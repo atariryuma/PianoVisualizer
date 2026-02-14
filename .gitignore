@@ -1,0 +1,9 @@
+# Security - certificates should not be in public repos
+cert.pfx
+*.pfx
+*.pem
+*.key
+
+# OS files
+.DS_Store
+Thumbs.db

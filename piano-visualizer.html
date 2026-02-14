@@ -22,19 +22,18 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 .theme-dot:nth-child(3){background:linear-gradient(135deg,#ff9800,#f44336)}
 .theme-dot:nth-child(4){background:linear-gradient(135deg,#e0e0ff,#a0a0ff)}
 #hud{position:fixed;top:0;left:0;right:0;z-index:4;pointer-events:none;display:none}
-#combo{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-size:1.1rem;color:rgba(255,255,255,.7);font-weight:200;letter-spacing:.1em;opacity:0;transition:opacity .3s}
-#combo.visible{opacity:1}
-#combo .num{font-size:2.2rem;font-weight:600;background:linear-gradient(135deg,#a78bfa,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:4px}
+#encouragement{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:6;font-size:1.6rem;color:rgba(255,255,255,.9);font-weight:300;letter-spacing:.15em;text-shadow:0 0 30px rgba(180,160,255,.6),0 0 60px rgba(180,160,255,.3);opacity:0;transition:opacity .5s,transform .5s;pointer-events:none}
+#encouragement.visible{opacity:1;transform:translateX(-50%) scale(1)}
+#encouragement.entering{opacity:0;transform:translateX(-50%) scale(0.8)}
 #flowGauge{position:fixed;left:12px;top:50%;transform:translateY(-50%);width:14px;height:60vh;max-height:400px;border-radius:7px;background:rgba(255,255,255,.08);overflow:hidden}
 #flowFill{position:absolute;bottom:0;width:100%;border-radius:7px;transition:height .3s,background .5s;height:0%}
 #stageLabel{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-size:1rem;color:rgba(255,255,255,.5);letter-spacing:.15em;font-weight:300;opacity:0;transition:opacity .8s}
 #stageLabel.visible{opacity:1}
 #noteDisplay{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);z-index:5;font-size:1.6rem;color:rgba(255,255,255,.6);font-weight:200;letter-spacing:.2em;text-shadow:0 0 20px rgba(180,160,255,.5);opacity:0;transition:opacity .4s;pointer-events:none}
 #noteDisplay.visible{opacity:1}
-#bestCombo{position:fixed;top:16px;right:60px;font-size:.75rem;color:rgba(255,255,255,.3);letter-spacing:.05em}
 #sessionStatus{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:5;font-size:.85rem;color:rgba(255,255,255,.4);letter-spacing:.12em;font-weight:300;opacity:0;transition:opacity .6s;pointer-events:none}
 #sessionStatus.visible{opacity:1}
-#qualityScore{position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:5;font-size:.7rem;color:rgba(255,255,255,.25);letter-spacing:.08em;opacity:0;transition:opacity .5s;pointer-events:none}
+#qualityScore{position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:5;font-size:.7rem;color:rgba(255,255,255,.25);letter-spacing:.08em;opacity:0;transition:opacity .5s;pointer-events:none}
 #qualityScore.visible{opacity:1}
 #debugOverlay{position:fixed;bottom:4px;left:4px;z-index:20;font-size:11px;font-family:'SF Mono',Menlo,monospace;color:rgba(0,255,150,.7);background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;display:none;line-height:1.5;white-space:pre}
 </style>
@@ -47,10 +46,9 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 </div>
 <canvas id="canvas"></canvas>
 <div id="hud">
-  <div id="combo"><span class="num">0</span>COMBO</div>
+  <div id="encouragement"></div>
   <div id="flowGauge"><div id="flowFill"></div></div>
   <div id="stageLabel"></div>
-  <div id="bestCombo">BEST: 0</div>
 </div>
 <div id="themeBar">
   <div class="theme-dot active" data-theme="0"></div>
@@ -66,23 +64,17 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 'use strict';
 
 // ========================================
-// v8 — Piano Visualizer
+// v9 — Piano Visualizer
 // ========================================
-// Improvements over v7:
-//   1. Software AGC via GainNode (replaces DynamicsCompressorNode)
-//      — actually amplifies quiet passages (compressor only attenuated loud ones)
-//      — tracks RMS over time, adjusts gain to normalize input
-//      — slow attack (don't flatten dynamics), faster release
-//   2. Simplified quality scoring (2 axes instead of 4)
-//      — rhythm stability + dynamic variation only
-//      — much more forgiving thresholds for children
-//      — removed over-engineered clarity/transition scores
-//   3. Centroid removed from onset gate
-//      — kept for debug display, but not reliable enough for iPad mic
-//   4. Session confidence sampling throttled
-//      — respects SESSION_SAMPLE_INTERVAL_MS properly
-//   5. getUserMedia with explicit constraints
-//      — autoGainControl:false, noiseSuppression:false, echoCancellation:false
+// Improvements over v8:
+//   1. Harmonicity gate — checks harmonic partial energy ratio
+//      to reject voice/speech (piano has strong integer-ratio harmonics)
+//   2. Tightened onset thresholds (flatness, crest, spread)
+//   3. AGC voice suppression — limits gain when non-piano audio persists
+//   4. Encouraging words system — replaces numeric combo display
+//      with escalating warm messages + special visual effects
+//   5. Enhanced stage transitions — more particles, celebration effects
+//   6. Warmer quality labels
 // ========================================
 
 const CONFIG = {
@@ -97,78 +89,84 @@ const CONFIG = {
   ONSET_SMOOTHING: 0.15,
 
   // =============================================
-  // Software AGC via GainNode (v8 — replaces compressor)
+  // Software AGC via GainNode (v8)
   // =============================================
-  AGC_TARGET_RMS: 0.06,           // target post-gain RMS level
-  AGC_ATTACK_COEFF: 0.02,         // slow gain increase (preserve dynamics)
-  AGC_RELEASE_COEFF: 0.08,        // faster gain decrease (avoid clipping)
-  AGC_MIN_GAIN: 1.0,              // never attenuate
-  AGC_MAX_GAIN: 40.0,             // max amplification (~32dB)
-  AGC_UPDATE_INTERVAL_MS: 100,    // gain adjustment interval
-  AGC_SILENCE_FLOOR: 0.0003,      // pre-gain RMS below this = true silence
+  AGC_TARGET_RMS: 0.06,
+  AGC_ATTACK_COEFF: 0.02,
+  AGC_RELEASE_COEFF: 0.08,
+  AGC_MIN_GAIN: 1.0,
+  AGC_MAX_GAIN: 40.0,
+  AGC_UPDATE_INTERVAL_MS: 100,
+  AGC_SILENCE_FLOOR: 0.0003,
+
+  // v9: AGC voice suppression
+  AGC_VOICE_REJECT_COUNT: 5,      // consecutive high-RMS rejections to trigger suppression
+  AGC_VOICE_SUPPRESS_MAX: 8.0,    // temporary max gain during voice suppression
+  AGC_VOICE_SUPPRESS_MS: 500,     // how long to suppress after voice detected
+  AGC_VOICE_RMS_MIN: 0.02,        // minimum RMS to count as "high-RMS rejection"
 
   // =============================================
   // YIN Pitch Detection (v6+)
   // =============================================
   YIN_THRESHOLD: 0.20,
   YIN_PROBABILITY_THRESHOLD: 0.10,
-  RMS_SILENCE_THRESHOLD: 0.010,   // v8: reasonable with real AGC (post-gain level)
+  RMS_SILENCE_THRESHOLD: 0.010,
   PITCH_MIN_HZ: 25,
   PITCH_MAX_HZ: 5000,
-  GOOD_NOTE_RMS: 0.015,           // v8: reasonable with real AGC
+  GOOD_NOTE_RMS: 0.015,
   CONFIDENCE_THRESHOLD: 0.30,
 
   // =============================================
-  // Multi-Feature Onset Classification (v6+)
+  // Multi-Feature Onset Classification (v9 — tightened)
   // =============================================
   SPECTRAL_FLUX_THRESHOLD: 6.0,
   SPECTRAL_FLUX_ADAPTIVE_K: 1.3,
   SPECTRAL_FLUX_HISTORY_SIZE: 20,
-  ONSET_SPREAD_THRESHOLD: 0.10,
+  ONSET_SPREAD_THRESHOLD: 0.15,       // v9: was 0.10 — piano onsets are broader
   ONSET_SPREAD_MIN_CHANGE: 1.5,
-  FLATNESS_PIANO_MIN: 0.08,
-  CREST_VOICE_MAX: 12.0,
+  FLATNESS_PIANO_MIN: 0.12,           // v9: was 0.08 — filters more voice
+  CREST_VOICE_MAX: 8.0,               // v9: was 12.0 — piano attacks are peakier
   ONSET_GATE_DURATION_MS: 1500,
   ONSET_COOLDOWN_MS: 60,
   FLUX_FREQ_MIN_HZ: 60,
   FLUX_FREQ_MAX_HZ: 4200,
 
   // =============================================
-  // Session Confidence Layer (v7 — new)
+  // Harmonicity Gate (v9 — new)
   // =============================================
-  SESSION_WINDOW_MS: 4000,        // sliding window for confidence calculation
-  SESSION_CONFIRM_THRESHOLD: 0.35, // 35% piano detection rate to enter "performing"
-  SESSION_LOSE_THRESHOLD: 0.10,    // drop below 10% to exit performing
-  SESSION_WARMUP_MS: 2000,         // minimum warmup before scoring starts
-  SESSION_SAMPLE_INTERVAL_MS: 50,  // how often to sample detection state
+  HARMONICITY_MIN: 0.20,              // minimum harmonic energy ratio to pass gate
+  HARMONICITY_PARTIALS: 6,            // number of harmonics to check (2x..7x)
+  HARMONICITY_BIN_TOLERANCE: 2,       // ±bins around each harmonic peak
 
   // =============================================
-  // Spectral Centroid Tracking (debug only in v8)
+  // Session Confidence Layer (v7+)
   // =============================================
-  CENTROID_HISTORY_SIZE: 20,        // frames to track (debug display only)
+  SESSION_WINDOW_MS: 4000,
+  SESSION_CONFIRM_THRESHOLD: 0.35,
+  SESSION_LOSE_THRESHOLD: 0.10,
+  SESSION_WARMUP_MS: 2000,
+  SESSION_SAMPLE_INTERVAL_MS: 50,
 
   // =============================================
-  // Quality Scoring — simplified for kids (v8)
+  // Spectral Centroid Tracking (debug only)
   // =============================================
-  // 2 axes: rhythm + dynamics (reduced from 4)
+  CENTROID_HISTORY_SIZE: 20,
+
+  // =============================================
+  // Quality Scoring — simplified for kids (v8+)
+  // =============================================
   SCORE_RHYTHM_WEIGHT: 0.5,
   SCORE_DYNAMICS_WEIGHT: 0.5,
-
-  // Rhythm: much more forgiving for children's practice
   IOI_HISTORY_SIZE: 16,
-  IOI_IDEAL_CV: 0.30,              // v8: was 0.15 — kids play with rubato
-  IOI_MAX_CV: 1.5,                 // v8: was 0.8 — allow very free timing
-
-  // Dynamics: wider sweet spot
+  IOI_IDEAL_CV: 0.30,
+  IOI_MAX_CV: 1.5,
   AMPLITUDE_HISTORY_SIZE: 30,
-  DYNAMICS_IDEAL_CV_MIN: 0.03,     // v8: was 0.10 — monotone is OK for practice
-  DYNAMICS_IDEAL_CV_MAX: 0.60,     // v8: was 0.35 — wide dynamics OK
-
-  // Quality score display
+  DYNAMICS_IDEAL_CV_MIN: 0.03,
+  DYNAMICS_IDEAL_CV_MAX: 0.60,
   SCORE_UPDATE_INTERVAL_MS: 500,
   SCORE_SMOOTHING: 0.08,
 
-  // Game timing (all in milliseconds)
+  // Game timing
   COMBO_WINDOW_MS: 2200,
   SILENCE_DECAY_START_MS: 1000,
   SILENCE_HARD_DECAY_MS: 3500,
@@ -176,14 +174,14 @@ const CONFIG = {
   NOTE_DISPLAY_DURATION_MS: 1200,
   MIN_NOTE_INTERVAL_MS: 70,
 
-  // Game balance (per-second rates)
-  FLOW_GAIN_BASE: 16,              // v8: slightly higher base (simpler quality calc)
+  // Game balance
+  FLOW_GAIN_BASE: 16,
   FLOW_GAIN_COMBO_MAX: 16,
   FLOW_GAIN_STABILITY_MAX: 20,
-  FLOW_GAIN_QUALITY_MAX: 25,       // v8: reduced (simpler scoring)
+  FLOW_GAIN_QUALITY_MAX: 25,
   FLOW_DECAY_SOFT: 6,
   FLOW_DECAY_HARD: 12,
-  NOISE_RMS_THRESHOLD: 0.05,       // v8: post-gain level with real AGC
+  NOISE_RMS_THRESHOLD: 0.05,
   FLOW_NOISE_PENALTY: 3,
   COMBO_DECAY_RATE: 1,
   COMBO_NOISE_PENALTY: 1,
@@ -210,6 +208,22 @@ const CONFIG = {
     { name: '\u2726\u2726\u2726\u2726\u2726 かがやき', minFlow: 90 }
   ],
 
+  // =============================================
+  // Encouragement Tiers (v9 — replaces combo numbers)
+  // =============================================
+  ENCOURAGEMENT_TIERS: [
+    { minCombo: 3,   message: 'いいよ！',         effect: 'glowPulse' },
+    { minCombo: 8,   message: 'すごい！',         effect: 'glowParticles' },
+    { minCombo: 15,  message: 'のってきた！',     effect: 'colorWave' },
+    { minCombo: 25,  message: 'きらきら！',       effect: 'starShower' },
+    { minCombo: 40,  message: 'すてきなおと！',   effect: 'flowerBurst' },
+    { minCombo: 60,  message: 'まほうみたい！',   effect: 'shimmer' },
+    { minCombo: 80,  message: 'かがやいてる！',   effect: 'radiance' },
+    { minCombo: 100, message: 'さいこう！',       effect: 'goldenBurst' }
+  ],
+  ENCOURAGEMENT_COOLDOWN_MS: 8000,   // don't repeat same tier within this window
+  ENCOURAGEMENT_DISPLAY_MS: 2500,    // how long message stays visible
+
   // Note mapping
   NOTE_NAMES: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
   PIANO_KEY_MIN: 21,
@@ -225,7 +239,7 @@ const CONFIG = {
 };
 
 // ========================================
-// DOM references — cached once
+// DOM references
 // ========================================
 const DOM = {
   canvas: document.getElementById('canvas'),
@@ -233,11 +247,9 @@ const DOM = {
   startBtn: document.getElementById('startBtn'),
   themeBar: document.getElementById('themeBar'),
   hud: document.getElementById('hud'),
-  comboEl: document.getElementById('combo'),
-  comboNum: document.querySelector('#combo .num'),
+  encouragement: document.getElementById('encouragement'),
   flowFill: document.getElementById('flowFill'),
   stageLabel: document.getElementById('stageLabel'),
-  bestComboEl: document.getElementById('bestCombo'),
   noteDisplay: document.getElementById('noteDisplay'),
   sessionStatus: document.getElementById('sessionStatus'),
   qualityScore: document.getElementById('qualityScore'),
@@ -265,47 +277,47 @@ const state = {
   noteShowTimeMs: 0,
   currentTheme: 0,
   lastFrameTimeMs: 0,
-  // Spectral flux onset detection
   prevSpectrum: null,
   spectralFluxHistory: [],
   lastOnsetTimeMs: -9999,
 
-  // =============================================
-  // Software AGC (v8 — new)
-  // =============================================
-  agcGain: 1.0,                   // current gain multiplier
-  agcSmoothedRms: 0,              // smoothed post-gain RMS for AGC decisions
-  agcLastUpdateMs: 0,             // last AGC adjustment time
+  // Software AGC (v8)
+  agcGain: 1.0,
+  agcSmoothedRms: 0,
+  agcLastUpdateMs: 0,
 
-  // =============================================
-  // Session Confidence Layer
-  // =============================================
-  sessionSamples: [],             // array of { timeMs, isPiano }
-  sessionState: 'waiting',        // 'waiting' | 'warmup' | 'performing'
-  sessionStartMs: 0,              // when warmup began
-  sessionConfidence: 0,           // current confidence ratio (0-1)
-  sessionPerformingStartMs: 0,    // when performing state began
-  lastSessionSampleMs: 0,         // v8: throttle sampling
+  // v9: AGC voice suppression
+  agcVoiceRejectCount: 0,
+  agcVoiceSuppressUntilMs: 0,
 
-  // =============================================
-  // Quality Scoring (v8 — simplified)
-  // =============================================
-  // IOI tracking (rhythm)
-  noteOnsetTimes: [],             // timestamps of recent note onsets
-  ioiHistory: [],                 // inter-onset intervals in ms
+  // Session Confidence
+  sessionSamples: [],
+  sessionState: 'waiting',
+  sessionStartMs: 0,
+  sessionConfidence: 0,
+  sessionPerformingStartMs: 0,
+  lastSessionSampleMs: 0,
 
-  // Amplitude tracking (dynamics)
-  amplitudeHistory: [],           // recent RMS values of good notes
-
-  // Spectral centroid tracking (debug only in v8)
-  centroidHistory: [],            // recent spectral centroid values
-
-  // Computed scores (0-1 each)
+  // Quality Scoring
+  noteOnsetTimes: [],
+  ioiHistory: [],
+  amplitudeHistory: [],
+  centroidHistory: [],
   rhythmScore: 0,
   dynamicsScore: 0,
-  qualityScore: 0,                // weighted average
-  displayedQualityScore: 0,       // smoothed for display
+  qualityScore: 0,
+  displayedQualityScore: 0,
   lastScoreUpdateMs: 0,
+
+  // v9: Encouragement system
+  currentEncouragementTier: -1,
+  lastEncouragementTimeMs: 0,
+  encouragementHideTimeMs: 0,
+
+  // v9: Special effects state
+  glowPulseIntensity: 0,
+  shimmerPhase: -1,
+  shimmerStartMs: 0,
 
   // Debug
   debugMode: false,
@@ -324,16 +336,17 @@ const state = {
   debugCentroidCV: 0,
   debugSessionConf: 0,
   debugSessionState: 'waiting',
-  debugAgcGain: 1.0
+  debugAgcGain: 1.0,
+  debugHarmonicity: 0
 };
 
 // ========================================
-// Audio — dual analyser + software AGC (v8)
+// Audio — dual analyser + software AGC
 // ========================================
 let audioCtx;
-let analyser;       // Main: high smoothing for pitch + visualisation
-let onsetAnalyser;  // Onset: low smoothing for transient detection
-let gainNode;       // v8: GainNode for software AGC
+let analyser;
+let onsetAnalyser;
+let gainNode;
 let dataArray, freqArray;
 let onsetDataArray;
 
@@ -343,7 +356,6 @@ async function initAudio() {
     await audioCtx.resume();
   }
 
-  // Explicit constraints — disable browser DSP
   const constraints = {
     audio: {
       autoGainControl: false,
@@ -356,15 +368,10 @@ async function initAudio() {
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   const source = audioCtx.createMediaStreamSource(stream);
 
-  // v8: GainNode for software AGC
-  // Unlike DynamicsCompressor, this ACTUALLY amplifies quiet input
   gainNode = audioCtx.createGain();
   gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
-
-  // Audio chain: source → gainNode → analysers
   source.connect(gainNode);
 
-  // Main analyser — smooth spectrum for pitch detection & visualisation
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = CONFIG.FFT_SIZE;
   analyser.smoothingTimeConstant = CONFIG.SMOOTHING;
@@ -372,7 +379,6 @@ async function initAudio() {
   dataArray = new Uint8Array(analyser.frequencyBinCount);
   freqArray = new Float32Array(analyser.fftSize);
 
-  // Onset analyser — low smoothing to preserve sharp transients
   onsetAnalyser = audioCtx.createAnalyser();
   onsetAnalyser.fftSize = CONFIG.ONSET_FFT_SIZE;
   onsetAnalyser.smoothingTimeConstant = CONFIG.ONSET_SMOOTHING;
@@ -397,7 +403,7 @@ resize();
 window.addEventListener('resize', resize);
 
 // ========================================
-// Debug toggle — triple-tap bottom-left corner
+// Debug toggle — triple-tap bottom-left
 // ========================================
 let debugTapCount = 0;
 let debugTapTimer = 0;
@@ -540,6 +546,144 @@ function spawnStream(x, y, energy) {
       Math.random() > 0.6 ? 'note' : 'circle'
     ));
   }
+}
+
+// ========================================
+// v9: Encouragement Effects
+// ========================================
+
+function effectGlowPulse() {
+  state.glowPulseIntensity = 0.4;
+}
+
+function effectGlowParticles() {
+  state.glowPulseIntensity = 0.5;
+  spawnBurst(W / 2, H * 0.3, 5, 0.6);
+}
+
+function effectColorWave() {
+  state.glowPulseIntensity = 0.6;
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  for (let i = 0; i < 8; i++) {
+    const ang = (Math.PI * 2 * i) / 8;
+    const dist = 80;
+    ripples.push(new Ripple(W / 2 + Math.cos(ang) * dist, H * 0.4 + Math.sin(ang) * dist,
+      cols[i % cols.length], 250 + state.flow * 2));
+  }
+}
+
+function effectStarShower(count) {
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  const n = count || 12;
+  for (let i = 0; i < n; i++) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) break;
+    particles.push(new Particle(
+      Math.random() * W, -10,
+      cols[Math.floor(Math.random() * cols.length)],
+      4 + Math.random() * 8,
+      (Math.random() - 0.5) * 1.5, 1 + Math.random() * 2,
+      120 + Math.random() * 80,
+      'star'
+    ));
+  }
+}
+
+function effectFlowerBurst() {
+  state.glowPulseIntensity = 0.7;
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  for (let i = 0; i < 15; i++) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) break;
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 1.5 + Math.random() * 3;
+    particles.push(new Particle(
+      W / 2, H * 0.4,
+      cols[Math.floor(Math.random() * cols.length)],
+      5 + Math.random() * 10,
+      Math.cos(ang) * spd, Math.sin(ang) * spd - 1.5,
+      100 + Math.random() * 80,
+      'flower'
+    ));
+  }
+}
+
+function effectShimmer() {
+  state.shimmerPhase = 0;
+  state.shimmerStartMs = performance.now();
+  state.glowPulseIntensity = 0.8;
+  spawnBurst(W / 2, H * 0.4, 20, 1.0);
+  effectStarShower(8);
+}
+
+function effectRadiance() {
+  state.glowPulseIntensity = 1.0;
+  effectStarShower(15);
+  for (let i = 0; i < 12; i++) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) break;
+    const ang = (Math.PI * 2 * i) / 12;
+    ripples.push(new Ripple(W / 2, H * 0.4,
+      CONFIG.THEMES[state.currentTheme].colors[i % 6], 300 + i * 30));
+  }
+}
+
+function effectGoldenBurst() {
+  state.glowPulseIntensity = 1.0;
+  state.shimmerPhase = 0;
+  state.shimmerStartMs = performance.now();
+  const goldColors = ['#ffd700', '#ffec8b', '#fff8dc', '#ffe4b5', '#ffc125', '#eec900'];
+  for (let i = 0; i < 30; i++) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) break;
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 2 + Math.random() * 4;
+    particles.push(new Particle(
+      W / 2, H * 0.35,
+      goldColors[Math.floor(Math.random() * goldColors.length)],
+      4 + Math.random() * 12,
+      Math.cos(ang) * spd, Math.sin(ang) * spd - 2,
+      100 + Math.random() * 100,
+      Math.random() > 0.5 ? 'star' : 'circle'
+    ));
+  }
+  effectStarShower(10);
+}
+
+function triggerEffect(effectName) {
+  switch (effectName) {
+    case 'glowPulse': effectGlowPulse(); break;
+    case 'glowParticles': effectGlowParticles(); break;
+    case 'colorWave': effectColorWave(); break;
+    case 'starShower': effectStarShower(12); break;
+    case 'flowerBurst': effectFlowerBurst(); break;
+    case 'shimmer': effectShimmer(); break;
+    case 'radiance': effectRadiance(); break;
+    case 'goldenBurst': effectGoldenBurst(); break;
+  }
+}
+
+function showEncouragement(tierIndex, timeMs) {
+  const tier = CONFIG.ENCOURAGEMENT_TIERS[tierIndex];
+  if (!tier) return;
+
+  // Check cooldown — don't show same or lower tier too frequently
+  if (timeMs - state.lastEncouragementTimeMs < CONFIG.ENCOURAGEMENT_COOLDOWN_MS
+      && tierIndex <= state.currentEncouragementTier) return;
+
+  state.currentEncouragementTier = tierIndex;
+  state.lastEncouragementTimeMs = timeMs;
+  state.encouragementHideTimeMs = timeMs + CONFIG.ENCOURAGEMENT_DISPLAY_MS;
+
+  // Show message with animation
+  DOM.encouragement.textContent = tier.message;
+  DOM.encouragement.classList.remove('visible');
+  DOM.encouragement.classList.add('entering');
+
+  // Force reflow for animation restart
+  void DOM.encouragement.offsetWidth;
+
+  DOM.encouragement.classList.remove('entering');
+  DOM.encouragement.classList.add('visible');
+
+  // Trigger visual effect
+  triggerEffect(tier.effect);
 }
 
 // ========================================
@@ -754,7 +898,7 @@ function detectPitchYIN(buf, sr) {
 }
 
 // ========================================
-// Spectral Features (v6+)
+// Spectral Features
 // ========================================
 
 function computeSpectralFlatness(spectrum, startBin, endBin) {
@@ -789,12 +933,6 @@ function computeSpectralCrest(spectrum, startBin, endBin) {
   return maxVal / mean;
 }
 
-// ========================================
-// Spectral Centroid (v7 — new)
-// ========================================
-// The "center of mass" of the spectrum
-// Piano: relatively stable post-attack
-// Voice: high variation due to formant shifts
 function computeSpectralCentroid(spectrum, startBin, endBin, binHz) {
   let weightedSum = 0;
   let totalEnergy = 0;
@@ -807,7 +945,6 @@ function computeSpectralCentroid(spectrum, startBin, endBin, binHz) {
   return weightedSum / totalEnergy;
 }
 
-// Coefficient of variation for an array
 function coefficientOfVariation(arr) {
   if (arr.length < 3) return 0;
   let mean = 0;
@@ -824,7 +961,42 @@ function coefficientOfVariation(arr) {
 }
 
 // ========================================
-// Multi-Feature Onset Detection (v6+, simplified v8)
+// v9: Harmonicity — checks harmonic partial energy
+// ========================================
+// Piano sound has strong energy at integer multiples of the fundamental.
+// Voice (especially vowels) has formant peaks that don't align as well.
+// Returns ratio of harmonic energy to total energy (0-1).
+function computeHarmonicity(spectrum, fundamentalBin, startBin, endBin) {
+  if (fundamentalBin <= 0 || fundamentalBin >= endBin) return 0;
+
+  const tol = CONFIG.HARMONICITY_BIN_TOLERANCE;
+  let harmonicEnergy = 0;
+  let totalEnergy = 0;
+
+  // Sum total energy in range
+  for (let i = startBin; i < endBin; i++) {
+    totalEnergy += spectrum[i];
+  }
+  if (totalEnergy < 1) return 0;
+
+  // Check energy at fundamental + harmonics (2x, 3x, ... Nx)
+  for (let h = 1; h <= CONFIG.HARMONICITY_PARTIALS + 1; h++) {
+    const harmonicBin = Math.round(fundamentalBin * h);
+    if (harmonicBin >= endBin) break;
+
+    // Sum energy within ±tolerance bins of each harmonic
+    const lo = Math.max(startBin, harmonicBin - tol);
+    const hi = Math.min(endBin - 1, harmonicBin + tol);
+    for (let i = lo; i <= hi; i++) {
+      harmonicEnergy += spectrum[i];
+    }
+  }
+
+  return harmonicEnergy / totalEnergy;
+}
+
+// ========================================
+// Multi-Feature Onset Detection (v9 — with harmonicity)
 // ========================================
 function updateMultiFeatureOnset(timeMs) {
   if (!onsetAnalyser || !onsetDataArray) return false;
@@ -866,13 +1038,23 @@ function updateMultiFeatureOnset(timeMs) {
   // Feature 3: Spectral Crest
   const crest = computeSpectralCrest(onsetDataArray, startBin, endBin);
 
-  // v7: Feature 4 — Spectral Centroid tracking
+  // Feature 4: Spectral Centroid (debug tracking)
   const centroid = computeSpectralCentroid(onsetDataArray, startBin, endBin, binHz);
   state.centroidHistory.push(centroid);
   if (state.centroidHistory.length > CONFIG.CENTROID_HISTORY_SIZE) {
     state.centroidHistory.shift();
   }
   const centroidCV = coefficientOfVariation(state.centroidHistory);
+
+  // v9: Feature 5 — Harmonicity check
+  let harmonicity = 0;
+  let harmonicityOk = true; // default: pass if no pitch available
+  if (state.debugLastPitch > CONFIG.PITCH_MIN_HZ) {
+    const fundamentalBin = Math.round(state.debugLastPitch / binHz);
+    harmonicity = computeHarmonicity(onsetDataArray, fundamentalBin, startBin, endBin);
+    harmonicityOk = harmonicity >= CONFIG.HARMONICITY_MIN;
+  }
+  state.debugHarmonicity = harmonicity;
 
   // Save current spectrum for next frame
   for (let i = 0; i < onsetDataArray.length; i++) {
@@ -910,17 +1092,25 @@ function updateMultiFeatureOnset(timeMs) {
     const flatnessOk = flatness > CONFIG.FLATNESS_PIANO_MIN;
     const crestOk = crest < CONFIG.CREST_VOICE_MAX;
 
-    // v8: Centroid tracked for debug but NOT used as gate
-    // (unreliable on iPad mic due to room acoustics)
-
-    if (fluxOk && spreadOk && flatnessOk && crestOk) {
+    // v9: 5-condition gate (added harmonicity)
+    if (fluxOk && spreadOk && flatnessOk && crestOk && harmonicityOk) {
       if (timeMs - state.lastOnsetTimeMs > CONFIG.ONSET_COOLDOWN_MS) {
         state.lastOnsetTimeMs = timeMs;
         isOnset = true;
         onsetReason = 'PIANO';
+        // v9: reset voice rejection counter on successful detection
+        state.agcVoiceRejectCount = 0;
       }
     } else if (fluxOk && spreadOk) {
-      if (!flatnessOk) onsetReason = 'REJ:flat';
+      // v9: track rejections for AGC voice suppression
+      if (state.debugLastRms > CONFIG.AGC_VOICE_RMS_MIN) {
+        state.agcVoiceRejectCount++;
+        if (state.agcVoiceRejectCount >= CONFIG.AGC_VOICE_REJECT_COUNT) {
+          state.agcVoiceSuppressUntilMs = timeMs + CONFIG.AGC_VOICE_SUPPRESS_MS;
+        }
+      }
+      if (!harmonicityOk) onsetReason = 'REJ:harm';
+      else if (!flatnessOk) onsetReason = 'REJ:flat';
       else if (!crestOk) onsetReason = 'REJ:crest';
     }
   }
@@ -941,23 +1131,19 @@ function updateMultiFeatureOnset(timeMs) {
 }
 
 // ========================================
-// Session Confidence Layer (v8 — throttled)
+// Session Confidence Layer
 // ========================================
 function updateSessionConfidence(timeMs, isPianoDetected) {
-  // v8: Throttle sampling to SESSION_SAMPLE_INTERVAL_MS
   if (timeMs - state.lastSessionSampleMs < CONFIG.SESSION_SAMPLE_INTERVAL_MS) return;
   state.lastSessionSampleMs = timeMs;
 
-  // Add sample to sliding window
   state.sessionSamples.push({ timeMs: timeMs, isPiano: isPianoDetected });
 
-  // Remove samples outside the window
   const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
   while (state.sessionSamples.length > 0 && state.sessionSamples[0].timeMs < windowStart) {
     state.sessionSamples.shift();
   }
 
-  // Calculate confidence: ratio of piano samples in window
   if (state.sessionSamples.length < 3) {
     state.sessionConfidence = 0;
     return;
@@ -971,7 +1157,6 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
 
   state.debugSessionConf = state.sessionConfidence;
 
-  // State transitions
   const prevState = state.sessionState;
 
   switch (state.sessionState) {
@@ -994,8 +1179,6 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
 
     case 'performing':
       if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
-        // Grace period: don't immediately drop out during musical pauses
-        // Only drop if sustained low confidence
         state.sessionState = 'warmup';
         state.sessionStartMs = timeMs;
       }
@@ -1023,37 +1206,29 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
 }
 
 // ========================================
-// Quality Scoring — simplified for kids (v8)
+// Quality Scoring — simplified for kids
 // ========================================
-// Only 2 axes: rhythm consistency + dynamic variation
-// Much more forgiving thresholds than v7
 
 function computeRhythmScore() {
   const ioi = state.ioiHistory;
-  if (ioi.length < 3) return 0.5; // v8: need fewer samples
-
+  if (ioi.length < 3) return 0.5;
   const cv = coefficientOfVariation(ioi);
-
-  // v8: Very generous — kids play with lots of rubato
   if (cv <= CONFIG.IOI_IDEAL_CV) return 0.85 + 0.15 * (1 - cv / CONFIG.IOI_IDEAL_CV);
   if (cv <= CONFIG.IOI_MAX_CV) {
     const t = (cv - CONFIG.IOI_IDEAL_CV) / (CONFIG.IOI_MAX_CV - CONFIG.IOI_IDEAL_CV);
-    return 0.85 - 0.45 * t; // v8: gentler dropoff
+    return 0.85 - 0.45 * t;
   }
-  return 0.4; // v8: floor raised from 0.2
+  return 0.4;
 }
 
 function computeDynamicsScore() {
   const amps = state.amplitudeHistory;
   if (amps.length < 3) return 0.5;
-
   const cv = coefficientOfVariation(amps);
-
-  // v8: Very wide sweet spot — almost any playing style is fine
   if (cv >= CONFIG.DYNAMICS_IDEAL_CV_MIN && cv <= CONFIG.DYNAMICS_IDEAL_CV_MAX) {
     return 0.8 + 0.2 * (1 - Math.abs(cv - 0.15) / 0.45);
   } else if (cv < CONFIG.DYNAMICS_IDEAL_CV_MIN) {
-    return 0.6; // v8: monotone is OK, just not great
+    return 0.6;
   } else {
     return Math.max(0.3, 0.8 - (cv - CONFIG.DYNAMICS_IDEAL_CV_MAX) * 0.5);
   }
@@ -1070,13 +1245,12 @@ function updateQualityScores(timeMs) {
     state.rhythmScore * CONFIG.SCORE_RHYTHM_WEIGHT +
     state.dynamicsScore * CONFIG.SCORE_DYNAMICS_WEIGHT;
 
-  // Smooth display value
   state.displayedQualityScore += (state.qualityScore - state.displayedQualityScore) * CONFIG.SCORE_SMOOTHING;
 
-  // Update quality display — simpler, more encouraging
+  // v9: Warmer quality labels
   if (state.sessionState === 'performing' && state.displayedQualityScore > 0.3) {
     const stars = Math.floor(state.displayedQualityScore * 5);
-    const label = stars >= 4 ? 'すばらしい！' : stars >= 3 ? 'いいね！' : stars >= 2 ? 'がんばれ！' : '';
+    const label = stars >= 4 ? 'うっとり！' : stars >= 3 ? 'すてき！' : stars >= 2 ? 'いいかんじ！' : '';
     DOM.qualityScore.textContent = '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars) + (label ? ' ' + label : '');
     DOM.qualityScore.classList.add('visible');
   } else {
@@ -1085,76 +1259,63 @@ function updateQualityScores(timeMs) {
 }
 
 // ========================================
-// Software AGC — adaptive gain control (v8)
+// Software AGC — with v9 voice suppression
 // ========================================
-// Measures post-gain RMS and adjusts GainNode to normalize level.
-// This is what makes quiet piano passages actually detectable.
 function updateAGC(timeMs, postGainRms) {
   if (timeMs - state.agcLastUpdateMs < CONFIG.AGC_UPDATE_INTERVAL_MS) return;
   state.agcLastUpdateMs = timeMs;
 
-  // Smooth the RMS measurement
   state.agcSmoothedRms += (postGainRms - state.agcSmoothedRms) * 0.15;
 
-  // Don't adjust during true silence (pre-gain level too low)
   const preGainRms = state.agcSmoothedRms / state.agcGain;
   if (preGainRms < CONFIG.AGC_SILENCE_FLOOR) return;
 
-  // Calculate desired gain to reach target RMS
-  const ratio = CONFIG.AGC_TARGET_RMS / (state.agcSmoothedRms + 1e-10);
-  const targetGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(CONFIG.AGC_MAX_GAIN, state.agcGain * ratio));
+  // v9: Determine effective max gain — suppress during voice detection
+  const effectiveMaxGain = (timeMs < state.agcVoiceSuppressUntilMs)
+    ? CONFIG.AGC_VOICE_SUPPRESS_MAX
+    : CONFIG.AGC_MAX_GAIN;
 
-  // Smooth approach: slow attack (preserve dynamics), faster release (avoid clipping)
+  const ratio = CONFIG.AGC_TARGET_RMS / (state.agcSmoothedRms + 1e-10);
+  const targetGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(effectiveMaxGain, state.agcGain * ratio));
+
   const alpha = targetGain > state.agcGain ? CONFIG.AGC_ATTACK_COEFF : CONFIG.AGC_RELEASE_COEFF;
   state.agcGain += (targetGain - state.agcGain) * alpha;
-  state.agcGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(CONFIG.AGC_MAX_GAIN, state.agcGain));
+  state.agcGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(effectiveMaxGain, state.agcGain));
 
-  // Apply to GainNode
   gainNode.gain.setValueAtTime(state.agcGain, audioCtx.currentTime);
   state.debugAgcGain = state.agcGain;
 }
 
 // ========================================
-// Game Logic — 4-layer architecture (v8 — streamlined)
-// ========================================
-// Layer 1: Detection (YIN + multi-feature onset)
-// Layer 2: Session confidence (sustained piano detection)
-// Layer 3: Quality scoring (rhythm + dynamics only)
-// Layer 4: Flow/game (uses session + quality to drive progression)
+// Game Logic — 4-layer architecture (v9)
 // ========================================
 function updateGameState(timeMs, dt, pitchResult) {
   const { pitch, conf, rms } = pitchResult;
 
-  // Layer 1: Multi-feature onset gate
   const hasRecentOnset = updateMultiFeatureOnset(timeMs);
 
   const pitchOk = pitch > CONFIG.PITCH_MIN_HZ && pitch < CONFIG.PITCH_MAX_HZ
     && conf > CONFIG.CONFIDENCE_THRESHOLD && rms > CONFIG.GOOD_NOTE_RMS;
   const isGoodNote = pitchOk && hasRecentOnset;
 
-  // Store debug info
   state.debugLastRms = rms;
   state.debugLastConf = conf;
   state.debugLastPitch = pitch;
   state.debugIsGoodNote = isGoodNote;
 
-  // Layer 2: Session confidence
   updateSessionConfidence(timeMs, isGoodNote);
 
-  // Track data for quality scoring
   if (isGoodNote) {
-    // Track note onset times for IOI calculation
     const lastOnset = state.noteOnsetTimes.length > 0
       ? state.noteOnsetTimes[state.noteOnsetTimes.length - 1] : 0;
-    if (timeMs - lastOnset > 80) { // debounce
+    if (timeMs - lastOnset > 80) {
       state.noteOnsetTimes.push(timeMs);
       if (state.noteOnsetTimes.length > CONFIG.IOI_HISTORY_SIZE + 1) {
         state.noteOnsetTimes.shift();
       }
-      // Calculate IOI
       if (state.noteOnsetTimes.length >= 2) {
         const ioi = timeMs - state.noteOnsetTimes[state.noteOnsetTimes.length - 2];
-        if (ioi > 100 && ioi < 5000) { // reasonable range
+        if (ioi > 100 && ioi < 5000) {
           state.ioiHistory.push(ioi);
           if (state.ioiHistory.length > CONFIG.IOI_HISTORY_SIZE) {
             state.ioiHistory.shift();
@@ -1163,20 +1324,14 @@ function updateGameState(timeMs, dt, pitchResult) {
       }
     }
 
-    // Track amplitude for dynamics scoring
     state.amplitudeHistory.push(rms);
     if (state.amplitudeHistory.length > CONFIG.AMPLITUDE_HISTORY_SIZE) {
       state.amplitudeHistory.shift();
     }
-
-  } else {
-    // v8: no transition/clarity tracking needed
   }
 
-  // Layer 3: Quality scoring
   updateQualityScores(timeMs);
 
-  // Layer 4: Flow/game — only progresses when session is confirmed
   const dtSec = dt / 1000;
   const isPerforming = state.sessionState === 'performing';
   const isWarmup = state.sessionState === 'warmup';
@@ -1193,13 +1348,11 @@ function updateGameState(timeMs, dt, pitchResult) {
     state.lastPitch = pitch;
     state.lastSilenceStartMs = -1;
 
-    // Combo tracking (works during warmup and performing)
     if (isPerforming || isWarmup) {
       if (state.lastGoodNoteTimeMs > 0 && (timeMs - state.lastGoodNoteTimeMs) < CONFIG.COMBO_WINDOW_MS) {
         state.combo++;
         if (state.combo > state.bestCombo) {
           state.bestCombo = state.combo;
-          DOM.bestComboEl.textContent = 'BEST: ' + state.bestCombo;
         }
       } else {
         state.combo = Math.max(1, Math.floor(state.combo * 0.6));
@@ -1207,7 +1360,6 @@ function updateGameState(timeMs, dt, pitchResult) {
     }
     state.lastGoodNoteTimeMs = timeMs;
 
-    // Flow gain — only during performing state
     if (isPerforming) {
       const comboFactor = Math.min(state.combo / 50, 1);
       const qualityFactor = state.qualityScore;
@@ -1217,7 +1369,6 @@ function updateGameState(timeMs, dt, pitchResult) {
         + qualityFactor * CONFIG.FLOW_GAIN_QUALITY_MAX) * dtSec;
       state.flow = Math.min(100, state.flow + flowGain);
     } else if (isWarmup) {
-      // During warmup: tiny flow gain to show something is happening
       state.flow = Math.min(8, state.flow + 2 * dtSec);
     }
 
@@ -1237,7 +1388,6 @@ function updateGameState(timeMs, dt, pitchResult) {
       }
     }
 
-    // Noise penalty
     if (rms > CONFIG.NOISE_RMS_THRESHOLD && !isGoodNote) {
       if (timeMs - state.lastNoisePenaltyMs > CONFIG.NOISE_PENALTY_COOLDOWN_MS) {
         state.flow = Math.max(0, state.flow - CONFIG.FLOW_NOISE_PENALTY * dtSec);
@@ -1247,6 +1397,7 @@ function updateGameState(timeMs, dt, pitchResult) {
     }
   }
 
+  // Stage transitions — v9: enhanced with more particles
   const prevStage = state.currentStage;
   let newStage = 0;
   for (let i = CONFIG.STAGES.length - 1; i >= 0; i--) {
@@ -1259,26 +1410,48 @@ function updateGameState(timeMs, dt, pitchResult) {
     if (newStage > 0) { DOM.stageLabel.classList.add('visible'); }
     else { DOM.stageLabel.classList.remove('visible'); }
 
+    // v9: Enhanced stage-up celebration
     if (newStage > prevStage && newStage > 0) {
-      for (let i = 0; i < 20; i++) {
-        spawnBurst(Math.random() * W, Math.random() * H, 3, 0.8);
+      for (let i = 0; i < 40; i++) {
+        spawnBurst(Math.random() * W, Math.random() * H, 3, 0.9);
       }
+      effectStarShower(6);
     }
   }
 
-  updateHUD();
+  updateHUD(timeMs);
   return isGoodNote;
 }
 
-function updateHUD() {
-  if (state.combo > 2) {
-    DOM.comboNum.textContent = state.combo;
-    DOM.comboEl.classList.add('visible');
-    DOM.comboEl.style.fontSize = 1.1 + Math.min(state.combo / 100, 0.5) + 'rem';
-  } else {
-    DOM.comboEl.classList.remove('visible');
+// ========================================
+// v9: updateHUD — encouragement instead of numbers
+// ========================================
+function updateHUD(timeMs) {
+  // v9: Check encouragement tiers (find highest matching tier)
+  let bestTier = -1;
+  for (let i = CONFIG.ENCOURAGEMENT_TIERS.length - 1; i >= 0; i--) {
+    if (state.combo >= CONFIG.ENCOURAGEMENT_TIERS[i].minCombo) {
+      bestTier = i;
+      break;
+    }
   }
 
+  // Show encouragement when tier increases
+  if (bestTier > state.currentEncouragementTier && bestTier >= 0) {
+    showEncouragement(bestTier, timeMs);
+  }
+
+  // Reset tier tracking when combo drops
+  if (bestTier < state.currentEncouragementTier) {
+    state.currentEncouragementTier = bestTier;
+  }
+
+  // Hide encouragement after display time
+  if (timeMs > state.encouragementHideTimeMs) {
+    DOM.encouragement.classList.remove('visible');
+  }
+
+  // Flow gauge
   DOM.flowFill.style.height = state.flow + '%';
   const hue = state.flow * 1.2 + 200;
   DOM.flowFill.style.background = 'linear-gradient(to top,hsl(' + hue + ',70%,40%),hsl(' + (hue + 40) + ',80%,60%))';
@@ -1286,21 +1459,23 @@ function updateHUD() {
 }
 
 // ========================================
-// Debug overlay update (v8)
+// Debug overlay (v9)
 // ========================================
 function updateDebugOverlay() {
   if (!state.debugMode) return;
   const gateMs = Math.max(0, CONFIG.ONSET_GATE_DURATION_MS - (performance.now() - state.lastOnsetTimeMs));
+  const voiceSupp = state.agcVoiceSuppressUntilMs > performance.now() ? 'SUPP' : 'ok';
   DOM.debugOverlay.textContent =
-    'v8 YIN+SoftAGC | FLUX: ' + state.debugLastFlux.toFixed(1) +
+    'v9 YIN+Harm+SoftAGC | FLUX: ' + state.debugLastFlux.toFixed(1) +
     '  THR: ' + state.debugLastThreshold.toFixed(1) +
     '  SPR: ' + (state.debugLastSpread * 100).toFixed(0) + '%' +
     '\nFLAT: ' + state.debugLastFlatness.toFixed(3) +
     '  CREST: ' + state.debugLastCrest.toFixed(1) +
+    '  HARM: ' + state.debugHarmonicity.toFixed(3) +
     '  ' + state.debugOnsetReason +
     '\nGATE: ' + (state.debugGateOpen ? 'OPEN ' + (gateMs / 1000).toFixed(1) + 's' : 'CLOSED') +
     '  RMS: ' + state.debugLastRms.toFixed(4) +
-    '  AGC: x' + state.debugAgcGain.toFixed(1) +
+    '  AGC: x' + state.debugAgcGain.toFixed(1) + ' ' + voiceSupp +
     '\nPITCH: ' + (state.debugLastPitch > 0 ? state.debugLastPitch.toFixed(1) + 'Hz' : '---') +
     '  CONF: ' + state.debugLastConf.toFixed(2) +
     '  NOTE: ' + (state.debugIsGoodNote ? 'YES' : 'no') +
@@ -1315,7 +1490,7 @@ function updateDebugOverlay() {
 }
 
 // ========================================
-// Energy calculation (for visualisation)
+// Energy calculation
 // ========================================
 function getEnergy() {
   if (!analyser) return 0;
@@ -1351,13 +1526,35 @@ function loop(timeMs) {
   drawAurora(timeMs);
   drawGroundFlowers(timeMs);
 
-  if (state.smoothEnergy > 0.04) {
-    const glowSize = W * 0.3 * state.smoothEnergy + 100 + state.flow * 3;
+  // v9: Glow pulse effect (from encouragement)
+  const glowExtra = state.glowPulseIntensity;
+  if (glowExtra > 0.01) {
+    state.glowPulseIntensity *= 0.96; // decay
+  }
+
+  if (state.smoothEnergy > 0.04 || glowExtra > 0.02) {
+    const baseGlow = W * 0.3 * state.smoothEnergy + 100 + state.flow * 3;
+    const glowSize = baseGlow + glowExtra * W * 0.2;
+    const glowAlpha = 0.08 + state.flow * 0.002 + glowExtra * 0.15;
     const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, glowSize);
-    grad.addColorStop(0, theme.glow + (0.08 + state.flow * 0.002) + ')');
+    grad.addColorStop(0, theme.glow + Math.min(glowAlpha, 0.4) + ')');
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // v9: Shimmer effect
+  if (state.shimmerPhase >= 0) {
+    const shimmerAge = timeMs - state.shimmerStartMs;
+    if (shimmerAge < 1500) {
+      const shimmerAlpha = 0.08 * Math.sin(shimmerAge * 0.02) * (1 - shimmerAge / 1500);
+      if (shimmerAlpha > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,' + shimmerAlpha + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+    } else {
+      state.shimmerPhase = -1;
+    }
   }
 
   let isGoodNote = false;
@@ -1365,7 +1562,6 @@ function loop(timeMs) {
     analyser.getFloatTimeDomainData(freqArray);
     const pitchResult = detectPitchYIN(freqArray, audioCtx.sampleRate);
 
-    // v8: Software AGC — adjust gain based on current RMS level
     updateAGC(timeMs, pitchResult.rms);
 
     isGoodNote = updateGameState(timeMs, dt, pitchResult);
