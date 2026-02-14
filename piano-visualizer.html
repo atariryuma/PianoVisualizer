@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Piano Visualizer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a14;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
+#startScreen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;background:radial-gradient(ellipse at center,#151530 0%,#0a0a14 100%)}
+#startScreen h1{font-size:2.4rem;color:#e8e0ff;margin-bottom:.5rem;font-weight:300;letter-spacing:.15em}
+#startScreen p{font-size:1rem;color:#8888aa;margin-bottom:2.5rem}
+#startBtn{font-size:1.2rem;padding:1rem 3rem;border:1px solid rgba(180,160,255,.4);border-radius:50px;background:rgba(100,80,200,.15);color:#c8b8ff;cursor:pointer;transition:all .3s;-webkit-tap-highlight-color:transparent}
+#startBtn:active{background:rgba(100,80,200,.35);transform:scale(.97)}
+#themeBar{position:fixed;top:16px;right:16px;z-index:5;display:flex;gap:8px;opacity:0;transition:opacity .5s;pointer-events:none}
+#themeBar.visible{opacity:1;pointer-events:auto}
+.theme-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.2);cursor:pointer;transition:all .3s;-webkit-tap-highlight-color:transparent}
+.theme-dot.active{border-color:#fff;transform:scale(1.15)}
+.theme-dot:nth-child(1){background:linear-gradient(135deg,#6a5acd,#ff69b4)}
+.theme-dot:nth-child(2){background:linear-gradient(135deg,#00bcd4,#4caf50)}
+.theme-dot:nth-child(3){background:linear-gradient(135deg,#ff9800,#f44336)}
+.theme-dot:nth-child(4){background:linear-gradient(135deg,#e0e0ff,#a0a0ff)}
+#hud{position:fixed;top:0;left:0;right:0;z-index:4;pointer-events:none;display:none}
+#combo{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-size:1.1rem;color:rgba(255,255,255,.7);font-weight:200;letter-spacing:.1em;opacity:0;transition:opacity .3s}
+#combo.visible{opacity:1}
+#combo .num{font-size:2.2rem;font-weight:600;background:linear-gradient(135deg,#a78bfa,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:4px}
+#flowGauge{position:fixed;left:12px;top:50%;transform:translateY(-50%);width:14px;height:60vh;max-height:400px;border-radius:7px;background:rgba(255,255,255,.08);overflow:hidden}
+#flowFill{position:absolute;bottom:0;width:100%;border-radius:7px;transition:height .3s,background .5s;height:0%}
+#stageLabel{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-size:1rem;color:rgba(255,255,255,.5);letter-spacing:.15em;font-weight:300;opacity:0;transition:opacity .8s}
+#stageLabel.visible{opacity:1}
+#noteDisplay{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);z-index:5;font-size:1.6rem;color:rgba(255,255,255,.6);font-weight:200;letter-spacing:.2em;text-shadow:0 0 20px rgba(180,160,255,.5);opacity:0;transition:opacity .4s;pointer-events:none}
+#noteDisplay.visible{opacity:1}
+#bestCombo{position:fixed;top:16px;right:60px;font-size:.75rem;color:rgba(255,255,255,.3);letter-spacing:.05em}
+#sessionStatus{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:5;font-size:.85rem;color:rgba(255,255,255,.4);letter-spacing:.12em;font-weight:300;opacity:0;transition:opacity .6s;pointer-events:none}
+#sessionStatus.visible{opacity:1}
+#qualityScore{position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:5;font-size:.7rem;color:rgba(255,255,255,.25);letter-spacing:.08em;opacity:0;transition:opacity .5s;pointer-events:none}
+#qualityScore.visible{opacity:1}
+#debugOverlay{position:fixed;bottom:4px;left:4px;z-index:20;font-size:11px;font-family:'SF Mono',Menlo,monospace;color:rgba(0,255,150,.7);background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;display:none;line-height:1.5;white-space:pre}
+</style>
+</head>
+<body>
+<div id="startScreen">
+  <h1>Piano Visualizer</h1>
+  <p>ピアノを弾くと画面がきれいに光るよ</p>
+  <button id="startBtn">タップしてスタート</button>
+</div>
+<canvas id="canvas"></canvas>
+<div id="hud">
+  <div id="combo"><span class="num">0</span>COMBO</div>
+  <div id="flowGauge"><div id="flowFill"></div></div>
+  <div id="stageLabel"></div>
+  <div id="bestCombo">BEST: 0</div>
+</div>
+<div id="themeBar">
+  <div class="theme-dot active" data-theme="0"></div>
+  <div class="theme-dot" data-theme="1"></div>
+  <div class="theme-dot" data-theme="2"></div>
+  <div class="theme-dot" data-theme="3"></div>
+</div>
+<div id="noteDisplay"></div>
+<div id="sessionStatus"></div>
+<div id="qualityScore"></div>
+<div id="debugOverlay"></div>
+<script>
+'use strict';
+
+// ========================================
+// v8 — Piano Visualizer
+// ========================================
+// Improvements over v7:
+//   1. Software AGC via GainNode (replaces DynamicsCompressorNode)
+//      — actually amplifies quiet passages (compressor only attenuated loud ones)
+//      — tracks RMS over time, adjusts gain to normalize input
+//      — slow attack (don't flatten dynamics), faster release
+//   2. Simplified quality scoring (2 axes instead of 4)
+//      — rhythm stability + dynamic variation only
+//      — much more forgiving thresholds for children
+//      — removed over-engineered clarity/transition scores
+//   3. Centroid removed from onset gate
+//      — kept for debug display, but not reliable enough for iPad mic
+//   4. Session confidence sampling throttled
+//      — respects SESSION_SAMPLE_INTERVAL_MS properly
+//   5. getUserMedia with explicit constraints
+//      — autoGainControl:false, noiseSuppression:false, echoCancellation:false
+// ========================================
+
+const CONFIG = {
+  // Audio — main analyser (for pitch + visualisation)
+  FFT_SIZE: 4096,
+  SMOOTHING: 0.82,
+  PIANO_FREQ_MIN: 27,
+  PIANO_FREQ_MAX: 4200,
+
+  // Onset analyser — dedicated low-smoothing node for transient detection
+  ONSET_FFT_SIZE: 2048,
+  ONSET_SMOOTHING: 0.15,
+
+  // =============================================
+  // Software AGC via GainNode (v8 — replaces compressor)
+  // =============================================
+  AGC_TARGET_RMS: 0.06,           // target post-gain RMS level
+  AGC_ATTACK_COEFF: 0.02,         // slow gain increase (preserve dynamics)
+  AGC_RELEASE_COEFF: 0.08,        // faster gain decrease (avoid clipping)
+  AGC_MIN_GAIN: 1.0,              // never attenuate
+  AGC_MAX_GAIN: 40.0,             // max amplification (~32dB)
+  AGC_UPDATE_INTERVAL_MS: 100,    // gain adjustment interval
+  AGC_SILENCE_FLOOR: 0.0003,      // pre-gain RMS below this = true silence
+
+  // =============================================
+  // YIN Pitch Detection (v6+)
+  // =============================================
+  YIN_THRESHOLD: 0.20,
+  YIN_PROBABILITY_THRESHOLD: 0.10,
+  RMS_SILENCE_THRESHOLD: 0.010,   // v8: reasonable with real AGC (post-gain level)
+  PITCH_MIN_HZ: 25,
+  PITCH_MAX_HZ: 5000,
+  GOOD_NOTE_RMS: 0.015,           // v8: reasonable with real AGC
+  CONFIDENCE_THRESHOLD: 0.30,
+
+  // =============================================
+  // Multi-Feature Onset Classification (v6+)
+  // =============================================
+  SPECTRAL_FLUX_THRESHOLD: 6.0,
+  SPECTRAL_FLUX_ADAPTIVE_K: 1.3,
+  SPECTRAL_FLUX_HISTORY_SIZE: 20,
+  ONSET_SPREAD_THRESHOLD: 0.10,
+  ONSET_SPREAD_MIN_CHANGE: 1.5,
+  FLATNESS_PIANO_MIN: 0.08,
+  CREST_VOICE_MAX: 12.0,
+  ONSET_GATE_DURATION_MS: 1500,
+  ONSET_COOLDOWN_MS: 60,
+  FLUX_FREQ_MIN_HZ: 60,
+  FLUX_FREQ_MAX_HZ: 4200,
+
+  // =============================================
+  // Session Confidence Layer (v7 — new)
+  // =============================================
+  SESSION_WINDOW_MS: 4000,        // sliding window for confidence calculation
+  SESSION_CONFIRM_THRESHOLD: 0.35, // 35% piano detection rate to enter "performing"
+  SESSION_LOSE_THRESHOLD: 0.10,    // drop below 10% to exit performing
+  SESSION_WARMUP_MS: 2000,         // minimum warmup before scoring starts
+  SESSION_SAMPLE_INTERVAL_MS: 50,  // how often to sample detection state
+
+  // =============================================
+  // Spectral Centroid Tracking (debug only in v8)
+  // =============================================
+  CENTROID_HISTORY_SIZE: 20,        // frames to track (debug display only)
+
+  // =============================================
+  // Quality Scoring — simplified for kids (v8)
+  // =============================================
+  // 2 axes: rhythm + dynamics (reduced from 4)
+  SCORE_RHYTHM_WEIGHT: 0.5,
+  SCORE_DYNAMICS_WEIGHT: 0.5,
+
+  // Rhythm: much more forgiving for children's practice
+  IOI_HISTORY_SIZE: 16,
+  IOI_IDEAL_CV: 0.30,              // v8: was 0.15 — kids play with rubato
+  IOI_MAX_CV: 1.5,                 // v8: was 0.8 — allow very free timing
+
+  // Dynamics: wider sweet spot
+  AMPLITUDE_HISTORY_SIZE: 30,
+  DYNAMICS_IDEAL_CV_MIN: 0.03,     // v8: was 0.10 — monotone is OK for practice
+  DYNAMICS_IDEAL_CV_MAX: 0.60,     // v8: was 0.35 — wide dynamics OK
+
+  // Quality score display
+  SCORE_UPDATE_INTERVAL_MS: 500,
+  SCORE_SMOOTHING: 0.08,
+
+  // Game timing (all in milliseconds)
+  COMBO_WINDOW_MS: 2200,
+  SILENCE_DECAY_START_MS: 1000,
+  SILENCE_HARD_DECAY_MS: 3500,
+  NOISE_PENALTY_COOLDOWN_MS: 300,
+  NOTE_DISPLAY_DURATION_MS: 1200,
+  MIN_NOTE_INTERVAL_MS: 70,
+
+  // Game balance (per-second rates)
+  FLOW_GAIN_BASE: 16,              // v8: slightly higher base (simpler quality calc)
+  FLOW_GAIN_COMBO_MAX: 16,
+  FLOW_GAIN_STABILITY_MAX: 20,
+  FLOW_GAIN_QUALITY_MAX: 25,       // v8: reduced (simpler scoring)
+  FLOW_DECAY_SOFT: 6,
+  FLOW_DECAY_HARD: 12,
+  NOISE_RMS_THRESHOLD: 0.05,       // v8: post-gain level with real AGC
+  FLOW_NOISE_PENALTY: 3,
+  COMBO_DECAY_RATE: 1,
+  COMBO_NOISE_PENALTY: 1,
+
+  // Pitch stability
+  STABILITY_SEMITONE_THRESHOLD: 3,
+  STABILITY_GROWTH: 0.05,
+  STABILITY_DECAY_GOOD: 0.85,
+  STABILITY_DECAY_IDLE: 0.98,
+
+  // Rendering
+  MAX_PARTICLES: 800,
+  SHADOW_BLUR_ENABLED: true,
+  AMBIENT_PARTICLE_CHANCE: 0.03,
+  BAR_COUNT: 64,
+
+  // Stages
+  STAGES: [
+    { name: '', minFlow: 0 },
+    { name: '\u2726 めざめ', minFlow: 15 },
+    { name: '\u2726\u2726 はなひらく', minFlow: 35 },
+    { name: '\u2726\u2726\u2726 オーロラ', minFlow: 55 },
+    { name: '\u2726\u2726\u2726\u2726 コスモス', minFlow: 75 },
+    { name: '\u2726\u2726\u2726\u2726\u2726 かがやき', minFlow: 90 }
+  ],
+
+  // Note mapping
+  NOTE_NAMES: ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
+  PIANO_KEY_MIN: 21,
+  PIANO_KEY_COUNT: 88,
+
+  // Themes
+  THEMES: [
+    { bg: [10,10,20], colors: ['#8b5cf6','#a855f7','#d946ef','#ec4899','#6366f1','#818cf8'], glow: 'rgba(139,92,246,' },
+    { bg: [8,18,20], colors: ['#06b6d4','#22d3ee','#34d399','#10b981','#14b8a6','#67e8f9'], glow: 'rgba(6,182,212,' },
+    { bg: [20,12,8], colors: ['#f97316','#fb923c','#ef4444','#f43f5e','#eab308','#fbbf24'], glow: 'rgba(249,115,22,' },
+    { bg: [12,12,18], colors: ['#e0e7ff','#c7d2fe','#a5b4fc','#ddd6fe','#f0f0ff','#ffffff'], glow: 'rgba(200,200,255,' }
+  ]
+};
+
+// ========================================
+// DOM references — cached once
+// ========================================
+const DOM = {
+  canvas: document.getElementById('canvas'),
+  startScreen: document.getElementById('startScreen'),
+  startBtn: document.getElementById('startBtn'),
+  themeBar: document.getElementById('themeBar'),
+  hud: document.getElementById('hud'),
+  comboEl: document.getElementById('combo'),
+  comboNum: document.querySelector('#combo .num'),
+  flowFill: document.getElementById('flowFill'),
+  stageLabel: document.getElementById('stageLabel'),
+  bestComboEl: document.getElementById('bestCombo'),
+  noteDisplay: document.getElementById('noteDisplay'),
+  sessionStatus: document.getElementById('sessionStatus'),
+  qualityScore: document.getElementById('qualityScore'),
+  debugOverlay: document.getElementById('debugOverlay')
+};
+const ctx = DOM.canvas.getContext('2d');
+
+// ========================================
+// Game State
+// ========================================
+const state = {
+  running: false,
+  flow: 0,
+  combo: 0,
+  bestCombo: 0,
+  currentStage: 0,
+  lastGoodNoteTimeMs: 0,
+  lastSilenceStartMs: -1,
+  lastNoisePenaltyMs: 0,
+  lastPitch: -1,
+  pitchStability: 0,
+  lastNoteTimeMs: 0,
+  smoothEnergy: 0,
+  lastDetectedNote: '',
+  noteShowTimeMs: 0,
+  currentTheme: 0,
+  lastFrameTimeMs: 0,
+  // Spectral flux onset detection
+  prevSpectrum: null,
+  spectralFluxHistory: [],
+  lastOnsetTimeMs: -9999,
+
+  // =============================================
+  // Software AGC (v8 — new)
+  // =============================================
+  agcGain: 1.0,                   // current gain multiplier
+  agcSmoothedRms: 0,              // smoothed post-gain RMS for AGC decisions
+  agcLastUpdateMs: 0,             // last AGC adjustment time
+
+  // =============================================
+  // Session Confidence Layer
+  // =============================================
+  sessionSamples: [],             // array of { timeMs, isPiano }
+  sessionState: 'waiting',        // 'waiting' | 'warmup' | 'performing'
+  sessionStartMs: 0,              // when warmup began
+  sessionConfidence: 0,           // current confidence ratio (0-1)
+  sessionPerformingStartMs: 0,    // when performing state began
+  lastSessionSampleMs: 0,         // v8: throttle sampling
+
+  // =============================================
+  // Quality Scoring (v8 — simplified)
+  // =============================================
+  // IOI tracking (rhythm)
+  noteOnsetTimes: [],             // timestamps of recent note onsets
+  ioiHistory: [],                 // inter-onset intervals in ms
+
+  // Amplitude tracking (dynamics)
+  amplitudeHistory: [],           // recent RMS values of good notes
+
+  // Spectral centroid tracking (debug only in v8)
+  centroidHistory: [],            // recent spectral centroid values
+
+  // Computed scores (0-1 each)
+  rhythmScore: 0,
+  dynamicsScore: 0,
+  qualityScore: 0,                // weighted average
+  displayedQualityScore: 0,       // smoothed for display
+  lastScoreUpdateMs: 0,
+
+  // Debug
+  debugMode: false,
+  debugLastFlux: 0,
+  debugLastSpread: 0,
+  debugLastThreshold: 0,
+  debugGateOpen: false,
+  debugLastRms: 0,
+  debugLastConf: 0,
+  debugLastPitch: 0,
+  debugIsGoodNote: false,
+  debugLastFlatness: 0,
+  debugLastCrest: 0,
+  debugOnsetReason: '',
+  debugLastCentroid: 0,
+  debugCentroidCV: 0,
+  debugSessionConf: 0,
+  debugSessionState: 'waiting',
+  debugAgcGain: 1.0
+};
+
+// ========================================
+// Audio — dual analyser + software AGC (v8)
+// ========================================
+let audioCtx;
+let analyser;       // Main: high smoothing for pitch + visualisation
+let onsetAnalyser;  // Onset: low smoothing for transient detection
+let gainNode;       // v8: GainNode for software AGC
+let dataArray, freqArray;
+let onsetDataArray;
+
+async function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
+  // Explicit constraints — disable browser DSP
+  const constraints = {
+    audio: {
+      autoGainControl: false,
+      noiseSuppression: false,
+      echoCancellation: false,
+      sampleRate: { ideal: 48000 }
+    }
+  };
+
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const source = audioCtx.createMediaStreamSource(stream);
+
+  // v8: GainNode for software AGC
+  // Unlike DynamicsCompressor, this ACTUALLY amplifies quiet input
+  gainNode = audioCtx.createGain();
+  gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+
+  // Audio chain: source → gainNode → analysers
+  source.connect(gainNode);
+
+  // Main analyser — smooth spectrum for pitch detection & visualisation
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = CONFIG.FFT_SIZE;
+  analyser.smoothingTimeConstant = CONFIG.SMOOTHING;
+  gainNode.connect(analyser);
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+  freqArray = new Float32Array(analyser.fftSize);
+
+  // Onset analyser — low smoothing to preserve sharp transients
+  onsetAnalyser = audioCtx.createAnalyser();
+  onsetAnalyser.fftSize = CONFIG.ONSET_FFT_SIZE;
+  onsetAnalyser.smoothingTimeConstant = CONFIG.ONSET_SMOOTHING;
+  gainNode.connect(onsetAnalyser);
+  onsetDataArray = new Uint8Array(onsetAnalyser.frequencyBinCount);
+}
+
+// ========================================
+// Canvas
+// ========================================
+let W, H;
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  DOM.canvas.width = W * dpr;
+  DOM.canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (state.running) initBgStars();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ========================================
+// Debug toggle — triple-tap bottom-left corner
+// ========================================
+let debugTapCount = 0;
+let debugTapTimer = 0;
+document.addEventListener('click', (e) => {
+  if (e.clientX < 80 && e.clientY > H - 80) {
+    debugTapCount++;
+    clearTimeout(debugTapTimer);
+    debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 600);
+    if (debugTapCount >= 3) {
+      state.debugMode = !state.debugMode;
+      DOM.debugOverlay.style.display = state.debugMode ? 'block' : 'none';
+      debugTapCount = 0;
+    }
+  }
+});
+
+// ========================================
+// Theme switching
+// ========================================
+document.querySelectorAll('.theme-dot').forEach(d => {
+  d.addEventListener('click', () => {
+    document.querySelector('.theme-dot.active')?.classList.remove('active');
+    d.classList.add('active');
+    state.currentTheme = parseInt(d.dataset.theme);
+  });
+});
+
+// ========================================
+// Particle System
+// ========================================
+class Particle {
+  constructor(x, y, color, size, vx, vy, life, type) {
+    this.x = x; this.y = y; this.color = color; this.size = size;
+    this.vx = vx; this.vy = vy; this.life = life; this.maxLife = life;
+    this.type = type || 'circle';
+    this.angle = Math.random() * Math.PI * 2;
+    this.spin = (Math.random() - 0.5) * 0.04;
+  }
+
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.vy += 0.012; this.vx *= 0.997;
+    this.life--; this.angle += this.spin;
+  }
+
+  draw(c) {
+    const a = Math.max(0, this.life / this.maxLife);
+    const s = this.size * (0.4 + 0.6 * a);
+    c.save();
+    c.globalAlpha = a;
+    c.translate(this.x, this.y);
+    c.rotate(this.angle);
+    const useShadow = CONFIG.SHADOW_BLUR_ENABLED && particles.length < 400;
+
+    if (this.type === 'circle') {
+      c.beginPath(); c.arc(0, 0, s, 0, Math.PI * 2);
+      c.fillStyle = this.color;
+      if (useShadow) { c.shadowColor = this.color; c.shadowBlur = s * 2; }
+      c.fill();
+    } else if (this.type === 'ring') {
+      c.beginPath(); c.arc(0, 0, s, 0, Math.PI * 2);
+      c.strokeStyle = this.color; c.lineWidth = 1.5;
+      if (useShadow) { c.shadowColor = this.color; c.shadowBlur = s; }
+      c.stroke();
+    } else if (this.type === 'star') {
+      drawStar(c, 0, 0, 5, s, s * 0.45, this.color, useShadow);
+    } else if (this.type === 'note') {
+      c.font = s * 2.5 + 'px serif';
+      c.fillStyle = this.color;
+      if (useShadow) { c.shadowColor = this.color; c.shadowBlur = 10; }
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('\u266A', 0, 0);
+    } else if (this.type === 'flower') {
+      drawFlower(c, 0, 0, s, this.color, a, useShadow);
+    }
+    c.restore();
+  }
+}
+
+function drawStar(c, cx, cy, sp, oR, iR, col, useShadow) {
+  c.beginPath();
+  for (let i = 0; i < sp * 2; i++) {
+    const r = i % 2 === 0 ? oR : iR;
+    const a = (Math.PI * i) / sp - Math.PI / 2;
+    if (i === 0) c.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+    else c.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  c.closePath(); c.fillStyle = col;
+  if (useShadow) { c.shadowColor = col; c.shadowBlur = oR * 1.5; }
+  c.fill();
+}
+
+function drawFlower(c, cx, cy, s, col, a, useShadow) {
+  c.fillStyle = col;
+  if (useShadow) { c.shadowColor = col; c.shadowBlur = s; }
+  for (let i = 0; i < 5; i++) {
+    const angle = (Math.PI * 2 * i) / 5;
+    c.beginPath();
+    c.ellipse(cx + Math.cos(angle) * s * 0.5, cy + Math.sin(angle) * s * 0.5, s * 0.5, s * 0.25, angle, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.shadowBlur = 0;
+  c.beginPath(); c.arc(cx, cy, s * 0.25, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(255,255,200,' + a + ')'; c.fill();
+}
+
+let particles = [];
+
+function spawnBurst(x, y, count, energy) {
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  const typePool = ['circle', 'circle', 'ring', 'star', 'note'];
+  if (state.flow > 35) typePool.push('flower');
+  if (state.flow > 60) typePool.push('star', 'star');
+  const actualCount = Math.min(count, CONFIG.MAX_PARTICLES - particles.length);
+  for (let i = 0; i < actualCount; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * 3.5 * energy;
+    particles.push(new Particle(
+      x, y,
+      cols[Math.floor(Math.random() * cols.length)],
+      3 + Math.random() * 9 * energy,
+      Math.cos(ang) * spd, Math.sin(ang) * spd - 1.2,
+      70 + Math.random() * 90,
+      typePool[Math.floor(Math.random() * typePool.length)]
+    ));
+  }
+}
+
+function spawnStream(x, y, energy) {
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  const count = 2 + Math.floor(state.flow / 25);
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) break;
+    particles.push(new Particle(
+      x + (Math.random() - 0.5) * 40, y,
+      cols[Math.floor(Math.random() * cols.length)],
+      2 + Math.random() * 5 * energy,
+      (Math.random() - 0.5) * 1.2, -1.5 - Math.random() * 2.5 * energy,
+      90 + Math.random() * 70,
+      Math.random() > 0.6 ? 'note' : 'circle'
+    ));
+  }
+}
+
+// ========================================
+// Ripples
+// ========================================
+let ripples = [];
+class Ripple {
+  constructor(x, y, color, size) {
+    this.x = x; this.y = y; this.radius = 0;
+    this.maxRadius = size || 200; this.color = color; this.life = 1;
+  }
+  update() {
+    this.radius += 2.5 + state.flow * 0.03;
+    this.life = 1 - this.radius / this.maxRadius;
+  }
+  draw(c) {
+    if (this.life <= 0) return;
+    c.save();
+    c.globalAlpha = this.life * 0.3;
+    c.beginPath(); c.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    c.strokeStyle = this.color;
+    c.lineWidth = 1.5 + state.flow * 0.02;
+    if (CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15) {
+      c.shadowColor = this.color;
+      c.shadowBlur = 10 + state.flow * 0.15;
+    }
+    c.stroke();
+    c.restore();
+  }
+}
+
+// ========================================
+// Background Elements
+// ========================================
+let bgStars = [];
+
+function initBgStars() {
+  bgStars = [];
+  for (let i = 0; i < 80; i++) {
+    bgStars.push({
+      x: Math.random() * W, y: Math.random() * H,
+      size: Math.random() * 2 + 0.5,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: 0.01 + Math.random() * 0.02
+    });
+  }
+}
+
+function drawBgStars(time) {
+  const visibility = Math.min(1, state.flow / 30);
+  if (visibility < 0.01) return;
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  ctx.save();
+  for (const s of bgStars) {
+    s.twinkle += s.speed;
+    const a = visibility * (0.3 + 0.7 * (Math.sin(s.twinkle) * 0.5 + 0.5));
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size * (1 + state.flow * 0.01), 0, Math.PI * 2);
+    ctx.fillStyle = cols[Math.floor(s.twinkle) % cols.length] || '#fff';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAurora(time) {
+  const intensity = Math.max(0, (state.flow - 40) / 60);
+  if (intensity < 0.01) return;
+  const theme = CONFIG.THEMES[state.currentTheme];
+  ctx.save();
+  ctx.globalAlpha = intensity * 0.15;
+  for (let band = 0; band < 3; band++) {
+    ctx.beginPath();
+    ctx.moveTo(0, H * 0.3 + band * 40);
+    for (let x = 0; x <= W; x += 20) {
+      const y = H * 0.3 + band * 40
+        + Math.sin(x * 0.005 + time * 0.0008 + band) * 50 * intensity
+        + Math.sin(x * 0.01 + time * 0.001) * 25 * intensity;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+    const grad = ctx.createLinearGradient(0, H * 0.2, 0, H * 0.7);
+    grad.addColorStop(0, theme.colors[band % theme.colors.length]);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGroundFlowers(time) {
+  const intensity = Math.max(0, (state.flow - 55) / 45);
+  if (intensity < 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = intensity * 0.5;
+  const cols = CONFIG.THEMES[state.currentTheme].colors;
+  const count = Math.floor(intensity * 12);
+  for (let i = 0; i < count; i++) {
+    const x = (i / (count - 1 || 1)) * W;
+    const baseY = H - 20;
+    const sway = Math.sin(time * 0.001 + i * 0.7) * 5;
+    const s = 4 + intensity * 6;
+    ctx.strokeStyle = 'rgba(100,180,100,' + intensity * 0.4 + ')';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x + sway, baseY - 20 - s * 2); ctx.stroke();
+    drawFlower(ctx, x + sway, baseY - 20 - s * 2, s, cols[i % cols.length], intensity, false);
+  }
+  ctx.restore();
+}
+
+// ========================================
+// YIN Pitch Detection (v6+)
+// ========================================
+function freqToNote(f) {
+  if (f < CONFIG.PITCH_MIN_HZ || f > CONFIG.PITCH_MAX_HZ) return null;
+  const n = 12 * (Math.log2(f / 440)) + 69;
+  const r = Math.round(n);
+  return {
+    name: CONFIG.NOTE_NAMES[r % 12],
+    octave: Math.floor(r / 12) - 1,
+    noteNum: r,
+    freq: f
+  };
+}
+
+let yinDiffBuf = null;
+let yinCMNDFBuf = null;
+
+function detectPitchYIN(buf, sr) {
+  const SIZE = buf.length;
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < CONFIG.RMS_SILENCE_THRESHOLD) return { pitch: -1, conf: 0, rms: rms };
+
+  const halfLen = Math.floor(SIZE / 2);
+  const tauMin = Math.floor(sr / CONFIG.PITCH_MAX_HZ);
+  const tauMax = Math.min(halfLen, Math.floor(sr / CONFIG.PITCH_MIN_HZ));
+
+  if (tauMax <= tauMin + 2) return { pitch: -1, conf: 0, rms: rms };
+
+  if (!yinDiffBuf || yinDiffBuf.length < tauMax + 1) {
+    yinDiffBuf = new Float32Array(tauMax + 1);
+    yinCMNDFBuf = new Float32Array(tauMax + 1);
+  }
+  const diff = yinDiffBuf;
+  diff[0] = 0;
+
+  for (let tau = 1; tau <= tauMax; tau++) {
+    let sum = 0;
+    for (let j = 0; j < halfLen; j++) {
+      const delta = buf[j] - buf[j + tau];
+      sum += delta * delta;
+    }
+    diff[tau] = sum;
+  }
+
+  const cmndf = yinCMNDFBuf;
+  cmndf[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    runningSum += diff[tau];
+    cmndf[tau] = (runningSum > 0) ? diff[tau] * tau / runningSum : 0;
+  }
+
+  let bestTau = -1;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (cmndf[tau] < CONFIG.YIN_THRESHOLD) {
+      while (tau + 1 < tauMax && cmndf[tau + 1] < cmndf[tau]) {
+        tau++;
+      }
+      bestTau = tau;
+      break;
+    }
+  }
+
+  if (bestTau < 0) {
+    let minVal = Infinity;
+    for (let tau = tauMin; tau <= tauMax; tau++) {
+      if (cmndf[tau] < minVal) {
+        minVal = cmndf[tau];
+        bestTau = tau;
+      }
+    }
+    if (minVal > 0.5) return { pitch: -1, conf: 0, rms: rms };
+  }
+
+  let refinedTau = bestTau;
+  if (bestTau > 0 && bestTau < tauMax) {
+    const s0 = diff[bestTau - 1];
+    const s1 = diff[bestTau];
+    const s2 = diff[bestTau + 1];
+    const denom = 2 * (2 * s1 - s0 - s2);
+    if (Math.abs(denom) > 1e-10) {
+      refinedTau = bestTau + (s0 - s2) / denom;
+    }
+  }
+
+  if (refinedTau <= 0) return { pitch: -1, conf: 0, rms: rms };
+
+  const pitch = sr / refinedTau;
+  const conf = 1 - cmndf[bestTau];
+
+  if (pitch < CONFIG.PITCH_MIN_HZ || pitch > CONFIG.PITCH_MAX_HZ) {
+    return { pitch: -1, conf: conf, rms: rms };
+  }
+  if (conf < CONFIG.YIN_PROBABILITY_THRESHOLD) {
+    return { pitch: -1, conf: conf, rms: rms };
+  }
+
+  return { pitch: pitch, conf: conf, rms: rms };
+}
+
+// ========================================
+// Spectral Features (v6+)
+// ========================================
+
+function computeSpectralFlatness(spectrum, startBin, endBin) {
+  const n = endBin - startBin;
+  if (n < 2) return 0;
+  let logSum = 0;
+  let arithSum = 0;
+  let validBins = 0;
+  for (let i = startBin; i < endBin; i++) {
+    const val = spectrum[i] + 1e-10;
+    logSum += Math.log(val);
+    arithSum += val;
+    validBins++;
+  }
+  if (validBins === 0 || arithSum < 1e-8) return 0;
+  const geometricMean = Math.exp(logSum / validBins);
+  const arithmeticMean = arithSum / validBins;
+  return geometricMean / arithmeticMean;
+}
+
+function computeSpectralCrest(spectrum, startBin, endBin) {
+  const n = endBin - startBin;
+  if (n < 2) return 0;
+  let maxVal = 0;
+  let sum = 0;
+  for (let i = startBin; i < endBin; i++) {
+    if (spectrum[i] > maxVal) maxVal = spectrum[i];
+    sum += spectrum[i];
+  }
+  const mean = sum / n;
+  if (mean < 1e-8) return 0;
+  return maxVal / mean;
+}
+
+// ========================================
+// Spectral Centroid (v7 — new)
+// ========================================
+// The "center of mass" of the spectrum
+// Piano: relatively stable post-attack
+// Voice: high variation due to formant shifts
+function computeSpectralCentroid(spectrum, startBin, endBin, binHz) {
+  let weightedSum = 0;
+  let totalEnergy = 0;
+  for (let i = startBin; i < endBin; i++) {
+    const val = spectrum[i];
+    weightedSum += val * (i * binHz);
+    totalEnergy += val;
+  }
+  if (totalEnergy < 1e-8) return 0;
+  return weightedSum / totalEnergy;
+}
+
+// Coefficient of variation for an array
+function coefficientOfVariation(arr) {
+  if (arr.length < 3) return 0;
+  let mean = 0;
+  for (let i = 0; i < arr.length; i++) mean += arr[i];
+  mean /= arr.length;
+  if (Math.abs(mean) < 1e-10) return 0;
+  let variance = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const d = arr[i] - mean;
+    variance += d * d;
+  }
+  variance /= arr.length;
+  return Math.sqrt(variance) / Math.abs(mean);
+}
+
+// ========================================
+// Multi-Feature Onset Detection (v6+, simplified v8)
+// ========================================
+function updateMultiFeatureOnset(timeMs) {
+  if (!onsetAnalyser || !onsetDataArray) return false;
+
+  onsetAnalyser.getByteFrequencyData(onsetDataArray);
+
+  const binHz = audioCtx.sampleRate / onsetAnalyser.fftSize;
+  const startBin = Math.max(1, Math.floor(CONFIG.FLUX_FREQ_MIN_HZ / binHz));
+  const endBin = Math.min(onsetDataArray.length, Math.floor(CONFIG.FLUX_FREQ_MAX_HZ / binHz));
+  const numBins = endBin - startBin;
+
+  if (numBins < 10) return (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
+
+  if (!state.prevSpectrum) {
+    state.prevSpectrum = new Float32Array(onsetDataArray.length);
+    for (let i = 0; i < onsetDataArray.length; i++) {
+      state.prevSpectrum[i] = onsetDataArray[i];
+    }
+    return false;
+  }
+
+  // Feature 1: Spectral Flux
+  let flux = 0;
+  let spreadCount = 0;
+  for (let i = startBin; i < endBin; i++) {
+    const diff = onsetDataArray[i] - state.prevSpectrum[i];
+    if (diff > 0) {
+      flux += diff;
+      if (diff > CONFIG.ONSET_SPREAD_MIN_CHANGE) {
+        spreadCount++;
+      }
+    }
+  }
+  const spread = spreadCount / numBins;
+
+  // Feature 2: Spectral Flatness
+  const flatness = computeSpectralFlatness(onsetDataArray, startBin, endBin);
+
+  // Feature 3: Spectral Crest
+  const crest = computeSpectralCrest(onsetDataArray, startBin, endBin);
+
+  // v7: Feature 4 — Spectral Centroid tracking
+  const centroid = computeSpectralCentroid(onsetDataArray, startBin, endBin, binHz);
+  state.centroidHistory.push(centroid);
+  if (state.centroidHistory.length > CONFIG.CENTROID_HISTORY_SIZE) {
+    state.centroidHistory.shift();
+  }
+  const centroidCV = coefficientOfVariation(state.centroidHistory);
+
+  // Save current spectrum for next frame
+  for (let i = 0; i < onsetDataArray.length; i++) {
+    state.prevSpectrum[i] = onsetDataArray[i];
+  }
+
+  // Update flux history for adaptive threshold
+  const fHist = state.spectralFluxHistory;
+  fHist.push(flux);
+  if (fHist.length > CONFIG.SPECTRAL_FLUX_HISTORY_SIZE) fHist.shift();
+
+  // Combined onset decision
+  let isOnset = false;
+  let onsetReason = '';
+  if (fHist.length >= 5) {
+    let mean = 0;
+    for (let i = 0; i < fHist.length; i++) mean += fHist[i];
+    mean /= fHist.length;
+
+    let variance = 0;
+    for (let i = 0; i < fHist.length; i++) {
+      const d = fHist[i] - mean;
+      variance += d * d;
+    }
+    variance /= fHist.length;
+    const stddev = Math.sqrt(variance);
+
+    const adaptiveThreshold = mean + CONFIG.SPECTRAL_FLUX_ADAPTIVE_K * stddev;
+    const threshold = Math.max(CONFIG.SPECTRAL_FLUX_THRESHOLD, adaptiveThreshold);
+
+    state.debugLastThreshold = threshold;
+
+    const fluxOk = flux > threshold;
+    const spreadOk = spread > CONFIG.ONSET_SPREAD_THRESHOLD;
+    const flatnessOk = flatness > CONFIG.FLATNESS_PIANO_MIN;
+    const crestOk = crest < CONFIG.CREST_VOICE_MAX;
+
+    // v8: Centroid tracked for debug but NOT used as gate
+    // (unreliable on iPad mic due to room acoustics)
+
+    if (fluxOk && spreadOk && flatnessOk && crestOk) {
+      if (timeMs - state.lastOnsetTimeMs > CONFIG.ONSET_COOLDOWN_MS) {
+        state.lastOnsetTimeMs = timeMs;
+        isOnset = true;
+        onsetReason = 'PIANO';
+      }
+    } else if (fluxOk && spreadOk) {
+      if (!flatnessOk) onsetReason = 'REJ:flat';
+      else if (!crestOk) onsetReason = 'REJ:crest';
+    }
+  }
+
+  // Store debug info
+  state.debugLastFlux = flux;
+  state.debugLastSpread = spread;
+  state.debugLastFlatness = flatness;
+  state.debugLastCrest = crest;
+  state.debugOnsetReason = onsetReason;
+  state.debugLastCentroid = centroid;
+  state.debugCentroidCV = centroidCV;
+
+  const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
+  state.debugGateOpen = gateOpen;
+
+  return gateOpen;
+}
+
+// ========================================
+// Session Confidence Layer (v8 — throttled)
+// ========================================
+function updateSessionConfidence(timeMs, isPianoDetected) {
+  // v8: Throttle sampling to SESSION_SAMPLE_INTERVAL_MS
+  if (timeMs - state.lastSessionSampleMs < CONFIG.SESSION_SAMPLE_INTERVAL_MS) return;
+  state.lastSessionSampleMs = timeMs;
+
+  // Add sample to sliding window
+  state.sessionSamples.push({ timeMs: timeMs, isPiano: isPianoDetected });
+
+  // Remove samples outside the window
+  const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
+  while (state.sessionSamples.length > 0 && state.sessionSamples[0].timeMs < windowStart) {
+    state.sessionSamples.shift();
+  }
+
+  // Calculate confidence: ratio of piano samples in window
+  if (state.sessionSamples.length < 3) {
+    state.sessionConfidence = 0;
+    return;
+  }
+
+  let pianoCount = 0;
+  for (let i = 0; i < state.sessionSamples.length; i++) {
+    if (state.sessionSamples[i].isPiano) pianoCount++;
+  }
+  state.sessionConfidence = pianoCount / state.sessionSamples.length;
+
+  state.debugSessionConf = state.sessionConfidence;
+
+  // State transitions
+  const prevState = state.sessionState;
+
+  switch (state.sessionState) {
+    case 'waiting':
+      if (state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
+        state.sessionState = 'warmup';
+        state.sessionStartMs = timeMs;
+      }
+      break;
+
+    case 'warmup':
+      if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
+        state.sessionState = 'waiting';
+      } else if (timeMs - state.sessionStartMs >= CONFIG.SESSION_WARMUP_MS
+                 && state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
+        state.sessionState = 'performing';
+        state.sessionPerformingStartMs = timeMs;
+      }
+      break;
+
+    case 'performing':
+      if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
+        // Grace period: don't immediately drop out during musical pauses
+        // Only drop if sustained low confidence
+        state.sessionState = 'warmup';
+        state.sessionStartMs = timeMs;
+      }
+      break;
+  }
+
+  state.debugSessionState = state.sessionState;
+
+  // Update visual indicator
+  if (state.sessionState === 'warmup') {
+    const warmupProgress = Math.min(1, (timeMs - state.sessionStartMs) / CONFIG.SESSION_WARMUP_MS);
+    const dots = Math.floor(warmupProgress * 3) + 1;
+    DOM.sessionStatus.textContent = '\u266B '.repeat(dots) + 'きいてるよ' + ' \u266B'.repeat(dots);
+    DOM.sessionStatus.classList.add('visible');
+  } else if (state.sessionState === 'performing') {
+    if (timeMs - state.sessionPerformingStartMs < 2000) {
+      DOM.sessionStatus.textContent = '\u2728 すてき！ \u2728';
+      DOM.sessionStatus.classList.add('visible');
+    } else {
+      DOM.sessionStatus.classList.remove('visible');
+    }
+  } else {
+    DOM.sessionStatus.classList.remove('visible');
+  }
+}
+
+// ========================================
+// Quality Scoring — simplified for kids (v8)
+// ========================================
+// Only 2 axes: rhythm consistency + dynamic variation
+// Much more forgiving thresholds than v7
+
+function computeRhythmScore() {
+  const ioi = state.ioiHistory;
+  if (ioi.length < 3) return 0.5; // v8: need fewer samples
+
+  const cv = coefficientOfVariation(ioi);
+
+  // v8: Very generous — kids play with lots of rubato
+  if (cv <= CONFIG.IOI_IDEAL_CV) return 0.85 + 0.15 * (1 - cv / CONFIG.IOI_IDEAL_CV);
+  if (cv <= CONFIG.IOI_MAX_CV) {
+    const t = (cv - CONFIG.IOI_IDEAL_CV) / (CONFIG.IOI_MAX_CV - CONFIG.IOI_IDEAL_CV);
+    return 0.85 - 0.45 * t; // v8: gentler dropoff
+  }
+  return 0.4; // v8: floor raised from 0.2
+}
+
+function computeDynamicsScore() {
+  const amps = state.amplitudeHistory;
+  if (amps.length < 3) return 0.5;
+
+  const cv = coefficientOfVariation(amps);
+
+  // v8: Very wide sweet spot — almost any playing style is fine
+  if (cv >= CONFIG.DYNAMICS_IDEAL_CV_MIN && cv <= CONFIG.DYNAMICS_IDEAL_CV_MAX) {
+    return 0.8 + 0.2 * (1 - Math.abs(cv - 0.15) / 0.45);
+  } else if (cv < CONFIG.DYNAMICS_IDEAL_CV_MIN) {
+    return 0.6; // v8: monotone is OK, just not great
+  } else {
+    return Math.max(0.3, 0.8 - (cv - CONFIG.DYNAMICS_IDEAL_CV_MAX) * 0.5);
+  }
+}
+
+function updateQualityScores(timeMs) {
+  if (timeMs - state.lastScoreUpdateMs < CONFIG.SCORE_UPDATE_INTERVAL_MS) return;
+  state.lastScoreUpdateMs = timeMs;
+
+  state.rhythmScore = computeRhythmScore();
+  state.dynamicsScore = computeDynamicsScore();
+
+  state.qualityScore =
+    state.rhythmScore * CONFIG.SCORE_RHYTHM_WEIGHT +
+    state.dynamicsScore * CONFIG.SCORE_DYNAMICS_WEIGHT;
+
+  // Smooth display value
+  state.displayedQualityScore += (state.qualityScore - state.displayedQualityScore) * CONFIG.SCORE_SMOOTHING;
+
+  // Update quality display — simpler, more encouraging
+  if (state.sessionState === 'performing' && state.displayedQualityScore > 0.3) {
+    const stars = Math.floor(state.displayedQualityScore * 5);
+    const label = stars >= 4 ? 'すばらしい！' : stars >= 3 ? 'いいね！' : stars >= 2 ? 'がんばれ！' : '';
+    DOM.qualityScore.textContent = '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars) + (label ? ' ' + label : '');
+    DOM.qualityScore.classList.add('visible');
+  } else {
+    DOM.qualityScore.classList.remove('visible');
+  }
+}
+
+// ========================================
+// Software AGC — adaptive gain control (v8)
+// ========================================
+// Measures post-gain RMS and adjusts GainNode to normalize level.
+// This is what makes quiet piano passages actually detectable.
+function updateAGC(timeMs, postGainRms) {
+  if (timeMs - state.agcLastUpdateMs < CONFIG.AGC_UPDATE_INTERVAL_MS) return;
+  state.agcLastUpdateMs = timeMs;
+
+  // Smooth the RMS measurement
+  state.agcSmoothedRms += (postGainRms - state.agcSmoothedRms) * 0.15;
+
+  // Don't adjust during true silence (pre-gain level too low)
+  const preGainRms = state.agcSmoothedRms / state.agcGain;
+  if (preGainRms < CONFIG.AGC_SILENCE_FLOOR) return;
+
+  // Calculate desired gain to reach target RMS
+  const ratio = CONFIG.AGC_TARGET_RMS / (state.agcSmoothedRms + 1e-10);
+  const targetGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(CONFIG.AGC_MAX_GAIN, state.agcGain * ratio));
+
+  // Smooth approach: slow attack (preserve dynamics), faster release (avoid clipping)
+  const alpha = targetGain > state.agcGain ? CONFIG.AGC_ATTACK_COEFF : CONFIG.AGC_RELEASE_COEFF;
+  state.agcGain += (targetGain - state.agcGain) * alpha;
+  state.agcGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(CONFIG.AGC_MAX_GAIN, state.agcGain));
+
+  // Apply to GainNode
+  gainNode.gain.setValueAtTime(state.agcGain, audioCtx.currentTime);
+  state.debugAgcGain = state.agcGain;
+}
+
+// ========================================
+// Game Logic — 4-layer architecture (v8 — streamlined)
+// ========================================
+// Layer 1: Detection (YIN + multi-feature onset)
+// Layer 2: Session confidence (sustained piano detection)
+// Layer 3: Quality scoring (rhythm + dynamics only)
+// Layer 4: Flow/game (uses session + quality to drive progression)
+// ========================================
+function updateGameState(timeMs, dt, pitchResult) {
+  const { pitch, conf, rms } = pitchResult;
+
+  // Layer 1: Multi-feature onset gate
+  const hasRecentOnset = updateMultiFeatureOnset(timeMs);
+
+  const pitchOk = pitch > CONFIG.PITCH_MIN_HZ && pitch < CONFIG.PITCH_MAX_HZ
+    && conf > CONFIG.CONFIDENCE_THRESHOLD && rms > CONFIG.GOOD_NOTE_RMS;
+  const isGoodNote = pitchOk && hasRecentOnset;
+
+  // Store debug info
+  state.debugLastRms = rms;
+  state.debugLastConf = conf;
+  state.debugLastPitch = pitch;
+  state.debugIsGoodNote = isGoodNote;
+
+  // Layer 2: Session confidence
+  updateSessionConfidence(timeMs, isGoodNote);
+
+  // Track data for quality scoring
+  if (isGoodNote) {
+    // Track note onset times for IOI calculation
+    const lastOnset = state.noteOnsetTimes.length > 0
+      ? state.noteOnsetTimes[state.noteOnsetTimes.length - 1] : 0;
+    if (timeMs - lastOnset > 80) { // debounce
+      state.noteOnsetTimes.push(timeMs);
+      if (state.noteOnsetTimes.length > CONFIG.IOI_HISTORY_SIZE + 1) {
+        state.noteOnsetTimes.shift();
+      }
+      // Calculate IOI
+      if (state.noteOnsetTimes.length >= 2) {
+        const ioi = timeMs - state.noteOnsetTimes[state.noteOnsetTimes.length - 2];
+        if (ioi > 100 && ioi < 5000) { // reasonable range
+          state.ioiHistory.push(ioi);
+          if (state.ioiHistory.length > CONFIG.IOI_HISTORY_SIZE) {
+            state.ioiHistory.shift();
+          }
+        }
+      }
+    }
+
+    // Track amplitude for dynamics scoring
+    state.amplitudeHistory.push(rms);
+    if (state.amplitudeHistory.length > CONFIG.AMPLITUDE_HISTORY_SIZE) {
+      state.amplitudeHistory.shift();
+    }
+
+  } else {
+    // v8: no transition/clarity tracking needed
+  }
+
+  // Layer 3: Quality scoring
+  updateQualityScores(timeMs);
+
+  // Layer 4: Flow/game — only progresses when session is confirmed
+  const dtSec = dt / 1000;
+  const isPerforming = state.sessionState === 'performing';
+  const isWarmup = state.sessionState === 'warmup';
+
+  if (isGoodNote) {
+    if (state.lastPitch > 0) {
+      const semitones = Math.abs(12 * Math.log2(pitch / state.lastPitch));
+      if (semitones < CONFIG.STABILITY_SEMITONE_THRESHOLD) {
+        state.pitchStability = Math.min(1, state.pitchStability + CONFIG.STABILITY_GROWTH);
+      } else {
+        state.pitchStability *= CONFIG.STABILITY_DECAY_GOOD;
+      }
+    }
+    state.lastPitch = pitch;
+    state.lastSilenceStartMs = -1;
+
+    // Combo tracking (works during warmup and performing)
+    if (isPerforming || isWarmup) {
+      if (state.lastGoodNoteTimeMs > 0 && (timeMs - state.lastGoodNoteTimeMs) < CONFIG.COMBO_WINDOW_MS) {
+        state.combo++;
+        if (state.combo > state.bestCombo) {
+          state.bestCombo = state.combo;
+          DOM.bestComboEl.textContent = 'BEST: ' + state.bestCombo;
+        }
+      } else {
+        state.combo = Math.max(1, Math.floor(state.combo * 0.6));
+      }
+    }
+    state.lastGoodNoteTimeMs = timeMs;
+
+    // Flow gain — only during performing state
+    if (isPerforming) {
+      const comboFactor = Math.min(state.combo / 50, 1);
+      const qualityFactor = state.qualityScore;
+      const flowGain = (CONFIG.FLOW_GAIN_BASE
+        + comboFactor * CONFIG.FLOW_GAIN_COMBO_MAX
+        + state.pitchStability * CONFIG.FLOW_GAIN_STABILITY_MAX
+        + qualityFactor * CONFIG.FLOW_GAIN_QUALITY_MAX) * dtSec;
+      state.flow = Math.min(100, state.flow + flowGain);
+    } else if (isWarmup) {
+      // During warmup: tiny flow gain to show something is happening
+      state.flow = Math.min(8, state.flow + 2 * dtSec);
+    }
+
+  } else {
+    state.pitchStability *= CONFIG.STABILITY_DECAY_IDLE;
+
+    if (state.lastSilenceStartMs < 0) {
+      state.lastSilenceStartMs = timeMs;
+    }
+    const silenceDuration = timeMs - state.lastSilenceStartMs;
+
+    if (silenceDuration > CONFIG.SILENCE_DECAY_START_MS) {
+      state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_SOFT * dtSec);
+      if (silenceDuration > CONFIG.SILENCE_HARD_DECAY_MS) {
+        state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_HARD * dtSec);
+        state.combo = Math.max(0, state.combo - Math.ceil(CONFIG.COMBO_DECAY_RATE * dtSec * 60));
+      }
+    }
+
+    // Noise penalty
+    if (rms > CONFIG.NOISE_RMS_THRESHOLD && !isGoodNote) {
+      if (timeMs - state.lastNoisePenaltyMs > CONFIG.NOISE_PENALTY_COOLDOWN_MS) {
+        state.flow = Math.max(0, state.flow - CONFIG.FLOW_NOISE_PENALTY * dtSec);
+        state.combo = Math.max(0, state.combo - CONFIG.COMBO_NOISE_PENALTY);
+        state.lastNoisePenaltyMs = timeMs;
+      }
+    }
+  }
+
+  const prevStage = state.currentStage;
+  let newStage = 0;
+  for (let i = CONFIG.STAGES.length - 1; i >= 0; i--) {
+    if (state.flow >= CONFIG.STAGES[i].minFlow) { newStage = i; break; }
+  }
+
+  if (newStage !== prevStage) {
+    state.currentStage = newStage;
+    DOM.stageLabel.textContent = CONFIG.STAGES[newStage].name;
+    if (newStage > 0) { DOM.stageLabel.classList.add('visible'); }
+    else { DOM.stageLabel.classList.remove('visible'); }
+
+    if (newStage > prevStage && newStage > 0) {
+      for (let i = 0; i < 20; i++) {
+        spawnBurst(Math.random() * W, Math.random() * H, 3, 0.8);
+      }
+    }
+  }
+
+  updateHUD();
+  return isGoodNote;
+}
+
+function updateHUD() {
+  if (state.combo > 2) {
+    DOM.comboNum.textContent = state.combo;
+    DOM.comboEl.classList.add('visible');
+    DOM.comboEl.style.fontSize = 1.1 + Math.min(state.combo / 100, 0.5) + 'rem';
+  } else {
+    DOM.comboEl.classList.remove('visible');
+  }
+
+  DOM.flowFill.style.height = state.flow + '%';
+  const hue = state.flow * 1.2 + 200;
+  DOM.flowFill.style.background = 'linear-gradient(to top,hsl(' + hue + ',70%,40%),hsl(' + (hue + 40) + ',80%,60%))';
+  DOM.flowFill.style.boxShadow = '0 0 ' + (state.flow * 0.3) + 'px hsl(' + hue + ',70%,60%)';
+}
+
+// ========================================
+// Debug overlay update (v8)
+// ========================================
+function updateDebugOverlay() {
+  if (!state.debugMode) return;
+  const gateMs = Math.max(0, CONFIG.ONSET_GATE_DURATION_MS - (performance.now() - state.lastOnsetTimeMs));
+  DOM.debugOverlay.textContent =
+    'v8 YIN+SoftAGC | FLUX: ' + state.debugLastFlux.toFixed(1) +
+    '  THR: ' + state.debugLastThreshold.toFixed(1) +
+    '  SPR: ' + (state.debugLastSpread * 100).toFixed(0) + '%' +
+    '\nFLAT: ' + state.debugLastFlatness.toFixed(3) +
+    '  CREST: ' + state.debugLastCrest.toFixed(1) +
+    '  ' + state.debugOnsetReason +
+    '\nGATE: ' + (state.debugGateOpen ? 'OPEN ' + (gateMs / 1000).toFixed(1) + 's' : 'CLOSED') +
+    '  RMS: ' + state.debugLastRms.toFixed(4) +
+    '  AGC: x' + state.debugAgcGain.toFixed(1) +
+    '\nPITCH: ' + (state.debugLastPitch > 0 ? state.debugLastPitch.toFixed(1) + 'Hz' : '---') +
+    '  CONF: ' + state.debugLastConf.toFixed(2) +
+    '  NOTE: ' + (state.debugIsGoodNote ? 'YES' : 'no') +
+    '\nSESSION: ' + state.debugSessionState.toUpperCase() +
+    '  S.CONF: ' + (state.debugSessionConf * 100).toFixed(0) + '%' +
+    '\nQUALITY: ' + (state.qualityScore * 100).toFixed(0) + '%' +
+    '  R:' + (state.rhythmScore * 100).toFixed(0) +
+    ' D:' + (state.dynamicsScore * 100).toFixed(0) +
+    '\nFLOW: ' + state.flow.toFixed(1) +
+    '  COMBO: ' + state.combo +
+    '  STAGE: ' + state.currentStage;
+}
+
+// ========================================
+// Energy calculation (for visualisation)
+// ========================================
+function getEnergy() {
+  if (!analyser) return 0;
+  analyser.getByteFrequencyData(dataArray);
+  let sum = 0;
+  const binHz = audioCtx.sampleRate / analyser.fftSize;
+  const s = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
+  const e = Math.min(Math.floor(CONFIG.PIANO_FREQ_MAX / binHz), dataArray.length);
+  for (let i = s; i < e; i++) sum += dataArray[i];
+  return sum / ((e - s) * 255);
+}
+
+// ========================================
+// Main Loop
+// ========================================
+function loop(timeMs) {
+  if (!state.running) return;
+  requestAnimationFrame(loop);
+
+  const dt = state.lastFrameTimeMs > 0 ? Math.min(timeMs - state.lastFrameTimeMs, 50) : 16;
+  state.lastFrameTimeMs = timeMs;
+
+  const theme = CONFIG.THEMES[state.currentTheme];
+  const energy = getEnergy();
+  state.smoothEnergy += (energy - state.smoothEnergy) * 0.15;
+
+  const [br, bg2, bb] = theme.bg;
+  const fadeRate = 0.08 + 0.06 * (1 - state.flow / 100);
+  ctx.fillStyle = 'rgba(' + br + ',' + bg2 + ',' + bb + ',' + fadeRate + ')';
+  ctx.fillRect(0, 0, W, H);
+
+  drawBgStars(timeMs);
+  drawAurora(timeMs);
+  drawGroundFlowers(timeMs);
+
+  if (state.smoothEnergy > 0.04) {
+    const glowSize = W * 0.3 * state.smoothEnergy + 100 + state.flow * 3;
+    const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, glowSize);
+    grad.addColorStop(0, theme.glow + (0.08 + state.flow * 0.002) + ')');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  let isGoodNote = false;
+  if (analyser) {
+    analyser.getFloatTimeDomainData(freqArray);
+    const pitchResult = detectPitchYIN(freqArray, audioCtx.sampleRate);
+
+    // v8: Software AGC — adjust gain based on current RMS level
+    updateAGC(timeMs, pitchResult.rms);
+
+    isGoodNote = updateGameState(timeMs, dt, pitchResult);
+
+    if (isGoodNote && pitchResult.pitch > CONFIG.PITCH_MIN_HZ) {
+      const note = freqToNote(pitchResult.pitch);
+      if (note) {
+        const noteX = ((note.noteNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
+        const noteY = H * 0.45 + (Math.random() - 0.5) * H * 0.25;
+
+        if (timeMs - state.lastNoteTimeMs > CONFIG.MIN_NOTE_INTERVAL_MS) {
+          const burstSize = Math.floor(4 + state.smoothEnergy * 20 + state.flow * 0.15);
+          spawnBurst(noteX, noteY, burstSize, state.smoothEnergy * (1 + state.flow * 0.02));
+          const rippleSize = 150 + state.flow * 2 + state.combo * 0.5;
+          ripples.push(new Ripple(noteX, noteY, theme.colors[note.noteNum % theme.colors.length], rippleSize));
+          state.lastNoteTimeMs = timeMs;
+        }
+        spawnStream(noteX, H * 0.65, state.smoothEnergy);
+
+        const displayNote = note.name + note.octave;
+        if (displayNote !== state.lastDetectedNote) {
+          state.lastDetectedNote = displayNote;
+          state.noteShowTimeMs = timeMs;
+          DOM.noteDisplay.textContent = note.name;
+          DOM.noteDisplay.classList.add('visible');
+        }
+      }
+    }
+  }
+
+  if (timeMs - state.noteShowTimeMs > CONFIG.NOTE_DISPLAY_DURATION_MS) {
+    DOM.noteDisplay.classList.remove('visible');
+  }
+
+  if (state.smoothEnergy < 0.04 && Math.random() > (1 - CONFIG.AMBIENT_PARTICLE_CHANCE - state.flow * 0.003)) {
+    const cols = theme.colors;
+    if (particles.length < CONFIG.MAX_PARTICLES) {
+      particles.push(new Particle(
+        Math.random() * W, H + 10,
+        cols[Math.floor(Math.random() * cols.length)],
+        1 + Math.random() * (1 + state.flow * 0.03),
+        (Math.random() - 0.5) * 0.3, -0.3 - Math.random() * 0.5 - state.flow * 0.005,
+        200 + Math.random() * 100, 'circle'
+      ));
+    }
+  }
+
+  if (analyser && state.smoothEnergy > 0.03) {
+    const binHz = audioCtx.sampleRate / analyser.fftSize;
+    const sB = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
+    const eB = Math.floor(CONFIG.PIANO_FREQ_MAX / binHz);
+    const step = Math.floor((eB - sB) / CONFIG.BAR_COUNT);
+    const barW = W / CONFIG.BAR_COUNT;
+    const barAlphaScale = 0.15 + state.flow * 0.003;
+    for (let i = 0; i < CONFIG.BAR_COUNT; i++) {
+      const idx = sB + i * step;
+      const val = dataArray[idx] / 255;
+      const barH = val * H * (0.1 + state.flow * 0.001);
+      ctx.fillStyle = theme.colors[Math.floor((i / CONFIG.BAR_COUNT) * theme.colors.length) % theme.colors.length];
+      ctx.globalAlpha = val * barAlphaScale;
+      ctx.fillRect(i * barW, H - barH, barW - 1, barH);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    ripples[i].update(); ripples[i].draw(ctx);
+    if (ripples[i].life <= 0) ripples.splice(i, 1);
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update(); particles[i].draw(ctx);
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+  if (particles.length > CONFIG.MAX_PARTICLES) {
+    particles.splice(0, particles.length - CONFIG.MAX_PARTICLES);
+  }
+
+  updateDebugOverlay();
+}
+
+// ========================================
+// Start
+// ========================================
+DOM.startBtn.addEventListener('click', async () => {
+  try {
+    await initAudio();
+    DOM.startScreen.style.display = 'none';
+    DOM.themeBar.classList.add('visible');
+    DOM.hud.style.display = 'block';
+    initBgStars();
+    state.running = true;
+    state.lastFrameTimeMs = 0;
+    requestAnimationFrame(loop);
+  } catch (e) {
+    alert('マイクへのアクセスを許可してください\n\niPadの場合：設定 > Safari > マイク で確認できます');
+  }
+});
+</script>
+</body>
+</html>
