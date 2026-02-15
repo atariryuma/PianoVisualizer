@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Piano Visualizer</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -13,6 +13,7 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 #startScreen p{font-size:1rem;color:#8888aa;margin-bottom:2.5rem}
 #startBtn{font-size:1.2rem;padding:1rem 3rem;border:1px solid rgba(180,160,255,.4);border-radius:50px;background:rgba(100,80,200,.15);color:#c8b8ff;cursor:pointer;transition:all .3s;-webkit-tap-highlight-color:transparent}
 #startBtn:active{background:rgba(100,80,200,.35);transform:scale(.97)}
+#startBtn:disabled{opacity:.6;cursor:wait}
 #themeBar{position:fixed;top:16px;right:16px;z-index:5;display:flex;gap:8px;opacity:0;transition:opacity .5s;pointer-events:none}
 #themeBar.visible{opacity:1;pointer-events:auto}
 .theme-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.2);cursor:pointer;transition:all .3s;-webkit-tap-highlight-color:transparent}
@@ -33,7 +34,7 @@ canvas{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
 #noteDisplay.visible{opacity:1}
 #sessionStatus{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:5;font-size:.85rem;color:rgba(255,255,255,.4);letter-spacing:.12em;font-weight:300;opacity:0;transition:opacity .6s;pointer-events:none}
 #sessionStatus.visible{opacity:1}
-#qualityScore{position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:5;font-size:.7rem;color:rgba(255,255,255,.25);letter-spacing:.08em;opacity:0;transition:opacity .5s;pointer-events:none}
+#qualityScore{position:fixed;top:55px;left:50%;transform:translateX(-50%);z-index:5;font-size:.72rem;line-height:1.45;color:rgba(255,255,255,.28);letter-spacing:.06em;opacity:0;transition:opacity .5s;pointer-events:none;white-space:pre-line;text-align:center;max-width:min(92vw,640px)}
 #qualityScore.visible{opacity:1}
 #debugOverlay{position:fixed;bottom:4px;left:4px;z-index:20;font-size:11px;font-family:'SF Mono',Menlo,monospace;color:rgba(0,255,150,.7);background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;display:none;line-height:1.5;white-space:pre}
 </style>
@@ -155,8 +156,9 @@ const CONFIG = {
   // =============================================
   // Quality Scoring — simplified for kids (v8+)
   // =============================================
-  SCORE_RHYTHM_WEIGHT: 0.5,
-  SCORE_DYNAMICS_WEIGHT: 0.5,
+  SCORE_RHYTHM_WEIGHT: 0.4,
+  SCORE_DYNAMICS_WEIGHT: 0.35,
+  SCORE_STABILITY_WEIGHT: 0.25,
   IOI_HISTORY_SIZE: 16,
   IOI_IDEAL_CV: 0.30,
   IOI_MAX_CV: 1.5,
@@ -165,6 +167,8 @@ const CONFIG = {
   DYNAMICS_IDEAL_CV_MAX: 0.60,
   SCORE_UPDATE_INTERVAL_MS: 500,
   SCORE_SMOOTHING: 0.08,
+  GROWTH_WINDOW_MS: 30000,
+  MOTIVATION_GOAL_MS: 30000,
 
   // Game timing
   COMBO_WINDOW_MS: 2200,
@@ -262,6 +266,7 @@ const ctx = DOM.canvas.getContext('2d');
 // ========================================
 const state = {
   running: false,
+  starting: false,
   flow: 0,
   combo: 0,
   bestCombo: 0,
@@ -300,6 +305,9 @@ const state = {
   sessionRingTail: 0,
   sessionRingSize: 0,
   sessionPianoCount: 0,
+  goalWindowStartMs: 0,
+  goalCelebrateUntilMs: 0,
+  goalCompletedCount: 0,
 
   // Quality Scoring
   noteOnsetTimes: [],
@@ -308,8 +316,13 @@ const state = {
   centroidHistory: [],
   rhythmScore: 0,
   dynamicsScore: 0,
+  stabilityScore: 0,
   qualityScore: 0,
   displayedQualityScore: 0,
+  growthScore: 0,
+  qualityHistory: [],
+  feedbackGood: '',
+  feedbackNext: '',
   lastScoreUpdateMs: 0,
 
   // v9: Encouragement system
@@ -332,6 +345,7 @@ const state = {
   debugLastConf: 0,
   debugLastPitch: 0,
   debugIsGoodNote: false,
+  debugIsActivePlay: false,
   debugLastFlatness: 0,
   debugLastCrest: 0,
   debugOnsetReason: '',
@@ -1012,8 +1026,11 @@ function computeHarmonicity(spectrum, fundamentalBin, startBin, endBin) {
 // ========================================
 // Multi-Feature Onset Detection (v9 — with harmonicity)
 // ========================================
-function updateMultiFeatureOnset(timeMs) {
-  if (!onsetAnalyser || !onsetDataArray) return false;
+function updateMultiFeatureOnset(timeMs, currentPitchHz) {
+  if (!onsetAnalyser || !onsetDataArray) {
+    state.debugGateOpen = false;
+    return { isOnset: false, gateOpen: false };
+  }
 
   onsetAnalyser.getByteFrequencyData(onsetDataArray);
 
@@ -1022,12 +1039,17 @@ function updateMultiFeatureOnset(timeMs) {
   const endBin = Math.min(onsetDataArray.length, Math.floor(CONFIG.FLUX_FREQ_MAX_HZ / binHz));
   const numBins = endBin - startBin;
 
-  if (numBins < 10) return (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
+  if (numBins < 10) {
+    const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
+    state.debugGateOpen = gateOpen;
+    return { isOnset: false, gateOpen };
+  }
 
   if (!state.prevSpectrum) {
     state.prevSpectrum = new Float32Array(onsetDataArray.length);
     state.prevSpectrum.set(onsetDataArray);
-    return false;
+    state.debugGateOpen = false;
+    return { isOnset: false, gateOpen: false };
   }
 
   // Feature 1: Spectral Flux
@@ -1061,8 +1083,8 @@ function updateMultiFeatureOnset(timeMs) {
   // v9: Feature 5 — Harmonicity check
   let harmonicity = 0;
   let harmonicityOk = true; // default: pass if no pitch available
-  if (state.debugLastPitch > CONFIG.PITCH_MIN_HZ) {
-    const fundamentalBin = Math.round(state.debugLastPitch / binHz);
+  if (currentPitchHz > CONFIG.PITCH_MIN_HZ) {
+    const fundamentalBin = Math.round(currentPitchHz / binHz);
     harmonicity = computeHarmonicity(onsetDataArray, fundamentalBin, startBin, endBin);
     harmonicityOk = harmonicity >= CONFIG.HARMONICITY_MIN;
   }
@@ -1137,7 +1159,7 @@ function updateMultiFeatureOnset(timeMs) {
   const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
   state.debugGateOpen = gateOpen;
 
-  return gateOpen;
+  return { isOnset, gateOpen };
 }
 
 // ========================================
@@ -1148,17 +1170,20 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
   state.lastSessionSampleMs = timeMs;
 
   // Push to ring buffer (reuse pre-allocated slot, zero allocation)
+  // When full, the slot at head is the oldest sample and must be removed first.
   const entry = sessionRing[state.sessionRingHead];
+  if (state.sessionRingSize === SESSION_RING_CAP && entry.isPiano) {
+    state.sessionPianoCount--;
+  }
   entry.timeMs = timeMs;
   entry.isPiano = isPianoDetected;
   if (isPianoDetected) state.sessionPianoCount++;
-  state.sessionRingHead = (state.sessionRingHead + 1) % SESSION_RING_CAP;
   if (state.sessionRingSize < SESSION_RING_CAP) {
     state.sessionRingSize++;
   } else {
-    if (sessionRing[state.sessionRingTail].isPiano) state.sessionPianoCount--;
     state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
   }
+  state.sessionRingHead = (state.sessionRingHead + 1) % SESSION_RING_CAP;
 
   // Expire samples outside time window (O(1) amortized)
   const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
@@ -1195,6 +1220,7 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
                  && state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
         state.sessionState = 'performing';
         state.sessionPerformingStartMs = timeMs;
+        state.goalWindowStartMs = timeMs;
       }
       break;
 
@@ -1206,6 +1232,10 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
       break;
   }
 
+  if (prevState !== 'performing' && state.sessionState === 'performing') {
+    state.goalWindowStartMs = timeMs;
+  }
+
   state.debugSessionState = state.sessionState;
 
   // Update visual indicator
@@ -1215,12 +1245,22 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
     DOM.sessionStatus.textContent = '\u266B '.repeat(dots) + 'きいてるよ' + ' \u266B'.repeat(dots);
     DOM.sessionStatus.classList.add('visible');
   } else if (state.sessionState === 'performing') {
-    if (timeMs - state.sessionPerformingStartMs < 2000) {
-      DOM.sessionStatus.textContent = '\u2728 すてき！ \u2728';
-      DOM.sessionStatus.classList.add('visible');
-    } else {
-      DOM.sessionStatus.classList.remove('visible');
+    if (state.goalWindowStartMs <= 0) state.goalWindowStartMs = timeMs;
+    const elapsedGoal = timeMs - state.goalWindowStartMs;
+    if (elapsedGoal >= CONFIG.MOTIVATION_GOAL_MS) {
+      state.goalCompletedCount++;
+      state.goalWindowStartMs = timeMs;
+      state.goalCelebrateUntilMs = timeMs + 2200;
+      triggerEffect('radiance');
     }
+
+    if (timeMs < state.goalCelebrateUntilMs) {
+      DOM.sessionStatus.textContent = '\u2728 目標達成！この調子！ \u2728';
+    } else {
+      const remainSec = Math.max(0, Math.ceil((CONFIG.MOTIVATION_GOAL_MS - (timeMs - state.goalWindowStartMs)) / 1000));
+      DOM.sessionStatus.textContent = '目標: 安定演奏 ' + remainSec + '秒';
+    }
+    DOM.sessionStatus.classList.add('visible');
   } else {
     DOM.sessionStatus.classList.remove('visible');
   }
@@ -1229,6 +1269,10 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
 // ========================================
 // Quality Scoring — simplified for kids
 // ========================================
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
 
 function computeRhythmScore() {
   const ioi = state.ioiHistory;
@@ -1255,24 +1299,87 @@ function computeDynamicsScore() {
   }
 }
 
+function computeStabilityScore() {
+  // Balance short-term pitch consistency with session-level confidence.
+  const s = state.pitchStability * 0.75 + state.sessionConfidence * 0.25;
+  return clamp01(s);
+}
+
+function updateGrowthTrend(timeMs) {
+  state.qualityHistory.push({ timeMs, score: state.displayedQualityScore });
+  const windowStart = timeMs - CONFIG.GROWTH_WINDOW_MS;
+  while (state.qualityHistory.length > 0 && state.qualityHistory[0].timeMs < windowStart) {
+    state.qualityHistory.shift();
+  }
+  if (state.qualityHistory.length < 2) {
+    state.growthScore = 0;
+    return;
+  }
+  const oldest = state.qualityHistory[0].score;
+  const newest = state.qualityHistory[state.qualityHistory.length - 1].score;
+  state.growthScore = newest - oldest;
+}
+
+function buildCoachingFeedback() {
+  const axes = [
+    { key: 'rhythm', score: state.rhythmScore },
+    { key: 'dynamics', score: state.dynamicsScore },
+    { key: 'stability', score: state.stabilityScore }
+  ];
+  axes.sort((a, b) => b.score - a.score);
+
+  let good = 'できた点: 音をしっかり鳴らせている';
+  if (state.growthScore > 0.05) {
+    good = 'できた点: 直近30秒で着実に伸びている';
+  } else if (axes[0].key === 'rhythm' && axes[0].score > 0.7) {
+    good = 'できた点: リズムが安定している';
+  } else if (axes[0].key === 'dynamics' && axes[0].score > 0.7) {
+    good = 'できた点: 強弱のコントロールが良い';
+  } else if (axes[0].key === 'stability' && axes[0].score > 0.7) {
+    good = 'できた点: 音程の安定感が高い';
+  }
+
+  let next = '次の1手: 深呼吸して同じテンポを20秒キープ';
+  const weakest = axes[axes.length - 1];
+  if (weakest.key === 'rhythm') {
+    next = '次の1手: 片手でゆっくり、一定テンポを20秒キープ';
+  } else if (weakest.key === 'dynamics') {
+    next = '次の1手: 1フレーズの中で弱→強を2段階つける';
+  } else if (weakest.key === 'stability') {
+    next = '次の1手: 1音ずつ最後まで伸ばしてから次の音へ';
+  }
+
+  state.feedbackGood = good;
+  state.feedbackNext = next;
+}
+
 function updateQualityScores(timeMs) {
   if (timeMs - state.lastScoreUpdateMs < CONFIG.SCORE_UPDATE_INTERVAL_MS) return;
   state.lastScoreUpdateMs = timeMs;
 
   state.rhythmScore = computeRhythmScore();
   state.dynamicsScore = computeDynamicsScore();
+  state.stabilityScore = computeStabilityScore();
 
   state.qualityScore =
     state.rhythmScore * CONFIG.SCORE_RHYTHM_WEIGHT +
-    state.dynamicsScore * CONFIG.SCORE_DYNAMICS_WEIGHT;
+    state.dynamicsScore * CONFIG.SCORE_DYNAMICS_WEIGHT +
+    state.stabilityScore * CONFIG.SCORE_STABILITY_WEIGHT;
 
   state.displayedQualityScore += (state.qualityScore - state.displayedQualityScore) * CONFIG.SCORE_SMOOTHING;
+  updateGrowthTrend(timeMs);
+  buildCoachingFeedback();
 
-  // v9: Warmer quality labels
-  if (state.sessionState === 'performing' && state.displayedQualityScore > 0.3) {
-    const stars = Math.floor(state.displayedQualityScore * 5);
-    const label = stars >= 4 ? 'うっとり！' : stars >= 3 ? 'すてき！' : stars >= 2 ? 'いいかんじ！' : '';
-    DOM.qualityScore.textContent = '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars) + (label ? ' ' + label : '');
+  if ((state.sessionState === 'performing' || state.sessionState === 'warmup') && state.displayedQualityScore > 0.25) {
+    const rhythmPct = Math.round(state.rhythmScore * 100);
+    const dynamicsPct = Math.round(state.dynamicsScore * 100);
+    const stabilityPct = Math.round(state.stabilityScore * 100);
+    const growthPts = Math.round(state.growthScore * 100);
+    const growthText = growthPts >= 0 ? '+' + growthPts : '' + growthPts;
+    DOM.qualityScore.textContent =
+      'リズム ' + rhythmPct + '% | ダイナミクス ' + dynamicsPct + '% | 安定性 ' + stabilityPct + '%\n' +
+      '直近30秒の成長: ' + growthText + 'pt\n' +
+      state.feedbackGood + ' -> ' + state.feedbackNext;
     DOM.qualityScore.classList.add('visible');
   } else {
     DOM.qualityScore.classList.remove('visible');
@@ -1313,20 +1420,22 @@ function updateAGC(timeMs, postGainRms) {
 function updateGameState(timeMs, dt, pitchResult) {
   const { pitch, conf, rms } = pitchResult;
 
-  const hasRecentOnset = updateMultiFeatureOnset(timeMs);
+  const onsetState = updateMultiFeatureOnset(timeMs, pitch);
 
   const pitchOk = pitch > CONFIG.PITCH_MIN_HZ && pitch < CONFIG.PITCH_MAX_HZ
     && conf > CONFIG.CONFIDENCE_THRESHOLD && rms > CONFIG.GOOD_NOTE_RMS;
-  const isGoodNote = pitchOk && hasRecentOnset;
+  const isOnsetNote = pitchOk && onsetState.isOnset;
+  const isActivePlay = pitchOk && onsetState.gateOpen;
 
   state.debugLastRms = rms;
   state.debugLastConf = conf;
   state.debugLastPitch = pitch;
-  state.debugIsGoodNote = isGoodNote;
+  state.debugIsGoodNote = isOnsetNote;
+  state.debugIsActivePlay = isActivePlay;
 
-  updateSessionConfidence(timeMs, isGoodNote);
+  updateSessionConfidence(timeMs, isActivePlay);
 
-  if (isGoodNote) {
+  if (isOnsetNote) {
     const lastOnset = state.noteOnsetTimes.length > 0
       ? state.noteOnsetTimes[state.noteOnsetTimes.length - 1] : 0;
     if (timeMs - lastOnset > 80) {
@@ -1357,7 +1466,7 @@ function updateGameState(timeMs, dt, pitchResult) {
   const isPerforming = state.sessionState === 'performing';
   const isWarmup = state.sessionState === 'warmup';
 
-  if (isGoodNote) {
+  if (isOnsetNote) {
     if (state.lastPitch > 0) {
       const semitones = Math.abs(12 * Math.log2(pitch / state.lastPitch));
       if (semitones < CONFIG.STABILITY_SEMITONE_THRESHOLD) {
@@ -1380,19 +1489,9 @@ function updateGameState(timeMs, dt, pitchResult) {
       }
     }
     state.lastGoodNoteTimeMs = timeMs;
-
-    if (isPerforming) {
-      const comboFactor = Math.min(state.combo / 50, 1);
-      const qualityFactor = state.qualityScore;
-      const flowGain = (CONFIG.FLOW_GAIN_BASE
-        + comboFactor * CONFIG.FLOW_GAIN_COMBO_MAX
-        + state.pitchStability * CONFIG.FLOW_GAIN_STABILITY_MAX
-        + qualityFactor * CONFIG.FLOW_GAIN_QUALITY_MAX) * dtSec;
-      state.flow = Math.min(100, state.flow + flowGain);
-    } else if (isWarmup) {
-      state.flow = Math.min(8, state.flow + 2 * dtSec);
-    }
-
+  } else if (isActivePlay) {
+    state.lastSilenceStartMs = -1;
+    state.pitchStability = Math.max(0, Math.min(1, state.pitchStability * 0.995 + 0.001));
   } else {
     state.pitchStability *= CONFIG.STABILITY_DECAY_IDLE;
 
@@ -1409,12 +1508,26 @@ function updateGameState(timeMs, dt, pitchResult) {
       }
     }
 
-    if (rms > CONFIG.NOISE_RMS_THRESHOLD && !isGoodNote) {
+    if (rms > CONFIG.NOISE_RMS_THRESHOLD && !isActivePlay) {
       if (timeMs - state.lastNoisePenaltyMs > CONFIG.NOISE_PENALTY_COOLDOWN_MS) {
         state.flow = Math.max(0, state.flow - CONFIG.FLOW_NOISE_PENALTY * dtSec);
         state.combo = Math.max(0, state.combo - CONFIG.COMBO_NOISE_PENALTY);
         state.lastNoisePenaltyMs = timeMs;
       }
+    }
+  }
+
+  if (isActivePlay) {
+    if (isPerforming) {
+      const comboFactor = Math.min(state.combo / 50, 1);
+      const qualityFactor = state.qualityScore;
+      const flowGain = (CONFIG.FLOW_GAIN_BASE
+        + comboFactor * CONFIG.FLOW_GAIN_COMBO_MAX
+        + state.pitchStability * CONFIG.FLOW_GAIN_STABILITY_MAX
+        + qualityFactor * CONFIG.FLOW_GAIN_QUALITY_MAX) * dtSec;
+      state.flow = Math.min(100, state.flow + flowGain);
+    } else if (isWarmup) {
+      state.flow = Math.min(8, state.flow + 2 * dtSec);
     }
   }
 
@@ -1441,7 +1554,7 @@ function updateGameState(timeMs, dt, pitchResult) {
   }
 
   updateHUD(timeMs);
-  return isGoodNote;
+  return isOnsetNote;
 }
 
 // ========================================
@@ -1500,11 +1613,13 @@ function updateDebugOverlay() {
     '\nPITCH: ' + (state.debugLastPitch > 0 ? state.debugLastPitch.toFixed(1) + 'Hz' : '---') +
     '  CONF: ' + state.debugLastConf.toFixed(2) +
     '  NOTE: ' + (state.debugIsGoodNote ? 'YES' : 'no') +
+    '  PLAY: ' + (state.debugIsActivePlay ? 'ON' : 'off') +
     '\nSESSION: ' + state.debugSessionState.toUpperCase() +
     '  S.CONF: ' + (state.debugSessionConf * 100).toFixed(0) + '%' +
     '\nQUALITY: ' + (state.qualityScore * 100).toFixed(0) + '%' +
     '  R:' + (state.rhythmScore * 100).toFixed(0) +
     ' D:' + (state.dynamicsScore * 100).toFixed(0) +
+    ' S:' + (state.stabilityScore * 100).toFixed(0) +
     '\nFLOW: ' + state.flow.toFixed(1) +
     '  COMBO: ' + state.combo +
     '  STAGE: ' + state.currentStage;
@@ -1681,6 +1796,11 @@ function loop(timeMs) {
 // Start
 // ========================================
 DOM.startBtn.addEventListener('click', async () => {
+  if (state.running || state.starting) return;
+  state.starting = true;
+  DOM.startBtn.disabled = true;
+  const prevBtnText = DOM.startBtn.textContent;
+  DOM.startBtn.textContent = '起動中...';
   try {
     await initAudio();
     DOM.startScreen.style.display = 'none';
@@ -1692,6 +1812,12 @@ DOM.startBtn.addEventListener('click', async () => {
     requestAnimationFrame(loop);
   } catch (e) {
     alert('マイクへのアクセスを許可してください\n\niPadの場合：設定 > Safari > マイク で確認できます');
+  } finally {
+    if (!state.running) {
+      DOM.startBtn.disabled = false;
+      DOM.startBtn.textContent = prevBtnText;
+    }
+    state.starting = false;
   }
 });
 </script>
