@@ -290,13 +290,16 @@ const state = {
   agcVoiceRejectCount: 0,
   agcVoiceSuppressUntilMs: 0,
 
-  // Session Confidence
-  sessionSamples: [],
+  // Session Confidence (ring buffer)
   sessionState: 'waiting',
   sessionStartMs: 0,
   sessionConfidence: 0,
   sessionPerformingStartMs: 0,
   lastSessionSampleMs: 0,
+  sessionRingHead: 0,
+  sessionRingTail: 0,
+  sessionRingSize: 0,
+  sessionPianoCount: 0,
 
   // Quality Scoring
   noteOnsetTimes: [],
@@ -337,8 +340,19 @@ const state = {
   debugSessionConf: 0,
   debugSessionState: 'waiting',
   debugAgcGain: 1.0,
-  debugHarmonicity: 0
+  debugHarmonicity: 0,
+
+  // YIN throttle
+  yinSkipCounter: 0,
+  cachedPitchResult: { pitch: -1, conf: 0, rms: 0 }
 };
+
+// ========================================
+// Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime)
+// ========================================
+const SESSION_RING_CAP = 100;
+const sessionRing = new Array(SESSION_RING_CAP);
+for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i] = { timeMs: 0, isPiano: false };
 
 // ========================================
 // Audio — dual analyser + software AGC
@@ -1012,9 +1026,7 @@ function updateMultiFeatureOnset(timeMs) {
 
   if (!state.prevSpectrum) {
     state.prevSpectrum = new Float32Array(onsetDataArray.length);
-    for (let i = 0; i < onsetDataArray.length; i++) {
-      state.prevSpectrum[i] = onsetDataArray[i];
-    }
+    state.prevSpectrum.set(onsetDataArray);
     return false;
   }
 
@@ -1057,9 +1069,7 @@ function updateMultiFeatureOnset(timeMs) {
   state.debugHarmonicity = harmonicity;
 
   // Save current spectrum for next frame
-  for (let i = 0; i < onsetDataArray.length; i++) {
-    state.prevSpectrum[i] = onsetDataArray[i];
-  }
+  state.prevSpectrum.set(onsetDataArray);
 
   // Update flux history for adaptive threshold
   const fHist = state.spectralFluxHistory;
@@ -1137,23 +1147,34 @@ function updateSessionConfidence(timeMs, isPianoDetected) {
   if (timeMs - state.lastSessionSampleMs < CONFIG.SESSION_SAMPLE_INTERVAL_MS) return;
   state.lastSessionSampleMs = timeMs;
 
-  state.sessionSamples.push({ timeMs: timeMs, isPiano: isPianoDetected });
-
-  const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
-  while (state.sessionSamples.length > 0 && state.sessionSamples[0].timeMs < windowStart) {
-    state.sessionSamples.shift();
+  // Push to ring buffer (reuse pre-allocated slot, zero allocation)
+  const entry = sessionRing[state.sessionRingHead];
+  entry.timeMs = timeMs;
+  entry.isPiano = isPianoDetected;
+  if (isPianoDetected) state.sessionPianoCount++;
+  state.sessionRingHead = (state.sessionRingHead + 1) % SESSION_RING_CAP;
+  if (state.sessionRingSize < SESSION_RING_CAP) {
+    state.sessionRingSize++;
+  } else {
+    if (sessionRing[state.sessionRingTail].isPiano) state.sessionPianoCount--;
+    state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
   }
 
-  if (state.sessionSamples.length < 3) {
+  // Expire samples outside time window (O(1) amortized)
+  const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
+  while (state.sessionRingSize > 0 && sessionRing[state.sessionRingTail].timeMs < windowStart) {
+    if (sessionRing[state.sessionRingTail].isPiano) state.sessionPianoCount--;
+    state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
+    state.sessionRingSize--;
+  }
+
+  if (state.sessionRingSize < 3) {
     state.sessionConfidence = 0;
     return;
   }
 
-  let pianoCount = 0;
-  for (let i = 0; i < state.sessionSamples.length; i++) {
-    if (state.sessionSamples[i].isPiano) pianoCount++;
-  }
-  state.sessionConfidence = pianoCount / state.sessionSamples.length;
+  // O(1) confidence — no iteration needed
+  state.sessionConfidence = state.sessionPianoCount / state.sessionRingSize;
 
   state.debugSessionConf = state.sessionConfidence;
 
@@ -1560,7 +1581,19 @@ function loop(timeMs) {
   let isGoodNote = false;
   if (analyser) {
     analyser.getFloatTimeDomainData(freqArray);
-    const pitchResult = detectPitchYIN(freqArray, audioCtx.sampleRate);
+
+    // YIN throttle: full autocorrelation every 3rd frame, RMS-only on others
+    let pitchResult;
+    if (++state.yinSkipCounter % 3 === 0) {
+      pitchResult = detectPitchYIN(freqArray, audioCtx.sampleRate);
+      state.cachedPitchResult = pitchResult;
+    } else {
+      let rms = 0;
+      const len = freqArray.length;
+      for (let i = 0; i < len; i++) rms += freqArray[i] * freqArray[i];
+      rms = Math.sqrt(rms / len);
+      pitchResult = { pitch: state.cachedPitchResult.pitch, conf: state.cachedPitchResult.conf, rms };
+    }
 
     updateAGC(timeMs, pitchResult.rms);
 
@@ -1627,18 +1660,19 @@ function loop(timeMs) {
     ctx.globalAlpha = 1;
   }
 
-  for (let i = ripples.length - 1; i >= 0; i--) {
+  let alive = 0;
+  for (let i = 0; i < ripples.length; i++) {
     ripples[i].update(); ripples[i].draw(ctx);
-    if (ripples[i].life <= 0) ripples.splice(i, 1);
+    if (ripples[i].life > 0) ripples[alive++] = ripples[i];
   }
+  ripples.length = alive;
 
-  for (let i = particles.length - 1; i >= 0; i--) {
+  alive = 0;
+  for (let i = 0; i < particles.length; i++) {
     particles[i].update(); particles[i].draw(ctx);
-    if (particles[i].life <= 0) particles.splice(i, 1);
+    if (particles[i].life > 0 && alive < CONFIG.MAX_PARTICLES) particles[alive++] = particles[i];
   }
-  if (particles.length > CONFIG.MAX_PARTICLES) {
-    particles.splice(0, particles.length - CONFIG.MAX_PARTICLES);
-  }
+  particles.length = alive;
 
   updateDebugOverlay();
 }
