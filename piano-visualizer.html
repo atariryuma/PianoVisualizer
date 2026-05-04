@@ -4888,8 +4888,8 @@
         return;
       }
       try {
-        const access = await navigator.requestMIDIAccess({ sysex: false });
-        const allPorts = Array.from(access.inputs.values());
+        const access = await safeMidiAccess();
+        const allPorts = gatherMidiInputs(access);
         console.log('[MIDI] available input ports: ' + allPorts.length);
         for (const p of allPorts) {
           console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
@@ -4913,21 +4913,57 @@
     // MIDI 再検索 — 二段階で接続を試みる:
     // (1) 通常フィルタで接続 (2) ダメなら virtual filter を無視して強制接続。
     // silent=true なら失敗時にUIを更新しない(自動リトライ用)。
+    // requestMIDIAccess wrapper. Tries with sysex:true first because Web MIDI
+    // Browser on iOS only exposes paired BLE-MIDI devices when SysEx access is
+    // granted (documented community workaround). Falls back to sysex:false on
+    // any error so other browsers (where sysex needs explicit user grant) still
+    // work.
+    async function safeMidiAccess() {
+      try { return await navigator.requestMIDIAccess({ sysex: true }); }
+      catch (e) {
+        try { return await navigator.requestMIDIAccess({ sysex: false }); }
+        catch (e2) { throw e2; }
+      }
+    }
+
+    // Defensive iteration of access.inputs: handles both Map (per spec) and
+    // plain-object polyfill shapes.
+    function gatherMidiInputs(access) {
+      const out = [];
+      const inputs = access && access.inputs;
+      if (!inputs) return out;
+      if (typeof inputs.values === 'function') {
+        for (const p of inputs.values()) out.push(p);
+      } else if (typeof inputs.forEach === 'function') {
+        inputs.forEach((p) => out.push(p));
+      } else if (typeof inputs === 'object') {
+        for (const k in inputs) {
+          const p = inputs[k];
+          if (p && (p.type === 'input' || p.type == null)) out.push(p);
+        }
+      }
+      return out;
+    }
+
     async function rescanMidi(silent) {
       if (!navigator.requestMIDIAccess) {
         if (!silent) setIntroHintDiagnostic('🎹 Web MIDI 非対応のブラウザです');
         return false;
       }
       try {
-        const access = await navigator.requestMIDIAccess({ sysex: false });
-        const ports = Array.from(access.inputs.values());
+        const access = await safeMidiAccess();
+        const ports = gatherMidiInputs(access);
         const portInfo = ports.map(p => (p.name || '無名') + '/' + p.state).join(', ');
         console.log('[MIDI] rescan ports: [' + portInfo + ']');
 
         if (ports.length === 0) {
           if (!silent) {
-            setIntroHintDiagnostic('🎹 MIDIポートが見つかりません',
-              'Web MIDI Browserのメニューでキーボードをペアリングしてから「🔄 MIDIキーボードを探す」をもう一度');
+            // Web MIDI Browser quirk: 起動時に既にペアリング済みのデバイスは
+            // 見えないことが多く、再ペアリングで救える事が多い。
+            const wmbHint = isAppleMobile()
+              ? 'WMBのMIDI設定でキーボードを一度切断→再接続してから🔄を再度タップ'
+              : 'キーボードをUSB/Bluetoothで接続してから🔄をタップ';
+            setIntroHintDiagnostic('🎹 MIDIポートが見つかりません', wmbHint);
           }
           return false;
         }
