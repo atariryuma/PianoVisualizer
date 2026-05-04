@@ -431,7 +431,9 @@
       height: 60vh;
       max-height: 400px;
       border-radius: 7px;
-      background: rgba(255, 255, 255, .08);
+      background: rgba(255, 255, 255, .14);
+      border: 1px solid rgba(255, 255, 255, .15);
+      box-shadow: inset 0 0 6px rgba(0, 0, 0, .3);
       overflow: hidden
     }
 
@@ -970,6 +972,35 @@
       color: rgba(255, 255, 255, .55);
       letter-spacing: .14em;
       margin: 14px 0 6px;
+    }
+
+    .hand-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .hand-btn {
+      flex: 1;
+      padding: 10px 6px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .06);
+      border: 1px solid rgba(255, 255, 255, .14);
+      color: #e8e0ff;
+      cursor: pointer;
+      font-size: .82rem;
+      transition: all .2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .hand-btn.active {
+      background: rgba(180, 220, 255, .25);
+      border-color: rgba(180, 220, 255, .8);
+      color: #fff;
+    }
+
+    .hand-btn:active {
+      transform: scale(.97);
     }
 
     .tempo-row {
@@ -1516,6 +1547,13 @@
 
       <div class="song-section-label">どこからはじめる？</div>
       <div id="sectionList"></div>
+
+      <div class="song-section-label">どの手で弾く？</div>
+      <div class="hand-row" id="handRow">
+        <button class="hand-btn" data-hand="L">👈 左手だけ</button>
+        <button class="hand-btn active" data-hand="both">🤝 両手</button>
+        <button class="hand-btn" data-hand="R">右手だけ 👉</button>
+      </div>
 
       <div class="opt-row">
         <div class="opt-toggle on" id="guidedModeToggle"></div>
@@ -3883,9 +3921,15 @@
       }
       particles.length = alive;
 
-      // v13: MIDI chord banner + virtual keyboard overlay (free-play only).
+      // MIDI chord banner — free-play only (would be visual noise during practice).
       if (midiInput.enabled && !practice.enabled) {
         drawMidiChordDisplay(timeMs);
+      }
+
+      // Virtual keyboard at the bottom — visible whenever MIDI is in use.
+      // In practice mode it provides a key-finding reference for kids; the lane
+      // sizing reserves the bottom strip for it.
+      if (midiInput.enabled) {
         drawMidiKeyboard();
       }
 
@@ -4628,10 +4672,6 @@
     const HIT_WINDOW_MS = 350;
     const PERFECT_MS = 90;
     const CHORD_MATE_TOLERANCE_MS = 30;
-    // Forward-search window for guided-mode chord forgiveness. 2× the chord-mate
-    // tolerance — covers ±tolerance around `cur` while staying well below the
-    // shortest inter-beat spacing, so we never bridge to the next written note.
-    const CHORD_FORGIVENESS_WINDOW_MS = 2 * CHORD_MATE_TOLERANCE_MS;
     // Mic-only safety nets — empirically tuned for iPad acoustic-piano practice.
     // ONSET_HYSTERESIS_FRAMES = 1 effectively disables the hysteresis (single-frame
     // onsets allowed). Bumping to 2 helps reject one-frame spectral spikes but also
@@ -4659,6 +4699,9 @@
       timingScoreSum: 0,
       sectionCombo: 0,
       sectionBestCombo: 0,
+      // 練習する手のフィルタ。'R' = 右手のみ、'L' = 左手のみ、null = 両手。
+      // フィルタされた手のノートはセクション開始時に .hit を立てて自動スキップ。
+      handFilter: null,
       progress: null,
       _completing: false,
       _lastProgUpdate: 0
@@ -5183,6 +5226,9 @@
     }
 
     function showNoteDisplay(displayText, changeKey, color, timeMs) {
+      // 練習モード中はレーンが「いま弾いた音」を伝える役割を担うので、
+      // 譜面と重なる位置に noteDisplay を出すと視覚ノイズになる。
+      if (practice.enabled) return;
       state.noteShowTimeMs = timeMs;
       if (state.lastDetectedNote === changeKey) return;
       state.lastDetectedNote = changeKey;
@@ -5288,6 +5334,9 @@
       } else {
         midiState.activeNotes.delete(midiNum);
       }
+      // Duration scoring is anchored to physical key release (independent of
+      // the sustain pedal), so the kid can't mask short presses with sustain.
+      if (practice.enabled) finalizeNoteHold(midiNum);
     }
 
     function onMidiCC(cc, value) {
@@ -5448,32 +5497,28 @@
       if (!practice.enabled) return false;
       const elapsed = practiceElapsedMs();
       const notes = practice.sectionNotes;
-      if (practice.currentNoteIdx >= notes.length) return false;
-      const cur = notes[practice.currentNoteIdx];
+      const idx = practice.currentNoteIdx;
+      if (idx >= notes.length) return false;
+      const cur = notes[idx];
       if (!cur || cur.hit || cur.missed) return false;
 
-      const dt = Math.abs(elapsed - cur.timeMs);
-      const inWindow = practice.mode === 'guided' ? true : dt <= HIT_WINDOW_MS;
-      const semitoneDiff = Math.abs(cur.midi - detectedMidi);
-      const pitchMatches = pitchClassMatches(cur.midi, detectedMidi);
-      let isHit = inWindow && pitchMatches;
-      let hitIdx = practice.currentNoteIdx;
+      const dtCur = Math.abs(elapsed - cur.timeMs);
+      const inWindow = practice.mode === 'guided' ? true : dtCur <= HIT_WINDOW_MS;
 
-      // Guided-mode chord forgiveness: kids can play the notes of a chord (or the
-      // notes within the same beat across both hands) in any order. The window is
-      // intentionally tight (CHORD_FORGIVENESS_WINDOW_MS) — wide enough for sloppy
-      // human chord timing, narrow enough to never bridge to the next beat. A
-      // wider window would credit wrong presses that happen to share pitch class
-      // with an upcoming note.
-      if (!isHit && practice.mode === 'guided') {
-        for (let i = practice.currentNoteIdx + 1; i < notes.length; i++) {
-          const m = notes[i];
-          if (m.hit || m.missed) continue;
-          if (m.timeMs - cur.timeMs > CHORD_FORGIVENESS_WINDOW_MS) break;
-          if (pitchClassMatches(m.midi, detectedMidi)) {
-            hitIdx = i;
-            isHit = true;
-            break;
+      // Find the played note inside the current chord cluster (cur and any
+      // simultaneous notes within ±CHORD_MATE_TOLERANCE_MS). Order within a chord
+      // is free — but each note must be physically pressed (no auto-credit).
+      let matched = null;
+      if (inWindow) {
+        if (cur.midi === detectedMidi) {
+          matched = cur;
+        } else {
+          for (let i = idx + 1; i < notes.length; i++) {
+            const m = notes[i];
+            const diff = m.timeMs - cur.timeMs;
+            if (diff > CHORD_MATE_TOLERANCE_MS) break;
+            if (m.hit || m.missed) continue;
+            if (m.midi === detectedMidi) { matched = m; break; }
           }
         }
       }
@@ -5483,46 +5528,27 @@
         remoteLog('[Match] in=' + detectedMidi
           + (isExact ? ' (midi)' : ' (mic)')
           + ' expected=' + cur.midi + '@' + Math.round(cur.timeMs - elapsed) + 'ms'
-          + ' diff=' + semitoneDiff
           + ' mode=' + practice.mode
-          + ' result=' + (isHit
-            ? (hitIdx === practice.currentNoteIdx ? 'HIT' : 'HIT(chord-fwd@+' + (hitIdx - practice.currentNoteIdx) + ')')
-            : (pitchMatches ? 'too-' + (cur.timeMs > elapsed ? 'early' : 'late') : 'wrong-note')));
+          + ' result=' + (matched ? (matched === cur ? 'HIT' : 'HIT(chord-mate)') : 'wrong-note'));
       }
 
-      if (!isHit) {
-        // Guided mode never punishes — show what they played as a learning hint, then
-        // help the kid escape after a few wrong tries (no shame, no stuck states).
-        if (practice.mode === 'guided' && !pitchMatches) {
-          practice.wrongAttempts = (practice.wrongAttempts || 0) + 1;
-          showHitChip('miss', '弾いた音: ' + midiToDoremi(detectedMidi));
-          if (practice.wrongAttempts === 2 && tonePiano) {
-            try {
-              tonePiano.triggerAttackRelease(midiToFreq(cur.midi), 0.5);
-            } catch (e) {}
-          }
-          // Attempt 2: auto-advance so the kid never gets stuck (rapid pieces like
-          // Mozart's Turkish March need a low threshold to stay responsive). Cursor
-          // advance is handled by the per-frame skip-past-resolved loop.
-          if (practice.wrongAttempts >= 2) {
-            practice.wrongAttempts = 0;
-            cur.hit = true;
-            practice.hits++;
-            showHitChip('good', 'つぎ いこう！');
-          }
+      if (!matched) {
+        if (practice.mode === 'guided') {
+          showHitChip('miss', '弾いた音: ' + midiToDoremi(detectedMidi) + (Math.floor(detectedMidi / 12) - 1));
         }
         return false;
       }
 
-      practice.wrongAttempts = 0;          // reset on successful hit
-      const matched = notes[hitIdx];
+      const dt = Math.abs(elapsed - matched.timeMs);
       matched.hit = true;
+      matched.holdStartMs = performance.now();
+      practice.pendingHolds.set(detectedMidi, matched);
       practice.hits++;
       practice.sectionCombo++;
       if (practice.sectionCombo > practice.sectionBestCombo) {
         practice.sectionBestCombo = practice.sectionCombo;
       }
-      // In guided mode every hit is "perfect" since timing isn't graded.
+      // Guided mode: every onset is "perfect" since timing isn't graded.
       const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / HIT_WINDOW_MS);
       practice.timingScoreSum += ts;
       const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
@@ -5531,28 +5557,30 @@
       state.combo++;
       if (state.combo > state.bestCombo) state.bestCombo = state.combo;
       spawnBurst(W * 0.5, H * 0.55, 8, 0.7 + ts * 0.5);
-
-      // Chord-mate auto-credit (RH+LH chord at the same instant) — only for strict
-      // currentNoteIdx hits. Out-of-order chord-forgiveness hits skip this since
-      // they'll get picked up when the kid plays the actual currentNoteIdx note.
-      if (hitIdx === practice.currentNoteIdx) {
-        for (let i = practice.currentNoteIdx + 1; i < notes.length; i++) {
-          const m = notes[i];
-          if (m.hit || m.missed) continue;
-          const diff = m.timeMs - cur.timeMs;
-          if (Math.abs(diff) <= CHORD_MATE_TOLERANCE_MS) {
-            m.hit = true;
-            practice.hits++;
-            practice.timingScoreSum += ts;
-          }
-          if (diff > CHORD_MATE_TOLERANCE_MS) break;
-        }
-      }
       // OSMD cursor advancement is driven by the per-frame "skip past resolved
-      // notes" loop in updatePracticeFrame — single source of truth so chord
-      // forgiveness, chord-mate, and strict hits all advance through the same path.
-      // (Rhythm mode advances cursor via scheduled Tone.Draw events instead.)
+      // notes" loop in updatePracticeFrame.
       return true;
+    }
+
+    // Duration scoring (rhythm mode only): compare physical hold time to the
+    // written note length. Tolerance is the larger of 30% of durMs or 80ms,
+    // giving short notes a human-reactable floor while keeping longer notes
+    // strict. score = 1 at exact, 0 at full tolerance off.
+    function finalizeNoteHold(detectedMidi) {
+      const matched = practice.pendingHolds.get(detectedMidi);
+      if (!matched) return;
+      practice.pendingHolds.delete(detectedMidi);
+      if (practice.mode !== 'rhythm') return;
+      if (!matched.holdStartMs || !matched.durMs) return;
+      const heldMs = performance.now() - matched.holdStartMs;
+      const expected = matched.durMs;
+      const tol = Math.max(80, expected * 0.3);
+      const score = Math.max(0, 1 - Math.abs(heldMs - expected) / tol);
+      practice.durationScoreSum += score;
+      practice.durationScoredCount++;
+      if (score < 0.4) {
+        showHitChip('miss', heldMs < expected ? '⏱ 短い' : '⏱ 長い');
+      }
     }
 
     // Single source of truth for "how far into the practice are we".
@@ -5692,12 +5720,6 @@
     }
 
     function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
-    // Same pitch class within ±maxOctaves. Used by guided-mode hit detection so
-    // a kid playing the right note in a different octave still scores.
-    function pitchClassMatches(a, b, maxOctaves) {
-      const span = (maxOctaves == null ? 2 : maxOctaves) * 12;
-      return notePitchClass(a) === notePitchClass(b) && Math.abs(a - b) <= span;
-    }
     function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
     function midiToName(midi) {
       return CONFIG.NOTE_NAMES[notePitchClass(midi)] + (Math.floor(midi / 12) - 1);
@@ -5710,9 +5732,14 @@
       const sec = currentSong.sections[sectionIdx];
       const speedFactor = 100 / practice.tempoPct;
       const out = [];
+      const handFilter = practice.handFilter;   // 'R' / 'L' / null
       for (const n of currentSong.notes) {
         if (n.timeSec >= sec.startSec && n.timeSec < sec.endSec) {
           const relSec = n.timeSec - sec.startSec;
+          // 片手モード: 反対の手のノートは _filtered=true で pre-hit にし、
+          // currentNoteIdx の advance loop が自動的に飛ばす(カーソルも進む)。
+          // レーン描画と統計集計は _filtered を除外。
+          const filtered = !!handFilter && n.hand !== handFilter;
           out.push({
             hand: n.hand,
             midi: n.midi,
@@ -5720,8 +5747,9 @@
             durMs: n.durSec * 1000 * speedFactor,
             measureIdx: n.measureIdx,
             cursorJump: n.cursorJump,
-            hit: false,
-            missed: false
+            hit: filtered,
+            missed: false,
+            _filtered: filtered
           });
         }
       }
@@ -5776,8 +5804,10 @@
       practice.laneDrawFromIdx = 0;        // amortized cursor for lane culling
       practice.currentNoteIdx = 0;
       practice.hits = practice.misses = practice.timingScoreSum = 0;
+      practice.durationScoreSum = 0;
+      practice.durationScoredCount = 0;
+      practice.pendingHolds = new Map();
       practice.sectionCombo = practice.sectionBestCombo = 0;
-      practice.wrongAttempts = 0;
       practice._completing = false;
       practice._lastProgUpdate = 0;
 
@@ -5787,8 +5817,10 @@
 
       // HUD
       DOM.ptbSection.textContent = sec.name + (sec.isBoss ? ' 👑' : '');
-      DOM.ptbTempo.textContent = practice.tempoPct + '%';
-      DOM.ptbProgress.textContent = '0 / ' + practice.sectionNotes.length;
+      DOM.ptbTempo.textContent = '🥁 ' + practice.tempoPct + '%';
+      // _filtered な音は反対の手で自動スキップされるので進捗カウントから除外
+      practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
+      DOM.ptbProgress.textContent = '0 / ' + practice._sectionTargetCount;
       DOM.practiceHud.classList.add('visible');
       DOM.osmdContainer.classList.add('visible');
       setInputIndicator();
@@ -5948,10 +5980,11 @@
       // 4. (OSMD cursor advance is driven by per-onset Tone.Draw events scheduled in
       //     startPracticeSection — keeps cursor locked to played audio, no drift.)
 
-      // 5. Progress UI (rate-limited)
+      // 5. Progress UI (rate-limited) — 片手モード時は反対の手の音を除外
       if (timeMs - practice._lastProgUpdate > 100) {
         practice._lastProgUpdate = timeMs;
-        DOM.ptbProgress.textContent = (practice.hits + practice.misses) + ' / ' + len;
+        const target = practice._sectionTargetCount || len;
+        DOM.ptbProgress.textContent = (practice.hits + practice.misses) + ' / ' + target;
       }
 
       // 6. Section complete?
@@ -5976,8 +6009,13 @@
       const elapsed = practiceElapsedMs();
       const notes = practice.sectionNotes;
 
-      const laneTop = 50;
-      const laneHeight = H * 0.55;
+      // Dynamic lane sizing — start below the visible OSMD score (so falling
+      // notes aren't hidden behind it) and stretch to just above the virtual
+      // keyboard at the bottom (so the unused dark space is filled).
+      const osmdVisible = DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible');
+      const laneTop = osmdVisible ? 332 : 50;   // OSMD top:60 + h:260 + margin:12
+      const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
+      const laneHeight = Math.max(280, H - laneTop - kbReserve);
       const hitLineY = laneTop + laneHeight - 30;
       const pxPerMs = (laneHeight - 40) / LANE_LOOKAHEAD_MS;
       const padX = 24;
@@ -6054,6 +6092,7 @@
         if (drawnCount >= 25) break;
         const n = notes[i];
         if (n.timeMs > visibleMaxTimeMs) break;
+        if (n._filtered) continue;   // 片手練習: 反対の手のノートは描画しない
         drawnCount++;
         const dy = (n.timeMs - elapsed) * pxPerMs;
         const y = hitLineY - dy;
@@ -6199,7 +6238,8 @@
       releaseWakeLock();
 
       const sec = currentSong.sections[practice.sectionIdx];
-      const total = practice.sectionNotes.length;
+      // 片手モード時は反対の手の音(_filtered)を除外して統計を計算
+      const total = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
       const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
       const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
       const stars = computeStars(accPct, timingPct);
@@ -6458,6 +6498,14 @@
       if (DOM.ghostRow) DOM.ghostRow.style.display = showRhythmOpts ? '' : 'none';
       if (DOM.metronomeRow) DOM.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
     }
+
+    document.querySelectorAll('.hand-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const h = btn.getAttribute('data-hand');
+        practice.handFilter = (h === 'L' || h === 'R') ? h : null;
+        document.querySelectorAll('.hand-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      });
+    });
 
     DOM.guidedModeToggle?.addEventListener('click', () => {
       practice.mode = practice.mode === 'guided' ? 'rhythm' : 'guided';
