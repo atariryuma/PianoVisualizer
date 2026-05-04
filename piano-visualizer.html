@@ -92,6 +92,9 @@
       cursor: wait
     }
 
+    /* Top-right cluster: ⚙ settings + 🏠 home. Always visible so a kid can
+       adjust language/theme/audio-offset before even starting. The home button
+       hides itself on the title screen via body.title-screen. */
     #themeBar {
       position: fixed;
       top: 16px;
@@ -99,11 +102,13 @@
       z-index: 5;
       display: flex;
       gap: 8px;
-      opacity: 0;
-      transition: opacity .5s;
-      pointer-events: none
     }
 
+    body.title-screen #homeBtn { display: none }
+
+    /* Legacy `.visible` toggle from showRunningUI/returnToTitle is now a no-op
+       — bar is always shown — but keep the rule for backwards-compat with code
+       that adds the class. */
     #themeBar.visible {
       opacity: 1;
       pointer-events: auto
@@ -1873,6 +1878,7 @@
         <button id="resHome" data-i18n-title="backToTitle" title="Back to title">🏠</button>
         <button id="resQuit" data-i18n="songSelect">Song select</button>
         <button id="resRetry" data-i18n="tryAgainBtn">Try again</button>
+        <button id="resTryPlay" class="primary" data-i18n="tryPlayingNow" style="display:none">▶ Try playing</button>
         <button id="resNext" class="primary" data-i18n="nextBtn">Next →</button>
       </div>
     </div>
@@ -2221,6 +2227,7 @@
       resQuit: document.getElementById('resQuit'),
       resRetry: document.getElementById('resRetry'),
       resNext: document.getElementById('resNext'),
+      resTryPlay: document.getElementById('resTryPlay'),
       resHome: document.getElementById('resHome'),
       resHistoryWrap: document.getElementById('resHistoryWrap'),
       resHistoryChart: document.getElementById('resHistoryChart'),
@@ -2614,6 +2621,7 @@
       // Listen-mode result
       listenedTitle:      { en: '🎧 Nicely listened!',        jp: '🎧 さいごまで聴けたね！' },
       listenedMsg:        { en: 'Now try playing along.',     jp: 'つぎは弾いてみよう。' },
+      tryPlayingNow:      { en: '▶ Try playing',              jp: '▶ 弾いてみる' },
       // Practice HUD
       score:              { en: 'Score',                     jp: '楽譜' },
       quit:               { en: 'Quit',                      jp: 'やめる' },
@@ -2861,6 +2869,11 @@
       // BLE button only when Web Bluetooth is supported (Chrome/Edge desktop, Android Chrome)
       const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
       DOM.settingsBleBtn.style.display = bleSupported ? '' : 'none';
+      // Reset session is only meaningful when audio is alive — disable on title.
+      const running = !!(state && state.running);
+      DOM.settingsResetBtn.disabled = !running;
+      DOM.settingsResetBtn.style.opacity = running ? '' : '.45';
+      DOM.settingsResetBtn.style.cursor = running ? 'pointer' : 'not-allowed';
     }
 
     DOM.settingsBtn.addEventListener('click', openSettings);
@@ -2933,6 +2946,9 @@
     // panel / result screen re-render their dynamic text if they're visible.
     applyI18n();
     refreshLangToggle();
+    // Page loads on the title screen — body class drives the home-button hide
+    // (no point in 🏠 when home is right here) and any future title-only styling.
+    document.body.classList.add('title-screen');
     window.addEventListener('langchange', () => {
       // Refresh hot-path caches read from the per-frame lane draw.
       if (typeof activeNoteNames !== 'undefined') {
@@ -7032,8 +7048,8 @@
       const sec = currentSong.sections[practice.sectionIdx];
 
       // Listen mode: no scoring, no progress mutation, no unlocks. Hide all
-      // score rows/stars and show a simple "Listened!" prompt to move on to
-      // actually playing.
+      // score rows/stars and offer a "Try playing" button that switches the
+      // kid into Guided on the same section — natural pedagogical flow.
       if (practice.mode === 'listen') {
         DOM.resTitle.textContent = t('listenedTitle');
         DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
@@ -7043,13 +7059,15 @@
         DOM.resUnlock.textContent = '';
         if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
         DOM.resNext.style.display = 'none';
+        if (DOM.resTryPlay) DOM.resTryPlay.style.display = '';
         DOM.sectionResult.classList.add('visible');
         practice._completing = false;
         return;
       }
-      // Restore stat visibility for rhythm/guided result.
+      // Restore stat visibility + hide the listen-only Try-playing button.
       DOM.resStars.style.display = '';
       document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
+      if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
       const total = practice._sectionTargetCount || 0;
       const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
       const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
@@ -7363,6 +7381,7 @@
 
     function showRunningUI() {
       DOM.startScreen.style.display = 'none';
+      document.body.classList.remove('title-screen');
       DOM.themeBar.classList.add('visible');
       DOM.hud.style.display = 'block';
       if (!practice.enabled) {
@@ -7499,6 +7518,12 @@
       DOM.sectionResult.classList.remove('visible');
       await startPracticeSection(practice.sectionIdx);
     });
+    // Listen-mode → "Try playing" shortcut: same section, but switch to Guided.
+    document.getElementById('resTryPlay')?.addEventListener('click', async () => {
+      DOM.sectionResult.classList.remove('visible');
+      practice.mode = 'guided';
+      await startPracticeSection(practice.sectionIdx);
+    });
     DOM.resNext.addEventListener('click', async () => {
       const nextIdx = Math.min(practice.sectionIdx + 1, currentSong.sections.length - 1);
       const nextId = currentSong.sections[nextIdx].id;
@@ -7579,6 +7604,7 @@
       stopMidiAutoRescan();
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
+      document.body.classList.add('title-screen');
       refreshBleMidiButton();
     }
 
