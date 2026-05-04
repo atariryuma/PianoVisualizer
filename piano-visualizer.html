@@ -2503,13 +2503,16 @@
         state.micIntentionallySkipped = true;
         console.log('[AUDIO] iOS WKWebView with Web MIDI polyfill — running MIDI-only (mic skipped)');
       } else {
-        // Mic acquisition is best-effort with a timeout. WKWebView wrappers can
-        // hang on getUserMedia indefinitely; without the timeout the app would
-        // freeze waiting forever on a permission that never resolves.
+        // Try to acquire the mic. The earlier hang case (iOS WKWebView wrappers
+        // freezing on getUserMedia) is already handled by the
+        // micIntentionallySkipped branch above, so the regular browser path
+        // doesn't need the aggressive 5s timeout — that was firing while the
+        // kid was still reading the permission dialog and falsely flipping the
+        // app into "mic failed" mode. Use a generous 20s safety net only.
         try {
           await Promise.race([
             acquireMic(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('mic permission timeout')), 5000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('mic permission timeout')), 20000))
           ]);
         } catch (e) {
           state.micSuspended = true;
@@ -2528,6 +2531,14 @@
       gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
       gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
       state.micSuspended = false;
+      // Clear any stale failure flag from a prior race-timeout — if the user
+      // eventually clicked Allow after the safety-net timeout fired, we still
+      // get here and need to update the UI gates that read this flag.
+      if (state.micPermissionFailed) {
+        state.micPermissionFailed = false;
+        if (typeof refreshIntroHint === 'function') refreshIntroHint();
+        if (typeof DOM !== 'undefined' && DOM.micMeter) DOM.micMeter.classList.add('visible');
+      }
       console.log('[AUDIO] Mic acquired');
     }
 
