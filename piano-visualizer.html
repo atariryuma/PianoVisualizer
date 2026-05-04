@@ -5097,8 +5097,8 @@
       });
       return defs.map((d, i) => ({
         id: d.id,
-        name: d.name,
-        desc: d.desc,
+        nameKey: d.nameKey,
+        descKey: d.descKey,
         isBoss: d.isBoss,
         startSec: startSecs[i],
         endSec: i + 1 < defs.length ? startSecs[i + 1] : (totalSec + 1)
