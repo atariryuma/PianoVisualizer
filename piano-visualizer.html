@@ -1349,6 +1349,71 @@
       transform: scale(.97);
     }
 
+    /* Big game-feel hit feedback (PERFECT! / NICE! / CRITICAL! / CHORD!) */
+    #hitFeedback {
+      position: fixed;
+      top: 38%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 12;
+      pointer-events: none;
+      font-weight: 900;
+      letter-spacing: .08em;
+      opacity: 0;
+      white-space: nowrap;
+    }
+
+    #hitFeedback.show {
+      animation: hitFeedbackPop .9s cubic-bezier(.32, 1.7, .56, 1) forwards;
+    }
+
+    @keyframes hitFeedbackPop {
+      0%   { transform: translate(-50%, -50%) scale(0.2) rotate(-12deg); opacity: 0; }
+      18%  { transform: translate(-50%, -50%) scale(1.45) rotate(2deg); opacity: 1; }
+      36%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); opacity: 1; }
+      78%  { opacity: 1; }
+      100% { transform: translate(-50%, -75%) scale(.85); opacity: 0; }
+    }
+
+    /* Floating combo counter — game-feel like Beat Saber / OSU */
+    #comboDisplay {
+      position: fixed;
+      right: 22px;
+      top: 38%;
+      transform: translateY(-50%);
+      z-index: 6;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .3s;
+    }
+
+    #comboDisplay.visible { opacity: 1 }
+
+    .combo-num {
+      font-size: 3.6rem;
+      font-weight: 900;
+      color: #ffec80;
+      line-height: 1;
+      text-shadow: 0 0 20px currentColor, 0 0 40px rgba(255, 100, 200, .5), 0 4px 12px rgba(0, 0, 0, .6);
+    }
+
+    .combo-num.pulse { animation: comboPulse .28s ease-out }
+
+    .combo-label {
+      font-size: .72rem;
+      letter-spacing: .25em;
+      color: rgba(255, 235, 150, .9);
+      text-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+      margin-top: 2px;
+    }
+
+    @keyframes comboPulse {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.32); }
+      100% { transform: scale(1); }
+    }
+
     /* Hit feedback chips floating from hit line */
     .hit-chip {
       position: fixed;
@@ -1531,6 +1596,11 @@
   <button id="midiRescanBtn">🔄 MIDIキーボードを探す</button>
   <div id="micMeter"><div id="micMeterFill"></div></div>
   <div id="midiBadge"></div>
+  <div id="hitFeedback"></div>
+  <div id="comboDisplay">
+    <div class="combo-num" id="comboNum">0</div>
+    <div class="combo-label">COMBO</div>
+  </div>
 
   <!-- ===== Practice Mode ===== -->
   <div id="songPanel">
@@ -1966,7 +2036,10 @@
       micMeterFill: document.getElementById('micMeterFill'),
       bleMidiBtn: document.getElementById('bleMidiBtn'),
       midiBadge: document.getElementById('midiBadge'),
-      midiRescanBtn: document.getElementById('midiRescanBtn')
+      midiRescanBtn: document.getElementById('midiRescanBtn'),
+      hitFeedback: document.getElementById('hitFeedback'),
+      comboDisplay: document.getElementById('comboDisplay'),
+      comboNum: document.getElementById('comboNum')
     };
     const ctx = DOM.canvas.getContext('2d');
 
@@ -3738,6 +3811,20 @@
         state.inputFlash *= 0.85; // Fast decay
       }
 
+      // Hit color flash — note color tints the screen on every press, decays fast.
+      if (state.hitFlashIntensity > 0.005) {
+        ctx.fillStyle = 'rgba(' + state.hitFlashRgb + ',' + state.hitFlashIntensity.toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+        state.hitFlashIntensity *= 0.78;
+      }
+
+      // FEVER MODE — combo ≥ 50: gold background tint accumulates with combo.
+      if (state.combo >= 50) {
+        const fmIntensity = Math.min(0.13, (state.combo - 50) * 0.0025);
+        ctx.fillStyle = 'rgba(255, 200, 80,' + fmIntensity.toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+
       // v9: Glow pulse effect (from encouragement)
       const glowExtra = state.glowPulseIntensity;
       if (glowExtra > 0.01) {
@@ -3942,6 +4029,7 @@
       }
 
       if (!practice.enabled) updateQuestState(timeMs);
+      refreshComboDisplay();
       updatePlayTime(timeMs);
       updateDebugOverlay();
     }
@@ -4821,6 +4909,91 @@
       }
     }
 
+    // ============================================
+    // Game-feel layer: dopamine boosters during play
+    //   - showHitFeedback: PERFECT! / NICE! / CRITICAL! 等の巨大テキスト
+    //   - refreshComboDisplay: 浮遊コンボカウンタ(色がコンボ階級で変化)
+    //   - triggerHitFlash: ヒット時の画面色フラッシュ
+    //   - 50コンボ以上で FEVER MODE (ループ内で背景にゴールド乗算)
+    //   - 5%確率で CRITICAL HIT
+    //   - 同時3音以上で CHORD CELEBRATION
+    // ============================================
+    function showHitFeedback(text, color, sizeRem) {
+      const fb = DOM.hitFeedback;
+      if (!fb) return;
+      fb.textContent = text;
+      const c = color || '#ffd700';
+      fb.style.color = c;
+      fb.style.textShadow = '0 0 28px ' + c + ', 0 0 56px ' + c + ', 0 4px 16px rgba(0,0,0,.65)';
+      fb.style.fontSize = (sizeRem || 4) + 'rem';
+      fb.classList.remove('show');
+      void fb.offsetWidth;       // restart animation
+      fb.classList.add('show');
+    }
+
+    let _lastComboShown = 0;
+    function refreshComboDisplay() {
+      const c = state.combo;
+      if (c < 3) {
+        if (_lastComboShown !== 0) {
+          DOM.comboDisplay.classList.remove('visible');
+          _lastComboShown = 0;
+        }
+        return;
+      }
+      if (c === _lastComboShown) return;
+      DOM.comboNum.textContent = c;
+      DOM.comboDisplay.classList.add('visible');
+      DOM.comboNum.classList.remove('pulse');
+      void DOM.comboNum.offsetWidth;
+      DOM.comboNum.classList.add('pulse');
+      // 階級カラー
+      let col = '#ffec80';
+      if (c >= 100) col = '#ff4d8a';
+      else if (c >= 50) col = '#ff9500';
+      else if (c >= 25) col = '#ffd700';
+      DOM.comboNum.style.color = col;
+      // サイズも徐々に成長
+      const grow = Math.min(1.6, 1 + c * 0.005);
+      DOM.comboNum.style.transform = 'scale(' + grow.toFixed(2) + ')';
+      _lastComboShown = c;
+    }
+
+    // 画面全体の色フラッシュ。triggerHitFlashで0.18セットして loop で減衰描画。
+    state.hitFlashIntensity = 0;
+    state.hitFlashRgb = '255,220,120';
+    function triggerHitFlash(rgbStr) {
+      state.hitFlashIntensity = 0.16;
+      if (rgbStr) state.hitFlashRgb = rgbStr;
+    }
+
+    // hex "#rrggbb" → "r,g,b" (rgba用)
+    function hexToRgb(hex) {
+      if (!hex || hex[0] !== '#' || hex.length !== 7) return '255,220,120';
+      return parseInt(hex.slice(1, 3), 16) + ',' +
+             parseInt(hex.slice(3, 5), 16) + ',' +
+             parseInt(hex.slice(5, 7), 16);
+    }
+
+    // 同時打鍵検出: 80ms以内に3音以上 = chord celebration
+    let _chordWindowStart = 0;
+    let _chordWindowCount = 0;
+    function trackChordHit() {
+      const now = performance.now();
+      if (now - _chordWindowStart < 80) {
+        _chordWindowCount++;
+        if (_chordWindowCount === 3) {
+          showHitFeedback('CHORD!', '#a0e0ff', 3.2);
+          effectFlowerBurst();
+          effectStarShower(5);
+          triggerHitFlash('160,220,255');
+        }
+      } else {
+        _chordWindowStart = now;
+        _chordWindowCount = 1;
+      }
+    }
+
     let _midiBadgePulseTimer = 0;
     function pulseMidiBadge() {
       if (!DOM.midiBadge || !DOM.midiBadge.classList.contains('visible')) return;
@@ -5262,10 +5435,17 @@
       const baseY = isLow ? H * 0.65 : H * 0.35;
       const noteY = baseY + (Math.random() - 0.5) * H * 0.08;
 
-      const burstCount = Math.floor(8 + v * 32 + state.flow * 0.15);
+      // CRITICAL HIT — 5%確率で黄金バースト＋専用テキスト
+      const isCrit = Math.random() < 0.05;
+
+      const baseBurst = Math.floor(8 + v * 32 + state.flow * 0.15);
+      const burstCount = isCrit ? baseBurst + 24 : baseBurst;
       spawnBurst(noteX, noteY, burstCount, v * (1.1 + state.flow * 0.012), color);
       ripples.push(new Ripple(noteX, noteY, color, 100 + v * 280 + state.flow * 1.2));
       spawnStream(noteX, isLow ? H * 0.78 : H * 0.22, v, color);
+
+      // 画面色フラッシュ — 弾いた音の色が一瞬画面に
+      triggerHitFlash(hexToRgb(color));
 
       // Drive flow/combo from MIDI directly so silent (headphone) practice still scores.
       state.flow = Math.min(100, state.flow + 1.0 + v * 1.8);
@@ -5274,6 +5454,15 @@
       const now = performance.now();
       state.lastGoodNoteTimeMs = now;
       state.lastNoteTimeMs = now;
+
+      // CHORD CELEBRATION — 80ms以内に3音以上で特別演出
+      trackChordHit();
+
+      if (isCrit) {
+        effectGoldenBurst();
+        showHitFeedback('CRITICAL!', '#ff6b9b', 3.6);
+        triggerHitFlash('255,210,80');
+      }
 
       const noteName = CONFIG.NOTE_NAMES[midiNum % 12];
       showNoteDisplay(noteName, noteName + (Math.floor(midiNum / 12) - 1), synColor, now);
@@ -5566,7 +5755,9 @@
       const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / HIT_WINDOW_MS);
       practice.timingScoreSum += ts;
       const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
-      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? 'パーフェクト！' : 'ナイス！');
+      // 練習HIT: 巨大ゲームフィードバック (ガイドモードでは常にPERFECT)
+      if (isPerfect) showHitFeedback('PERFECT!', '#ffd700', 4.2);
+      else showHitFeedback('NICE!', '#88ff88', 3.4);
       state.flow = Math.min(100, state.flow + 6 + ts * 4);
       state.combo++;
       if (state.combo > state.bestCombo) state.bestCombo = state.combo;
@@ -6772,6 +6963,8 @@
       DOM.hud.style.display = 'none';
       hideIntroHint();
       DOM.micMeter.classList.remove('visible');
+      DOM.comboDisplay.classList.remove('visible');
+      _lastComboShown = 0;
       stopMidiAutoRescan();
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
