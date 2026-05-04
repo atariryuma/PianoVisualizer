@@ -1844,7 +1844,8 @@
   <div id="sessionStatus"></div>
   <div id="qualityScore"></div>
   <div id="debugOverlay"></div>
-  <div id="introHint" data-i18n="introTryPlay">🎹 Try playing the piano</div>
+  <!-- Populated by refreshIntroHint() — only shown when noInputAvailable(). -->
+  <div id="introHint"></div>
   <button id="midiHintDismiss" data-i18n="later">Later</button>
   <!-- MIDI rescan moved to the ⚙ settings panel. Element kept for legacy-code compatibility. -->
   <button id="midiRescanBtn">🔄 Scan for MIDI keyboard</button>
@@ -2656,8 +2657,6 @@
       language:           { en: 'Language',                  jp: '言語' },
       later:              { en: 'Later',                     jp: 'あとで' },
       // Intro hint / MIDI diagnostics
-      introTryPlay:       { en: '🎹 Try playing the piano',
-                            jp: '🎹 ピアノを弾いてみよう' },
       introNeedMidi:      { en: '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)',
                             jp: '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）' },
       diagWebMidiUnsupported: { en: '🎹 This browser does not support Web MIDI',
@@ -7552,19 +7551,17 @@
       return state.micPermissionFailed && !midiInput.enabled;
     }
 
+    // The intro hint only appears when there's a real input problem the kid
+    // needs to act on. When mic + MIDI are healthy (or about to be — auto-poll
+    // will pick up a hot-plugged keyboard), nothing is shown — the canvas
+    // lights up the moment they play, which is the only feedback they need.
     function refreshIntroHint() {
       if (!DOM.introHint) return;
-      // If the user dismissed the hint, hide everything — they know.
-      if (state.midiHintDismissed && noInputAvailable()) {
-        DOM.introHint.classList.remove('visible');
-        DOM.midiRescanBtn?.classList.remove('visible');
-        DOM.midiHintDismiss?.classList.remove('visible');
-        return;
-      }
-      DOM.introHint.innerHTML = noInputAvailable() ? t('introNeedMidi') : t('introTryPlay');
-      const needRescan = noInputAvailable() && DOM.introHint.classList.contains('visible');
-      DOM.midiRescanBtn?.classList.toggle('visible', needRescan);
-      DOM.midiHintDismiss?.classList.toggle('visible', needRescan);
+      const show = noInputAvailable() && !state.midiHintDismissed;
+      DOM.introHint.classList.toggle('visible', show);
+      if (show) DOM.introHint.innerHTML = t('introNeedMidi');
+      DOM.midiRescanBtn?.classList.toggle('visible', show);
+      DOM.midiHintDismiss?.classList.toggle('visible', show);
     }
 
     function showRunningUI() {
@@ -7572,10 +7569,7 @@
       document.body.classList.remove('title-screen');
       DOM.themeBar.classList.add('visible');
       DOM.hud.style.display = 'block';
-      if (!practice.enabled) {
-        refreshIntroHint();
-        DOM.introHint.classList.add('visible');
-      }
+      if (!practice.enabled) refreshIntroHint();
       if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
       else DOM.micMeter.classList.remove('visible');
       // Background-rescan only for actual mic failures — iOS-WMB sessions
