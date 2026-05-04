@@ -94,12 +94,15 @@
 
     /* Top-right cluster: ⚙ settings + 🏠 home. Always visible so a kid can
        adjust language/theme/audio-offset before even starting. The home button
-       hides itself on the title screen via body.title-screen. */
+       hides itself on the title screen via body.title-screen.
+       z-index 55 sits above the title screen (10), song panel (30), and
+       session summary (50) so the bar is reachable from every screen, but
+       below the settings panel modal (60) which it launches. */
     #themeBar {
       position: fixed;
       top: 16px;
       right: 16px;
-      z-index: 5;
+      z-index: 55;
       display: flex;
       gap: 8px;
     }
@@ -1854,7 +1857,7 @@
       <div class="song-title" id="songTitle">Für Elise</div>
       <div class="song-composer" id="songComposer">L. v. Beethoven</div>
       <div class="song-streak">
-        🔥 <span id="streakCount">0</span> <span data-i18n="dayStreak">day streak</span>
+        🔥 <span id="streakCount">0</span><span data-i18n="dayStreak"> day streak</span>
         <div class="streak-cal" id="streakCal"></div>
       </div>
 
@@ -2693,7 +2696,9 @@
                             jp: 'ピアノを弾くと画面がきれいに光るよ' },
       freePlay:           { en: 'Free Play',                 jp: 'フリープレイ' },
       // Song panel
-      dayStreak:          { en: 'day streak',                jp: '日れんしゅう中' },
+      // Leading space lives in the EN value so JP renders "1日れんしゅう中"
+      // without a half-width gap between the digit and 日.
+      dayStreak:          { en: ' day streak',               jp: '日れんしゅう中' },
       tempo:              { en: 'Tempo',                     jp: 'テンポ' },
       startFrom:          { en: 'Start from',                jp: 'どこからはじめる？' },
       whichHand:          { en: 'Which hand?',               jp: 'どの手で弾く？' },
