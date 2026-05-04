@@ -1598,6 +1598,7 @@
       <div class="result-stars" id="resStars">★★★</div>
       <div class="result-stat"><span>音程の正確さ</span><span id="resAcc">0%</span></div>
       <div class="result-stat"><span>タイミング</span><span id="resTiming">0%</span></div>
+      <div class="result-stat" id="resDurationRow"><span>音の長さ</span><span id="resDuration">0%</span></div>
       <div class="result-stat"><span>連続成功（最高）</span><span id="resCombo">0</span></div>
       <div class="result-history hidden" id="resHistoryWrap">
         <canvas id="resHistoryChart" width="280" height="80"></canvas>
@@ -1949,6 +1950,8 @@
       resStars: document.getElementById('resStars'),
       resAcc: document.getElementById('resAcc'),
       resTiming: document.getElementById('resTiming'),
+      resDuration: document.getElementById('resDuration'),
+      resDurationRow: document.getElementById('resDurationRow'),
       resCombo: document.getElementById('resCombo'),
       resMsg: document.getElementById('resMsg'),
       resUnlock: document.getElementById('resUnlock'),
@@ -4672,6 +4675,11 @@
     const HIT_WINDOW_MS = 350;
     const PERFECT_MS = 90;
     const CHORD_MATE_TOLERANCE_MS = 30;
+    // Note-length tolerance: |held - written| up to max(MIN_TOL, written × FRACTION)
+    // counts. Floor protects short notes (e.g., 60ms staccato) where finger physics
+    // dominate over written length.
+    const DURATION_MIN_TOL_MS = 80;
+    const DURATION_TOL_FRACTION = 0.3;
     // Mic-only safety nets — empirically tuned for iPad acoustic-piano practice.
     // ONSET_HYSTERESIS_FRAMES = 1 effectively disables the hysteresis (single-frame
     // onsets allowed). Bumping to 2 helps reject one-frame spectral spikes but also
@@ -4697,6 +4705,11 @@
       hits: 0,
       misses: 0,
       timingScoreSum: 0,
+      // Note-length scoring: only filled in rhythm mode. In guided mode the cursor
+      // freezes on the current note so there's no audio clock to compare against.
+      durationScoreSum: 0,
+      durationScoredCount: 0,
+      pendingHolds: new Map(),
       sectionCombo: 0,
       sectionBestCombo: 0,
       // 練習する手のフィルタ。'R' = 右手のみ、'L' = 左手のみ、null = 両手。
@@ -4712,6 +4725,7 @@
     // ========================================
     const DOREMI_NAMES = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
     function midiToDoremi(midi) { return DOREMI_NAMES[notePitchClass(midi)]; }
+    function midiToDoremiOctave(midi) { return midiToDoremi(midi) + (Math.floor(midi / 12) - 1); }
 
     function showSectionBanner(sec) {
       if (!DOM.sectionBanner) return;
@@ -5534,7 +5548,7 @@
 
       if (!matched) {
         if (practice.mode === 'guided') {
-          showHitChip('miss', '弾いた音: ' + midiToDoremi(detectedMidi) + (Math.floor(detectedMidi / 12) - 1));
+          showHitChip('miss', '弾いた音: ' + midiToDoremiOctave(detectedMidi));
         }
         return false;
       }
@@ -5562,10 +5576,8 @@
       return true;
     }
 
-    // Duration scoring (rhythm mode only): compare physical hold time to the
-    // written note length. Tolerance is the larger of 30% of durMs or 80ms,
-    // giving short notes a human-reactable floor while keeping longer notes
-    // strict. score = 1 at exact, 0 at full tolerance off.
+    // Note-length scoring (rhythm mode only): compare physical hold time to the
+    // written length. score = 1 at exact, 0 at full tolerance off.
     function finalizeNoteHold(detectedMidi) {
       const matched = practice.pendingHolds.get(detectedMidi);
       if (!matched) return;
@@ -5574,7 +5586,7 @@
       if (!matched.holdStartMs || !matched.durMs) return;
       const heldMs = performance.now() - matched.holdStartMs;
       const expected = matched.durMs;
-      const tol = Math.max(80, expected * 0.3);
+      const tol = Math.max(DURATION_MIN_TOL_MS, expected * DURATION_TOL_FRACTION);
       const score = Math.max(0, 1 - Math.abs(heldMs - expected) / tol);
       practice.durationScoreSum += score;
       practice.durationScoredCount++;
@@ -6225,24 +6237,35 @@
       { title: '🌟 パーフェクト！', msg: 'すばらしい！次の難しさにチャレンジ！' }
     ];
 
-    function computeStars(accPct, timingPct) {
-      if (accPct >= 90 && timingPct >= 70) return 3;
-      if (accPct >= 75) return 2;
-      if (accPct >= 50) return 1;
-      return 0;
+    // durPct is null in guided mode (no audio clock to score length against), in
+    // which case the dur threshold is skipped.
+    const STAR_TIERS = [
+      { stars: 3, acc: 90, timing: 70, dur: 70 },
+      { stars: 2, acc: 75, timing: 0,  dur: 50 },
+      { stars: 1, acc: 50, timing: 0,  dur: 0  }
+    ];
+    function computeStars(accPct, timingPct, durPct) {
+      const tier = STAR_TIERS.find(t =>
+        accPct >= t.acc &&
+        timingPct >= t.timing &&
+        (durPct == null || durPct >= t.dur));
+      return tier ? tier.stars : 0;
     }
 
     function completePracticeSection() {
       practice.enabled = false;
       stopPracticeAudio();
       releaseWakeLock();
+      practice.pendingHolds.clear();
 
       const sec = currentSong.sections[practice.sectionIdx];
-      // 片手モード時は反対の手の音(_filtered)を除外して統計を計算
-      const total = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
+      const total = practice._sectionTargetCount || 0;
       const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
       const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
-      const stars = computeStars(accPct, timingPct);
+      const durPct = practice.durationScoredCount > 0
+        ? Math.round((practice.durationScoreSum / practice.durationScoredCount) * 100)
+        : null;
+      const stars = computeStars(accPct, timingPct, durPct);
 
       // Save to progress (per-song)
       const sp = songProg();
@@ -6300,6 +6323,12 @@
       }
       DOM.resAcc.textContent = accPct + '%';
       DOM.resTiming.textContent = timingPct + '%';
+      if (durPct == null) {
+        if (DOM.resDurationRow) DOM.resDurationRow.style.display = 'none';
+      } else {
+        if (DOM.resDurationRow) DOM.resDurationRow.style.display = '';
+        DOM.resDuration.textContent = durPct + '%';
+      }
       DOM.resCombo.textContent = practice.sectionBestCombo;
       DOM.resMsg.textContent = tier.msg;
       DOM.resUnlock.textContent = unlockedMsg.trim();
@@ -6645,6 +6674,7 @@
       // Clear any keys still held when bailing out of practice mode.
       midiState.activeNotes.clear();
       midiState.sustainedNotes.clear();
+      practice.pendingHolds.clear();
       DOM.practiceHud.classList.remove('visible');
       DOM.osmdContainer.classList.remove('visible');
       DOM.songPanel.classList.add('visible');
