@@ -162,6 +162,195 @@
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
     }
 
+    /* Settings panel — consolidates theme, synesthesia, audio calibration,
+       MIDI controls, and debug toggle. Opened via the ⚙ button in the top-right. */
+    #settingsBtn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: rgba(255, 255, 255, .12);
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 32px;
+      text-align: center;
+      transition: background .3s, transform .3s;
+      -webkit-tap-highlight-color: transparent;
+      padding: 0;
+      color: #fff;
+    }
+
+    #settingsBtn:hover,
+    #settingsBtn:active {
+      background: rgba(255, 255, 255, .25);
+      transform: rotate(90deg);
+    }
+
+    #settingsPanel {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(8, 8, 16, .78);
+      backdrop-filter: blur(4px);
+    }
+
+    #settingsPanel.visible {
+      display: flex;
+    }
+
+    .settings-card {
+      background: rgba(20, 20, 36, .96);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 22px;
+      padding: 22px 24px;
+      width: 92vw;
+      max-width: 480px;
+      max-height: 88vh;
+      overflow-y: auto;
+      color: #e8e0ff;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+    }
+
+    .settings-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .settings-title {
+      font-size: 1.15rem;
+      font-weight: 500;
+      letter-spacing: .08em;
+    }
+
+    .settings-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: rgba(255, 255, 255, .08);
+      color: #e8e0ff;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .settings-section {
+      margin-bottom: 18px;
+    }
+
+    .settings-section-label {
+      font-size: .78rem;
+      color: rgba(255, 255, 255, .55);
+      margin-bottom: 8px;
+      letter-spacing: .06em;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      flex-wrap: wrap;
+    }
+
+    .settings-theme-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .settings-theme-row .theme-dot {
+      margin: 0;
+    }
+
+    .settings-slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .settings-slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: .85rem;
+    }
+
+    .settings-slider-label .val {
+      font-variant-numeric: tabular-nums;
+      color: rgba(180, 220, 255, .9);
+    }
+
+    .settings-slider {
+      width: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      background: rgba(255, 255, 255, .12);
+      border-radius: 3px;
+      outline: none;
+    }
+
+    .settings-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #b0e0ff;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+    }
+
+    .settings-slider::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #b0e0ff;
+      cursor: pointer;
+      border: none;
+    }
+
+    .settings-help {
+      font-size: .72rem;
+      color: rgba(255, 255, 255, .45);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .settings-btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .08);
+      border: 1px solid rgba(255, 255, 255, .14);
+      color: #e8e0ff;
+      cursor: pointer;
+      font-size: .85rem;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .settings-btn:active {
+      transform: scale(.97);
+      background: rgba(255, 255, 255, .16);
+    }
+
+    .settings-btn.danger {
+      border-color: rgba(255, 130, 150, .35);
+      color: rgba(255, 200, 210, .95);
+    }
+
+    .settings-input-status {
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, .05);
+      border-radius: 10px;
+      font-size: .85rem;
+      color: rgba(200, 220, 255, .9);
+      flex: 1;
+    }
+
     #questDisplay {
       position: fixed;
       top: 55px;
@@ -338,7 +527,11 @@
       -webkit-tap-highlight-color: transparent
     }
 
-    #midiRescanBtn.visible { display: inline-block }
+    /* Legacy floating rescan button is now consolidated into the ⚙ settings
+       panel. Existing code paths still toggle `.visible` to indicate "rescan
+       recommended" — we keep the element to avoid touching every callsite,
+       but suppress the visual entirely. The settings panel surfaces the action. */
+    #midiRescanBtn.visible { display: none }
 
     #midiRescanBtn:active {
       background: rgba(80, 100, 200, .45);
@@ -850,7 +1043,9 @@
       display: none
     }
 
-    #bleMidiBtn.visible { display: inline-block }
+    /* Legacy BLE button moved to ⚙ settings panel. Suppress the start-screen
+       version; settingsBleBtn handles the user-facing path now. */
+    #bleMidiBtn.visible { display: none }
 
     #bleMidiBtn:active {
       background: rgba(60, 110, 200, .35);
@@ -1472,6 +1667,7 @@
       <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 エリーゼのために</button>
       <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 トルコ行進曲</button>
     </div>
+    <!-- Bluetooth MIDI 接続は ⚙ 設定パネルから。要素は legacy code との互換のため残す。 -->
     <button id="bleMidiBtn" title="Bluetooth MIDIキーボードと接続">🔵 Bluetoothキーボードと接続</button>
   </div>
   <canvas id="canvas"></canvas>
@@ -1483,13 +1679,75 @@
     <div id="stageLabel"></div>
   </div>
   <div id="themeBar">
-    <div class="theme-dot active" data-theme="0"></div>
-    <div class="theme-dot" data-theme="1"></div>
-    <div class="theme-dot" data-theme="2"></div>
-    <div class="theme-dot" data-theme="3"></div>
-    <div id="synesthesiaToggle" title="音階色モード">🎨</div>
-    <button id="resetBtn" title="セッションリセット">🔄</button>
+    <button id="settingsBtn" title="設定">⚙</button>
     <button id="homeBtn" title="タイトルにもどる">🏠</button>
+  </div>
+
+  <div id="settingsPanel">
+    <div class="settings-card">
+      <div class="settings-header">
+        <div class="settings-title">⚙ 設定</div>
+        <button class="settings-close" id="settingsCloseBtn" title="閉じる">✕</button>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🎨 表示</div>
+        <div class="settings-row">
+          <div class="settings-theme-row">
+            <div class="theme-dot active" data-theme="0" title="紫×ピンク"></div>
+            <div class="theme-dot" data-theme="1" title="シアン×グリーン"></div>
+            <div class="theme-dot" data-theme="2" title="オレンジ×レッド"></div>
+            <div class="theme-dot" data-theme="3" title="白×ラベンダー"></div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div id="synesthesiaToggle" title="音階色モード">🎨</div>
+          <span style="font-size:.85rem">音階色モード（音ごとに色が変わる）</span>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🎚 タイミング補正</div>
+        <div class="settings-slider-row">
+          <div class="settings-slider-label">
+            <span>音と画面のずれ補正</span>
+            <span class="val"><span id="audioOffsetVal">40</span> ms</span>
+          </div>
+          <input type="range" id="audioOffsetSlider" class="settings-slider"
+                 min="-50" max="200" step="5" value="40">
+          <div class="settings-help">
+            子供が拍に合わせて弾いてるのに「遅い」判定になる時は数値を上げる。
+            「早い」判定になる時は下げる。<br>
+            <span id="audioOffsetAuto" style="color:rgba(180,220,255,.8)"></span>
+          </div>
+          <div style="margin-top:6px">
+            <button class="settings-btn" id="audioOffsetReset">自動検出に戻す</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🎹 入力</div>
+        <div class="settings-row">
+          <div class="settings-input-status" id="settingsInputStatus">マイク入力中</div>
+        </div>
+        <div class="settings-row">
+          <button class="settings-btn" id="settingsRescanBtn">🔄 MIDIキーボードを探す</button>
+          <button class="settings-btn" id="settingsBleBtn" style="display:none">🔵 Bluetooth接続</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🛠 その他</div>
+        <div class="settings-row">
+          <button class="settings-btn" id="settingsResetBtn">🔄 セッションをリセット</button>
+        </div>
+        <div class="settings-row">
+          <div id="settingsDebugToggle" class="opt-toggle"></div>
+          <span style="font-size:.85rem">🐞 デバッグ表示</span>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="playTime"></div>
   <div id="sessionSummary">
@@ -1528,6 +1786,7 @@
   <div id="qualityScore"></div>
   <div id="debugOverlay"></div>
   <div id="introHint">🎹 ピアノを弾いてみよう</div>
+  <!-- MIDI再スキャンは ⚙ 設定パネル内へ移動。要素は legacy code との互換のため残す。 -->
   <button id="midiRescanBtn">🔄 MIDIキーボードを探す</button>
   <div id="micMeter"><div id="micMeterFill"></div></div>
   <div id="midiBadge"></div>
@@ -1966,7 +2225,20 @@
       micMeterFill: document.getElementById('micMeterFill'),
       bleMidiBtn: document.getElementById('bleMidiBtn'),
       midiBadge: document.getElementById('midiBadge'),
-      midiRescanBtn: document.getElementById('midiRescanBtn')
+      midiRescanBtn: document.getElementById('midiRescanBtn'),
+      // Settings panel
+      settingsBtn: document.getElementById('settingsBtn'),
+      settingsPanel: document.getElementById('settingsPanel'),
+      settingsCloseBtn: document.getElementById('settingsCloseBtn'),
+      audioOffsetSlider: document.getElementById('audioOffsetSlider'),
+      audioOffsetVal: document.getElementById('audioOffsetVal'),
+      audioOffsetAuto: document.getElementById('audioOffsetAuto'),
+      audioOffsetReset: document.getElementById('audioOffsetReset'),
+      settingsRescanBtn: document.getElementById('settingsRescanBtn'),
+      settingsBleBtn: document.getElementById('settingsBleBtn'),
+      settingsResetBtn: document.getElementById('settingsResetBtn'),
+      settingsInputStatus: document.getElementById('settingsInputStatus'),
+      settingsDebugToggle: document.getElementById('settingsDebugToggle')
     };
     const ctx = DOM.canvas.getContext('2d');
 
@@ -2266,18 +2538,51 @@
     // ========================================
     // Theme switching
     // ========================================
+    // ========================================
+    // User preferences — persisted across sessions
+    // ========================================
+    const prefs = {
+      theme: 0,
+      synesthesia: false,
+      audioOffsetMs: null,   // null = auto-detect from AudioContext.outputLatency
+      debug: false
+    };
+    function loadPrefs() {
+      try {
+        const raw = localStorage.getItem('pianoViz_prefs');
+        if (raw) Object.assign(prefs, JSON.parse(raw));
+      } catch (e) {}
+    }
+    function savePrefs() {
+      try { localStorage.setItem('pianoViz_prefs', JSON.stringify(prefs)); } catch (e) {}
+    }
+    loadPrefs();
+
+    function applyTheme(idx) {
+      prefs.theme = idx;
+      state.currentTheme = idx;
+      document.querySelectorAll('.theme-dot').forEach(d => {
+        d.classList.toggle('active', parseInt(d.dataset.theme) === idx);
+      });
+    }
+    applyTheme(prefs.theme);
     document.querySelectorAll('.theme-dot').forEach(d => {
       d.addEventListener('click', () => {
-        document.querySelector('.theme-dot.active')?.classList.remove('active');
-        d.classList.add('active');
-        state.currentTheme = parseInt(d.dataset.theme);
+        applyTheme(parseInt(d.dataset.theme));
+        savePrefs();
       });
     });
 
     const synToggle = document.getElementById('synesthesiaToggle');
+    function applySynesthesia(on) {
+      prefs.synesthesia = on;
+      state.useSynesthesiaMode = on;
+      synToggle.classList.toggle('active', on);
+    }
+    applySynesthesia(prefs.synesthesia);
     synToggle.addEventListener('click', () => {
-      state.useSynesthesiaMode = !state.useSynesthesiaMode;
-      synToggle.classList.toggle('active', state.useSynesthesiaMode);
+      applySynesthesia(!state.useSynesthesiaMode);
+      savePrefs();
     });
 
     // ========================================
@@ -3924,8 +4229,8 @@
       }
       particles.length = alive;
 
-      // MIDI chord banner — free-play only (would be visual noise during practice).
-      if (midiInput.enabled && !practice.enabled) {
+      // 和音名表示 — 関数側でモード別レイアウト分岐(中央デカ vs 鍵盤上の小)。
+      if (midiInput.enabled) {
         drawMidiChordDisplay(timeMs);
       }
 
@@ -5349,12 +5654,13 @@
       const recents = midiState.recentOnsets;
       while (recents.length && now - recents[0].timeMs >= 80) recents.shift();
       recents.push({ midi: midiNum, timeMs: now });
-      if (!practice.enabled && recents.length >= 3) {
+      if (recents.length >= 3) {
         const chord = detectChord(recents.map(o => o.midi));
         if (chord && (chord !== midiState.lastChordName || now - midiState.lastChordTimeMs > 600)) {
           midiState.lastChordName = chord;
           midiState.lastChordTimeMs = now;
-          effectGlowPulse();
+          // フリーのみグロー演出も同時、練習モードでは名前表示だけで静かに
+          if (!practice.enabled) effectGlowPulse();
         }
       }
     }
@@ -5488,15 +5794,30 @@
       ctx.restore();
     }
 
-    // Transient chord-name banner above the keyboard.
+    // 和音名の表示。フリープレイは中央に大きく祝うように、練習モードは鍵盤
+    // のすぐ上に小さく静かに(レーンや譜面と競合しないよう抑えめに)。
     function drawMidiChordDisplay(timeMs) {
       if (!midiState.lastChordName) return;
       const age = timeMs - midiState.lastChordTimeMs;
       if (age > 1800) return;
       const t = age / 1800;
       const alpha = (t < 0.12) ? (t / 0.12) : Math.max(0, 1 - (t - 0.12) / 0.88);
-      const scale = 0.9 + 0.18 * Math.sin(Math.min(t, 1) * Math.PI);
       ctx.save();
+      if (practice.enabled) {
+        // 控えめ版: 鍵盤のすぐ上、小さく、フェードのみ
+        const yPos = H - kbHeight - kbSafeBottom - 22;
+        ctx.translate(W / 2, yPos);
+        ctx.fillStyle = 'rgba(255, 220, 140, ' + (alpha * 0.75).toFixed(3) + ')';
+        ctx.font = '500 ' + Math.round(Math.min(28, W * 0.022)) + 'px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(255, 200, 80, 0.5)';
+        ctx.shadowBlur = 10;
+        ctx.fillText(midiState.lastChordName, 0, 0);
+        ctx.restore();
+        return;
+      }
+      const scale = 0.9 + 0.18 * Math.sin(Math.min(t, 1) * Math.PI);
       ctx.translate(W / 2, H * 0.42);
       ctx.scale(scale, scale);
       ctx.fillStyle = 'rgba(255, 230, 150, ' + alpha + ')';
