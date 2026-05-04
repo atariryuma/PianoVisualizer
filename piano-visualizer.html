@@ -2059,7 +2059,18 @@
         console.log('[AUDIO] MIDI detected — skipping microphone acquisition');
         state.micSuspended = true;
       } else {
-        await acquireMic();
+        // Mic acquisition is best-effort: WKWebView wrappers (Web MIDI Browser etc.)
+        // may have broken getUserMedia plumbing where the iOS permission dialog
+        // never re-asks but always denies. We don't want that to dead-end the app —
+        // running in MIDI-only mode is still useful, and the keyboard can be paired
+        // afterwards via the existing Web MIDI / BLE paths.
+        try {
+          await acquireMic();
+        } catch (e) {
+          state.micSuspended = true;
+          state.micPermissionFailed = true;
+          console.warn('[AUDIO] mic unavailable — running in MIDI-only mode:', e && e.message);
+        }
       }
     }
 
@@ -4739,6 +4750,8 @@
         if (e.data && e.data.length >= 2) dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
       };
       setInputIndicator();
+      if (typeof refreshIntroHint === 'function') refreshIntroHint();
+      DOM.micMeter?.classList.remove('visible');
       console.log('[MIDI] connected: ' + port.name);
       return true;
     }
@@ -4881,6 +4894,8 @@
         midiInput.lastEventTime = performance.now();
         if (audioCtx && !state.micSuspended) suspendMic();
         setInputIndicator();
+        if (typeof refreshIntroHint === 'function') refreshIntroHint();
+        DOM.micMeter?.classList.remove('visible');
         console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
 
         device.addEventListener('gattserverdisconnected', () => {
@@ -6234,14 +6249,25 @@
     // be visible. Without this helper, paths like (returnToTitle → song panel →
     // back) leave the user on a bare canvas with no controls. Call this anywhere
     // we transition from title or a panel back into an in-session view.
+    function refreshIntroHint() {
+      if (!DOM.introHint) return;
+      let txt = '🎹 ピアノを弾いてみよう';
+      if (state.micPermissionFailed && !midiInput.enabled) {
+        txt = '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）';
+      }
+      DOM.introHint.innerHTML = txt;
+    }
+
     function showRunningUI() {
       DOM.startScreen.style.display = 'none';
       DOM.themeBar.classList.add('visible');
       DOM.hud.style.display = 'block';
-      // Free play: 起動時に「弾いてみよう」を見せて動作中であることを伝える。
-      // 練習モードはレーンが見えるので別途呼ばれる時に隠す。
-      if (!practice.enabled) DOM.introHint.classList.add('visible');
-      if (!midiInput.enabled) DOM.micMeter.classList.add('visible');
+      if (!practice.enabled) {
+        refreshIntroHint();
+        DOM.introHint.classList.add('visible');
+      }
+      if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
+      else DOM.micMeter.classList.remove('visible');
     }
 
     function hideIntroHint() {
@@ -6277,7 +6303,7 @@
         }
         await startPracticeSection(practice.sectionIdx);
       } catch (e) {
-        alert('マイクへのアクセスを許可してください\n\niPadの場合：設定 > Safari > マイク で確認できます');
+        alert('オーディオ初期化に失敗しました: ' + (e && e.message || e) + '\n\nブラウザを更新してリトライしてみてください。');
       } finally {
         state.starting = false;
       }
@@ -6390,7 +6416,7 @@
         state.sessionStartTimeMs = performance.now();
         requestAnimationFrame(loop);
       } catch (e) {
-        alert('マイクへのアクセスを許可してください\n\niPadの場合：設定 > Safari > マイク で確認できます');
+        alert('オーディオ初期化に失敗しました: ' + (e && e.message || e) + '\n\nブラウザを更新してリトライしてみてください。');
       } finally {
         if (!state.running) {
           DOM.startBtn.disabled = false;
