@@ -2493,11 +2493,13 @@
         state.micSuspended = true;
       } else if (isAppleMobile() && navigator.requestMIDIAccess) {
         // Web MIDI Browser (or any iOS WKWebView wrapper that polyfills Web MIDI):
-        // mic permission is consistently broken on iOS WKWebView wrappers — the
-        // dialog says "go to settings" but settings have no entry to grant.
-        // Skip mic entirely; this app is meant to be used with MIDI here anyway.
+        // mic permission is consistently broken on iOS WKWebView wrappers, so we
+        // skip it on purpose. Note we set `micIntentionallySkipped` (not
+        // `micPermissionFailed`) so downstream code doesn't pop a "MIDI required"
+        // diagnostic on every screen entry — the kid is fine to wait for a
+        // keyboard or just listen passively.
         state.micSuspended = true;
-        state.micPermissionFailed = true;
+        state.micIntentionallySkipped = true;
         console.log('[AUDIO] iOS WKWebView with Web MIDI polyfill — running MIDI-only (mic skipped)');
       } else {
         // Mic acquisition is best-effort with a timeout. WKWebView wrappers can
@@ -5738,6 +5740,12 @@
       if (audioCtx && state.micSuspended) {
         resumeMic();
       }
+      // Restart silent polling so a hot-replug picks up automatically. This
+      // handles "browser sees keyboard but app dropped it" — the user doesn't
+      // need to know what happened, the next 2.5 s tick reconnects.
+      if (!state.midiHintDismissed && (state.micPermissionFailed || state.micIntentionallySkipped)) {
+        startMidiAutoRescan();
+      }
     }
 
     async function initWebMIDI() {
@@ -5779,7 +5787,11 @@
     // and may also fail outside the original user gesture.
     let _midiAccess = null;
 
-    async function ensureMidiAccess() {
+    // Force=true drops the cache and re-requests. Used by the explicit user
+    // rescan path so a stale MIDIAccess (Web MIDI Browser / sleeping iPad) can
+    // recover without requiring an app restart.
+    async function ensureMidiAccess(force) {
+      if (force) _midiAccess = null;
       if (_midiAccess) return _midiAccess;
       // Try sysex:true first (Web MIDI Browser exposes BLE-MIDI only with
       // sysex granted). Fall back to sysex:false on rejection. Surface both
@@ -5828,6 +5840,9 @@
         if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagWebMidiUnsupported')));
         return false;
       }
+      // A user-initiated rescan (silent=false) drops the cached MIDIAccess so
+      // a stale enumeration (e.g. WMB or post-sleep) can be refreshed.
+      if (!silent) _midiAccess = null;
       try {
         const access = await ensureMidiAccess();
         const ports = gatherMidiInputs(access);
@@ -7530,22 +7545,24 @@
     // be visible. Without this helper, paths like (returnToTitle → song panel →
     // back) leave the user on a bare canvas with no controls. Call this anywhere
     // we transition from title or a panel back into an in-session view.
+    // True when we have no input alive AND don't expect to recover one without
+    // user help. iOS-WMB intentionally skips the mic but is still happy to wait
+    // for a MIDI keyboard — that is NOT the "no input" state we want to nag about.
+    function noInputAvailable() {
+      return state.micPermissionFailed && !midiInput.enabled;
+    }
+
     function refreshIntroHint() {
       if (!DOM.introHint) return;
-      // ユーザがあとでボタンで消したならイントロもサブUIも一切出さない
-      if (state.midiHintDismissed && state.micPermissionFailed && !midiInput.enabled) {
+      // If the user dismissed the hint, hide everything — they know.
+      if (state.midiHintDismissed && noInputAvailable()) {
         DOM.introHint.classList.remove('visible');
         DOM.midiRescanBtn?.classList.remove('visible');
         DOM.midiHintDismiss?.classList.remove('visible');
         return;
       }
-      let txt = t('introTryPlay');
-      if (state.micPermissionFailed && !midiInput.enabled) {
-        txt = t('introNeedMidi');
-      }
-      DOM.introHint.innerHTML = txt;
-      const needRescan = state.micPermissionFailed && !midiInput.enabled
-        && DOM.introHint.classList.contains('visible');
+      DOM.introHint.innerHTML = noInputAvailable() ? t('introNeedMidi') : t('introTryPlay');
+      const needRescan = noInputAvailable() && DOM.introHint.classList.contains('visible');
       DOM.midiRescanBtn?.classList.toggle('visible', needRescan);
       DOM.midiHintDismiss?.classList.toggle('visible', needRescan);
     }
@@ -7561,11 +7578,15 @@
       }
       if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
       else DOM.micMeter.classList.remove('visible');
-      // Mic unavailable + no MIDI → run diagnostic immediately and auto-rescan in the background.
-      // Skip entirely if user dismissed the hint earlier in this session.
-      if (state.micPermissionFailed && !midiInput.enabled && !state.midiHintDismissed) {
+      // Background-rescan only for actual mic failures — iOS-WMB sessions
+      // (`micIntentionallySkipped`) start the silent poller too so a later MIDI
+      // hot-plug picks up. NEVER fire a non-silent rescan here: it surfaces a
+      // "🎹 No MIDI port found" diagnostic the kid did not ask for.
+      const wantBgRescan = !midiInput.enabled
+        && (state.micPermissionFailed || state.micIntentionallySkipped);
+      if (wantBgRescan && !state.midiHintDismissed) {
         startMidiAutoRescan();
-        rescanMidi(false).catch(() => {});
+        rescanMidi(true).catch(() => {});   // SILENT — no diagnostic on entry
       }
     }
 
