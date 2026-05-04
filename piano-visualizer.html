@@ -4711,8 +4711,11 @@
 
     // Browsers drop the lock when the tab is hidden; re-acquire when visible again.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && practice.enabled) {
-        requestWakeLock();
+      if (document.visibilityState !== 'visible') return;
+      if (practice.enabled) requestWakeLock();
+      // ユーザがWMBのMIDIペアリング画面から戻ってきた直後の即時リスキャン
+      if (state.running && !midiInput.enabled && navigator.requestMIDIAccess) {
+        rescanMidi(true).catch(() => {});
       }
     });
 
@@ -4850,6 +4853,7 @@
       setInputIndicator();
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
       DOM.micMeter?.classList.remove('visible');
+      stopMidiAutoRescan();
       showHitChip('good', '🎹 接続: ' + (port.name || 'MIDI'));
       console.log('[MIDI] connected: ' + port.name + (force ? ' (forced)' : ''));
       return true;
@@ -4906,13 +4910,13 @@
       }
     }
 
-    // 手動 MIDI 再検索 — Web MIDI Browser のポリフィルが onstatechange を発火
-    // しない場合や、virtual filter が通常認識を弾いてる場合の救済。
-    // 二段階: (1) 通常フィルタで接続 (2) ダメなら virtual filter を無視して強制接続。
-    async function rescanMidi() {
+    // MIDI 再検索 — 二段階で接続を試みる:
+    // (1) 通常フィルタで接続 (2) ダメなら virtual filter を無視して強制接続。
+    // silent=true なら失敗時にUIを更新しない(自動リトライ用)。
+    async function rescanMidi(silent) {
       if (!navigator.requestMIDIAccess) {
-        showHitChip('miss', 'Web MIDI 非対応');
-        return;
+        if (!silent) setIntroHintDiagnostic('🎹 Web MIDI 非対応のブラウザです');
+        return false;
       }
       try {
         const access = await navigator.requestMIDIAccess({ sysex: false });
@@ -4921,25 +4925,55 @@
         console.log('[MIDI] rescan ports: [' + portInfo + ']');
 
         if (ports.length === 0) {
-          showHitChip('miss', 'ポート0個 — WMB側でペアリングを');
-          return;
-        }
-        // (1) 通常: 接続済み・非virtual を試す
-        for (const port of ports) {
-          if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) {
-            return;
+          if (!silent) {
+            setIntroHintDiagnostic('🎹 MIDIポートが見つかりません',
+              'Web MIDI Browserのメニューでキーボードをペアリングしてから「🔄 MIDIキーボードを探す」をもう一度');
           }
+          return false;
         }
-        // (2) フォールバック: state関係なく force-attach（user explicit re-scan = 意思明確）
         for (const port of ports) {
-          if (midiInput.enabled) return;
-          if (attachMidiPort(port, true)) return;
+          if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
         }
-        showHitChip('miss', 'ポート: ' + portInfo);
+        for (const port of ports) {
+          if (midiInput.enabled) return true;
+          if (attachMidiPort(port, true)) return true;
+        }
+        if (!silent) {
+          setIntroHintDiagnostic('🎹 認識中: ' + portInfo,
+            '接続できませんでした。WMBで再ペアリングしてください');
+        }
+        return false;
       } catch (e) {
         console.warn('[MIDI] rescan failed:', e.message);
-        showHitChip('miss', 'エラー: ' + e.message);
+        if (!silent) setIntroHintDiagnostic('🎹 MIDIエラー', e.message);
+        return false;
       }
+    }
+
+    // introHint に診断情報を表示（永続）。MIDI接続するか refreshIntroHint で復帰。
+    function setIntroHintDiagnostic(line1, line2) {
+      if (!DOM.introHint) return;
+      const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
+      DOM.introHint.innerHTML = line1 + sub;
+      DOM.introHint.classList.add('visible');
+      DOM.midiRescanBtn?.classList.add('visible');
+    }
+
+    // MIDI が必要なのに未接続な状態で、ユーザがバックグラウンドで WMB の
+    // ペアリングUIを操作してから戻った時に自動的に検出するためのポーリング。
+    let _midiRescanInterval = 0;
+    function startMidiAutoRescan() {
+      if (_midiRescanInterval) return;
+      _midiRescanInterval = setInterval(() => {
+        if (midiInput.enabled || !navigator.requestMIDIAccess) {
+          stopMidiAutoRescan();
+          return;
+        }
+        rescanMidi(true).then((ok) => { if (ok) stopMidiAutoRescan(); });
+      }, 2500);
+    }
+    function stopMidiAutoRescan() {
+      if (_midiRescanInterval) { clearInterval(_midiRescanInterval); _midiRescanInterval = 0; }
     }
 
     // ========================================
@@ -6418,6 +6452,8 @@
       }
       if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
       else DOM.micMeter.classList.remove('visible');
+      // マイク不可 + MIDI未接続 → 裏で自動リスキャン開始
+      if (state.micPermissionFailed && !midiInput.enabled) startMidiAutoRescan();
     }
 
     function hideIntroHint() {
@@ -6612,6 +6648,7 @@
       DOM.hud.style.display = 'none';
       hideIntroHint();
       DOM.micMeter.classList.remove('visible');
+      stopMidiAutoRescan();
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
       refreshBleMidiButton();
