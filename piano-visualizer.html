@@ -1817,9 +1817,11 @@
         <button class="hand-btn" data-hand="R" data-i18n="rightOnly">Right only 👉</button>
       </div>
 
-      <div class="opt-row">
-        <div class="opt-toggle on" id="guidedModeToggle"></div>
-        <div data-i18n="guidedMode">✨ Guided mode (play at your own pace)</div>
+      <div class="song-section-label" data-i18n="modeLabel">Mode</div>
+      <div class="hand-row" id="modeRow">
+        <button class="hand-btn" data-mode="listen" data-i18n="modeListen">🎧 Listen</button>
+        <button class="hand-btn active" data-mode="guided" data-i18n="modeGuided">✨ Guided</button>
+        <button class="hand-btn" data-mode="rhythm" data-i18n="modeRhythm">🎵 Rhythm</button>
       </div>
       <div class="opt-row" id="ghostRow">
         <div class="opt-toggle" id="ghostToggle"></div>
@@ -2194,7 +2196,6 @@
       ghostRow: document.getElementById('ghostRow'),
       metronomeToggle: document.getElementById('metronomeToggle'),
       metronomeRow: document.getElementById('metronomeRow'),
-      guidedModeToggle: document.getElementById('guidedModeToggle'),
       songBack: document.getElementById('songBack'),
       songStart: document.getElementById('songStart'),
       practiceHud: document.getElementById('practiceHud'),
@@ -2601,12 +2602,18 @@
       leftOnly:           { en: '👈 Left only',              jp: '👈 左手だけ' },
       bothHands:          { en: '🤝 Both',                    jp: '🤝 両手' },
       rightOnly:          { en: 'Right only 👉',             jp: '右手だけ 👉' },
-      guidedMode:         { en: '✨ Guided mode (play at your own pace)',
-                            jp: '✨ ガイドモード（じぶんのペースで弾ける）' },
+      modeLabel:          { en: 'Mode',                      jp: 'モード' },
+      modeListen:         { en: '🎧 Listen',                 jp: '🎧 きく' },
+      modeGuided:         { en: '✨ Guided',                  jp: '✨ ガイド' },
+      modeRhythm:         { en: '🎵 Rhythm',                 jp: '🎵 リズム' },
       ghostPlayback:      { en: '👻 Ghost playback (demo)',  jp: '👻 おてほん再生（ゴースト）' },
       metronome:          { en: '🥁 Metronome',              jp: '🥁 メトロノーム' },
       back:               { en: 'Back',                      jp: 'もどる' },
       startPractice:      { en: '▶ Start practice',          jp: '▶ れんしゅうスタート' },
+      startListening:     { en: '🎧 Start listening',         jp: '🎧 きいてみる' },
+      // Listen-mode result
+      listenedTitle:      { en: '🎧 Nicely listened!',        jp: '🎧 さいごまで聴けたね！' },
+      listenedMsg:        { en: 'Now try playing along.',     jp: 'つぎは弾いてみよう。' },
       // Practice HUD
       score:              { en: 'Score',                     jp: '楽譜' },
       quit:               { en: 'Quit',                      jp: 'やめる' },
@@ -6125,6 +6132,10 @@
     // ========================================
     function matchNoteOnset(detectedMidi, isExact) {
       if (!practice.enabled) return false;
+      // Listen mode: the song plays itself, the kid is just watching/listening.
+      // Don't judge, score, or chip on input — let any incidental key-presses
+      // create free-play visuals (handled outside this function) but ignore here.
+      if (practice.mode === 'listen') return false;
       const elapsed = practiceElapsedMs();
       const notes = practice.sectionNotes;
       // Eagerly skip past any already-resolved notes. The per-frame skip-past
@@ -6501,8 +6512,10 @@
           practice.startAudioTime = Tone.now();
           scheduleCountInBeeps(practice.startAudioTime);
         } else {
-          // Rhythm mode — full timeline scheduling
-          if (practice.ghostOn && tonePiano) {
+          // Rhythm / Listen — full timeline scheduling. Listen forces ghost on
+          // so the kid hears the song; rhythm respects the user's ghost toggle.
+          const ghostActive = practice.mode === 'listen' || practice.ghostOn;
+          if (ghostActive && tonePiano) {
             for (const n of practice.sectionNotes) {
               const dur = Math.max(0.1, n.durMs / 1000 * 0.85);
               Tone.Transport.schedule((time) => {
@@ -6599,8 +6612,8 @@
       const len = notes.length;
 
       // 1. Mark missed notes (hit window expired) — RHYTHM MODE ONLY.
-      //    In guided mode we never time-out; the kid moves the score forward.
-      if (practice.mode !== 'guided') {
+      //    Guided waits for the kid; Listen plays itself, so neither auto-misses.
+      if (practice.mode === 'rhythm') {
         for (let i = practice.currentNoteIdx; i < len; i++) {
           const n = notes[i];
           if (n.hit || n.missed) continue;
@@ -6611,6 +6624,17 @@
             showHitChip('miss', t('missChip'));
           }
           if (n.timeMs - elapsed > HIT_WINDOW_MS) break;
+        }
+      } else if (practice.mode === 'listen') {
+        // Listen mode auto-advances the cursor as the song plays so the lane
+        // and OSMD stay in sync with the audio. We mark notes as `hit` (not
+        // missed) so the per-frame skip-past loop walks the cursor forward
+        // without the rhythm-mode penalty path.
+        for (let i = practice.currentNoteIdx; i < len; i++) {
+          const n = notes[i];
+          if (n.hit || n.missed) continue;
+          if (elapsed >= n.timeMs) n.hit = true;
+          else break;
         }
       }
 
@@ -6938,6 +6962,26 @@
       practice.pendingHolds.clear();
 
       const sec = currentSong.sections[practice.sectionIdx];
+
+      // Listen mode: no scoring, no progress mutation, no unlocks. Hide all
+      // score rows/stars and show a simple "Listened!" prompt to move on to
+      // actually playing.
+      if (practice.mode === 'listen') {
+        DOM.resTitle.textContent = t('listenedTitle');
+        DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+        DOM.resStars.style.display = 'none';
+        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = 'none'; });
+        DOM.resMsg.textContent = t('listenedMsg');
+        DOM.resUnlock.textContent = '';
+        if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
+        DOM.resNext.style.display = 'none';
+        DOM.sectionResult.classList.add('visible');
+        practice._completing = false;
+        return;
+      }
+      // Restore stat visibility for rhythm/guided result.
+      DOM.resStars.style.display = '';
+      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
       const total = practice._sectionTargetCount || 0;
       const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
       const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
@@ -7190,28 +7234,44 @@
         if (i === practice.sectionIdx && unlocked) row.style.outline = '2px solid rgba(255,200,230,.6)';
       });
 
-      // Mode toggle: visible. Default 'guided' is friendly for kids; switching it OFF
-      // reveals the rhythm-mode-only options (ghost playback, metronome).
-      DOM.guidedModeToggle.classList.toggle('on', practice.mode === 'guided');
+      // Highlight current mode in the 3-way picker (Listen / Guided / Rhythm).
+      // Ghost / metronome only make sense in rhythm mode — Listen plays the song
+      // through automatically and Guided waits for input note-by-note.
+      document.querySelectorAll('#modeRow .hand-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-mode') === practice.mode);
+      });
+      // Hand picker — also re-paints active state since renderSongPanel rebuilds.
+      document.querySelectorAll('#handRow .hand-btn').forEach(b => {
+        const h = b.getAttribute('data-hand');
+        const active = (h === 'L' || h === 'R') ? practice.handFilter === h : !practice.handFilter;
+        b.classList.toggle('active', active);
+      });
       DOM.ghostToggle.classList.toggle('on', practice.ghostOn);
       DOM.metronomeToggle.classList.toggle('on', practice.metronomeOn);
-      const showRhythmOpts = practice.mode !== 'guided';
+      const showRhythmOpts = practice.mode === 'rhythm';
       if (DOM.ghostRow) DOM.ghostRow.style.display = showRhythmOpts ? '' : 'none';
       if (DOM.metronomeRow) DOM.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
+      // Start button copy: Listen mode reads as "Start listening" instead of "Start practice".
+      const startBtn = DOM.songStart;
+      if (startBtn) startBtn.textContent = t(practice.mode === 'listen' ? 'startListening' : 'startPractice');
     }
 
-    document.querySelectorAll('.hand-btn').forEach((btn) => {
+    document.querySelectorAll('#handRow .hand-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const h = btn.getAttribute('data-hand');
         practice.handFilter = (h === 'L' || h === 'R') ? h : null;
-        document.querySelectorAll('.hand-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('#handRow .hand-btn').forEach((b) => b.classList.toggle('active', b === btn));
       });
     });
 
-    DOM.guidedModeToggle?.addEventListener('click', () => {
-      practice.mode = practice.mode === 'guided' ? 'rhythm' : 'guided';
-      renderSongPanel();
+    document.querySelectorAll('#modeRow .hand-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const m = btn.getAttribute('data-mode');
+        if (m === 'listen' || m === 'guided' || m === 'rhythm') practice.mode = m;
+        renderSongPanel();
+      });
     });
+
     DOM.ghostToggle?.addEventListener('click', () => { practice.ghostOn = !practice.ghostOn; renderSongPanel(); });
     DOM.metronomeToggle?.addEventListener('click', () => { practice.metronomeOn = !practice.metronomeOn; renderSongPanel(); });
 
