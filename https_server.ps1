@@ -85,9 +85,15 @@ while ($true) {
             continue
         }
 
+        # v10: Parse headers
+        $headers = @{}
         while ($true) {
             $line = $reader.ReadLine()
             if ([string]::IsNullOrEmpty($line)) { break }
+            $parts = $line -split ":", 2
+            if ($parts.Length -ge 2) {
+                $headers[$parts[0].Trim()] = $parts[1].Trim()
+            }
         }
 
         $parts = $requestLine -split " "
@@ -97,13 +103,33 @@ while ($true) {
         }
 
         $method = $parts[0].ToUpperInvariant()
+        $rawTarget = $parts[1]
+        $requestPath = ($rawTarget -split "\?")[0]
+
+        # v10: Handle POST /log
+        if ($method -eq "POST" -and $requestPath -eq "/log") {
+            $length = 0
+            if ($headers.ContainsKey("Content-Length")) {
+                $length = [int]$headers["Content-Length"]
+            }
+            if ($length -gt 0) {
+                $buffer = New-Object char[] $length
+                $reader.Read($buffer, 0, $length) | Out-Null
+                # Fix: Use [string]::new constructor to avoid array unrolling issues
+                $bodyStr = [string]::new($buffer)
+                $now = Get-Date -Format "HH:mm:ss"
+                Write-Host "[$now iPad Log] $bodyStr" -ForegroundColor Cyan
+                Write-Log "[iPad] $bodyStr"
+            }
+            Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body ([System.Text.Encoding]::UTF8.GetBytes("Logged")) -contentType "text/plain; charset=utf-8"
+            continue
+        }
+
         if ($method -ne "GET") {
             Send-Response -stream $sslStream -statusCode 405 -reason "Method Not Allowed" -body ([System.Text.Encoding]::UTF8.GetBytes("Method Not Allowed")) -contentType "text/plain; charset=utf-8"
             continue
         }
 
-        $rawTarget = $parts[1]
-        $requestPath = ($rawTarget -split "\?")[0]
         if ($requestPath -eq "/" -or [string]::IsNullOrWhiteSpace($requestPath)) {
             $requestPath = "/piano-visualizer.html"
         }
@@ -136,9 +162,12 @@ while ($true) {
         if (-not $contentType) { $contentType = "application/octet-stream" }
 
         Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body $content -contentType $contentType
-    } catch {
+    }
+    catch {
+        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
         Write-Log $_.Exception.Message
-    } finally {
+    }
+    finally {
         if ($reader) { $reader.Close() }
         $sslStream.Close()
         $client.Close()
