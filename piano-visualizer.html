@@ -2694,6 +2694,9 @@
       starting:           { en: 'Starting...',               jp: '起動中...' },
       audioInitFailedFmt: { en: 'Audio init failed: {v}\n\nReload the browser and try again.',
                             jp: 'オーディオ初期化に失敗しました: {v}\n\nブラウザを更新してリトライしてみてください。' },
+      // Composers — last-name katakana for JP (common in JP music ed)
+      composerBeethoven:  { en: 'L. v. Beethoven',             jp: 'ベートーヴェン' },
+      composerMozart:     { en: 'W. A. Mozart',                jp: 'モーツァルト' },
       // Result-screen unlock messages
       tempoUnlockedFmt:   { en: '🚀 Tempo {v}% unlocked!  ',   jp: '🚀 テンポ {v}% 解放！  ' },
       sectionUnlockedFmt: { en: '🔓 {v} unlocked!',            jp: '🔓 {v} 解放！' },
@@ -4912,11 +4915,11 @@
     // source-score measure number); the section runs until the next def's
     // startMeasure (or end-of-song). Boundaries are chosen at musical landmarks
     // (theme returns, key changes, climaxes) so a kid never gets cut off mid-phrase.
-    function makeSong(id, titleKey, composer, icon, sectionDefs) {
+    function makeSong(id, titleKey, composerKey, icon, sectionDefs) {
       return {
         id,
         titleKey,
-        composer,
+        composerKey,
         icon,
         mxlUrl: 'assets/' + id + '.mxl',
         xmlUrl: 'assets/' + id + '.xml',
@@ -4934,7 +4937,7 @@
     const SONGS = {
       // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
       // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
-      fur_elise: makeSong('fur_elise', 'furElise', 'Beethoven', '🌸', [
+      fur_elise: makeSong('fur_elise', 'furElise', 'composerBeethoven', '🌸', [
         { id: 'A1', nameKey: 'feA1', descKey: 'feA1desc', startMeasure: 0,  isBoss: false },
         { id: 'B',  nameKey: 'feB',  descKey: 'feBdesc',  startMeasure: 23, isBoss: false },
         { id: 'A2', nameKey: 'feA2', descKey: 'feA2desc', startMeasure: 55, isBoss: true  }
@@ -4942,7 +4945,7 @@
       // Mozart Sonata K.331/3 "Rondo alla Turca" — 137-measure musetrainer edition.
       // Form: A(0-8) | B(9-25) | A'(26-34) | C(35-43) | A''(44-60)
       //        | D(61-69) | E(70-78) | F(79-95) | G(96-104) | Coda(105-136)
-      alla_turca: makeSong('alla_turca', 'turkishMarch', 'Mozart', '🥁', [
+      alla_turca: makeSong('alla_turca', 'turkishMarch', 'composerMozart', '🥁', [
         { id: 'A1', nameKey: 'taA1', descKey: 'taA1desc', startMeasure: 0,  isBoss: false },
         { id: 'B',  nameKey: 'taB',  descKey: 'taBdesc',  startMeasure: 26, isBoss: false },
         { id: 'A2', nameKey: 'taA2', descKey: 'taA2desc', startMeasure: 70, isBoss: true  }
@@ -7439,7 +7442,7 @@
         DOM.osmdContainer.innerHTML = '';
       }
       DOM.songTitle.textContent = t(song.titleKey);
-      DOM.songComposer.textContent = song.composer;
+      DOM.songComposer.textContent = t(song.composerKey);
       practice.progress = practice.progress || loadPracticeProgress();
       practice.mode = 'guided';
       DOM.startScreen.style.display = 'none';
