@@ -2686,7 +2686,11 @@
       loadingScore:       { en: 'Loading score…',            jp: '楽譜を読み込み中…' },
       starting:           { en: 'Starting...',               jp: '起動中...' },
       audioInitFailedFmt: { en: 'Audio init failed: {v}\n\nReload the browser and try again.',
-                            jp: 'オーディオ初期化に失敗しました: {v}\n\nブラウザを更新してリトライしてみてください。' }
+                            jp: 'オーディオ初期化に失敗しました: {v}\n\nブラウザを更新してリトライしてみてください。' },
+      // Result-screen unlock messages
+      tempoUnlockedFmt:   { en: '🚀 Tempo {v}% unlocked!  ',   jp: '🚀 テンポ {v}% 解放！  ' },
+      sectionUnlockedFmt: { en: '🔓 {v} unlocked!',            jp: '🔓 {v} 解放！' },
+      streakDaysFmt:      { en: ' ✨ {v}-day streak!',          jp: ' ✨ ストリーク {v}日！' }
     };
 
     function t(key, vars) {
@@ -2697,14 +2701,12 @@
       return s;
     }
 
-    // For static HTML elements: walk [data-i18n] and update textContent;
-    // [data-i18n-title] separately updates the title attribute.
     function applyI18n() {
-      document.querySelectorAll('[data-i18n]').forEach(el => {
-        el.textContent = t(el.getAttribute('data-i18n'));
-      });
-      document.querySelectorAll('[data-i18n-title]').forEach(el => {
-        el.title = t(el.getAttribute('data-i18n-title'));
+      document.querySelectorAll('[data-i18n], [data-i18n-title]').forEach(el => {
+        const k = el.getAttribute('data-i18n');
+        const tk = el.getAttribute('data-i18n-title');
+        if (k) el.textContent = t(k);
+        if (tk) el.title = t(tk);
       });
       // Notify code paths that re-render their own text (song panel, result screen, etc.).
       window.dispatchEvent(new CustomEvent('langchange'));
@@ -2857,18 +2859,22 @@
     applyI18n();
     refreshLangToggle();
     window.addEventListener('langchange', () => {
-      if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
-      if (DOM.sectionResult?.classList.contains('visible')) {
-        // Last-known result tier is captured as practice.sectionIdx; the title
-        // and msg need to refresh — but we don't store the tier index. Easiest:
-        // recompute from cached pcts on the result card. Skipped — re-entering
-        // the result card naturally shows the new language.
+      // Refresh hot-path caches read from the per-frame lane draw.
+      if (typeof activeNoteNames !== 'undefined') {
+        activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
       }
-      if (DOM.ptbSection?.textContent && currentSong) {
+      laneLabelL = t('laneLeft');
+      laneLabelR = t('laneRight');
+
+      if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
+      if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
         const sec = currentSong.sections?.[practice.sectionIdx];
         if (sec) DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
       }
     });
+    // Lane labels — recomputed on lang change, used in the per-frame draw.
+    let laneLabelL = t('laneLeft');
+    let laneLabelR = t('laneRight');
 
     // ========================================
     // Particle System
@@ -6357,10 +6363,10 @@
     // numbers stay as digits — a Japanese kid's textbook also uses C4-style
     // octave numerals when needed.
     const NOTE_NAMES_JP = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
-    function midiToPitchName(midi) {
-      const names = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
-      return names[notePitchClass(midi)];
-    }
+    // Hot-path cache — refreshed on langchange so the per-frame lane draw
+    // doesn't re-evaluate the prefs.lang ternary 25× per frame.
+    let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+    function midiToPitchName(midi) { return activeNoteNames[notePitchClass(midi)]; }
     function midiToName(midi) { return midiToPitchName(midi) + (Math.floor(midi / 12) - 1); }
 
     // ========================================
@@ -6712,9 +6718,9 @@
       ctx.fillStyle = 'rgba(180, 200, 255, 0.7)';
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(t('laneLeft'), padX + halfW / 2, laneTop + 14);
+      ctx.fillText(laneLabelL, padX + halfW / 2, laneTop + 14);
       ctx.fillStyle = 'rgba(255, 200, 220, 0.7)';
-      ctx.fillText(t('laneRight'), midX + halfW / 2, laneTop + 14);
+      ctx.fillText(laneLabelR, midX + halfW / 2, laneTop + 14);
 
       // Center divider
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
@@ -6957,7 +6963,7 @@
           const next = tempos[idx + 1];
           if (!sp.unlockedTempos[next]) {
             sp.unlockedTempos[next] = true;
-            unlockedMsg += '🚀 Tempo ' + next + '% unlocked!  ';
+            unlockedMsg += t('tempoUnlockedFmt', { v: next });
           }
         }
       }
@@ -6967,13 +6973,13 @@
           const next = SECTION_IDS[sIdx + 1];
           if (!sp.unlockedSections[next]) {
             sp.unlockedSections[next] = true;
-            unlockedMsg += '🔓 ' + t(currentSong.sections.find(s => s.id === next).nameKey) + ' unlocked!';
+            unlockedMsg += t('sectionUnlockedFmt', { v: t(currentSong.sections.find(s => s.id === next).nameKey) });
           }
         }
       }
       // Theme unlock at streak milestone
       if (practice.progress.streakCount === 3 || practice.progress.streakCount === 7) {
-        unlockedMsg += ' ✨ ' + practice.progress.streakCount + '-day streak!';
+        unlockedMsg += t('streakDaysFmt', { v: practice.progress.streakCount });
       }
 
       if (!sp.history[sec.id]) sp.history[sec.id] = [];
