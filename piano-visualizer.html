@@ -5700,10 +5700,16 @@
       if (!practice.enabled) return false;
       const elapsed = practiceElapsedMs();
       const notes = practice.sectionNotes;
-      const idx = practice.currentNoteIdx;
+      // Eagerly skip past any already-resolved notes. The per-frame skip-past
+      // loop normally advances currentNoteIdx, but a chord played within a
+      // single frame would otherwise leave subsequent presses pointing at the
+      // already-hit cur and drop them silently.
+      let idx = practice.currentNoteIdx;
+      while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
+      practice.currentNoteIdx = idx;
       if (idx >= notes.length) return false;
       const cur = notes[idx];
-      if (!cur || cur.hit || cur.missed) return false;
+      if (!cur) return false;
 
       const dtCur = Math.abs(elapsed - cur.timeMs);
       const inWindow = practice.mode === 'guided' ? true : dtCur <= HIT_WINDOW_MS;
@@ -5726,14 +5732,11 @@
         }
       }
 
-      if (!practice._lastMatchLogMs || performance.now() - practice._lastMatchLogMs > 700) {
-        practice._lastMatchLogMs = performance.now();
-        remoteLog('[Match] in=' + detectedMidi
-          + (isExact ? ' (midi)' : ' (mic)')
-          + ' expected=' + cur.midi + '@' + Math.round(cur.timeMs - elapsed) + 'ms'
-          + ' mode=' + practice.mode
-          + ' result=' + (matched ? (matched === cur ? 'HIT' : 'HIT(chord-mate)') : 'wrong-note'));
-      }
+      remoteLog('[Match] in=' + detectedMidi
+        + (isExact ? ' (midi)' : ' (mic)')
+        + ' expected=' + cur.midi + '@' + Math.round(cur.timeMs - elapsed) + 'ms'
+        + ' mode=' + practice.mode
+        + ' result=' + (matched ? (matched === cur ? 'HIT' : 'HIT(chord-mate)') : 'wrong-note'));
 
       if (!matched) {
         if (practice.mode === 'guided') {
@@ -6103,6 +6106,19 @@
           scheduleCountInBeeps(practice.startAudioTime);
           Tone.Transport.start('+' + audioStartLead);
         }
+        // Diagnostic: log device audio output latency. AudioContext.outputLatency
+        // is the speaker-side buffer delay; baseLatency is the processing block.
+        // The total is roughly how late audio reaches the kid's ears vs Tone.now().
+        try {
+          const ctx = Tone.context.rawContext || Tone.context;
+          const out = (ctx.outputLatency || 0) * 1000;
+          const base = (ctx.baseLatency || 0) * 1000;
+          remoteLog('[Practice] mode=' + practice.mode
+            + ' tempoPct=' + practice.tempoPct
+            + ' audioOutputLatency=' + out.toFixed(1) + 'ms'
+            + ' audioBaseLatency=' + base.toFixed(1) + 'ms'
+            + ' lookAhead=' + (Tone.context.lookAhead * 1000).toFixed(1) + 'ms');
+        } catch (e) {}
       } catch (e) {
         console.error('Tone start failed', e);
         practice.startAudioTime = (performance.now() / 1000) + audioStartLead;
