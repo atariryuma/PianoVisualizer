@@ -4672,8 +4672,14 @@
       COUNT_IN_MS = Math.round(Math.max(2400, Math.min(7000, 4 * beatMs)));
       LANE_LOOKAHEAD_MS = COUNT_IN_MS;
     }
-    const HIT_WINDOW_MS = 350;
-    const PERFECT_MS = 90;
+    // Asymmetric hit windows: early presses are punished much harder than late
+    // ones. Pedagogical reason — kids should learn to *wait for the beat*, not
+    // anticipate it; reaction-lag is also natural and partly compensates for
+    // audio output latency. Symmetric windows let kids develop a "rush ahead"
+    // habit that's hard to unlearn.
+    const HIT_WINDOW_EARLY_MS = 120;   // before cur.timeMs (anticipation side)
+    const HIT_WINDOW_MS = 350;         // after cur.timeMs (reaction side)
+    const PERFECT_MS = 90;             // |dt| ≤ this counts as perfect (both sides)
     const CHORD_MATE_TOLERANCE_MS = 30;
     // Note-length tolerance: |held - written| up to max(MIN_TOL, written × FRACTION)
     // counts. Floor protects short notes where finger release physics dominate over
@@ -5523,8 +5529,11 @@
       const cur = notes[idx];
       if (!cur) return false;
 
-      const dtCur = Math.abs(elapsed - cur.timeMs);
-      const inWindow = practice.mode === 'guided' ? true : dtCur <= HIT_WINDOW_MS;
+      const dtSigned = elapsed - cur.timeMs;   // +late, -early
+      const inWindow = practice.mode === 'guided'
+        ? true
+        : (dtSigned >= -HIT_WINDOW_EARLY_MS && dtSigned <= HIT_WINDOW_MS);
+      const dtCur = Math.abs(dtSigned);
 
       // Find the played note inside the current chord cluster (cur and any
       // simultaneous notes within ±CHORD_MATE_TOLERANCE_MS). Order within a chord
@@ -5557,7 +5566,8 @@
         return false;
       }
 
-      const dt = Math.abs(elapsed - matched.timeMs);
+      const dtSignedMatched = elapsed - matched.timeMs;
+      const dt = Math.abs(dtSignedMatched);
       matched.hit = true;
       matched.holdStartMs = performance.now();
       practice.pendingHolds.set(detectedMidi, matched);
@@ -5566,8 +5576,11 @@
       if (practice.sectionCombo > practice.sectionBestCombo) {
         practice.sectionBestCombo = practice.sectionCombo;
       }
-      // Guided mode: every onset is "perfect" since timing isn't graded.
-      const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / HIT_WINDOW_MS);
+      // Guided mode: every onset is "perfect" (timing not graded). Rhythm mode:
+      // score linearly, but use the asymmetric window so an early press is judged
+      // against the smaller early window (steeper penalty).
+      const window = dtSignedMatched < 0 ? HIT_WINDOW_EARLY_MS : HIT_WINDOW_MS;
+      const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
       practice.timingScoreSum += ts;
       const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
       showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? 'パーフェクト！' : 'ナイス！');
@@ -6045,7 +6058,9 @@
       const laneTop = osmdVisible ? 332 : 50;   // OSMD top:60 + h:260 + margin:12
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
       const laneHeight = Math.max(280, H - laneTop - kbReserve);
-      const hitLineY = laneTop + laneHeight - 30;
+      // Lift the hit line a bit higher than the lane bottom so it sits in the
+      // kid's natural focus zone (was -30 = almost flush with the keyboard).
+      const hitLineY = laneTop + laneHeight - 60;
       const pxPerMs = (laneHeight - 40) / LANE_LOOKAHEAD_MS;
       const padX = 24;
       const usableW = W - padX * 2;
@@ -6083,16 +6098,31 @@
       ctx.lineTo(midX, hitLineY + 50);
       ctx.stroke();
 
-      // Hit line + hit window band
-      ctx.strokeStyle = 'rgba(255, 220, 230, 0.9)';
-      ctx.lineWidth = 2;
+      // Hit window band — asymmetric: above-line (early) is small, below-line
+      // (late) is the full HIT_WINDOW_MS. Visual matches the judgment so kids
+      // can read "if my note is in the band when I press, that counts."
+      const earlyPx = HIT_WINDOW_EARLY_MS * pxPerMs;
+      const latePx = HIT_WINDOW_MS * pxPerMs;
+      const perfectPx = PERFECT_MS * pxPerMs;
+      ctx.fillStyle = 'rgba(255, 200, 230, 0.20)';
+      ctx.fillRect(padX, hitLineY - earlyPx, usableW, earlyPx + latePx);
+      // Inner Perfect zone — brighter strip ±PERFECT_MS so kids see the sweet spot.
+      ctx.fillStyle = 'rgba(170, 255, 200, 0.30)';
+      ctx.fillRect(padX, hitLineY - perfectPx, usableW, perfectPx * 2);
+      // Hit line — thicker and with a soft glow so it reads from the score area.
+      ctx.save();
+      ctx.shadowColor = 'rgba(255, 220, 230, 0.8)';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(255, 240, 245, 0.95)';
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(padX, hitLineY);
       ctx.lineTo(W - padX, hitLineY);
       ctx.stroke();
-      const winPx = HIT_WINDOW_MS * pxPerMs;
-      ctx.fillStyle = 'rgba(255, 200, 230, 0.12)';
-      ctx.fillRect(padX, hitLineY - winPx, usableW, winPx * 2);
+      ctx.restore();
+      // Keep the legacy `winPx` symbol in scope for the ▼ indicator below; it
+      // points at the top of the early-zone (the moment a note becomes hittable).
+      const winPx = earlyPx;
 
       const { lhMin, lhMax, rhMin, rhMax } = practice.handRanges;
       const noteX = (n) => {
