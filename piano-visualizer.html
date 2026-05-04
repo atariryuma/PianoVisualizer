@@ -2586,6 +2586,100 @@
     });
 
     // ========================================
+    // Settings panel
+    // ========================================
+    function openSettings() {
+      DOM.settingsPanel.classList.add('visible');
+      refreshSettingsPanel();
+    }
+    function closeSettings() {
+      DOM.settingsPanel.classList.remove('visible');
+    }
+
+    function refreshAudioOffsetUI() {
+      const isAuto = prefs.audioOffsetMs == null;
+      const value = Math.round(
+        isAuto ? (typeof practice !== 'undefined' && practice.audioOffsetMs)
+                 || DEFAULT_AUDIO_OFFSET_MS
+               : prefs.audioOffsetMs);
+      DOM.audioOffsetSlider.value = value;
+      DOM.audioOffsetVal.textContent = value;
+      DOM.audioOffsetAuto.textContent = isAuto
+        ? '自動検出値を使用中（現在: ' + value + ' ms）'
+        : '';
+    }
+
+    function refreshSettingsPanel() {
+      refreshAudioOffsetUI();
+      // Input source status
+      if (typeof midiInput !== 'undefined' && midiInput.enabled && midiInput.port?.name) {
+        DOM.settingsInputStatus.textContent = '🎹 ' + midiInput.port.name;
+      } else if (typeof state !== 'undefined' && state.micSuspended) {
+        DOM.settingsInputStatus.textContent = '🎙️ 待機中';
+      } else {
+        DOM.settingsInputStatus.textContent = '🎙️ マイク入力';
+      }
+      // BLE button only when Web Bluetooth is supported (Chrome/Edge desktop, Android Chrome)
+      const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+      DOM.settingsBleBtn.style.display = bleSupported ? '' : 'none';
+    }
+
+    DOM.settingsBtn.addEventListener('click', openSettings);
+    DOM.settingsCloseBtn.addEventListener('click', closeSettings);
+    DOM.settingsPanel.addEventListener('click', (e) => {
+      if (e.target === DOM.settingsPanel) closeSettings();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && DOM.settingsPanel.classList.contains('visible')) closeSettings();
+    });
+
+    DOM.audioOffsetSlider.addEventListener('input', () => {
+      const v = parseInt(DOM.audioOffsetSlider.value, 10);
+      prefs.audioOffsetMs = v;
+      if (typeof practice !== 'undefined') practice.audioOffsetMs = v;
+      DOM.audioOffsetVal.textContent = v;
+      DOM.audioOffsetAuto.textContent = '';
+      savePrefs();
+    });
+    DOM.audioOffsetReset.addEventListener('click', () => {
+      prefs.audioOffsetMs = null;
+      savePrefs();
+      // Re-trigger auto-detect on next session start; meanwhile use the default.
+      if (typeof practice !== 'undefined') practice.audioOffsetMs = DEFAULT_AUDIO_OFFSET_MS;
+      refreshAudioOffsetUI();
+    });
+
+    DOM.settingsRescanBtn.addEventListener('click', () => {
+      if (typeof rescanMidi === 'function') rescanMidi();
+      closeSettings();
+    });
+    DOM.settingsBleBtn.addEventListener('click', () => {
+      if (typeof connectBleMidi === 'function') {
+        connectBleMidi().finally(() => {
+          if (typeof refreshBleMidiButton === 'function') refreshBleMidiButton();
+          refreshSettingsPanel();
+        });
+      }
+      closeSettings();
+    });
+    DOM.settingsResetBtn.addEventListener('click', () => {
+      closeSettings();
+      if (state.running && typeof showSessionSummary === 'function') showSessionSummary();
+    });
+
+    function applyDebug(on) {
+      prefs.debug = on;
+      DOM.settingsDebugToggle.classList.toggle('on', on);
+      const overlay = document.getElementById('debugOverlay');
+      if (overlay) overlay.classList.toggle('visible', on);
+    }
+    applyDebug(prefs.debug);
+    DOM.settingsDebugToggle.addEventListener('click', () => {
+      applyDebug(!prefs.debug);
+      savePrefs();
+    });
+
+    // ========================================
     // Particle System
     // ========================================
     // ========================================
@@ -5033,10 +5127,11 @@
       // 練習する手のフィルタ。'R' = 右手のみ、'L' = 左手のみ、null = 両手。
       // フィルタされた手のノートはセクション開始時に .hit を立てて自動スキップ。
       handFilter: null,
-      // Set in startPracticeSection from AudioContext.outputLatency or
-      // DEFAULT_AUDIO_OFFSET_MS. Subtracted from practiceRealElapsedMs so a
-      // press timed to the audible beat scores PERFECT.
-      audioOffsetMs: 0,
+      // Subtracted from practiceRealElapsedMs so a press timed to the audible
+      // beat scores PERFECT. Set in startPracticeSection from
+      // AudioContext.outputLatency, or from the user's saved override
+      // (prefs.audioOffsetMs) if they've adjusted the slider.
+      audioOffsetMs: prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
       progress: null,
       _completing: false,
       _lastProgUpdate: 0
@@ -6271,23 +6366,28 @@
           const ctx = Tone.context.rawContext || Tone.context;
           const out = (ctx.outputLatency || 0) * 1000;
           const base = (ctx.baseLatency || 0) * 1000;
-          // Hit-judging offset: prefer the browser's reported figure when it's
-          // populated (Chrome/Edge desktop reliably do; Firefox often returns 0,
-          // older Safari undefined), otherwise fall back to a 40ms default that
-          // covers typical desktop wired output. Without this, a press timed to
-          // the audible metronome registers ~30-100ms late.
-          const reported = out + base;
-          practice.audioOffsetMs = reported > 5
-            ? Math.min(reported, 200)   // clamp absurd values (e.g. AirPods 250ms)
-            : DEFAULT_AUDIO_OFFSET_MS;
+          // User override (slider in ⚙ settings) wins over auto-detection.
+          // Otherwise prefer the browser's reported figure when populated
+          // (Chrome/Edge desktop reliably do; Firefox often returns 0, older
+          // Safari undefined), else fall back to DEFAULT_AUDIO_OFFSET_MS.
+          if (prefs.audioOffsetMs != null) {
+            practice.audioOffsetMs = prefs.audioOffsetMs;
+          } else {
+            const reported = out + base;
+            practice.audioOffsetMs = reported > 5
+              ? Math.min(reported, 200)   // clamp absurd values (e.g. AirPods 250ms)
+              : DEFAULT_AUDIO_OFFSET_MS;
+          }
           remoteLog('[Practice] mode=' + practice.mode
             + ' tempoPct=' + practice.tempoPct
             + ' audioOutputLatency=' + out.toFixed(1) + 'ms'
             + ' audioBaseLatency=' + base.toFixed(1) + 'ms'
             + ' lookAhead=' + (Tone.context.lookAhead * 1000).toFixed(1) + 'ms'
-            + ' compensation=' + practice.audioOffsetMs.toFixed(1) + 'ms');
+            + ' compensation=' + practice.audioOffsetMs.toFixed(1) + 'ms'
+            + (prefs.audioOffsetMs != null ? ' (user)' : ' (auto)'));
         } catch (e) {
-          practice.audioOffsetMs = DEFAULT_AUDIO_OFFSET_MS;
+          practice.audioOffsetMs = prefs.audioOffsetMs != null
+            ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS;
         }
       } catch (e) {
         console.error('Tone start failed', e);
@@ -7136,7 +7236,7 @@
     });
 
     // v11: Reset button listener
-    DOM.resetBtn.addEventListener('click', () => {
+    DOM.resetBtn?.addEventListener('click', () => {
       if (!state.running) return;
       showSessionSummary();
     });
