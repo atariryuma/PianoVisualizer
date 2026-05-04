@@ -12,9 +12,18 @@ Current version: **v9** (`piano-visualizer.html`)
 
 The app requires HTTPS for microphone access (especially on iPad/Safari). A PowerShell HTTPS server is provided:
 
-1. Generate a self-signed certificate (`cert.pfx`) in the project directory (not tracked by git)
-2. Run `powershell -File https_server.ps1` — serves on port 8443
-3. Access from iPad at `https://<host-ip>:8443`
+1. **Generate certs** with `powershell -File gen_cert.ps1` (auto-detects LAN IP, outputs `cert.pfx` for the server + `cert.cer` for iOS to trust). Re-run any time the LAN IP changes.
+2. **Run server**: `powershell -File https_server.ps1` — serves on port 8443.
+3. **Access** at `https://<host-ip>:8443`.
+
+### iPad / strict-cert browser (Web MIDI Browser etc.) setup
+
+Stock Safari lets you bypass the self-signed-cert warning, but Web MIDI Browser and many WKWebView-based apps don't. Install the cert as trusted:
+
+1. iPad Safari → `https://<host-ip>:8443/cert.cer` → tap through the cert warning once → "プロファイルをダウンロード" → **OK**.
+2. **Settings → General → VPN & Device Management** → tap the downloaded *PianoVisualizer* profile → **インストール**.
+3. **Settings → General → About → Certificate Trust Settings** → enable the *PianoVisualizer* root certificate.
+4. Re-open `https://<host-ip>:8443/` in Web MIDI Browser — no more cert error.
 
 For local development, any HTTPS-capable static server works, or simply open the HTML file directly in a desktop browser.
 

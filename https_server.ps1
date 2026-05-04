@@ -57,6 +57,8 @@ $mimeMap = @{
     ".jpg"  = "image/jpeg"
     ".jpeg" = "image/jpeg"
     ".ico"  = "image/x-icon"
+    ".cer"  = "application/pkix-cert"
+    ".crt"  = "application/pkix-cert"
 }
 
 if (-not (Test-Path $certPath -PathType Leaf)) {
