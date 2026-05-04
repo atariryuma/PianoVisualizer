@@ -1661,11 +1661,11 @@
 <body>
   <div id="startScreen">
     <h1>Piano Visualizer</h1>
-    <p>Play the piano and watch the screen come alive</p>
+    <p data-i18n="tagline">Play the piano and watch the screen come alive</p>
     <div id="modeButtons">
-      <button id="startBtn" class="mode-btn">🎨 Free Play</button>
-      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 Für Elise</button>
-      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 Turkish March</button>
+      <button id="startBtn" class="mode-btn">🎨 <span data-i18n="freePlay">Free Play</span></button>
+      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 <span data-i18n="furElise">Für Elise</span></button>
+      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 <span data-i18n="turkishMarch">Turkish March</span></button>
     </div>
     <!-- Bluetooth MIDI connection lives in the ⚙ settings panel. Element kept for legacy-code compatibility. -->
     <button id="bleMidiBtn" title="Connect Bluetooth MIDI keyboard">🔵 Connect Bluetooth keyboard</button>
@@ -1679,19 +1679,19 @@
     <div id="stageLabel"></div>
   </div>
   <div id="themeBar">
-    <button id="settingsBtn" title="Settings">⚙</button>
-    <button id="homeBtn" title="Back to title">🏠</button>
+    <button id="settingsBtn" data-i18n-title="settings" title="Settings">⚙</button>
+    <button id="homeBtn" data-i18n-title="backToTitle" title="Back to title">🏠</button>
   </div>
 
   <div id="settingsPanel">
     <div class="settings-card">
       <div class="settings-header">
-        <div class="settings-title">⚙ Settings</div>
-        <button class="settings-close" id="settingsCloseBtn" title="Close">✕</button>
+        <div class="settings-title">⚙ <span data-i18n="settings">Settings</span></div>
+        <button class="settings-close" id="settingsCloseBtn" data-i18n-title="close" title="Close">✕</button>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🎨 Display</div>
+        <div class="settings-section-label">🎨 <span data-i18n="display">Display</span></div>
         <div class="settings-row">
           <div class="settings-theme-row">
             <div class="theme-dot active" data-theme="0" title="Purple × Pink"></div>
@@ -1701,50 +1701,53 @@
           </div>
         </div>
         <div class="settings-row">
-          <div id="synesthesiaToggle" title="Synesthesia mode">🎨</div>
-          <span style="font-size:.85rem">Synesthesia mode (each note has its own color)</span>
+          <div id="synesthesiaToggle" data-i18n-title="synesthesiaTitle" title="Synesthesia mode">🎨</div>
+          <span style="font-size:.85rem" data-i18n="synesthesia">Synesthesia mode (each note has its own color)</span>
+        </div>
+        <div class="settings-row">
+          <span style="font-size:.85rem" data-i18n="language">Language</span>
+          <button class="settings-btn" id="langToggleBtn">EN / 日本語</button>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🎚 Timing Calibration</div>
+        <div class="settings-section-label">🎚 <span data-i18n="timingCalibration">Timing Calibration</span></div>
         <div class="settings-slider-row">
           <div class="settings-slider-label">
-            <span>Audio offset</span>
+            <span data-i18n="audioOffset">Audio offset</span>
             <span class="val"><span id="audioOffsetVal">40</span> ms</span>
           </div>
           <input type="range" id="audioOffsetSlider" class="settings-slider"
                  min="-50" max="200" step="5" value="40">
           <div class="settings-help">
-            If you play on the beat but it's judged "late", raise the number.
-            If your press is rejected as "early", lower it.<br>
+            <span data-i18n="audioOffsetHelp">If you play on the beat but it's judged "late", raise the number. If your press is rejected as "early", lower it.</span><br>
             <span id="audioOffsetAuto" style="color:rgba(180,220,255,.8)"></span>
           </div>
           <div style="margin-top:6px">
-            <button class="settings-btn" id="audioOffsetReset">Use auto-detected value</button>
+            <button class="settings-btn" id="audioOffsetReset" data-i18n="resetToAuto">Use auto-detected value</button>
           </div>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🎹 Input</div>
+        <div class="settings-section-label">🎹 <span data-i18n="input">Input</span></div>
         <div class="settings-row">
           <div class="settings-input-status" id="settingsInputStatus">Mic input</div>
         </div>
         <div class="settings-row">
-          <button class="settings-btn" id="settingsRescanBtn">🔄 Scan for MIDI keyboard</button>
-          <button class="settings-btn" id="settingsBleBtn" style="display:none">🔵 Connect Bluetooth</button>
+          <button class="settings-btn" id="settingsRescanBtn">🔄 <span data-i18n="scanMidi">Scan for MIDI keyboard</span></button>
+          <button class="settings-btn" id="settingsBleBtn" style="display:none">🔵 <span data-i18n="connectBluetooth">Connect Bluetooth</span></button>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🛠 Other</div>
+        <div class="settings-section-label">🛠 <span data-i18n="other">Other</span></div>
         <div class="settings-row">
-          <button class="settings-btn" id="settingsResetBtn">🔄 Reset session</button>
+          <button class="settings-btn" id="settingsResetBtn">🔄 <span data-i18n="resetSession">Reset session</span></button>
         </div>
         <div class="settings-row">
           <div id="settingsDebugToggle" class="opt-toggle"></div>
-          <span style="font-size:.85rem">🐞 Debug overlay</span>
+          <span style="font-size:.85rem">🐞 <span data-i18n="debugOverlay">Debug overlay</span></span>
         </div>
       </div>
     </div>
@@ -1797,39 +1800,39 @@
       <div class="song-title" id="songTitle">Für Elise</div>
       <div class="song-composer" id="songComposer">L. v. Beethoven</div>
       <div class="song-streak">
-        🔥 <span id="streakCount">0</span> day streak
+        🔥 <span id="streakCount">0</span> <span data-i18n="dayStreak">day streak</span>
         <div class="streak-cal" id="streakCal"></div>
       </div>
 
-      <div class="song-section-label">Tempo</div>
+      <div class="song-section-label" data-i18n="tempo">Tempo</div>
       <div class="tempo-row" id="tempoRow"></div>
 
-      <div class="song-section-label">Start from</div>
+      <div class="song-section-label" data-i18n="startFrom">Start from</div>
       <div id="sectionList"></div>
 
-      <div class="song-section-label">Which hand?</div>
+      <div class="song-section-label" data-i18n="whichHand">Which hand?</div>
       <div class="hand-row" id="handRow">
-        <button class="hand-btn" data-hand="L">👈 Left only</button>
-        <button class="hand-btn active" data-hand="both">🤝 Both</button>
-        <button class="hand-btn" data-hand="R">Right only 👉</button>
+        <button class="hand-btn" data-hand="L" data-i18n="leftOnly">👈 Left only</button>
+        <button class="hand-btn active" data-hand="both" data-i18n="bothHands">🤝 Both</button>
+        <button class="hand-btn" data-hand="R" data-i18n="rightOnly">Right only 👉</button>
       </div>
 
       <div class="opt-row">
         <div class="opt-toggle on" id="guidedModeToggle"></div>
-        <div>✨ Guided mode (play at your own pace)</div>
+        <div data-i18n="guidedMode">✨ Guided mode (play at your own pace)</div>
       </div>
       <div class="opt-row" id="ghostRow">
         <div class="opt-toggle" id="ghostToggle"></div>
-        <div>👻 Ghost playback (demo)</div>
+        <div data-i18n="ghostPlayback">👻 Ghost playback (demo)</div>
       </div>
       <div class="opt-row" id="metronomeRow">
         <div class="opt-toggle" id="metronomeToggle"></div>
-        <div>🥁 Metronome</div>
+        <div data-i18n="metronome">🥁 Metronome</div>
       </div>
 
       <div class="song-actions">
-        <button id="songBack">Back</button>
-        <button id="songStart" class="primary">▶ Start practice</button>
+        <button id="songBack" data-i18n="back">Back</button>
+        <button id="songStart" class="primary" data-i18n="startPractice">▶ Start practice</button>
       </div>
     </div>
   </div>
@@ -1839,9 +1842,9 @@
       <span class="ptb-section" id="ptbSection">Part 1</span>
       <span class="ptb-tempo" id="ptbTempo">100%</span>
       <span class="ptb-progress" id="ptbProgress">0 / 0</span>
-      <span class="ptb-input" id="ptbInput" title="Input source">🎙️</span>
-      <button id="ptbToggleOsmd">Score</button>
-      <button id="ptbQuit">Quit</button>
+      <span class="ptb-input" id="ptbInput" data-i18n-title="inputSource" title="Input source">🎙️</span>
+      <button id="ptbToggleOsmd" data-i18n="score">Score</button>
+      <button id="ptbQuit" data-i18n="quit">Quit</button>
     </div>
   </div>
   <!-- OSMD container lives at body level so it's always rendered (even before practice
@@ -1855,20 +1858,20 @@
       <div class="result-title" id="resTitle">Part Clear!</div>
       <div class="result-section-name" id="resSectionName">Part 1</div>
       <div class="result-stars" id="resStars">★★★</div>
-      <div class="result-stat"><span>Pitch accuracy</span><span id="resAcc">0%</span></div>
-      <div class="result-stat"><span>Timing</span><span id="resTiming">0%</span></div>
-      <div class="result-stat" id="resDurationRow"><span>Note length</span><span id="resDuration">0%</span></div>
-      <div class="result-stat"><span>Best combo</span><span id="resCombo">0</span></div>
+      <div class="result-stat"><span data-i18n="pitchAccuracy">Pitch accuracy</span><span id="resAcc">0%</span></div>
+      <div class="result-stat"><span data-i18n="timing">Timing</span><span id="resTiming">0%</span></div>
+      <div class="result-stat" id="resDurationRow"><span data-i18n="noteLength">Note length</span><span id="resDuration">0%</span></div>
+      <div class="result-stat"><span data-i18n="bestComboLabel">Best combo</span><span id="resCombo">0</span></div>
       <div class="result-history hidden" id="resHistoryWrap">
         <canvas id="resHistoryChart" width="280" height="80"></canvas>
       </div>
       <div class="result-msg" id="resMsg"></div>
       <div class="result-unlock" id="resUnlock"></div>
       <div class="result-actions">
-        <button id="resHome" title="Back to title">🏠</button>
-        <button id="resQuit">Song select</button>
-        <button id="resRetry">Try again</button>
-        <button id="resNext" class="primary">Next →</button>
+        <button id="resHome" data-i18n-title="backToTitle" title="Back to title">🏠</button>
+        <button id="resQuit" data-i18n="songSelect">Song select</button>
+        <button id="resRetry" data-i18n="tryAgainBtn">Try again</button>
+        <button id="resNext" class="primary" data-i18n="nextBtn">Next →</button>
       </div>
     </div>
   </div>
@@ -2087,29 +2090,29 @@
       AMBIENT_PARTICLE_CHANCE: 0.03,
       BAR_COUNT: 64,
 
-      // Stages
+      // Stages — `nameKey` is resolved via t() so labels follow prefs.lang.
       STAGES: [
-        { name: '', minFlow: 0 },
-        { name: '\u2726 Awakening', minFlow: 15 },
-        { name: '\u2726\u2726 Blooming', minFlow: 35 },
-        { name: '\u2726\u2726\u2726 Aurora', minFlow: 55 },
-        { name: '\u2726\u2726\u2726\u2726 Cosmos', minFlow: 75 },
-        { name: '\u2726\u2726\u2726\u2726\u2726 Radiance', minFlow: 90 },
-        { name: '\u2726\u2726\u2726\u2726\u2726\u2726 Legend', minFlow: 98 }
+        { nameKey: null,     prefix: '',             minFlow: 0 },
+        { nameKey: 'stage1', prefix: '\u2726 ',       minFlow: 15 },
+        { nameKey: 'stage2', prefix: '\u2726\u2726 ', minFlow: 35 },
+        { nameKey: 'stage3', prefix: '\u2726\u2726\u2726 ', minFlow: 55 },
+        { nameKey: 'stage4', prefix: '\u2726\u2726\u2726\u2726 ', minFlow: 75 },
+        { nameKey: 'stage5', prefix: '\u2726\u2726\u2726\u2726\u2726 ', minFlow: 90 },
+        { nameKey: 'stage6', prefix: '\u2726\u2726\u2726\u2726\u2726\u2726 ', minFlow: 98 }
       ],
 
       // =============================================
       // Encouragement Tiers (v9 — replaces combo numbers)
       // =============================================
       ENCOURAGEMENT_TIERS: [
-        { minCombo: 3, message: 'Nice!', effect: 'glowPulse' },
-        { minCombo: 8, message: 'Great!', effect: 'glowParticles' },
-        { minCombo: 15, message: 'On a roll!', effect: 'colorWave' },
-        { minCombo: 25, message: 'Sparkle!', effect: 'starShower' },
-        { minCombo: 40, message: 'Beautiful!', effect: 'flowerBurst' },
-        { minCombo: 60, message: 'Like magic!', effect: 'shimmer' },
-        { minCombo: 80, message: 'Shining!', effect: 'radiance' },
-        { minCombo: 100, message: 'Awesome!', effect: 'goldenBurst' }
+        { minCombo: 3,   messageKey: 'enc1', effect: 'glowPulse' },
+        { minCombo: 8,   messageKey: 'enc2', effect: 'glowParticles' },
+        { minCombo: 15,  messageKey: 'enc3', effect: 'colorWave' },
+        { minCombo: 25,  messageKey: 'enc4', effect: 'starShower' },
+        { minCombo: 40,  messageKey: 'enc5', effect: 'flowerBurst' },
+        { minCombo: 60,  messageKey: 'enc6', effect: 'shimmer' },
+        { minCombo: 80,  messageKey: 'enc7', effect: 'radiance' },
+        { minCombo: 100, messageKey: 'enc8', effect: 'goldenBurst' }
       ],
       ENCOURAGEMENT_COOLDOWN_MS: 8000,   // don't repeat same tier within this window
       ENCOURAGEMENT_DISPLAY_MS: 2500,    // how long message stays visible
@@ -2545,18 +2548,179 @@
       theme: 0,
       synesthesia: false,
       audioOffsetMs: null,   // null = auto-detect from AudioContext.outputLatency
-      debug: false
+      debug: false,
+      lang: 'en'             // 'en' | 'jp' — practice-flow UI language
     };
-    function loadPrefs() {
-      try {
-        const raw = localStorage.getItem('pianoViz_prefs');
-        if (raw) Object.assign(prefs, JSON.parse(raw));
-      } catch (e) {}
+    function loadJSON(key, fallback) {
+      try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+      catch (e) { return fallback; }
     }
-    function savePrefs() {
-      try { localStorage.setItem('pianoViz_prefs', JSON.stringify(prefs)); } catch (e) {}
+    function saveJSON(key, val) {
+      try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
     }
-    loadPrefs();
+    Object.assign(prefs, loadJSON('pianoViz_prefs', {}));
+    function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
+
+    // ========================================
+    // i18n — practice-flow strings only (free-play / quest / dev strings stay English)
+    // ========================================
+    const T_STRINGS = {
+      // Settings panel
+      settings:           { en: 'Settings',                  jp: '設定' },
+      close:              { en: 'Close',                     jp: '閉じる' },
+      backToTitle:        { en: 'Back to title',             jp: 'タイトルにもどる' },
+      display:            { en: 'Display',                   jp: '表示' },
+      synesthesia:        { en: 'Synesthesia mode (each note has its own color)',
+                            jp: '音階色モード（音ごとに色が変わる）' },
+      synesthesiaTitle:   { en: 'Synesthesia mode',          jp: '音階色モード' },
+      timingCalibration:  { en: 'Timing Calibration',        jp: 'タイミング補正' },
+      audioOffset:        { en: 'Audio offset',              jp: '音と画面のずれ補正' },
+      audioOffsetHelp:    { en: 'If you play on the beat but it\'s judged "late", raise the number. If your press is rejected as "early", lower it.',
+                            jp: '拍に合わせて弾いてるのに「遅い」判定になる時は数値を上げる。「早い」判定になる時は下げる。' },
+      autoDetectedFmt:    { en: 'Auto-detected value in use (currently {v} ms)',
+                            jp: '自動検出値を使用中（現在: {v} ms）' },
+      resetToAuto:        { en: 'Use auto-detected value',   jp: '自動検出に戻す' },
+      input:              { en: 'Input',                     jp: '入力' },
+      micInput:           { en: 'Mic input',                 jp: 'マイク入力' },
+      micStandby:         { en: 'Standby',                   jp: '待機中' },
+      scanMidi:           { en: 'Scan for MIDI keyboard',    jp: 'MIDIキーボードを探す' },
+      connectBluetooth:   { en: 'Connect Bluetooth',         jp: 'Bluetooth接続' },
+      other:              { en: 'Other',                     jp: 'その他' },
+      resetSession:       { en: 'Reset session',             jp: 'セッションをリセット' },
+      debugOverlay:       { en: 'Debug overlay',             jp: 'デバッグ表示' },
+      language:           { en: 'Language',                  jp: '言語' },
+      // Start screen
+      tagline:            { en: 'Play the piano and watch the screen come alive',
+                            jp: 'ピアノを弾くと画面がきれいに光るよ' },
+      freePlay:           { en: 'Free Play',                 jp: 'フリープレイ' },
+      // Song panel
+      dayStreak:          { en: 'day streak',                jp: '日れんしゅう中' },
+      tempo:              { en: 'Tempo',                     jp: 'テンポ' },
+      startFrom:          { en: 'Start from',                jp: 'どこからはじめる？' },
+      whichHand:          { en: 'Which hand?',               jp: 'どの手で弾く？' },
+      leftOnly:           { en: '👈 Left only',              jp: '👈 左手だけ' },
+      bothHands:          { en: '🤝 Both',                    jp: '🤝 両手' },
+      rightOnly:          { en: 'Right only 👉',             jp: '右手だけ 👉' },
+      guidedMode:         { en: '✨ Guided mode (play at your own pace)',
+                            jp: '✨ ガイドモード（じぶんのペースで弾ける）' },
+      ghostPlayback:      { en: '👻 Ghost playback (demo)',  jp: '👻 おてほん再生（ゴースト）' },
+      metronome:          { en: '🥁 Metronome',              jp: '🥁 メトロノーム' },
+      back:               { en: 'Back',                      jp: 'もどる' },
+      startPractice:      { en: '▶ Start practice',          jp: '▶ れんしゅうスタート' },
+      // Practice HUD
+      score:              { en: 'Score',                     jp: '楽譜' },
+      quit:               { en: 'Quit',                      jp: 'やめる' },
+      inputSource:        { en: 'Input source',              jp: '入力ソース' },
+      // Result screen
+      pitchAccuracy:      { en: 'Pitch accuracy',            jp: '音程の正確さ' },
+      timing:             { en: 'Timing',                    jp: 'タイミング' },
+      noteLength:         { en: 'Note length',               jp: '音の長さ' },
+      bestComboLabel:     { en: 'Best combo',                jp: '連続成功（最高）' },
+      songSelect:         { en: 'Song select',               jp: 'きょく選択' },
+      tryAgainBtn:        { en: 'Try again',                 jp: 'もう一度' },
+      nextBtn:            { en: 'Next →',                    jp: 'つぎへ →' },
+      // Hit chips / dynamic
+      perfect:            { en: 'Perfect!',                  jp: 'パーフェクト！' },
+      nice:               { en: 'Nice!',                     jp: 'ナイス！' },
+      missChip:           { en: 'Miss',                      jp: 'ミス' },
+      youPlayedFmt:       { en: 'You played: {v}',           jp: '弾いた音: {v}' },
+      tooShort:           { en: '⏱ Too short',               jp: '⏱ 短い' },
+      tooLong:            { en: '⏱ Too long',                jp: '⏱ 長い' },
+      // Lane labels
+      laneLeft:           { en: 'LEFT',                      jp: '左手' },
+      laneRight:          { en: 'RIGHT',                     jp: '右手' },
+      // Count-in
+      countInGo:          { en: 'GO!',                       jp: 'スタート！' },
+      // Stages
+      stage1:             { en: 'Awakening',                 jp: 'めざめ' },
+      stage2:             { en: 'Blooming',                  jp: 'はなひらく' },
+      stage3:             { en: 'Aurora',                    jp: 'オーロラ' },
+      stage4:             { en: 'Cosmos',                    jp: 'コスモス' },
+      stage5:             { en: 'Radiance',                  jp: 'かがやき' },
+      stage6:             { en: 'Legend',                    jp: 'でんせつ' },
+      // Encouragement tiers
+      enc1:               { en: 'Nice!',                     jp: 'いいよ！' },
+      enc2:               { en: 'Great!',                    jp: 'すごい！' },
+      enc3:               { en: 'On a roll!',                jp: 'のってきた！' },
+      enc4:               { en: 'Sparkle!',                  jp: 'きらきら！' },
+      enc5:               { en: 'Beautiful!',                jp: 'すてきなおと！' },
+      enc6:               { en: 'Like magic!',               jp: 'まほうみたい！' },
+      enc7:               { en: 'Shining!',                  jp: 'かがやいてる！' },
+      enc8:               { en: 'Awesome!',                  jp: 'さいこう！' },
+      // Result tiers
+      tier0Title:         { en: 'Try again!',                jp: 'もういちど！' },
+      tier0Msg:           { en: 'Start with a slow tempo. Give it another try!',
+                            jp: 'まずはゆっくりテンポでも大丈夫。リトライしてみよう！' },
+      tier1Title:         { en: 'Clear!',                    jp: 'クリア！' },
+      tier1Msg:           { en: 'Clear! Keep practicing to get even better.',
+                            jp: 'クリアおめでとう！くりかえしで上達するよ。' },
+      tier2Title:         { en: '🎉 Part Clear!',            jp: '🎉 章クリア！' },
+      tier2Msg:           { en: 'Great job! Almost perfect!',
+                            jp: 'よくがんばったね！もう少しでパーフェクト！' },
+      tier3Title:         { en: '🌟 Perfect!',               jp: '🌟 パーフェクト！' },
+      tier3Msg:           { en: 'Brilliant! Try the next difficulty!',
+                            jp: 'すばらしい！次の難しさにチャレンジ！' },
+      // Songs (Für Elise)
+      furElise:           { en: 'Für Elise',                 jp: 'エリーゼのために' },
+      feA1:               { en: 'Part 1: Theme',             jp: '第1章 主題' },
+      feA1desc:           { en: 'The famous melody. Start gently.',
+                            jp: '有名なあのメロディ。やさしく始めよう。' },
+      feB:                { en: 'Part 2: Gentle Middle',     jp: '第2章 おだやかな中間' },
+      feBdesc:            { en: 'A bright C-major section, then back to the theme.',
+                            jp: 'C長調のあかるい部分→主題に戻ります。' },
+      feA2:               { en: 'Part 3: Storm & Finale',    jp: '第3章 嵐とフィナーレ' },
+      feA2desc:           { en: 'A D-minor storm, then back to the theme — the climax!',
+                            jp: 'D短調の嵐→主題に戻りラスト！ここがクライマックス。' },
+      // Songs (Turkish March)
+      turkishMarch:       { en: 'Turkish March',             jp: 'トルコ行進曲' },
+      taA1:               { en: 'Part 1: Light Theme',       jp: '第1章 軽やかな主題' },
+      taA1desc:           { en: 'The famous theme plus an A-major contrasting section. Right-hand scales feel great.',
+                            jp: '有名な主題＋A長調の対比部。右手のスケールが気持ちいい。' },
+      taB:                { en: 'Part 2: Theme Variations',  jp: '第2章 主題のへんそう' },
+      taBdesc:            { en: 'The theme returns transformed — chord practice.',
+                            jp: '主題が形を変えてかえってくる。和音の練習。' },
+      taA2:               { en: 'Part 3: March Festival',    jp: '第3章 マルチアの祭り' },
+      taA2desc:           { en: "The coda's powerful octaves! Race to the finale.",
+                            jp: 'コーダの力強いオクターブ！フィナーレに駆けあがろう。' },
+      // Misc
+      loadingScore:       { en: 'Loading score…',            jp: '楽譜を読み込み中…' },
+      starting:           { en: 'Starting...',               jp: '起動中...' },
+      audioInitFailedFmt: { en: 'Audio init failed: {v}\n\nReload the browser and try again.',
+                            jp: 'オーディオ初期化に失敗しました: {v}\n\nブラウザを更新してリトライしてみてください。' }
+    };
+
+    function t(key, vars) {
+      const entry = T_STRINGS[key];
+      if (!entry) return key;
+      let s = entry[prefs.lang] || entry.en || key;
+      if (vars) for (const k in vars) s = s.replace('{' + k + '}', vars[k]);
+      return s;
+    }
+
+    // For static HTML elements: walk [data-i18n] and update textContent;
+    // [data-i18n-title] separately updates the title attribute.
+    function applyI18n() {
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        el.textContent = t(el.getAttribute('data-i18n'));
+      });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        el.title = t(el.getAttribute('data-i18n-title'));
+      });
+      // Notify code paths that re-render their own text (song panel, result screen, etc.).
+      window.dispatchEvent(new CustomEvent('langchange'));
+    }
+
+    function setLang(lang) {
+      prefs.lang = lang === 'jp' ? 'jp' : 'en';
+      savePrefs();
+      applyI18n();
+    }
+
+    // Build a stage label out of its prefix (✦ marks) + its translated name.
+    function stageLabel(stage) {
+      if (!stage || !stage.nameKey) return '';
+      return stage.prefix + t(stage.nameKey);
+    }
 
     function applyTheme(idx) {
       prefs.theme = idx;
@@ -2604,9 +2768,7 @@
                : prefs.audioOffsetMs);
       DOM.audioOffsetSlider.value = value;
       DOM.audioOffsetVal.textContent = value;
-      DOM.audioOffsetAuto.textContent = isAuto
-        ? 'Auto-detected value in use (currently ' + value + ' ms)'
-        : '';
+      DOM.audioOffsetAuto.textContent = isAuto ? t('autoDetectedFmt', { v: value }) : '';
     }
 
     function refreshSettingsPanel() {
@@ -2615,9 +2777,9 @@
       if (typeof midiInput !== 'undefined' && midiInput.enabled && midiInput.port?.name) {
         DOM.settingsInputStatus.textContent = '🎹 ' + midiInput.port.name;
       } else if (typeof state !== 'undefined' && state.micSuspended) {
-        DOM.settingsInputStatus.textContent = '🎙️ Standby';
+        DOM.settingsInputStatus.textContent = '🎙️ ' + t('micStandby');
       } else {
-        DOM.settingsInputStatus.textContent = '🎙️ Mic input';
+        DOM.settingsInputStatus.textContent = '🎙️ ' + t('micInput');
       }
       // BLE button only when Web Bluetooth is supported (Chrome/Edge desktop, Android Chrome)
       const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
@@ -2677,6 +2839,35 @@
     DOM.settingsDebugToggle.addEventListener('click', () => {
       applyDebug(!prefs.debug);
       savePrefs();
+    });
+
+    // Language toggle (en ↔ jp). Highlight current; click flips.
+    function refreshLangToggle() {
+      const btn = document.getElementById('langToggleBtn');
+      if (!btn) return;
+      btn.textContent = prefs.lang === 'jp' ? '🇯🇵 日本語' : '🇬🇧 EN';
+    }
+    document.getElementById('langToggleBtn')?.addEventListener('click', () => {
+      setLang(prefs.lang === 'jp' ? 'en' : 'jp');
+      refreshLangToggle();
+      refreshSettingsPanel();   // input status / audio offset use t()
+    });
+    // Apply persisted language at startup. The langchange event lets song
+    // panel / result screen re-render their dynamic text if they're visible.
+    applyI18n();
+    refreshLangToggle();
+    window.addEventListener('langchange', () => {
+      if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
+      if (DOM.sectionResult?.classList.contains('visible')) {
+        // Last-known result tier is captured as practice.sectionIdx; the title
+        // and msg need to refresh — but we don't store the tier index. Easiest:
+        // recompute from cached pcts on the result card. Skipped — re-entering
+        // the result card naturally shows the new language.
+      }
+      if (DOM.ptbSection?.textContent && currentSong) {
+        const sec = currentSong.sections?.[practice.sectionIdx];
+        if (sec) DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      }
     });
 
     // ========================================
@@ -2999,7 +3190,7 @@
       state.encouragementHideTimeMs = timeMs + CONFIG.ENCOURAGEMENT_DISPLAY_MS;
 
       // Show message with animation
-      DOM.encouragement.textContent = tier.message;
+      DOM.encouragement.textContent = t(tier.messageKey);
       DOM.encouragement.classList.remove('visible');
       DOM.encouragement.classList.add('entering');
 
@@ -3721,29 +3912,29 @@
       ];
       axes.sort((a, b) => b.score - a.score);
 
-      let good = 'Strength: playing each note clearly';
+      let good = 'playing each note clearly';
       if (state.growthScore > 0.05) {
-        good = 'Strength: improving steadily over the last 30s';
+        good = 'improving steadily over the last 30s';
       } else if (axes[0].key === 'rhythm' && axes[0].score > 0.7) {
-        good = 'Strength: rhythm is steady';
+        good = 'rhythm is steady';
       } else if (axes[0].key === 'dynamics' && axes[0].score > 0.7) {
-        good = 'Strength: good dynamic control';
+        good = 'good dynamic control';
       } else if (axes[0].key === 'stability' && axes[0].score > 0.7) {
-        good = 'Strength: pitch is stable';
+        good = 'pitch is stable';
       }
 
-      let next = 'Next: breathe and hold tempo for 20s';
+      let next = 'breathe and hold tempo for 20s';
       const weakest = axes[axes.length - 1];
       if (weakest.key === 'rhythm') {
-        next = 'Next: one hand slowly, hold tempo for 20s';
+        next = 'one hand slowly, hold tempo for 20s';
       } else if (weakest.key === 'dynamics') {
-        next = 'Next: build soft to loud across one phrase';
+        next = 'build soft to loud across one phrase';
       } else if (weakest.key === 'stability') {
-        next = 'Next: hold each note fully before moving on';
+        next = 'hold each note fully before moving on';
       }
 
-      state.feedbackGood = good;
-      state.feedbackNext = next;
+      state.feedbackGood = 'Strength: ' + good;
+      state.feedbackNext = 'Next: ' + next;
     }
 
     function updateQualityScores(timeMs) {
@@ -3988,7 +4179,7 @@
 
       if (newStage !== prevStage) {
         state.currentStage = newStage;
-        DOM.stageLabel.textContent = CONFIG.STAGES[newStage].name;
+        DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[newStage]);
         if (newStage > 0) { DOM.stageLabel.classList.add('visible'); }
         else { DOM.stageLabel.classList.remove('visible'); }
 
@@ -4348,18 +4539,14 @@
     // ========================================
     // v11: localStorage Best Scores
     // ========================================
-    function loadBestScores() {
-      try {
-        const raw = localStorage.getItem('pianoViz_best');
-        return raw ? JSON.parse(raw) : { bestCombo: 0, peakFlow: 0, totalSessions: 0 };
-      } catch (e) { return { bestCombo: 0, peakFlow: 0, totalSessions: 0 }; }
-    }
+    const BEST_DEFAULT = { bestCombo: 0, peakFlow: 0, totalSessions: 0 };
+    function loadBestScores() { return loadJSON('pianoViz_best', { ...BEST_DEFAULT }); }
     function saveBestScores(combo, flow) {
       const best = loadBestScores();
       best.bestCombo = Math.max(best.bestCombo, combo);
       best.peakFlow = Math.max(best.peakFlow, Math.round(flow));
       best.totalSessions++;
-      try { localStorage.setItem('pianoViz_best', JSON.stringify(best)); } catch (e) { }
+      saveJSON('pianoViz_best', best);
       return best;
     }
 
@@ -4387,7 +4574,7 @@
     // ========================================
     function showSessionSummary() {
       const elapsed = performance.now() - state.sessionStartTimeMs;
-      const stageName = CONFIG.STAGES[state.currentStage] ? CONFIG.STAGES[state.currentStage].name : '-';
+      const stageName = stageLabel(CONFIG.STAGES[state.currentStage]) || '-';
 
       DOM.sumCombo.textContent = state.bestCombo;
       DOM.sumStage.textContent = stageName || '-';
@@ -4647,10 +4834,10 @@
     // source-score measure number); the section runs until the next def's
     // startMeasure (or end-of-song). Boundaries are chosen at musical landmarks
     // (theme returns, key changes, climaxes) so a kid never gets cut off mid-phrase.
-    function makeSong(id, title, composer, icon, sectionDefs) {
+    function makeSong(id, titleKey, composer, icon, sectionDefs) {
       return {
         id,
-        title,
+        titleKey,
         composer,
         icon,
         mxlUrl: 'assets/' + id + '.mxl',
@@ -4669,24 +4856,18 @@
     const SONGS = {
       // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
       // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
-      fur_elise: makeSong('fur_elise', 'Für Elise', 'Beethoven', '🌸', [
-        { id: 'A1', name: 'Part 1: Theme',         startMeasure: 0,  isBoss: false,
-          desc: 'The famous melody. Start gently.' },
-        { id: 'B',  name: 'Part 2: Gentle Middle', startMeasure: 23, isBoss: false,
-          desc: 'A bright C-major section, then back to the theme.' },
-        { id: 'A2', name: 'Part 3: Storm & Finale', startMeasure: 55, isBoss: true,
-          desc: 'A D-minor storm, then back to the theme — the climax!' }
+      fur_elise: makeSong('fur_elise', 'furElise', 'Beethoven', '🌸', [
+        { id: 'A1', nameKey: 'feA1', descKey: 'feA1desc', startMeasure: 0,  isBoss: false },
+        { id: 'B',  nameKey: 'feB',  descKey: 'feBdesc',  startMeasure: 23, isBoss: false },
+        { id: 'A2', nameKey: 'feA2', descKey: 'feA2desc', startMeasure: 55, isBoss: true  }
       ]),
       // Mozart Sonata K.331/3 "Rondo alla Turca" — 137-measure musetrainer edition.
       // Form: A(0-8) | B(9-25) | A'(26-34) | C(35-43) | A''(44-60)
       //        | D(61-69) | E(70-78) | F(79-95) | G(96-104) | Coda(105-136)
-      alla_turca: makeSong('alla_turca', 'Turkish March', 'Mozart', '🥁', [
-        { id: 'A1', name: 'Part 1: Light Theme', startMeasure: 0,  isBoss: false,
-          desc: 'The famous theme plus an A-major contrasting section. Right-hand scales feel great.' },
-        { id: 'B',  name: 'Part 2: Theme Variations', startMeasure: 26, isBoss: false,
-          desc: 'The theme returns transformed — chord practice.' },
-        { id: 'A2', name: 'Part 3: March Festival', startMeasure: 70, isBoss: true,
-          desc: "The coda's powerful octaves! Race to the finale." }
+      alla_turca: makeSong('alla_turca', 'turkishMarch', 'Mozart', '🥁', [
+        { id: 'A1', nameKey: 'taA1', descKey: 'taA1desc', startMeasure: 0,  isBoss: false },
+        { id: 'B',  nameKey: 'taB',  descKey: 'taBdesc',  startMeasure: 26, isBoss: false },
+        { id: 'A2', nameKey: 'taA2', descKey: 'taA2desc', startMeasure: 70, isBoss: true  }
       ])
     };
     let currentSong = SONGS.fur_elise;
@@ -5138,15 +5319,11 @@
     };
 
     // ========================================
-    // Kid-friendly: doremi labels + section banner
+    // Section banner
     // ========================================
-    const DOREMI_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    function midiToDoremi(midi) { return DOREMI_NAMES[notePitchClass(midi)]; }
-    function midiToDoremiOctave(midi) { return midiToDoremi(midi) + (Math.floor(midi / 12) - 1); }
-
     function showSectionBanner(sec) {
       if (!DOM.sectionBanner) return;
-      DOM.sectionBanner.textContent = (sec.isBoss ? '👑 ' : '') + sec.name;
+      DOM.sectionBanner.textContent = (sec.isBoss ? '👑 ' : '') + t(sec.nameKey);
       DOM.sectionBanner.classList.remove('show');
       void DOM.sectionBanner.offsetWidth;   // restart animation
       DOM.sectionBanner.classList.add('show');
@@ -5987,7 +6164,7 @@
 
       if (!matched) {
         if (practice.mode === 'guided') {
-          showHitChip('miss', 'You played: ' + midiToDoremiOctave(detectedMidi));
+          showHitChip('miss', t('youPlayedFmt', { v: midiToName(detectedMidi) }));
         }
         return false;
       }
@@ -6009,7 +6186,7 @@
       const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
       practice.timingScoreSum += ts;
       const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
-      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? 'Perfect!' : 'Nice!');
+      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? t('perfect') : t('nice'));
       state.flow = Math.min(100, state.flow + 6 + ts * 4);
       state.combo++;
       if (state.combo > state.bestCombo) state.bestCombo = state.combo;
@@ -6034,7 +6211,7 @@
       practice.durationScoreSum += score;
       practice.durationScoredCount++;
       if (score < 0.4) {
-        showHitChip('miss', heldMs < expected ? '⏱ Too short' : '⏱ Too long');
+        showHitChip('miss', heldMs < expected ? t('tooShort') : t('tooLong'));
       }
     }
 
@@ -6080,29 +6257,24 @@
     }
     function loadPracticeProgress() {
       const def = { streakDays: [], streakCount: 0, songs: {} };
-      try {
-        const raw = localStorage.getItem('pianoViz_practice_v1');
-        if (!raw) return def;
-        const p = JSON.parse(raw);
-        // Migrate legacy schema (top-level sections/unlocked*) into songs.fur_elise.
-        if (p.sections && !p.songs) {
-          p.songs = {
-            fur_elise: {
-              sections: p.sections,
-              unlockedTempos: p.unlockedTempos || { 60: true, 75: false, 90: false, 100: false },
-              unlockedSections: p.unlockedSections || { A1: true, B: false, A2: false }
-            }
-          };
-          delete p.sections;
-          delete p.unlockedTempos;
-          delete p.unlockedSections;
-        }
-        return Object.assign(def, p);
-      } catch (e) { return def; }
+      const p = loadJSON('pianoViz_practice_v1', null);
+      if (!p) return def;
+      // Migrate legacy schema (top-level sections/unlocked*) into songs.fur_elise.
+      if (p.sections && !p.songs) {
+        p.songs = {
+          fur_elise: {
+            sections: p.sections,
+            unlockedTempos: p.unlockedTempos || { 60: true, 75: false, 90: false, 100: false },
+            unlockedSections: p.unlockedSections || { A1: true, B: false, A2: false }
+          }
+        };
+        delete p.sections;
+        delete p.unlockedTempos;
+        delete p.unlockedSections;
+      }
+      return Object.assign(def, p);
     }
-    function savePracticeProgress() {
-      try { localStorage.setItem('pianoViz_practice_v1', JSON.stringify(practice.progress)); } catch (e) { }
-    }
+    function savePracticeProgress() { saveJSON('pianoViz_practice_v1', practice.progress); }
     // Always returns the per-song state, lazily creating it on first access.
     function songProg() {
       if (!practice.progress.songs) practice.progress.songs = {};
@@ -6180,9 +6352,8 @@
 
     function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
     function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
-    function midiToName(midi) {
-      return CONFIG.NOTE_NAMES[notePitchClass(midi)] + (Math.floor(midi / 12) - 1);
-    }
+    function midiToPitchName(midi) { return CONFIG.NOTE_NAMES[notePitchClass(midi)]; }
+    function midiToName(midi) { return midiToPitchName(midi) + (Math.floor(midi / 12) - 1); }
 
     // ========================================
     // Section build + start
@@ -6275,7 +6446,7 @@
       state.bestCombo = 0;
 
       // HUD
-      DOM.ptbSection.textContent = sec.name + (sec.isBoss ? ' 👑' : '');
+      DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
       DOM.ptbTempo.textContent = '🥁 ' + practice.tempoPct + '%';
       // Exclude _filtered notes from the progress count (they are auto-skipped).
       practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
@@ -6423,7 +6594,7 @@
             n.missed = true;
             practice.misses++;
             practice.sectionCombo = 0;
-            showHitChip('miss', 'Miss');
+            showHitChip('miss', t('missChip'));
           }
           if (n.timeMs - elapsed > HIT_WINDOW_MS) break;
         }
@@ -6533,9 +6704,9 @@
       ctx.fillStyle = 'rgba(180, 200, 255, 0.7)';
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('LEFT', padX + halfW / 2, laneTop + 14);
+      ctx.fillText(t('laneLeft'), padX + halfW / 2, laneTop + 14);
       ctx.fillStyle = 'rgba(255, 200, 220, 0.7)';
-      ctx.fillText('RIGHT', midX + halfW / 2, laneTop + 14);
+      ctx.fillText(t('laneRight'), midX + halfW / 2, laneTop + 14);
 
       // Center divider
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
@@ -6626,7 +6797,7 @@
         if (!n.hit && !n.missed && noteH > 18) {
           ctx.fillStyle = 'rgba(0,0,0,0.9)';
           ctx.font = 'bold 12px sans-serif';
-          ctx.fillText(midiToDoremi(n.midi), x, y - noteH / 2 + 4);
+          ctx.fillText(midiToPitchName(n.midi), x, y - noteH / 2 + 4);
         }
       }
 
@@ -6640,7 +6811,7 @@
         ctx.fillText('▼', x, hitLineY - winPx - 4);
         ctx.font = 'bold 18px sans-serif';
         ctx.fillStyle = cur.hand === 'L' ? 'rgba(180,220,255,1)' : 'rgba(255,200,220,1)';
-        ctx.fillText((cur.hand === 'L' ? 'L ' : 'R ') + midiToDoremi(cur.midi), x, hitLineY + 32);
+        ctx.fillText(cur.hand + ' · ' + midiToPitchName(cur.midi), x, hitLineY + 32);
       }
 
       // Boss flair
@@ -6663,7 +6834,7 @@
         const remaining = totalBeats - beatIdx;    // 4 → 3 → 2 → 1
         const slotMs = ctElapsed - beatIdx * beatMs;
         const slotProgress = 1 - Math.min(1, slotMs / beatMs);
-        const text = ctElapsed >= COUNT_IN_MS ? 'GO!' : String(remaining);
+        const text = ctElapsed >= COUNT_IN_MS ? t('countInGo') : String(remaining);
         const isGo = ctElapsed >= COUNT_IN_MS;
         // pop-in scale
         const pop = isGo
@@ -6725,10 +6896,10 @@
     const SECTION_IDS = ['A1', 'B', 'A2'];
 
     const RESULT_TIERS = [
-      { title: 'Try again!',     msg: 'Start with a slow tempo. Give it another try!' },
-      { title: 'Clear!',         msg: 'Clear! Keep practicing to get even better.' },
-      { title: '🎉 Part Clear!',    msg: 'Great job! Almost perfect!' },
-      { title: '🌟 Perfect!', msg: 'Brilliant! Try the next difficulty!' }
+      { titleKey: 'tier0Title', msgKey: 'tier0Msg' },
+      { titleKey: 'tier1Title', msgKey: 'tier1Msg' },
+      { titleKey: 'tier2Title', msgKey: 'tier2Msg' },
+      { titleKey: 'tier3Title', msgKey: 'tier3Msg' }
     ];
 
     // durPct is null in guided mode (no audio clock to score length against), in
@@ -6788,7 +6959,7 @@
           const next = SECTION_IDS[sIdx + 1];
           if (!sp.unlockedSections[next]) {
             sp.unlockedSections[next] = true;
-            unlockedMsg += '🔓 ' + (currentSong.sections.find(s => s.id === next).name) + ' unlocked!';
+            unlockedMsg += '🔓 ' + t(currentSong.sections.find(s => s.id === next).nameKey) + ' unlocked!';
           }
         }
       }
@@ -6806,8 +6977,8 @@
 
       // Populate result UI
       const tier = RESULT_TIERS[Math.max(0, Math.min(3, stars))];
-      DOM.resTitle.textContent = tier.title;
-      DOM.resSectionName.textContent = sec.name + (sec.isBoss ? ' 👑' : '');
+      DOM.resTitle.textContent = t(tier.titleKey);
+      DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
       DOM.resStars.innerHTML = '';
       for (let i = 0; i < 3; i++) {
         const span = document.createElement('span');
@@ -6824,7 +6995,7 @@
         DOM.resDuration.textContent = durPct + '%';
       }
       DOM.resCombo.textContent = practice.sectionBestCombo;
-      DOM.resMsg.textContent = tier.msg;
+      DOM.resMsg.textContent = t(tier.msgKey);
       DOM.resUnlock.textContent = unlockedMsg.trim();
 
       const nextIdx = SECTION_IDS.indexOf(sec.id) + 1;
@@ -6874,7 +7045,6 @@
         c.beginPath(); c.moveTo(padX, y); c.lineTo(padX + innerW, y); c.stroke();
       }
 
-      // Y-axis labels (left edge).
       c.fillStyle = 'rgba(255,255,255,0.35)';
       c.font = '9px sans-serif';
       c.textAlign = 'right';
@@ -6886,7 +7056,6 @@
       const xAt = (i) => n === 1 ? padX + innerW / 2 : padX + (i / (n - 1)) * innerW;
       const yAt = (v) => padTop + innerH * (1 - clamp01(v / 100));
 
-      // Line (accuracy).
       c.strokeStyle = 'rgba(255, 215, 0, 0.85)';
       c.lineWidth = 2;
       c.beginPath();
@@ -6896,14 +7065,12 @@
       }
       c.stroke();
 
-      // Data points + star markers.
       for (let i = 0; i < n; i++) {
         const x = xAt(i), y = yAt(history[i].a);
         c.beginPath();
         c.arc(x, y, 3.2, 0, Math.PI * 2);
         c.fillStyle = '#ffd700';
         c.fill();
-        // Ring around 3-star attempts.
         if (history[i].s >= 3) {
           c.strokeStyle = 'rgba(255, 220, 80, 0.9)';
           c.lineWidth = 1.5;
@@ -6913,7 +7080,6 @@
         }
       }
 
-      // Latest-value label.
       const last = history[n - 1];
       const prev = history[n - 2];
       const lastX = xAt(n - 1), lastY = yAt(last.a);
@@ -6924,7 +7090,6 @@
       const labelOffsetY = (lastY < padTop + 16) ? 14 : -6;
       c.fillText(last.a + '%', lastX - 5, lastY + labelOffsetY);
 
-      // Trend vs previous.
       const delta = last.a - prev.a;
       let txt, col;
       if (delta >= 3)       { txt = '↑ +' + delta + '%';            col = '#7eff8a'; }
@@ -6935,7 +7100,6 @@
       c.font = 'bold 11px sans-serif';
       c.fillText(txt, padX, h - 4);
 
-      // Title (right side).
       c.textAlign = 'right';
       c.fillStyle = 'rgba(255,255,255,0.45)';
       c.font = '10px sans-serif';
@@ -6982,7 +7146,7 @@
         const loading = document.createElement('div');
         loading.className = 'section-row';
         loading.style.opacity = '0.6';
-        loading.innerHTML = '<div class="section-icon">⏳</div><div>Loading score…</div><div></div>';
+        loading.innerHTML = '<div class="section-icon">⏳</div><div>' + t('loadingScore') + '</div><div></div>';
         DOM.sectionList.appendChild(loading);
         return;
       }
@@ -6994,8 +7158,8 @@
         row.innerHTML = `
           <div class="section-icon">${sec.isBoss ? '👑' : (unlocked ? '🎵' : '🔒')}</div>
           <div>
-            <div style="font-weight:500;">${sec.name}</div>
-            <div style="font-size:.75rem; color:rgba(255,255,255,.45);">${sec.desc}</div>
+            <div style="font-weight:500;">${t(sec.nameKey)}</div>
+            <div style="font-size:.75rem; color:rgba(255,255,255,.45);">${t(sec.descKey)}</div>
           </div>
           <div class="section-stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
         `;
@@ -7078,6 +7242,10 @@
       DOM.midiRescanBtn?.classList.remove('visible');
     }
 
+    function alertAudioInitError(e) {
+      alert(t('audioInitFailedFmt', { v: (e && e.message) || e }));
+    }
+
     DOM.midiRescanBtn?.addEventListener('click', () => {
       rescanMidi();
     });
@@ -7111,7 +7279,7 @@
         }
         await startPracticeSection(practice.sectionIdx);
       } catch (e) {
-        alert('Audio init failed: ' + (e && e.message || e) + '\n\nReload the browser and try again.');
+        alertAudioInitError(e);
       } finally {
         state.starting = false;
       }
@@ -7131,7 +7299,7 @@
         }
         DOM.osmdContainer.innerHTML = '';
       }
-      DOM.songTitle.textContent = song.title;
+      DOM.songTitle.textContent = t(song.titleKey);
       DOM.songComposer.textContent = song.composer;
       practice.progress = practice.progress || loadPracticeProgress();
       practice.mode = 'guided';
@@ -7215,7 +7383,7 @@
       state.starting = true;
       DOM.startBtn.disabled = true;
       const prevBtnText = DOM.startBtn.textContent;
-      DOM.startBtn.textContent = 'Starting...';
+      DOM.startBtn.textContent = t('starting');
       try {
         await initAudio();
         showRunningUI();
@@ -7225,7 +7393,7 @@
         state.sessionStartTimeMs = performance.now();
         requestAnimationFrame(loop);
       } catch (e) {
-        alert('Audio init failed: ' + (e && e.message || e) + '\n\nReload the browser and try again.');
+        alertAudioInitError(e);
       } finally {
         if (!state.running) {
           DOM.startBtn.disabled = false;
