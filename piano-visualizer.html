@@ -4687,6 +4687,12 @@
     // at this age is noticeably wider than onset variability (Bonacina 2019).
     const DURATION_MIN_TOL_MS = 120;
     const DURATION_TOL_FRACTION = 0.4;
+    // Audio output latency compensation. Speaker buffer delay means the kid hears
+    // the metronome ~30-100ms after Tone schedules it, so a press timed to the
+    // audible beat registers as "late" without compensation. We try to read
+    // AudioContext.outputLatency at session start; this default covers the case
+    // where the browser returns 0 (Firefox / older Safari) or unreliable values.
+    const DEFAULT_AUDIO_OFFSET_MS = 40;
     // Mic-only safety nets — empirically tuned for iPad acoustic-piano practice.
     // ONSET_HYSTERESIS_FRAMES = 1 effectively disables the hysteresis (single-frame
     // onsets allowed). Bumping to 2 helps reject one-frame spectral spikes but also
@@ -4722,6 +4728,10 @@
       // 練習する手のフィルタ。'R' = 右手のみ、'L' = 左手のみ、null = 両手。
       // フィルタされた手のノートはセクション開始時に .hit を立てて自動スキップ。
       handFilter: null,
+      // Set in startPracticeSection from AudioContext.outputLatency or
+      // DEFAULT_AUDIO_OFFSET_MS. Subtracted from practiceRealElapsedMs so a
+      // press timed to the audible beat scores PERFECT.
+      audioOffsetMs: 0,
       progress: null,
       _completing: false,
       _lastProgUpdate: 0
@@ -5619,9 +5629,13 @@
     // upcoming queue displayed above it. The lane only moves when the kid plays
     // correctly and currentNoteIdx advances.
     function practiceRealElapsedMs() {
-      return (typeof Tone !== 'undefined')
+      const raw = (typeof Tone !== 'undefined')
         ? (Tone.now() - practice.startAudioTime) * 1000
         : performance.now() - practice.startAudioTime * 1000;
+      // Subtract the audio output latency. Applied to both judging (so an
+      // on-the-beat press scores PERFECT) and lane visuals (so the note crosses
+      // the hit line at the same wall-clock instant the kid hears the beep).
+      return raw - (practice.audioOffsetMs || 0);
     }
     function practiceElapsedMs() {
       const realElapsed = practiceRealElapsedMs();
@@ -5936,12 +5950,24 @@
           const ctx = Tone.context.rawContext || Tone.context;
           const out = (ctx.outputLatency || 0) * 1000;
           const base = (ctx.baseLatency || 0) * 1000;
+          // Hit-judging offset: prefer the browser's reported figure when it's
+          // populated (Chrome/Edge desktop reliably do; Firefox often returns 0,
+          // older Safari undefined), otherwise fall back to a 40ms default that
+          // covers typical desktop wired output. Without this, a press timed to
+          // the audible metronome registers ~30-100ms late.
+          const reported = out + base;
+          practice.audioOffsetMs = reported > 5
+            ? Math.min(reported, 200)   // clamp absurd values (e.g. AirPods 250ms)
+            : DEFAULT_AUDIO_OFFSET_MS;
           remoteLog('[Practice] mode=' + practice.mode
             + ' tempoPct=' + practice.tempoPct
             + ' audioOutputLatency=' + out.toFixed(1) + 'ms'
             + ' audioBaseLatency=' + base.toFixed(1) + 'ms'
-            + ' lookAhead=' + (Tone.context.lookAhead * 1000).toFixed(1) + 'ms');
-        } catch (e) {}
+            + ' lookAhead=' + (Tone.context.lookAhead * 1000).toFixed(1) + 'ms'
+            + ' compensation=' + practice.audioOffsetMs.toFixed(1) + 'ms');
+        } catch (e) {
+          practice.audioOffsetMs = DEFAULT_AUDIO_OFFSET_MS;
+        }
       } catch (e) {
         console.error('Tone start failed', e);
         practice.startAudioTime = (performance.now() / 1000) + audioStartLead;
