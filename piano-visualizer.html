@@ -4831,9 +4831,9 @@
     // Returns true if the port was successfully attached, false if it was skipped
     // (virtual/system port). Callers can use the return to decide whether to keep
     // searching the port list.
-    function attachMidiPort(port, force) {
+    function attachMidiPort(port) {
       if (midiInput.port === port) return true;
-      if (!force && isVirtualMidiPort(port)) {
+      if (isVirtualMidiPort(port)) {
         console.log('[MIDI] skip virtual/system port: ' + port.name);
         return false;
       }
@@ -4855,7 +4855,7 @@
       DOM.micMeter?.classList.remove('visible');
       stopMidiAutoRescan();
       showHitChip('good', '🎹 接続: ' + (port.name || 'MIDI'));
-      console.log('[MIDI] connected: ' + port.name + (force ? ' (forced)' : ''));
+      console.log('[MIDI] connected: ' + port.name);
       return true;
     }
 
@@ -4981,13 +4981,8 @@
         for (const port of ports) {
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
         }
-        for (const port of ports) {
-          if (midiInput.enabled) return true;
-          if (attachMidiPort(port, true)) return true;
-        }
         if (!silent) {
-          setIntroHintDiagnostic('🎹 認識中: ' + portInfo,
-            '接続できませんでした。WMBで再ペアリングしてください');
+          setIntroHintDiagnostic('🎹 認識中: ' + portInfo, '接続できませんでした');
         }
         return false;
       } catch (e) {
