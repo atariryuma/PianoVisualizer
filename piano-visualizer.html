@@ -541,33 +541,6 @@
        but suppress the visual entirely. The settings panel surfaces the action. */
     #midiRescanBtn.visible { display: none }
 
-    /* Dismiss button under the introHint diagnostic, lets users hide the
-       "no MIDI" message when they intentionally aren't connecting a keyboard. */
-    #midiHintDismiss {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, calc(-50% + 64px));
-      z-index: 6;
-      font-size: .82rem;
-      padding: .42rem 1.2rem;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, .07);
-      border: 1px solid rgba(255, 255, 255, .2);
-      color: rgba(255, 255, 255, .7);
-      cursor: pointer;
-      letter-spacing: .05em;
-      display: none;
-      -webkit-tap-highlight-color: transparent;
-      transition: background .15s
-    }
-
-    #midiHintDismiss.visible { display: inline-block }
-
-    #midiHintDismiss:active {
-      background: rgba(255, 255, 255, .18);
-      transform: translate(-50%, calc(-50% + 64px)) scale(.97)
-    }
 
     #midiRescanBtn:active {
       background: rgba(80, 100, 200, .45);
@@ -1846,8 +1819,9 @@
   <div id="debugOverlay"></div>
   <!-- Populated by refreshIntroHint() — only shown when noInputAvailable(). -->
   <div id="introHint"></div>
-  <button id="midiHintDismiss" data-i18n="later">Later</button>
-  <!-- MIDI rescan moved to the ⚙ settings panel. Element kept for legacy-code compatibility. -->
+  <!-- The "Later" dismiss button has been retired — the rescan button below
+       gives the user the only meaningful action (retry); doing nothing already
+       acts as an implicit dismiss. -->
   <button id="midiRescanBtn">🔄 Scan for MIDI keyboard</button>
   <div id="micMeter"><div id="micMeterFill"></div></div>
   <div id="midiBadge"></div>
@@ -2292,7 +2266,6 @@
       bleMidiBtn: document.getElementById('bleMidiBtn'),
       midiBadge: document.getElementById('midiBadge'),
       midiRescanBtn: document.getElementById('midiRescanBtn'),
-      midiHintDismiss: document.getElementById('midiHintDismiss'),
       // Settings panel
       settingsBtn: document.getElementById('settingsBtn'),
       settingsPanel: document.getElementById('settingsPanel'),
@@ -2666,7 +2639,6 @@
       resetSession:       { en: 'Reset session',             jp: 'セッションをリセット' },
       debugOverlay:       { en: 'Debug overlay',             jp: 'デバッグ表示' },
       language:           { en: 'Language',                  jp: '言語' },
-      later:              { en: 'Later',                     jp: 'あとで' },
       // Intro hint / MIDI diagnostics
       introNeedMidi:      { en: '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)',
                             jp: '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）' },
@@ -3011,7 +2983,6 @@
 
     DOM.settingsRescanBtn.addEventListener('click', () => {
       // 明示的な再スキャン = dismiss 状態を解除して再エンゲージ
-      state.midiHintDismissed = false;
       if (typeof rescanMidi === 'function') rescanMidi();
       closeSettings();
     });
@@ -5753,7 +5724,7 @@
       // Restart silent polling so a hot-replug picks up automatically. This
       // handles "browser sees keyboard but app dropped it" — the user doesn't
       // need to know what happened, the next 2.5 s tick reconnects.
-      if (!state.midiHintDismissed && (state.micPermissionFailed || state.micIntentionallySkipped)) {
+      if (state.micPermissionFailed || state.micIntentionallySkipped) {
         startMidiAutoRescan();
       }
     }
@@ -5889,12 +5860,10 @@
     // か再スキャンの明示的な操作までは再表示しない。
     function setIntroHintDiagnostic(line1, line2) {
       if (!DOM.introHint) return;
-      if (state.midiHintDismissed) return;
-      const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
+            const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
       DOM.introHint.innerHTML = line1 + sub;
       DOM.introHint.classList.add('visible');
       DOM.midiRescanBtn?.classList.add('visible');
-      DOM.midiHintDismiss?.classList.add('visible');
     }
     // Each callsite that produces a diagnostic with localized strings should
     // wrap its call in showIntroDiag(() => setIntroHintDiagnostic(t(...), ...))
@@ -7568,11 +7537,10 @@
     // lights up the moment they play, which is the only feedback they need.
     function refreshIntroHint() {
       if (!DOM.introHint) return;
-      const show = noInputAvailable() && !state.midiHintDismissed;
+      const show = noInputAvailable();
       DOM.introHint.classList.toggle('visible', show);
       if (show) DOM.introHint.innerHTML = t('introNeedMidi');
       DOM.midiRescanBtn?.classList.toggle('visible', show);
-      DOM.midiHintDismiss?.classList.toggle('visible', show);
     }
 
     function showRunningUI() {
@@ -7589,7 +7557,7 @@
       // "🎹 No MIDI port found" diagnostic the kid did not ask for.
       const wantBgRescan = !midiInput.enabled
         && (state.micPermissionFailed || state.micIntentionallySkipped);
-      if (wantBgRescan && !state.midiHintDismissed) {
+      if (wantBgRescan) {
         startMidiAutoRescan();
         rescanMidi(true).catch(() => {});   // SILENT — no diagnostic on entry
       }
@@ -7599,7 +7567,6 @@
       if (DOM.introHint) DOM.introHint.classList.remove('visible');
       clearIntroDiagCache();
       DOM.midiRescanBtn?.classList.remove('visible');
-      DOM.midiHintDismiss?.classList.remove('visible');
     }
 
     function alertAudioInitError(e) {
@@ -7608,17 +7575,9 @@
 
     DOM.midiRescanBtn?.addEventListener('click', () => {
       // 明示的な再スキャン要求 = dismiss を解除してエンゲージし直す
-      state.midiHintDismissed = false;
       rescanMidi();
     });
 
-    // 「あとで」ボタン: イントロの診断を抑制し、自動リスキャンも止める。
-    // 次回 returnToTitle、または ⚙ 設定からの「Scan for MIDI」操作で復活。
-    DOM.midiHintDismiss?.addEventListener('click', () => {
-      state.midiHintDismissed = true;
-      hideIntroHint();
-      stopMidiAutoRescan();
-    });
 
     DOM.songBack.addEventListener('click', () => {
       DOM.songPanel.classList.remove('visible');
@@ -7818,7 +7777,6 @@
       DOM.micMeter.classList.remove('visible');
       stopMidiAutoRescan();
       // タイトルに戻ったら dismiss 状態もリセット (次回起動で再度ガイド表示)
-      state.midiHintDismissed = false;
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
       document.body.classList.add('title-screen');
