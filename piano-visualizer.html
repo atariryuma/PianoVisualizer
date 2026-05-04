@@ -320,6 +320,31 @@
       50%      { transform: translate(-50%, -50%) scale(1.06); }
     }
 
+    #midiRescanBtn {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, calc(-50% + 60px));
+      z-index: 6;
+      font-size: .85rem;
+      padding: .55rem 1.4rem;
+      border: 1px solid rgba(180, 200, 255, .4);
+      border-radius: 24px;
+      background: rgba(60, 80, 160, .25);
+      color: #c8d4ff;
+      cursor: pointer;
+      letter-spacing: .04em;
+      display: none;
+      -webkit-tap-highlight-color: transparent
+    }
+
+    #midiRescanBtn.visible { display: inline-block }
+
+    #midiRescanBtn:active {
+      background: rgba(80, 100, 200, .45);
+      transform: translate(-50%, calc(-50% + 60px)) scale(.97)
+    }
+
     #midiBadge {
       position: fixed;
       right: 16px;
@@ -1472,6 +1497,7 @@
   <div id="qualityScore"></div>
   <div id="debugOverlay"></div>
   <div id="introHint">🎹 ピアノを弾いてみよう</div>
+  <button id="midiRescanBtn">🔄 MIDIキーボードを探す</button>
   <div id="micMeter"><div id="micMeterFill"></div></div>
   <div id="midiBadge"></div>
 
@@ -1898,7 +1924,8 @@
       micMeter: document.getElementById('micMeter'),
       micMeterFill: document.getElementById('micMeterFill'),
       bleMidiBtn: document.getElementById('bleMidiBtn'),
-      midiBadge: document.getElementById('midiBadge')
+      midiBadge: document.getElementById('midiBadge'),
+      midiRescanBtn: document.getElementById('midiRescanBtn')
     };
     const ctx = DOM.canvas.getContext('2d');
 
@@ -2085,14 +2112,23 @@
       if (midiInput.enabled) {
         console.log('[AUDIO] MIDI detected — skipping microphone acquisition');
         state.micSuspended = true;
+      } else if (isAppleMobile() && navigator.requestMIDIAccess) {
+        // Web MIDI Browser (or any iOS WKWebView wrapper that polyfills Web MIDI):
+        // mic permission is consistently broken on iOS WKWebView wrappers — the
+        // dialog says "go to settings" but settings have no entry to grant.
+        // Skip mic entirely; this app is meant to be used with MIDI here anyway.
+        state.micSuspended = true;
+        state.micPermissionFailed = true;
+        console.log('[AUDIO] iOS WKWebView with Web MIDI polyfill — running MIDI-only (mic skipped)');
       } else {
-        // Mic acquisition is best-effort: WKWebView wrappers (Web MIDI Browser etc.)
-        // may have broken getUserMedia plumbing where the iOS permission dialog
-        // never re-asks but always denies. We don't want that to dead-end the app —
-        // running in MIDI-only mode is still useful, and the keyboard can be paired
-        // afterwards via the existing Web MIDI / BLE paths.
+        // Mic acquisition is best-effort with a timeout. WKWebView wrappers can
+        // hang on getUserMedia indefinitely; without the timeout the app would
+        // freeze waiting forever on a permission that never resolves.
         try {
-          await acquireMic();
+          await Promise.race([
+            acquireMic(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('mic permission timeout')), 5000))
+          ]);
         } catch (e) {
           state.micSuspended = true;
           state.micPermissionFailed = true;
@@ -4855,6 +4891,30 @@
       }
     }
 
+    // 手動 MIDI 再検索 — ユーザが Web MIDI Browser や OS で後からキーボードを
+    // ペアリングしたが、onstatechange が(ポリフィル/環境差で)発火しない場合の救済。
+    async function rescanMidi() {
+      if (!navigator.requestMIDIAccess) {
+        showHitChip('miss', 'Web MIDI 非対応');
+        return;
+      }
+      try {
+        const access = await navigator.requestMIDIAccess({ sysex: false });
+        const ports = Array.from(access.inputs.values());
+        for (const port of ports) {
+          if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) {
+            return;
+          }
+        }
+        if (!midiInput.enabled) {
+          showHitChip('miss', 'MIDIキーボードが見つかりません');
+        }
+      } catch (e) {
+        console.warn('[MIDI] rescan failed:', e.message);
+        showHitChip('miss', 'MIDI再検索エラー');
+      }
+    }
+
     // ========================================
     // BLE-MIDI via Web Bluetooth
     //   Android Chrome's Web MIDI exposes USB devices only — Bluetooth keyboards
@@ -6305,6 +6365,10 @@
         txt = '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）';
       }
       DOM.introHint.innerHTML = txt;
+      // No-input 状態でだけリスキャンボタンを出す
+      const needRescan = state.micPermissionFailed && !midiInput.enabled
+        && DOM.introHint.classList.contains('visible');
+      DOM.midiRescanBtn?.classList.toggle('visible', needRescan);
     }
 
     function showRunningUI() {
@@ -6321,7 +6385,12 @@
 
     function hideIntroHint() {
       if (DOM.introHint) DOM.introHint.classList.remove('visible');
+      DOM.midiRescanBtn?.classList.remove('visible');
     }
+
+    DOM.midiRescanBtn?.addEventListener('click', () => {
+      rescanMidi();
+    });
 
     DOM.songBack.addEventListener('click', () => {
       DOM.songPanel.classList.remove('visible');
