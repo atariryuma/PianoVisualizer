@@ -4733,9 +4733,23 @@
     // Single point of MIDI message dispatch — called from Web MIDI port handler
     // (above) and from the BLE-MIDI parser. Updates lastEventTime so the loop's
     // mic-vs-MIDI arbitration knows MIDI is live.
+    //
+    // Android BLE stack occasionally redelivers the same packet, causing the
+    // same note-on to arrive twice within a few ms. That makes the practice
+    // cursor advance twice for one keypress and the score get out of sync.
+    // Drop identical note-ons within 30ms — well below human-playable speed.
+    let _lastMidiNoteOnKey = -1;
+    let _lastMidiNoteOnTime = 0;
     function dispatchMidiMessage(status, a, b) {
       const cmd = status & 0xF0;
-      midiInput.lastEventTime = performance.now();
+      const now = performance.now();
+      if (cmd === 0x90 && b > 0) {
+        const key = (a << 8) | b;
+        if (key === _lastMidiNoteOnKey && now - _lastMidiNoteOnTime < 30) return;
+        _lastMidiNoteOnKey = key;
+        _lastMidiNoteOnTime = now;
+      }
+      midiInput.lastEventTime = now;
       if (cmd === 0x90 && b > 0) {
         pulseMidiBadge();
         onMidiNoteOn(a, b);
@@ -5830,16 +5844,26 @@
       }
 
       // 3. Skip past resolved notes. Guided mode: this is the single driver of OSMD
-      //    cursor advancement. Chord-forgiveness can mark notes ahead as .hit, so
-      //    once the kid plays the actually-expected note, this loop catches the
-      //    index past those pre-credited slots and the OSMD cursor follows.
+      //    cursor advancement.
+      //
+      //    Critical: a chord (multiple notes sharing the same timeMs) corresponds
+      //    to ONE cursor step in OSMD. Calling cursor.next() per note would advance
+      //    the cursor by N steps for an N-note chord, racing the score ahead of
+      //    where the kid actually is. We only advance the cursor when crossing
+      //    into a *new* beat (different timeMs) or when an explicit cursorJump
+      //    is set (repeats). Chord-mates within the same timeMs share the step.
       const idxBefore = practice.currentNoteIdx;
       const driveCursor = practice.mode === 'guided';
       while (practice.currentNoteIdx < len &&
         (notes[practice.currentNoteIdx].hit || notes[practice.currentNoteIdx].missed)) {
         const skipped = notes[practice.currentNoteIdx];
         practice.currentNoteIdx++;
-        if (driveCursor) advanceOsmdCursor(skipped && skipped.cursorJump);
+        if (driveCursor) {
+          const next = notes[practice.currentNoteIdx];
+          const sameBeat = next && skipped.cursorJump == null
+            && Math.abs(next.timeMs - skipped.timeMs) < 5;
+          if (!sameBeat) advanceOsmdCursor(skipped.cursorJump);
+        }
       }
       if (driveCursor && practice.currentNoteIdx !== idxBefore) {
         osmdScrollToCursor();
