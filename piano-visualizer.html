@@ -1755,24 +1755,24 @@
   <div id="playTime"></div>
   <div id="sessionSummary">
     <div class="summary-card">
-      <h2>🎹 Session Results</h2>
-      <div class="summary-stat"><span class="summary-label">🎵 Best Combo</span><span class="summary-value"
+      <h2 data-i18n="sumTitle">🎹 Session Results</h2>
+      <div class="summary-stat"><span class="summary-label" data-i18n="sumBestCombo">🎵 Best Combo</span><span class="summary-value"
           id="sumCombo">0</span></div>
-      <div class="summary-stat"><span class="summary-label">🏔 Stage Reached</span><span class="summary-value"
+      <div class="summary-stat"><span class="summary-label" data-i18n="sumStageReached">🏔 Stage Reached</span><span class="summary-value"
           id="sumStage">-</span></div>
-      <div class="summary-stat"><span class="summary-label">⏱ Play Time</span><span class="summary-value"
+      <div class="summary-stat"><span class="summary-label" data-i18n="sumPlayTime">⏱ Play Time</span><span class="summary-value"
           id="sumTime">0:00</span></div>
       <div class="summary-radar">
         <canvas id="radarChart" width="200" height="200"></canvas>
       </div>
       <div class="summary-quests">
-        <div class="summary-quests-title">⭐ Quests</div>
+        <div class="summary-quests-title" data-i18n="sumQuests">⭐ Quests</div>
         <div id="sumQuestList"></div>
       </div>
       <div class="summary-best" id="sumBest"></div>
       <div class="summary-actions">
-        <button id="sumHome">🏠 Title</button>
-        <button id="sumClose" class="primary">Continue →</button>
+        <button id="sumHome" data-i18n="sumTitleBtn">🏠 Title</button>
+        <button id="sumClose" class="primary" data-i18n="sumContinue">Continue →</button>
       </div>
     </div>
   </div>
@@ -2132,19 +2132,19 @@
         { bg: [12, 12, 18], colors: ['#e0e7ff', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#f0f0ff', '#ffffff'], glow: 'rgba(200,200,255,' }
       ],
 
-      // v10: Magic Quests
+      // v10: Magic Quests — name/desc are i18n keys, resolved via t() at use.
       QUESTS: [
-        { id: 'q1', name: 'First Notes', desc: 'Play 3 notes', condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
-        { id: 'q2', name: 'Catch the Flow', desc: 'Fill the flow gauge halfway', condition: s => s.flow >= 50, reward: 'Good Flow!' },
-        { id: 'q3', name: 'Combo Master', desc: 'Reach 30 combo!', condition: s => s.combo >= 30, reward: 'Combo Master!' },
-        { id: 'q4', name: 'Clean Tone', desc: 'Keep stability at 80%+', condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
-        { id: 'q5', name: 'Pianist', desc: 'Play with confidence', condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
-        { id: 'q6', name: 'Rhythm Master', desc: 'Rhythm score 85%+', condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
-        { id: 'q7', name: 'Peak Flow', desc: 'Reach 95% flow', condition: s => s.flow >= 95, reward: 'Peak Flow!' },
-        { id: 'q8', name: '100 Combo', desc: 'Reach 100 combo!', condition: s => s.combo >= 100, reward: 'Century Combo!' },
-        { id: 'q9', name: 'Dynamics', desc: 'Dynamics 80%+', condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
-        { id: 'q10', name: 'Full Focus', desc: 'Overall score 85%+', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
-        { id: 'q11', name: 'Legendary Pianist', desc: '200 combo & 90% flow', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
+        { id: 'q1',  nameKey: 'qst1Name',  descKey: 'qst1Desc',  condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
+        { id: 'q2',  nameKey: 'qst2Name',  descKey: 'qst2Desc',  condition: s => s.flow >= 50, reward: 'Good Flow!' },
+        { id: 'q3',  nameKey: 'qst3Name',  descKey: 'qst3Desc',  condition: s => s.combo >= 30, reward: 'Combo Master!' },
+        { id: 'q4',  nameKey: 'qst4Name',  descKey: 'qst4Desc',  condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
+        { id: 'q5',  nameKey: 'qst5Name',  descKey: 'qst5Desc',  condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
+        { id: 'q6',  nameKey: 'qst6Name',  descKey: 'qst6Desc',  condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
+        { id: 'q7',  nameKey: 'qst7Name',  descKey: 'qst7Desc',  condition: s => s.flow >= 95, reward: 'Peak Flow!' },
+        { id: 'q8',  nameKey: 'qst8Name',  descKey: 'qst8Desc',  condition: s => s.combo >= 100, reward: 'Century Combo!' },
+        { id: 'q9',  nameKey: 'qst9Name',  descKey: 'qst9Desc',  condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
+        { id: 'q10', nameKey: 'qst10Name', descKey: 'qst10Desc', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
+        { id: 'q11', nameKey: 'qst11Name', descKey: 'qst11Desc', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
       ]
     };
 
@@ -2697,7 +2697,72 @@
       // Result-screen unlock messages
       tempoUnlockedFmt:   { en: '🚀 Tempo {v}% unlocked!  ',   jp: '🚀 テンポ {v}% 解放！  ' },
       sectionUnlockedFmt: { en: '🔓 {v} unlocked!',            jp: '🔓 {v} 解放！' },
-      streakDaysFmt:      { en: ' ✨ {v}-day streak!',          jp: ' ✨ ストリーク {v}日！' }
+      streakDaysFmt:      { en: ' ✨ {v}-day streak!',          jp: ' ✨ ストリーク {v}日！' },
+      // Result-screen growth chart
+      growthChartFmt:     { en: 'Growth ({v} attempts)',        jp: '成長グラフ ({v}回)' },
+      trendSimilar:       { en: '→ similar',                    jp: '→ おなじくらい' },
+      // Sustain pedal label (drawn on the keyboard when pedal is held)
+      sustainLabel:       { en: 'SUSTAIN',                      jp: 'サステイン' },
+      // Free-play HUD (session status while playing without a song)
+      listeningFmt:       { en: '{p}Listening{p}',              jp: '{p}きいてるよ{p}' },
+      goalCelebrate:      { en: '✨ Goal reached! Keep it up! ✨',
+                            jp: '✨ 目標達成！この調子！ ✨' },
+      goalCountdownFmt:   { en: 'Goal: stable play for {v}s',   jp: '目標: 安定演奏 {v}秒' },
+      // Free-play quality coaching (shown in the qualityScore HUD)
+      strengthFmt:        { en: 'Strength: {v}',                jp: 'できた点: {v}' },
+      nextStepFmt:        { en: 'Next: {v}',                    jp: '次の1手: {v}' },
+      // Quality coaching strengths
+      strNotesClear:      { en: 'playing each note clearly',    jp: '音をしっかり鳴らせている' },
+      strGrowing:         { en: 'improving steadily over the last 30s',
+                            jp: '直近30秒で着実に伸びている' },
+      strRhythmSteady:    { en: 'rhythm is steady',             jp: 'リズムが安定している' },
+      strDynamicsGood:    { en: 'good dynamic control',         jp: '強弱のコントロールが良い' },
+      strPitchStable:     { en: 'pitch is stable',              jp: '音程の安定感が高い' },
+      // Quality coaching next steps
+      nxtBreathe:         { en: 'breathe and hold tempo for 20s',
+                            jp: '深呼吸して同じテンポを20秒キープ' },
+      nxtOneHand:         { en: 'one hand slowly, hold tempo for 20s',
+                            jp: '片手でゆっくり、一定テンポを20秒キープ' },
+      nxtSoftLoud:        { en: 'build soft to loud across one phrase',
+                            jp: '1フレーズの中で弱→強を2段階つける' },
+      nxtHoldNotes:       { en: 'hold each note fully before moving on',
+                            jp: '1音ずつ最後まで伸ばしてから次の音へ' },
+      // Quest names + descriptions (free-play). Reward strings are short enough
+      // to leave English (they're brief celebratory tokens).
+      qst1Name:           { en: 'First Notes',                  jp: 'はじまりの音' },
+      qst1Desc:           { en: 'Play 3 notes',                 jp: '音を3回鳴らしてみよう' },
+      qst2Name:           { en: 'Catch the Flow',               jp: '流れに乗って' },
+      qst2Desc:           { en: 'Fill the flow gauge halfway',  jp: 'フローゲージを半分までためよう' },
+      qst3Name:           { en: 'Combo Master',                 jp: 'コンボマスター' },
+      qst3Desc:           { en: 'Reach 30 combo!',              jp: '30コンボ達成！' },
+      qst4Name:           { en: 'Clean Tone',                   jp: 'きれいな音' },
+      qst4Desc:           { en: 'Keep stability at 80%+',       jp: '安定性80%以上をキープ' },
+      qst5Name:           { en: 'Pianist',                      jp: 'ピアニスト' },
+      qst5Desc:           { en: 'Play with confidence',         jp: '自信を持って演奏しよう' },
+      qst6Name:           { en: 'Rhythm Master',                jp: 'リズムの達人' },
+      qst6Desc:           { en: 'Rhythm score 85%+',            jp: 'リズムスコア85%以上！' },
+      qst7Name:           { en: 'Peak Flow',                    jp: 'フローの極み' },
+      qst7Desc:           { en: 'Reach 95% flow',               jp: 'フローゲージを95%以上にしよう' },
+      qst8Name:           { en: '100 Combo',                    jp: '100コンボ' },
+      qst8Desc:           { en: 'Reach 100 combo!',             jp: '100コンボ達成！' },
+      qst9Name:           { en: 'Dynamics',                     jp: 'ダイナミクス' },
+      qst9Desc:           { en: 'Dynamics 80%+',                jp: 'ダイナミクス80%以上！' },
+      qst10Name:          { en: 'Full Focus',                   jp: '全集中' },
+      qst10Desc:          { en: 'Overall score 85%+',           jp: '総合スコア85%以上！' },
+      qst11Name:          { en: 'Legendary Pianist',            jp: '伝説のピアニスト' },
+      qst11Desc:          { en: '200 combo & 90% flow',         jp: '200コンボ&フロー90%以上' },
+      // Quest display chrome
+      questAllClearFmt:   { en: '🎉 {n}/{n} All Clear!',         jp: '🎉 {n}/{n} 全クリア！' },
+      questTargetFmt:     { en: '🎯 {v}',                        jp: '🎯 {v}' },
+      questClearedFmt:    { en: '✅ {v} CLEARED!',               jp: '✅ {v} クリア！' },
+      // Session summary (post free-play)
+      sumTitle:           { en: '🎹 Session Results',           jp: '🎹 セッション結果' },
+      sumBestCombo:       { en: '🎵 Best Combo',                jp: '🎵 最高コンボ' },
+      sumStageReached:    { en: '🏔 Stage Reached',             jp: '🏔 到達ステージ' },
+      sumPlayTime:        { en: '⏱ Play Time',                  jp: '⏱ 演奏時間' },
+      sumQuests:          { en: '⭐ Quests',                     jp: '⭐ クエスト' },
+      sumTitleBtn:        { en: '🏠 Title',                     jp: '🏠 タイトル' },
+      sumContinue:        { en: 'Continue →',                   jp: 'つづける →' }
     };
 
     function t(key, vars) {
@@ -3763,7 +3828,7 @@
       if (state.sessionState === 'warmup') {
         const warmupProgress = Math.min(1, (timeMs - state.sessionStartMs) / CONFIG.SESSION_WARMUP_MS);
         const dots = Math.floor(warmupProgress * 3) + 1;
-        DOM.sessionStatus.textContent = '\u266B '.repeat(dots) + 'Listening' + ' \u266B'.repeat(dots);
+        DOM.sessionStatus.textContent = t('listeningFmt', { p: '\u266B '.repeat(dots) });
         DOM.sessionStatus.classList.add('visible');
       } else if (state.sessionState === 'performing') {
         if (state.goalWindowStartMs <= 0) state.goalWindowStartMs = timeMs;
@@ -3776,10 +3841,10 @@
         }
 
         if (timeMs < state.goalCelebrateUntilMs) {
-          DOM.sessionStatus.textContent = '\u2728 Goal reached! Keep it up! \u2728';
+          DOM.sessionStatus.textContent = t('goalCelebrate');
         } else {
           const remainSec = Math.max(0, Math.ceil((CONFIG.MOTIVATION_GOAL_MS - (timeMs - state.goalWindowStartMs)) / 1000));
-          DOM.sessionStatus.textContent = 'Goal: stable play for ' + remainSec + 's';
+          DOM.sessionStatus.textContent = t('goalCountdownFmt', { v: remainSec });
         }
         DOM.sessionStatus.classList.add('visible');
       } else {
@@ -3814,7 +3879,7 @@
         if (!done && !firstUndone) firstUndone = q;
         const cls = done ? 'quest-dot done' :
           (firstUndone === q && !justCompleted ? 'quest-dot current' : 'quest-dot');
-        dotsHtml += '<div class="' + cls + '" title="' + q.name + '"></div>';
+        dotsHtml += '<div class="' + cls + '" title="' + t(q.nameKey) + '"></div>';
       }
       DOM.questDots.innerHTML = dotsHtml;
 
@@ -3823,7 +3888,7 @@
 
       if (!firstUndone) {
         // All done!
-        DOM.questLabel.textContent = '🎉 ' + CONFIG.QUESTS.length + '/' + CONFIG.QUESTS.length + ' All Clear!';
+        DOM.questLabel.textContent = t('questAllClearFmt', { n: CONFIG.QUESTS.length });
         state.activeQuestId = 'ALL_DONE';
         return;
       }
@@ -3831,24 +3896,24 @@
       // Update label with next quest info
       const doneCount = state.completedQuests.length;
       if (!justCompleted) {
-        DOM.questLabel.textContent = '🎯 ' + firstUndone.desc;
+        DOM.questLabel.textContent = t('questTargetFmt', { v: t(firstUndone.descKey) });
       }
       state.activeQuestId = firstUndone.id;
     }
 
     function completeQuest(quest, timeMs) {
-      console.log('Quest Completed: ' + quest.name);
+      console.log('Quest Completed: ' + t(quest.nameKey));
       state.completedQuests.push(quest.id);
 
       // Center-screen toast animation
-      DOM.toastTitle.textContent = '\u2728 ' + quest.name + ' \u2728';
+      DOM.toastTitle.textContent = '\u2728 ' + t(quest.nameKey) + ' \u2728';
       DOM.toastSub.textContent = quest.reward + ' (' + state.completedQuests.length + '/' + CONFIG.QUESTS.length + ')';
       DOM.questToast.classList.remove('show');
       void DOM.questToast.offsetWidth; // force reflow to restart animation
       DOM.questToast.classList.add('show');
 
       // Update HUD label temporarily
-      DOM.questLabel.textContent = '\u2705 ' + quest.name + ' CLEARED!';
+      DOM.questLabel.textContent = t('questClearedFmt', { v: t(quest.nameKey) });
 
       // Visual Reward
       effectGoldenBurst();
@@ -3925,29 +3990,29 @@
       ];
       axes.sort((a, b) => b.score - a.score);
 
-      let good = 'playing each note clearly';
+      let goodKey = 'strNotesClear';
       if (state.growthScore > 0.05) {
-        good = 'improving steadily over the last 30s';
+        goodKey = 'strGrowing';
       } else if (axes[0].key === 'rhythm' && axes[0].score > 0.7) {
-        good = 'rhythm is steady';
+        goodKey = 'strRhythmSteady';
       } else if (axes[0].key === 'dynamics' && axes[0].score > 0.7) {
-        good = 'good dynamic control';
+        goodKey = 'strDynamicsGood';
       } else if (axes[0].key === 'stability' && axes[0].score > 0.7) {
-        good = 'pitch is stable';
+        goodKey = 'strPitchStable';
       }
 
-      let next = 'breathe and hold tempo for 20s';
+      let nextKey = 'nxtBreathe';
       const weakest = axes[axes.length - 1];
       if (weakest.key === 'rhythm') {
-        next = 'one hand slowly, hold tempo for 20s';
+        nextKey = 'nxtOneHand';
       } else if (weakest.key === 'dynamics') {
-        next = 'build soft to loud across one phrase';
+        nextKey = 'nxtSoftLoud';
       } else if (weakest.key === 'stability') {
-        next = 'hold each note fully before moving on';
+        nextKey = 'nxtHoldNotes';
       }
 
-      state.feedbackGood = 'Strength: ' + good;
-      state.feedbackNext = 'Next: ' + next;
+      state.feedbackGood = t('strengthFmt', { v: t(goodKey) });
+      state.feedbackNext = t('nextStepFmt', { v: t(nextKey) });
     }
 
     function updateQualityScores(timeMs) {
@@ -4612,7 +4677,7 @@
         const icon = done ? '\u2B50' : '\u2B1C';
         badgeHtml += '<div class="' + cls + '" style="animation-delay:' + (i * 0.25) + 's">' +
           '<span class="badge-icon">' + icon + '</span>' +
-          '<span>' + q.name + '</span></div>';
+          '<span>' + t(q.nameKey) + '</span></div>';
       }
 
       if (allDone) {
@@ -6043,7 +6108,7 @@
         ctx.fillStyle = 'rgba(255, 200, 100, 0.85)';
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText('SUSTAIN', kbX + 6, kbY - 5);
+        ctx.fillText(t('sustainLabel'), kbX + 6, kbY - 5);
       }
       ctx.restore();
     }
@@ -7152,7 +7217,7 @@
       let txt, col;
       if (delta >= 3)       { txt = '↑ +' + delta + '%';            col = '#7eff8a'; }
       else if (delta <= -3) { txt = '↓ ' + delta + '%';             col = '#ff8a9a'; }
-      else                  { txt = '→ similar';                col = 'rgba(255,255,255,0.55)'; }
+      else                  { txt = t('trendSimilar');         col = 'rgba(255,255,255,0.55)'; }
       c.textAlign = 'left';
       c.fillStyle = col;
       c.font = 'bold 11px sans-serif';
@@ -7161,7 +7226,7 @@
       c.textAlign = 'right';
       c.fillStyle = 'rgba(255,255,255,0.45)';
       c.font = '10px sans-serif';
-      c.fillText('Growth (' + n + ' attempts)', padX + innerW, h - 4);
+      c.fillText(t('growthChartFmt', { v: n }), padX + innerW, h - 4);
     }
 
     // ========================================
