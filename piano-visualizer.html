@@ -781,6 +781,30 @@
       pointer-events: none;
     }
 
+    /* BLE-MIDI connect button — Android Chrome / desktop Chrome path for
+       Bluetooth piano keyboards (Web MIDI doesn't expose BLE devices). */
+    #bleMidiBtn {
+      margin-top: 18px;
+      font-size: .9rem;
+      padding: .65rem 1.6rem;
+      border: 1px solid rgba(120, 180, 255, .45);
+      border-radius: 50px;
+      background: rgba(60, 110, 200, .15);
+      color: #c8dcff;
+      cursor: pointer;
+      transition: all .25s;
+      -webkit-tap-highlight-color: transparent;
+      letter-spacing: .06em;
+      display: none
+    }
+
+    #bleMidiBtn.visible { display: inline-block }
+
+    #bleMidiBtn:active {
+      background: rgba(60, 110, 200, .35);
+      transform: scale(.97)
+    }
+
     /* ============================== */
     /* Practice Mode (Für Elise) — v12 */
     /* ============================== */
@@ -1367,6 +1391,7 @@
       <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 エリーゼのために</button>
       <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 トルコ行進曲</button>
     </div>
+    <button id="bleMidiBtn" title="Bluetooth MIDIキーボードと接続">🔵 Bluetoothキーボードと接続</button>
   </div>
   <canvas id="canvas"></canvas>
   <div id="hud">
@@ -1845,7 +1870,8 @@
       resHistoryChart: document.getElementById('resHistoryChart'),
       introHint: document.getElementById('introHint'),
       micMeter: document.getElementById('micMeter'),
-      micMeterFill: document.getElementById('micMeterFill')
+      micMeterFill: document.getElementById('micMeterFill'),
+      bleMidiBtn: document.getElementById('bleMidiBtn')
     };
     const ctx = DOM.canvas.getContext('2d');
 
@@ -4630,6 +4656,22 @@
       platformBlocked: false
     };
 
+    // Single point of MIDI message dispatch — called from Web MIDI port handler
+    // (above) and from the BLE-MIDI parser. Updates lastEventTime so the loop's
+    // mic-vs-MIDI arbitration knows MIDI is live.
+    function dispatchMidiMessage(status, a, b) {
+      const cmd = status & 0xF0;
+      midiInput.lastEventTime = performance.now();
+      if (cmd === 0x90 && b > 0) {
+        onMidiNoteOn(a, b);
+        if (practice.enabled) matchNoteOnset(a, true);
+      } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
+        onMidiNoteOff(a);
+      } else if (cmd === 0xB0) {
+        onMidiCC(a, b);
+      }
+    }
+
     // iOS Safari (and every other browser on iPadOS / iOS — they all use WebKit)
     // does not implement the Web MIDI API at all. WebKit Bug 107250 is unresolved
     // and Apple has stated it is not on the roadmap. Detect this so we can show
@@ -4694,25 +4736,7 @@
         suspendMic();
       }
       port.onmidimessage = (e) => {
-        const data = e.data;
-        if (!data || data.length < 2) return;
-        const cmd = data[0] & 0xF0;
-        const a = data[1];
-        const b = data.length > 2 ? data[2] : 0;
-        // Note-On (0x90 with vel>0)
-        if (cmd === 0x90 && b > 0) {
-          midiInput.lastEventTime = performance.now();
-          onMidiNoteOn(a, b);
-          if (practice.enabled) matchNoteOnset(a, true);
-        // Note-Off (0x80, or 0x90 with vel=0)
-        } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
-          midiInput.lastEventTime = performance.now();
-          onMidiNoteOff(a);
-        // Control Change (0xB0): we care about sustain pedal (CC 64)
-        } else if (cmd === 0xB0) {
-          midiInput.lastEventTime = performance.now();
-          onMidiCC(a, b);
-        }
+        if (e.data && e.data.length >= 2) dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
       };
       setInputIndicator();
       console.log('[MIDI] connected: ' + port.name);
@@ -4767,6 +4791,113 @@
         };
       } catch (e) {
         console.warn('[MIDI] requestMIDIAccess failed:', e.message);
+      }
+    }
+
+    // ========================================
+    // BLE-MIDI via Web Bluetooth
+    //   Android Chrome's Web MIDI exposes USB devices only — Bluetooth keyboards
+    //   never appear there. Web Bluetooth IS available on Android Chrome though,
+    //   so we connect over BLE-MIDI directly using the standard service UUID.
+    //   Same path also helps desktop Chrome users whose BLE-MIDI device isn't
+    //   surfaced via Web MIDI.
+    // ========================================
+    const BLE_MIDI_SERVICE = '03b80e5a-ede8-4b33-a751-6ce34ec4c700';
+    const BLE_MIDI_CHAR    = '7772e5db-3868-4112-a1a9-f2669d106bf3';
+
+    const bleMidi = {
+      device: null,
+      characteristic: null,
+      connected: false
+    };
+
+    // Parse BLE-MIDI 1.0 packet. The packet starts with a header byte (high bit set,
+    // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
+    // use we ignore timestamps and extract MIDI messages of types we care about.
+    function parseBleMidiPacket(buf) {
+      const data = new Uint8Array(buf);
+      if (data.length < 3) return;
+      let runningStatus = 0;
+      // Skip header byte at index 0; first timestamp at index 1.
+      for (let i = 1; i < data.length; ) {
+        // Each MIDI event in a BLE-MIDI packet is preceded by a timestamp byte
+        // (high bit set). Running-status events may follow without a new timestamp.
+        if (data[i] & 0x80) {
+          // Could be timestamp or status. Per spec, in a multi-event packet a
+          // timestamp byte (followed by status) precedes each event. Skip it.
+          i++;
+          if (i >= data.length) break;
+          // Now data[i] should be a status or running data
+          if (data[i] & 0x80) {
+            runningStatus = data[i];
+            i++;
+          }
+        }
+        if (runningStatus === 0) { i++; continue; }
+        const cmd = runningStatus & 0xF0;
+        // 2-data-byte messages
+        if (cmd === 0x80 || cmd === 0x90 || cmd === 0xB0 || cmd === 0xA0 || cmd === 0xE0) {
+          if (i + 1 >= data.length) break;
+          const a = data[i] & 0x7F;
+          const b = data[i + 1] & 0x7F;
+          dispatchMidiMessage(runningStatus, a, b);
+          i += 2;
+        } else if (cmd === 0xC0 || cmd === 0xD0) {
+          if (i >= data.length) break;
+          i++;
+        } else if (runningStatus === 0xF0) {
+          while (i < data.length && data[i] !== 0xF7) i++;
+          if (i < data.length) i++;
+          runningStatus = 0;
+        } else {
+          i++;
+        }
+      }
+    }
+
+    async function connectBleMidi() {
+      if (!navigator.bluetooth) {
+        alert('このブラウザはWeb Bluetoothに対応していません。\n\nAndroid Chrome / Mac Chrome / Linux Chrome は対応。\niPad Safari は非対応 → 「Web MIDI Browser」アプリを使ってください。');
+        return;
+      }
+      if (bleMidi.connected) return;
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [BLE_MIDI_SERVICE] }],
+          optionalServices: [BLE_MIDI_SERVICE]
+        });
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
+        const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
+        await ch.startNotifications();
+        ch.addEventListener('characteristicvaluechanged', (e) => parseBleMidiPacket(e.target.value.buffer));
+
+        bleMidi.device = device;
+        bleMidi.characteristic = ch;
+        bleMidi.connected = true;
+
+        midiInput.enabled = true;
+        midiInput.port = { name: device.name || 'BLE-MIDI' };
+        midiInput.lastEventTime = performance.now();
+        if (audioCtx && !state.micSuspended) suspendMic();
+        setInputIndicator();
+        console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
+
+        device.addEventListener('gattserverdisconnected', () => {
+          bleMidi.connected = false;
+          bleMidi.characteristic = null;
+          midiInput.enabled = false;
+          midiInput.port = null;
+          setInputIndicator();
+          if (audioCtx && state.micSuspended) resumeMic();
+          if (typeof refreshBleMidiButton === 'function') refreshBleMidiButton();
+          console.log('[BLE-MIDI] disconnected');
+        });
+      } catch (e) {
+        console.warn('[BLE-MIDI] connect failed:', e.message);
+        if (e.name !== 'NotFoundError') {
+          alert('Bluetoothキーボードに接続できませんでした:\n' + e.message);
+        }
       }
     }
 
@@ -6187,6 +6318,14 @@
       btn.addEventListener('click', () => selectSong(btn.getAttribute('data-song')));
     });
 
+    function refreshBleMidiButton() {
+      if (!DOM.bleMidiBtn) return;
+      const show = !!navigator.bluetooth && !bleMidi.connected;
+      DOM.bleMidiBtn.classList.toggle('visible', show);
+    }
+    DOM.bleMidiBtn?.addEventListener('click', () => { connectBleMidi().finally(refreshBleMidiButton); });
+    refreshBleMidiButton();
+
     DOM.ptbQuit.addEventListener('click', () => {
       if (!practice.enabled && !practice._completing) return;
       practice.enabled = false;
@@ -6294,6 +6433,7 @@
       DOM.micMeter.classList.remove('visible');
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
+      refreshBleMidiButton();
     }
 
     DOM.homeBtn.addEventListener('click', returnToTitle);
