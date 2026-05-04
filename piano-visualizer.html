@@ -1661,14 +1661,14 @@
 <body>
   <div id="startScreen">
     <h1>Piano Visualizer</h1>
-    <p>ピアノを弾くと画面がきれいに光るよ</p>
+    <p>Play the piano and watch the screen come alive</p>
     <div id="modeButtons">
-      <button id="startBtn" class="mode-btn">🎨 フリープレイ</button>
-      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 エリーゼのために</button>
-      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 トルコ行進曲</button>
+      <button id="startBtn" class="mode-btn">🎨 Free Play</button>
+      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 Für Elise</button>
+      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 Turkish March</button>
     </div>
-    <!-- Bluetooth MIDI 接続は ⚙ 設定パネルから。要素は legacy code との互換のため残す。 -->
-    <button id="bleMidiBtn" title="Bluetooth MIDIキーボードと接続">🔵 Bluetoothキーボードと接続</button>
+    <!-- Bluetooth MIDI connection lives in the ⚙ settings panel. Element kept for legacy-code compatibility. -->
+    <button id="bleMidiBtn" title="Connect Bluetooth MIDI keyboard">🔵 Connect Bluetooth keyboard</button>
   </div>
   <canvas id="canvas"></canvas>
   <div id="hud">
@@ -1679,72 +1679,72 @@
     <div id="stageLabel"></div>
   </div>
   <div id="themeBar">
-    <button id="settingsBtn" title="設定">⚙</button>
-    <button id="homeBtn" title="タイトルにもどる">🏠</button>
+    <button id="settingsBtn" title="Settings">⚙</button>
+    <button id="homeBtn" title="Back to title">🏠</button>
   </div>
 
   <div id="settingsPanel">
     <div class="settings-card">
       <div class="settings-header">
-        <div class="settings-title">⚙ 設定</div>
-        <button class="settings-close" id="settingsCloseBtn" title="閉じる">✕</button>
+        <div class="settings-title">⚙ Settings</div>
+        <button class="settings-close" id="settingsCloseBtn" title="Close">✕</button>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🎨 表示</div>
+        <div class="settings-section-label">🎨 Display</div>
         <div class="settings-row">
           <div class="settings-theme-row">
-            <div class="theme-dot active" data-theme="0" title="紫×ピンク"></div>
-            <div class="theme-dot" data-theme="1" title="シアン×グリーン"></div>
-            <div class="theme-dot" data-theme="2" title="オレンジ×レッド"></div>
-            <div class="theme-dot" data-theme="3" title="白×ラベンダー"></div>
+            <div class="theme-dot active" data-theme="0" title="Purple × Pink"></div>
+            <div class="theme-dot" data-theme="1" title="Cyan × Green"></div>
+            <div class="theme-dot" data-theme="2" title="Orange × Red"></div>
+            <div class="theme-dot" data-theme="3" title="White × Lavender"></div>
           </div>
         </div>
         <div class="settings-row">
-          <div id="synesthesiaToggle" title="音階色モード">🎨</div>
-          <span style="font-size:.85rem">音階色モード（音ごとに色が変わる）</span>
+          <div id="synesthesiaToggle" title="Synesthesia mode">🎨</div>
+          <span style="font-size:.85rem">Synesthesia mode (each note has its own color)</span>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🎚 タイミング補正</div>
+        <div class="settings-section-label">🎚 Timing Calibration</div>
         <div class="settings-slider-row">
           <div class="settings-slider-label">
-            <span>音と画面のずれ補正</span>
+            <span>Audio offset</span>
             <span class="val"><span id="audioOffsetVal">40</span> ms</span>
           </div>
           <input type="range" id="audioOffsetSlider" class="settings-slider"
                  min="-50" max="200" step="5" value="40">
           <div class="settings-help">
-            子供が拍に合わせて弾いてるのに「遅い」判定になる時は数値を上げる。
-            「早い」判定になる時は下げる。<br>
+            If you play on the beat but it's judged "late", raise the number.
+            If your press is rejected as "early", lower it.<br>
             <span id="audioOffsetAuto" style="color:rgba(180,220,255,.8)"></span>
           </div>
           <div style="margin-top:6px">
-            <button class="settings-btn" id="audioOffsetReset">自動検出に戻す</button>
+            <button class="settings-btn" id="audioOffsetReset">Use auto-detected value</button>
           </div>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🎹 入力</div>
+        <div class="settings-section-label">🎹 Input</div>
         <div class="settings-row">
-          <div class="settings-input-status" id="settingsInputStatus">マイク入力中</div>
+          <div class="settings-input-status" id="settingsInputStatus">Mic input</div>
         </div>
         <div class="settings-row">
-          <button class="settings-btn" id="settingsRescanBtn">🔄 MIDIキーボードを探す</button>
-          <button class="settings-btn" id="settingsBleBtn" style="display:none">🔵 Bluetooth接続</button>
+          <button class="settings-btn" id="settingsRescanBtn">🔄 Scan for MIDI keyboard</button>
+          <button class="settings-btn" id="settingsBleBtn" style="display:none">🔵 Connect Bluetooth</button>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-label">🛠 その他</div>
+        <div class="settings-section-label">🛠 Other</div>
         <div class="settings-row">
-          <button class="settings-btn" id="settingsResetBtn">🔄 セッションをリセット</button>
+          <button class="settings-btn" id="settingsResetBtn">🔄 Reset session</button>
         </div>
         <div class="settings-row">
           <div id="settingsDebugToggle" class="opt-toggle"></div>
-          <span style="font-size:.85rem">🐞 デバッグ表示</span>
+          <span style="font-size:.85rem">🐞 Debug overlay</span>
         </div>
       </div>
     </div>
@@ -1752,24 +1752,24 @@
   <div id="playTime"></div>
   <div id="sessionSummary">
     <div class="summary-card">
-      <h2>🎹 セッション結果</h2>
-      <div class="summary-stat"><span class="summary-label">🎵 最高コンボ</span><span class="summary-value"
+      <h2>🎹 Session Results</h2>
+      <div class="summary-stat"><span class="summary-label">🎵 Best Combo</span><span class="summary-value"
           id="sumCombo">0</span></div>
-      <div class="summary-stat"><span class="summary-label">🏔 到達ステージ</span><span class="summary-value"
+      <div class="summary-stat"><span class="summary-label">🏔 Stage Reached</span><span class="summary-value"
           id="sumStage">-</span></div>
-      <div class="summary-stat"><span class="summary-label">⏱ 演奏時間</span><span class="summary-value"
+      <div class="summary-stat"><span class="summary-label">⏱ Play Time</span><span class="summary-value"
           id="sumTime">0:00</span></div>
       <div class="summary-radar">
         <canvas id="radarChart" width="200" height="200"></canvas>
       </div>
       <div class="summary-quests">
-        <div class="summary-quests-title">⭐ クエスト</div>
+        <div class="summary-quests-title">⭐ Quests</div>
         <div id="sumQuestList"></div>
       </div>
       <div class="summary-best" id="sumBest"></div>
       <div class="summary-actions">
-        <button id="sumHome">🏠 タイトル</button>
-        <button id="sumClose" class="primary">つづける →</button>
+        <button id="sumHome">🏠 Title</button>
+        <button id="sumClose" class="primary">Continue →</button>
       </div>
     </div>
   </div>
@@ -1785,63 +1785,63 @@
   <div id="sessionStatus"></div>
   <div id="qualityScore"></div>
   <div id="debugOverlay"></div>
-  <div id="introHint">🎹 ピアノを弾いてみよう</div>
-  <!-- MIDI再スキャンは ⚙ 設定パネル内へ移動。要素は legacy code との互換のため残す。 -->
-  <button id="midiRescanBtn">🔄 MIDIキーボードを探す</button>
+  <div id="introHint">🎹 Try playing the piano</div>
+  <!-- MIDI rescan moved to the ⚙ settings panel. Element kept for legacy-code compatibility. -->
+  <button id="midiRescanBtn">🔄 Scan for MIDI keyboard</button>
   <div id="micMeter"><div id="micMeterFill"></div></div>
   <div id="midiBadge"></div>
 
   <!-- ===== Practice Mode ===== -->
   <div id="songPanel">
     <div class="song-card">
-      <div class="song-title" id="songTitle">エリーゼのために</div>
+      <div class="song-title" id="songTitle">Für Elise</div>
       <div class="song-composer" id="songComposer">L. v. Beethoven</div>
       <div class="song-streak">
-        🔥 <span id="streakCount">0</span> 日れんしゅう中
+        🔥 <span id="streakCount">0</span> day streak
         <div class="streak-cal" id="streakCal"></div>
       </div>
 
-      <div class="song-section-label">テンポをえらぶ</div>
+      <div class="song-section-label">Tempo</div>
       <div class="tempo-row" id="tempoRow"></div>
 
-      <div class="song-section-label">どこからはじめる？</div>
+      <div class="song-section-label">Start from</div>
       <div id="sectionList"></div>
 
-      <div class="song-section-label">どの手で弾く？</div>
+      <div class="song-section-label">Which hand?</div>
       <div class="hand-row" id="handRow">
-        <button class="hand-btn" data-hand="L">👈 左手だけ</button>
-        <button class="hand-btn active" data-hand="both">🤝 両手</button>
-        <button class="hand-btn" data-hand="R">右手だけ 👉</button>
+        <button class="hand-btn" data-hand="L">👈 Left only</button>
+        <button class="hand-btn active" data-hand="both">🤝 Both</button>
+        <button class="hand-btn" data-hand="R">Right only 👉</button>
       </div>
 
       <div class="opt-row">
         <div class="opt-toggle on" id="guidedModeToggle"></div>
-        <div>✨ ガイドモード（じぶんのペースで弾ける）</div>
+        <div>✨ Guided mode (play at your own pace)</div>
       </div>
       <div class="opt-row" id="ghostRow">
         <div class="opt-toggle" id="ghostToggle"></div>
-        <div>👻 おてほん再生（ゴースト）</div>
+        <div>👻 Ghost playback (demo)</div>
       </div>
       <div class="opt-row" id="metronomeRow">
         <div class="opt-toggle" id="metronomeToggle"></div>
-        <div>🥁 メトロノーム</div>
+        <div>🥁 Metronome</div>
       </div>
 
       <div class="song-actions">
-        <button id="songBack">もどる</button>
-        <button id="songStart" class="primary">▶ れんしゅうスタート</button>
+        <button id="songBack">Back</button>
+        <button id="songStart" class="primary">▶ Start practice</button>
       </div>
     </div>
   </div>
 
   <div id="practiceHud">
     <div id="practiceTopBar">
-      <span class="ptb-section" id="ptbSection">第1章</span>
+      <span class="ptb-section" id="ptbSection">Part 1</span>
       <span class="ptb-tempo" id="ptbTempo">100%</span>
       <span class="ptb-progress" id="ptbProgress">0 / 0</span>
-      <span class="ptb-input" id="ptbInput" title="入力ソース">🎙️</span>
-      <button id="ptbToggleOsmd">楽譜</button>
-      <button id="ptbQuit">やめる</button>
+      <span class="ptb-input" id="ptbInput" title="Input source">🎙️</span>
+      <button id="ptbToggleOsmd">Score</button>
+      <button id="ptbQuit">Quit</button>
     </div>
   </div>
   <!-- OSMD container lives at body level so it's always rendered (even before practice
@@ -1852,23 +1852,23 @@
 
   <div id="sectionResult">
     <div class="result-card">
-      <div class="result-title" id="resTitle">章クリア！</div>
-      <div class="result-section-name" id="resSectionName">第1章</div>
+      <div class="result-title" id="resTitle">Part Clear!</div>
+      <div class="result-section-name" id="resSectionName">Part 1</div>
       <div class="result-stars" id="resStars">★★★</div>
-      <div class="result-stat"><span>音程の正確さ</span><span id="resAcc">0%</span></div>
-      <div class="result-stat"><span>タイミング</span><span id="resTiming">0%</span></div>
-      <div class="result-stat" id="resDurationRow"><span>音の長さ</span><span id="resDuration">0%</span></div>
-      <div class="result-stat"><span>連続成功（最高）</span><span id="resCombo">0</span></div>
+      <div class="result-stat"><span>Pitch accuracy</span><span id="resAcc">0%</span></div>
+      <div class="result-stat"><span>Timing</span><span id="resTiming">0%</span></div>
+      <div class="result-stat" id="resDurationRow"><span>Note length</span><span id="resDuration">0%</span></div>
+      <div class="result-stat"><span>Best combo</span><span id="resCombo">0</span></div>
       <div class="result-history hidden" id="resHistoryWrap">
         <canvas id="resHistoryChart" width="280" height="80"></canvas>
       </div>
       <div class="result-msg" id="resMsg"></div>
       <div class="result-unlock" id="resUnlock"></div>
       <div class="result-actions">
-        <button id="resHome" title="タイトルにもどる">🏠</button>
-        <button id="resQuit">きょく選択</button>
-        <button id="resRetry">もう一度</button>
-        <button id="resNext" class="primary">つぎへ →</button>
+        <button id="resHome" title="Back to title">🏠</button>
+        <button id="resQuit">Song select</button>
+        <button id="resRetry">Try again</button>
+        <button id="resNext" class="primary">Next →</button>
       </div>
     </div>
   </div>
@@ -2090,26 +2090,26 @@
       // Stages
       STAGES: [
         { name: '', minFlow: 0 },
-        { name: '\u2726 めざめ', minFlow: 15 },
-        { name: '\u2726\u2726 はなひらく', minFlow: 35 },
-        { name: '\u2726\u2726\u2726 オーロラ', minFlow: 55 },
-        { name: '\u2726\u2726\u2726\u2726 コスモス', minFlow: 75 },
-        { name: '\u2726\u2726\u2726\u2726\u2726 かがやき', minFlow: 90 },
-        { name: '\u2726\u2726\u2726\u2726\u2726\u2726 でんせつ', minFlow: 98 }
+        { name: '\u2726 Awakening', minFlow: 15 },
+        { name: '\u2726\u2726 Blooming', minFlow: 35 },
+        { name: '\u2726\u2726\u2726 Aurora', minFlow: 55 },
+        { name: '\u2726\u2726\u2726\u2726 Cosmos', minFlow: 75 },
+        { name: '\u2726\u2726\u2726\u2726\u2726 Radiance', minFlow: 90 },
+        { name: '\u2726\u2726\u2726\u2726\u2726\u2726 Legend', minFlow: 98 }
       ],
 
       // =============================================
       // Encouragement Tiers (v9 — replaces combo numbers)
       // =============================================
       ENCOURAGEMENT_TIERS: [
-        { minCombo: 3, message: 'いいよ！', effect: 'glowPulse' },
-        { minCombo: 8, message: 'すごい！', effect: 'glowParticles' },
-        { minCombo: 15, message: 'のってきた！', effect: 'colorWave' },
-        { minCombo: 25, message: 'きらきら！', effect: 'starShower' },
-        { minCombo: 40, message: 'すてきなおと！', effect: 'flowerBurst' },
-        { minCombo: 60, message: 'まほうみたい！', effect: 'shimmer' },
-        { minCombo: 80, message: 'かがやいてる！', effect: 'radiance' },
-        { minCombo: 100, message: 'さいこう！', effect: 'goldenBurst' }
+        { minCombo: 3, message: 'Nice!', effect: 'glowPulse' },
+        { minCombo: 8, message: 'Great!', effect: 'glowParticles' },
+        { minCombo: 15, message: 'On a roll!', effect: 'colorWave' },
+        { minCombo: 25, message: 'Sparkle!', effect: 'starShower' },
+        { minCombo: 40, message: 'Beautiful!', effect: 'flowerBurst' },
+        { minCombo: 60, message: 'Like magic!', effect: 'shimmer' },
+        { minCombo: 80, message: 'Shining!', effect: 'radiance' },
+        { minCombo: 100, message: 'Awesome!', effect: 'goldenBurst' }
       ],
       ENCOURAGEMENT_COOLDOWN_MS: 8000,   // don't repeat same tier within this window
       ENCOURAGEMENT_DISPLAY_MS: 2500,    // how long message stays visible
@@ -2129,17 +2129,17 @@
 
       // v10: Magic Quests
       QUESTS: [
-        { id: 'q1', name: 'はじまりの音', desc: '音を3回鳴らしてみよう', condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
-        { id: 'q2', name: '流れに乗って', desc: 'フローゲージを半分までためよう', condition: s => s.flow >= 50, reward: 'Good Flow!' },
-        { id: 'q3', name: 'コンボマスター', desc: '30コンボ達成！', condition: s => s.combo >= 30, reward: 'Combo Master!' },
-        { id: 'q4', name: 'きれいな音', desc: '安定性80%以上をキープ', condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
-        { id: 'q5', name: 'ピアニスト', desc: '自信を持って演奏しよう', condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
-        { id: 'q6', name: 'リズムの達人', desc: 'リズムスコア85%以上！', condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
-        { id: 'q7', name: 'フローの極み', desc: 'フローゲージを95%以上にしよう', condition: s => s.flow >= 95, reward: 'Peak Flow!' },
-        { id: 'q8', name: '100コンボ', desc: '100コンボ達成！', condition: s => s.combo >= 100, reward: 'Century Combo!' },
-        { id: 'q9', name: 'ダイナミクス', desc: 'ダイナミクス80%以上！', condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
-        { id: 'q10', name: '全集中', desc: '総合スコア85%以上！', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
-        { id: 'q11', name: '伝説のピアニスト', desc: '200コンボ&フロー90%以上', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
+        { id: 'q1', name: 'First Notes', desc: 'Play 3 notes', condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
+        { id: 'q2', name: 'Catch the Flow', desc: 'Fill the flow gauge halfway', condition: s => s.flow >= 50, reward: 'Good Flow!' },
+        { id: 'q3', name: 'Combo Master', desc: 'Reach 30 combo!', condition: s => s.combo >= 30, reward: 'Combo Master!' },
+        { id: 'q4', name: 'Clean Tone', desc: 'Keep stability at 80%+', condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
+        { id: 'q5', name: 'Pianist', desc: 'Play with confidence', condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
+        { id: 'q6', name: 'Rhythm Master', desc: 'Rhythm score 85%+', condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
+        { id: 'q7', name: 'Peak Flow', desc: 'Reach 95% flow', condition: s => s.flow >= 95, reward: 'Peak Flow!' },
+        { id: 'q8', name: '100 Combo', desc: 'Reach 100 combo!', condition: s => s.combo >= 100, reward: 'Century Combo!' },
+        { id: 'q9', name: 'Dynamics', desc: 'Dynamics 80%+', condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
+        { id: 'q10', name: 'Full Focus', desc: 'Overall score 85%+', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
+        { id: 'q11', name: 'Legendary Pianist', desc: '200 combo & 90% flow', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
       ]
     };
 
@@ -2605,7 +2605,7 @@
       DOM.audioOffsetSlider.value = value;
       DOM.audioOffsetVal.textContent = value;
       DOM.audioOffsetAuto.textContent = isAuto
-        ? '自動検出値を使用中（現在: ' + value + ' ms）'
+        ? 'Auto-detected value in use (currently ' + value + ' ms)'
         : '';
     }
 
@@ -2615,9 +2615,9 @@
       if (typeof midiInput !== 'undefined' && midiInput.enabled && midiInput.port?.name) {
         DOM.settingsInputStatus.textContent = '🎹 ' + midiInput.port.name;
       } else if (typeof state !== 'undefined' && state.micSuspended) {
-        DOM.settingsInputStatus.textContent = '🎙️ 待機中';
+        DOM.settingsInputStatus.textContent = '🎙️ Standby';
       } else {
-        DOM.settingsInputStatus.textContent = '🎙️ マイク入力';
+        DOM.settingsInputStatus.textContent = '🎙️ Mic input';
       }
       // BLE button only when Web Bluetooth is supported (Chrome/Edge desktop, Android Chrome)
       const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
@@ -3559,7 +3559,7 @@
       if (state.sessionState === 'warmup') {
         const warmupProgress = Math.min(1, (timeMs - state.sessionStartMs) / CONFIG.SESSION_WARMUP_MS);
         const dots = Math.floor(warmupProgress * 3) + 1;
-        DOM.sessionStatus.textContent = '\u266B '.repeat(dots) + 'きいてるよ' + ' \u266B'.repeat(dots);
+        DOM.sessionStatus.textContent = '\u266B '.repeat(dots) + 'Listening' + ' \u266B'.repeat(dots);
         DOM.sessionStatus.classList.add('visible');
       } else if (state.sessionState === 'performing') {
         if (state.goalWindowStartMs <= 0) state.goalWindowStartMs = timeMs;
@@ -3572,10 +3572,10 @@
         }
 
         if (timeMs < state.goalCelebrateUntilMs) {
-          DOM.sessionStatus.textContent = '\u2728 目標達成！この調子！ \u2728';
+          DOM.sessionStatus.textContent = '\u2728 Goal reached! Keep it up! \u2728';
         } else {
           const remainSec = Math.max(0, Math.ceil((CONFIG.MOTIVATION_GOAL_MS - (timeMs - state.goalWindowStartMs)) / 1000));
-          DOM.sessionStatus.textContent = '目標: 安定演奏 ' + remainSec + '秒';
+          DOM.sessionStatus.textContent = 'Goal: stable play for ' + remainSec + 's';
         }
         DOM.sessionStatus.classList.add('visible');
       } else {
@@ -3721,25 +3721,25 @@
       ];
       axes.sort((a, b) => b.score - a.score);
 
-      let good = 'できた点: 音をしっかり鳴らせている';
+      let good = 'Strength: playing each note clearly';
       if (state.growthScore > 0.05) {
-        good = 'できた点: 直近30秒で着実に伸びている';
+        good = 'Strength: improving steadily over the last 30s';
       } else if (axes[0].key === 'rhythm' && axes[0].score > 0.7) {
-        good = 'できた点: リズムが安定している';
+        good = 'Strength: rhythm is steady';
       } else if (axes[0].key === 'dynamics' && axes[0].score > 0.7) {
-        good = 'できた点: 強弱のコントロールが良い';
+        good = 'Strength: good dynamic control';
       } else if (axes[0].key === 'stability' && axes[0].score > 0.7) {
-        good = 'できた点: 音程の安定感が高い';
+        good = 'Strength: pitch is stable';
       }
 
-      let next = '次の1手: 深呼吸して同じテンポを20秒キープ';
+      let next = 'Next: breathe and hold tempo for 20s';
       const weakest = axes[axes.length - 1];
       if (weakest.key === 'rhythm') {
-        next = '次の1手: 片手でゆっくり、一定テンポを20秒キープ';
+        next = 'Next: one hand slowly, hold tempo for 20s';
       } else if (weakest.key === 'dynamics') {
-        next = '次の1手: 1フレーズの中で弱→強を2段階つける';
+        next = 'Next: build soft to loud across one phrase';
       } else if (weakest.key === 'stability') {
-        next = '次の1手: 1音ずつ最後まで伸ばしてから次の音へ';
+        next = 'Next: hold each note fully before moving on';
       }
 
       state.feedbackGood = good;
@@ -3770,8 +3770,8 @@
         const growthPts = Math.round(state.growthScore * 100);
         const growthText = growthPts >= 0 ? '+' + growthPts : '' + growthPts;
         DOM.qualityScore.textContent =
-          'リズム ' + rhythmPct + '% | ダイナミクス ' + dynamicsPct + '% | 安定性 ' + stabilityPct + '%\n' +
-          '直近30秒の成長: ' + growthText + 'pt\n' +
+          'Rhythm ' + rhythmPct + '% | Dynamics ' + dynamicsPct + '% | Stability ' + stabilityPct + '%\n' +
+          'Last 30s growth: ' + growthText + 'pt\n' +
           state.feedbackGood + ' -> ' + state.feedbackNext;
         DOM.qualityScore.classList.add('visible');
       } else {
@@ -4323,7 +4323,7 @@
       }
       particles.length = alive;
 
-      // 和音名表示 — 関数側でモード別レイアウト分岐(中央デカ vs 鍵盤上の小)。
+      // Chord-name display — the function picks a layout per mode (big-centered for free play, small-above-keyboard for practice).
       if (midiInput.enabled) {
         drawMidiChordDisplay(timeMs);
       }
@@ -4441,7 +4441,7 @@
       // Draw radar chart with animated grow-in
       drawRadarChart(
         DOM.radarChart,
-        ['安定性', 'リズム', 'ダイナミクス'],
+        ['Stability', 'Rhythm', 'Dynamics'],
         [state.stabilityScore, state.rhythmScore, state.dynamicsScore]
       );
     }
@@ -4669,24 +4669,24 @@
     const SONGS = {
       // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
       // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
-      fur_elise: makeSong('fur_elise', 'エリーゼのために', 'Beethoven', '🌸', [
-        { id: 'A1', name: '第1章 主題',         startMeasure: 0,  isBoss: false,
-          desc: '有名なあのメロディ。やさしく始めよう。' },
-        { id: 'B',  name: '第2章 おだやかな中間', startMeasure: 23, isBoss: false,
-          desc: 'C長調のあかるい部分→主題に戻ります。' },
-        { id: 'A2', name: '第3章 嵐とフィナーレ', startMeasure: 55, isBoss: true,
-          desc: 'D短調の嵐→主題に戻りラスト！ここがクライマックス。' }
+      fur_elise: makeSong('fur_elise', 'Für Elise', 'Beethoven', '🌸', [
+        { id: 'A1', name: 'Part 1: Theme',         startMeasure: 0,  isBoss: false,
+          desc: 'The famous melody. Start gently.' },
+        { id: 'B',  name: 'Part 2: Gentle Middle', startMeasure: 23, isBoss: false,
+          desc: 'A bright C-major section, then back to the theme.' },
+        { id: 'A2', name: 'Part 3: Storm & Finale', startMeasure: 55, isBoss: true,
+          desc: 'A D-minor storm, then back to the theme — the climax!' }
       ]),
       // Mozart Sonata K.331/3 "Rondo alla Turca" — 137-measure musetrainer edition.
       // Form: A(0-8) | B(9-25) | A'(26-34) | C(35-43) | A''(44-60)
       //        | D(61-69) | E(70-78) | F(79-95) | G(96-104) | Coda(105-136)
-      alla_turca: makeSong('alla_turca', 'トルコ行進曲', 'Mozart', '🥁', [
-        { id: 'A1', name: '第1章 軽やかな主題', startMeasure: 0,  isBoss: false,
-          desc: '有名な主題＋A長調の対比部。右手のスケールが気持ちいい。' },
-        { id: 'B',  name: '第2章 主題のへんそう', startMeasure: 26, isBoss: false,
-          desc: '主題が形を変えてかえってくる。和音の練習。' },
-        { id: 'A2', name: '第3章 マルチアの祭り', startMeasure: 70, isBoss: true,
-          desc: 'コーダの力強いオクターブ！フィナーレに駆けあがろう。' }
+      alla_turca: makeSong('alla_turca', 'Turkish March', 'Mozart', '🥁', [
+        { id: 'A1', name: 'Part 1: Light Theme', startMeasure: 0,  isBoss: false,
+          desc: 'The famous theme plus an A-major contrasting section. Right-hand scales feel great.' },
+        { id: 'B',  name: 'Part 2: Theme Variations', startMeasure: 26, isBoss: false,
+          desc: 'The theme returns transformed — chord practice.' },
+        { id: 'A2', name: 'Part 3: March Festival', startMeasure: 70, isBoss: true,
+          desc: "The coda's powerful octaves! Race to the finale." }
       ])
     };
     let currentSong = SONGS.fur_elise;
@@ -4923,8 +4923,8 @@
     }
 
     async function loadCurrentScore() {
-      // データはあるが OSMD インスタンスが消えているケース（曲切替で null 化した直後）
-      // — 譜面再描画のためだけに initOsmd を呼び直す。ノート/セクション抽出は不要。
+      // Data is loaded but the OSMD instance was nulled (right after a song switch).
+      // Re-run initOsmd only to redraw the score; note/section extraction is unnecessary.
       if (currentSong._loaded) {
         if (!osmd) await initOsmd();
         return;
@@ -5124,8 +5124,8 @@
       pendingHolds: new Map(),
       sectionCombo: 0,
       sectionBestCombo: 0,
-      // 練習する手のフィルタ。'R' = 右手のみ、'L' = 左手のみ、null = 両手。
-      // フィルタされた手のノートはセクション開始時に .hit を立てて自動スキップ。
+      // Hand filter. 'R' = right only, 'L' = left only, null = both hands.
+      // Filtered notes are pre-flagged hit at section start so the cursor auto-skips them.
       handFilter: null,
       // Subtracted from practiceRealElapsedMs so a press timed to the audible
       // beat scores PERFECT. Set in startPracticeSection from
@@ -5140,7 +5140,7 @@
     // ========================================
     // Kid-friendly: doremi labels + section banner
     // ========================================
-    const DOREMI_NAMES = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
+    const DOREMI_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     function midiToDoremi(midi) { return DOREMI_NAMES[notePitchClass(midi)]; }
     function midiToDoremiOctave(midi) { return midiToDoremi(midi) + (Math.floor(midi / 12) - 1); }
 
@@ -5187,7 +5187,7 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
       if (practice.enabled) requestWakeLock();
-      // ユーザがWMBのMIDIペアリング画面から戻ってきた直後の即時リスキャン
+      // Immediate rescan when the user returns from the WMB MIDI-pairing screen.
       if (state.running && !midiInput.enabled && navigator.requestMIDIAccess) {
         rescanMidi(true).catch(() => {});
       }
@@ -5278,14 +5278,14 @@
       if (midiInput.enabled) {
         DOM.ptbInput.textContent = '🎹 MIDI';
         DOM.ptbInput.classList.add('midi');
-        DOM.ptbInput.title = 'MIDIキーボード接続中: ' + (midiInput.port?.name || 'unknown');
+        DOM.ptbInput.title = 'MIDI keyboard: ' + (midiInput.port?.name || 'unknown');
       } else {
         DOM.ptbInput.textContent = '🎙️ MIC';
         DOM.ptbInput.classList.remove('midi');
         DOM.ptbInput.title = midiInput.platformBlocked
-          ? 'iPad/iPhoneのSafariはWeb MIDI非対応。マイク入力で演奏してください。'
-            + '（BLE-MIDIキーボードを使うには「Web MIDI Browser」アプリが必要）'
-          : 'マイク入力モード';
+          ? 'iPad/iPhone Safari does not support Web MIDI. Use mic input.'
+            + '(For BLE-MIDI keyboards, install the "Web MIDI Browser" iOS app)'
+          : 'Mic input mode';
       }
     }
 
@@ -5328,7 +5328,7 @@
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
       DOM.micMeter?.classList.remove('visible');
       stopMidiAutoRescan();
-      showHitChip('good', '🎹 接続: ' + (port.name || 'MIDI'));
+      showHitChip('good', '🎹 Connected: ' + (port.name || 'MIDI'));
       console.log('[MIDI] connected: ' + port.name);
       return true;
     }
@@ -5377,9 +5377,9 @@
       }
     }
 
-    // MIDI 再検索 — 二段階で接続を試みる:
-    // (1) 通常フィルタで接続 (2) ダメなら virtual filter を無視して強制接続。
-    // silent=true なら失敗時にUIを更新しない(自動リトライ用)。
+    // MIDI rescan — two-stage connection attempt:
+    // (1) connect via the normal filter; (2) if that fails, force-connect ignoring the virtual filter.
+    // silent=true skips UI updates on failure (used by auto-retry).
     // Cached MIDIAccess. Per spec the inputs collection updates live with
     // onstatechange events, so we only need to request once and re-iterate
     // for rescans. Re-requesting bypasses cached permission on some polyfills
@@ -5432,23 +5432,23 @@
 
     async function rescanMidi(silent) {
       if (!navigator.requestMIDIAccess) {
-        if (!silent) setIntroHintDiagnostic('🎹 Web MIDI 非対応のブラウザです');
+        if (!silent) setIntroHintDiagnostic('🎹 This browser does not support Web MIDI');
         return false;
       }
       try {
         const access = await ensureMidiAccess();
         const ports = gatherMidiInputs(access);
-        const portInfo = ports.map(p => (p.name || '無名') + '/' + p.state).join(', ');
+        const portInfo = ports.map(p => (p.name || 'unnamed') + '/' + p.state).join(', ');
         console.log('[MIDI] rescan ports: [' + portInfo + ']');
 
         if (ports.length === 0) {
           if (!silent) {
-            // Web MIDI Browser quirk: 起動時に既にペアリング済みのデバイスは
-            // 見えないことが多く、再ペアリングで救える事が多い。
+            // Web MIDI Browser quirk: devices already paired at startup are often
+            // invisible — re-pairing usually surfaces them.
             const wmbHint = isAppleMobile()
-              ? 'WMBのMIDI設定でキーボードを一度切断→再接続してから🔄を再度タップ'
-              : 'キーボードをUSB/Bluetoothで接続してから🔄をタップ';
-            setIntroHintDiagnostic('🎹 MIDIポートが見つかりません', wmbHint);
+              ? 'In WMB, disconnect → reconnect the keyboard, then tap 🔄 again'
+              : 'Connect the keyboard via USB/Bluetooth, then tap 🔄';
+            setIntroHintDiagnostic('🎹 No MIDI port found', wmbHint);
           }
           return false;
         }
@@ -5456,17 +5456,17 @@
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
         }
         if (!silent) {
-          setIntroHintDiagnostic('🎹 認識中: ' + portInfo, '接続できませんでした');
+          setIntroHintDiagnostic('🎹 Detected: ' + portInfo, 'Could not connect');
         }
         return false;
       } catch (e) {
         console.warn('[MIDI] rescan failed:', e.message);
-        if (!silent) setIntroHintDiagnostic('🎹 MIDIエラー', e.message);
+        if (!silent) setIntroHintDiagnostic('🎹 MIDI error', e.message);
         return false;
       }
     }
 
-    // introHint に診断情報を表示（永続）。MIDI接続するか refreshIntroHint で復帰。
+    // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
     function setIntroHintDiagnostic(line1, line2) {
       if (!DOM.introHint) return;
       const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
@@ -5475,8 +5475,8 @@
       DOM.midiRescanBtn?.classList.add('visible');
     }
 
-    // MIDI が必要なのに未接続な状態で、ユーザがバックグラウンドで WMB の
-    // ペアリングUIを操作してから戻った時に自動的に検出するためのポーリング。
+    // Polling: when MIDI is required but not connected, detect when the user
+    // has paired in the WMB UI in the background and returns to the page.
     let _midiRescanInterval = 0;
     function startMidiAutoRescan() {
       if (_midiRescanInterval) return;
@@ -5555,7 +5555,7 @@
 
     async function connectBleMidi() {
       if (!navigator.bluetooth) {
-        alert('このブラウザはWeb Bluetoothに対応していません。\n\nAndroid Chrome / Mac Chrome / Linux Chrome は対応。\niPad Safari は非対応 → 「Web MIDI Browser」アプリを使ってください。');
+        alert('This browser does not support Web Bluetooth.\n\nAndroid Chrome / Mac Chrome / Linux Chrome are supported.\niPad Safari is not — use the "Web MIDI Browser" app instead.');
         return;
       }
       if (bleMidi.connected) return;
@@ -5581,7 +5581,7 @@
         setInputIndicator();
         if (typeof refreshIntroHint === 'function') refreshIntroHint();
         DOM.micMeter?.classList.remove('visible');
-        showHitChip('good', '🎹 接続: ' + (device.name || 'BLE-MIDI'));
+        showHitChip('good', '🎹 Connected: ' + (device.name || 'BLE-MIDI'));
         console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
 
         device.addEventListener('gattserverdisconnected', () => {
@@ -5597,7 +5597,7 @@
       } catch (e) {
         console.warn('[BLE-MIDI] connect failed:', e.message);
         if (e.name !== 'NotFoundError') {
-          alert('Bluetoothキーボードに接続できませんでした:\n' + e.message);
+          alert('Could not connect to Bluetooth keyboard:\n' + e.message);
         }
       }
     }
@@ -5657,8 +5657,8 @@
     }
 
     function showNoteDisplay(displayText, changeKey, color, timeMs) {
-      // 練習モード中はレーンが「いま弾いた音」を伝える役割を担うので、
-      // 譜面と重なる位置に noteDisplay を出すと視覚ノイズになる。
+      // In practice mode the falling lane already shows the just-played note,
+      // so showing noteDisplay where it overlaps the score is visual noise.
       if (practice.enabled) return;
       state.noteShowTimeMs = timeMs;
       if (state.lastDetectedNote === changeKey) return;
@@ -5754,7 +5754,7 @@
         if (chord && (chord !== midiState.lastChordName || now - midiState.lastChordTimeMs > 600)) {
           midiState.lastChordName = chord;
           midiState.lastChordTimeMs = now;
-          // フリーのみグロー演出も同時、練習モードでは名前表示だけで静かに
+          // Free-play also runs the glow effect; practice just shows the name quietly.
           if (!practice.enabled) effectGlowPulse();
         }
       }
@@ -5889,8 +5889,8 @@
       ctx.restore();
     }
 
-    // 和音名の表示。フリープレイは中央に大きく祝うように、練習モードは鍵盤
-    // のすぐ上に小さく静かに(レーンや譜面と競合しないよう抑えめに)。
+    // Chord-name display. Free play celebrates with a big centered label;
+    // practice puts it small and quiet just above the keyboard so it doesn't fight the lane/score.
     function drawMidiChordDisplay(timeMs) {
       if (!midiState.lastChordName) return;
       const age = timeMs - midiState.lastChordTimeMs;
@@ -5899,7 +5899,7 @@
       const alpha = (t < 0.12) ? (t / 0.12) : Math.max(0, 1 - (t - 0.12) / 0.88);
       ctx.save();
       if (practice.enabled) {
-        // 控えめ版: 鍵盤のすぐ上、小さく、フェードのみ
+        // Quiet variant: just above the keyboard, small, fade-only.
         const yPos = H - kbHeight - kbSafeBottom - 22;
         ctx.translate(W / 2, yPos);
         ctx.fillStyle = 'rgba(255, 220, 140, ' + (alpha * 0.75).toFixed(3) + ')';
@@ -5987,7 +5987,7 @@
 
       if (!matched) {
         if (practice.mode === 'guided') {
-          showHitChip('miss', '弾いた音: ' + midiToDoremiOctave(detectedMidi));
+          showHitChip('miss', 'You played: ' + midiToDoremiOctave(detectedMidi));
         }
         return false;
       }
@@ -6009,7 +6009,7 @@
       const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
       practice.timingScoreSum += ts;
       const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
-      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? 'パーフェクト！' : 'ナイス！');
+      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? 'Perfect!' : 'Nice!');
       state.flow = Math.min(100, state.flow + 6 + ts * 4);
       state.combo++;
       if (state.combo > state.bestCombo) state.bestCombo = state.combo;
@@ -6034,7 +6034,7 @@
       practice.durationScoreSum += score;
       practice.durationScoredCount++;
       if (score < 0.4) {
-        showHitChip('miss', heldMs < expected ? '⏱ 短い' : '⏱ 長い');
+        showHitChip('miss', heldMs < expected ? '⏱ Too short' : '⏱ Too long');
       }
     }
 
@@ -6116,7 +6116,7 @@
       s.sections = Object.assign({}, def.sections, s.sections);
       s.unlockedTempos = Object.assign({}, def.unlockedTempos, s.unlockedTempos);
       s.unlockedSections = Object.assign({}, def.unlockedSections, s.unlockedSections);
-      if (!s.history) s.history = {};   // 旧セーブからのマイグレーション
+      if (!s.history) s.history = {};   // Migration from older save format.
       return s;
     }
     function dateKey(d) {
@@ -6195,9 +6195,9 @@
       for (const n of currentSong.notes) {
         if (n.timeSec >= sec.startSec && n.timeSec < sec.endSec) {
           const relSec = n.timeSec - sec.startSec;
-          // 片手モード: 反対の手のノートは _filtered=true で pre-hit にし、
-          // currentNoteIdx の advance loop が自動的に飛ばす(カーソルも進む)。
-          // レーン描画と統計集計は _filtered を除外。
+          // One-hand mode: notes from the other hand are marked _filtered=true and pre-hit so
+          // the currentNoteIdx skip-past loop advances over them (the cursor moves too).
+          // Lane drawing and stats exclude _filtered notes.
           const filtered = !!handFilter && n.hand !== handFilter;
           out.push({
             hand: n.hand,
@@ -6246,7 +6246,7 @@
       hideIntroHint();
       if (!currentSong._loaded) {
         try { await loadCurrentScore(); }
-        catch (e) { alert('楽譜の読み込みに失敗しました\n' + e.message); return; }
+        catch (e) { alert('Failed to load score\n' + e.message); return; }
       }
 
       // Lock in the count-in / lookahead lengths for this section before notes
@@ -6277,7 +6277,7 @@
       // HUD
       DOM.ptbSection.textContent = sec.name + (sec.isBoss ? ' 👑' : '');
       DOM.ptbTempo.textContent = '🥁 ' + practice.tempoPct + '%';
-      // _filtered な音は反対の手で自動スキップされるので進捗カウントから除外
+      // Exclude _filtered notes from the progress count (they are auto-skipped).
       practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
       DOM.ptbProgress.textContent = '0 / ' + practice._sectionTargetCount;
       DOM.practiceHud.classList.add('visible');
@@ -6423,7 +6423,7 @@
             n.missed = true;
             practice.misses++;
             practice.sectionCombo = 0;
-            showHitChip('miss', 'ミス');
+            showHitChip('miss', 'Miss');
           }
           if (n.timeMs - elapsed > HIT_WINDOW_MS) break;
         }
@@ -6469,7 +6469,7 @@
       // 4. (OSMD cursor advance is driven by per-onset Tone.Draw events scheduled in
       //     startPracticeSection — keeps cursor locked to played audio, no drift.)
 
-      // 5. Progress UI (rate-limited) — 片手モード時は反対の手の音を除外
+      // 5. Progress UI (rate-limited) — exclude the other hand in one-hand mode
       if (timeMs - practice._lastProgUpdate > 100) {
         practice._lastProgUpdate = timeMs;
         const target = practice._sectionTargetCount || len;
@@ -6533,9 +6533,9 @@
       ctx.fillStyle = 'rgba(180, 200, 255, 0.7)';
       ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('LEFT 左手', padX + halfW / 2, laneTop + 14);
+      ctx.fillText('LEFT', padX + halfW / 2, laneTop + 14);
       ctx.fillStyle = 'rgba(255, 200, 220, 0.7)';
-      ctx.fillText('RIGHT 右手', midX + halfW / 2, laneTop + 14);
+      ctx.fillText('RIGHT', midX + halfW / 2, laneTop + 14);
 
       // Center divider
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
@@ -6598,7 +6598,7 @@
         if (drawnCount >= 25) break;
         const n = notes[i];
         if (n.timeMs > visibleMaxTimeMs) break;
-        if (n._filtered) continue;   // 片手練習: 反対の手のノートは描画しない
+        if (n._filtered) continue;   // One-hand practice: do not draw the other hand.
         drawnCount++;
         const dy = (n.timeMs - elapsed) * pxPerMs;
         const y = hitLineY - dy;
@@ -6640,7 +6640,7 @@
         ctx.fillText('▼', x, hitLineY - winPx - 4);
         ctx.font = 'bold 18px sans-serif';
         ctx.fillStyle = cur.hand === 'L' ? 'rgba(180,220,255,1)' : 'rgba(255,200,220,1)';
-        ctx.fillText((cur.hand === 'L' ? '左 ' : '右 ') + midiToDoremi(cur.midi), x, hitLineY + 32);
+        ctx.fillText((cur.hand === 'L' ? 'L ' : 'R ') + midiToDoremi(cur.midi), x, hitLineY + 32);
       }
 
       // Boss flair
@@ -6663,7 +6663,7 @@
         const remaining = totalBeats - beatIdx;    // 4 → 3 → 2 → 1
         const slotMs = ctElapsed - beatIdx * beatMs;
         const slotProgress = 1 - Math.min(1, slotMs / beatMs);
-        const text = ctElapsed >= COUNT_IN_MS ? 'スタート！' : String(remaining);
+        const text = ctElapsed >= COUNT_IN_MS ? 'GO!' : String(remaining);
         const isGo = ctElapsed >= COUNT_IN_MS;
         // pop-in scale
         const pop = isGo
@@ -6725,10 +6725,10 @@
     const SECTION_IDS = ['A1', 'B', 'A2'];
 
     const RESULT_TIERS = [
-      { title: 'もういちど！',     msg: 'まずはゆっくりテンポでも大丈夫。リトライしてみよう！' },
-      { title: 'クリア！',         msg: 'クリアおめでとう！くりかえしで上達するよ。' },
-      { title: '🎉 章クリア！',    msg: 'よくがんばったね！もう少しでパーフェクト！' },
-      { title: '🌟 パーフェクト！', msg: 'すばらしい！次の難しさにチャレンジ！' }
+      { title: 'Try again!',     msg: 'Start with a slow tempo. Give it another try!' },
+      { title: 'Clear!',         msg: 'Clear! Keep practicing to get even better.' },
+      { title: '🎉 Part Clear!',    msg: 'Great job! Almost perfect!' },
+      { title: '🌟 Perfect!', msg: 'Brilliant! Try the next difficulty!' }
     ];
 
     // durPct is null in guided mode (no audio clock to score length against), in
@@ -6778,7 +6778,7 @@
           const next = tempos[idx + 1];
           if (!sp.unlockedTempos[next]) {
             sp.unlockedTempos[next] = true;
-            unlockedMsg += '🚀 テンポ ' + next + '% 解放！  ';
+            unlockedMsg += '🚀 Tempo ' + next + '% unlocked!  ';
           }
         }
       }
@@ -6788,13 +6788,13 @@
           const next = SECTION_IDS[sIdx + 1];
           if (!sp.unlockedSections[next]) {
             sp.unlockedSections[next] = true;
-            unlockedMsg += '🔓 ' + (currentSong.sections.find(s => s.id === next).name) + ' 解放！';
+            unlockedMsg += '🔓 ' + (currentSong.sections.find(s => s.id === next).name) + ' unlocked!';
           }
         }
       }
       // Theme unlock at streak milestone
       if (practice.progress.streakCount === 3 || practice.progress.streakCount === 7) {
-        unlockedMsg += ' ✨ ストリーク ' + practice.progress.streakCount + '日！';
+        unlockedMsg += ' ✨ ' + practice.progress.streakCount + '-day streak!';
       }
 
       if (!sp.history[sec.id]) sp.history[sec.id] = [];
@@ -6854,7 +6854,7 @@
       practice._completing = false;
     }
 
-    // 成長グラフ — 直近最大8回の正答率を折れ線で表示
+    // Growth chart — line graph of accuracy over the last 8 attempts.
     function drawHistoryChart(canvas, history) {
       const w = 280, h = 80;
       const c = setupHiDPICanvas(canvas, w, h);
@@ -6874,7 +6874,7 @@
         c.beginPath(); c.moveTo(padX, y); c.lineTo(padX + innerW, y); c.stroke();
       }
 
-      // Y軸ラベル（左端）
+      // Y-axis labels (left edge).
       c.fillStyle = 'rgba(255,255,255,0.35)';
       c.font = '9px sans-serif';
       c.textAlign = 'right';
@@ -6886,7 +6886,7 @@
       const xAt = (i) => n === 1 ? padX + innerW / 2 : padX + (i / (n - 1)) * innerW;
       const yAt = (v) => padTop + innerH * (1 - clamp01(v / 100));
 
-      // 折れ線（正答率）
+      // Line (accuracy).
       c.strokeStyle = 'rgba(255, 215, 0, 0.85)';
       c.lineWidth = 2;
       c.beginPath();
@@ -6896,14 +6896,14 @@
       }
       c.stroke();
 
-      // データ点 + 星マーカー
+      // Data points + star markers.
       for (let i = 0; i < n; i++) {
         const x = xAt(i), y = yAt(history[i].a);
         c.beginPath();
         c.arc(x, y, 3.2, 0, Math.PI * 2);
         c.fillStyle = '#ffd700';
         c.fill();
-        // 星3つを取った回はリング
+        // Ring around 3-star attempts.
         if (history[i].s >= 3) {
           c.strokeStyle = 'rgba(255, 220, 80, 0.9)';
           c.lineWidth = 1.5;
@@ -6913,7 +6913,7 @@
         }
       }
 
-      // 最新値ラベル
+      // Latest-value label.
       const last = history[n - 1];
       const prev = history[n - 2];
       const lastX = xAt(n - 1), lastY = yAt(last.a);
@@ -6924,22 +6924,22 @@
       const labelOffsetY = (lastY < padTop + 16) ? 14 : -6;
       c.fillText(last.a + '%', lastX - 5, lastY + labelOffsetY);
 
-      // 前回比トレンド
+      // Trend vs previous.
       const delta = last.a - prev.a;
       let txt, col;
       if (delta >= 3)       { txt = '↑ +' + delta + '%';            col = '#7eff8a'; }
       else if (delta <= -3) { txt = '↓ ' + delta + '%';             col = '#ff8a9a'; }
-      else                  { txt = '→ おなじくらい';                col = 'rgba(255,255,255,0.55)'; }
+      else                  { txt = '→ similar';                col = 'rgba(255,255,255,0.55)'; }
       c.textAlign = 'left';
       c.fillStyle = col;
       c.font = 'bold 11px sans-serif';
       c.fillText(txt, padX, h - 4);
 
-      // タイトル右側
+      // Title (right side).
       c.textAlign = 'right';
       c.fillStyle = 'rgba(255,255,255,0.45)';
       c.font = '10px sans-serif';
-      c.fillText('成長グラフ (' + n + '回)', padX + innerW, h - 4);
+      c.fillText('Growth (' + n + ' attempts)', padX + innerW, h - 4);
     }
 
     // ========================================
@@ -6982,7 +6982,7 @@
         const loading = document.createElement('div');
         loading.className = 'section-row';
         loading.style.opacity = '0.6';
-        loading.innerHTML = '<div class="section-icon">⏳</div><div>楽譜を読み込み中…</div><div></div>';
+        loading.innerHTML = '<div class="section-icon">⏳</div><div>Loading score…</div><div></div>';
         DOM.sectionList.appendChild(loading);
         return;
       }
@@ -7044,12 +7044,12 @@
     // we transition from title or a panel back into an in-session view.
     function refreshIntroHint() {
       if (!DOM.introHint) return;
-      let txt = '🎹 ピアノを弾いてみよう';
+      let txt = '🎹 Try playing the piano';
       if (state.micPermissionFailed && !midiInput.enabled) {
-        txt = '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）';
+        txt = '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)';
       }
       DOM.introHint.innerHTML = txt;
-      // No-input 状態でだけリスキャンボタンを出す
+      // Show the rescan button only in the no-input state.
       const needRescan = state.micPermissionFailed && !midiInput.enabled
         && DOM.introHint.classList.contains('visible');
       DOM.midiRescanBtn?.classList.toggle('visible', needRescan);
@@ -7065,10 +7065,10 @@
       }
       if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
       else DOM.micMeter.classList.remove('visible');
-      // マイク不可 + MIDI未接続 → 即座に診断を実行＆裏で自動リスキャン
+      // Mic unavailable + no MIDI → run diagnostic immediately and auto-rescan in the background.
       if (state.micPermissionFailed && !midiInput.enabled) {
         startMidiAutoRescan();
-        // タップを待たず diagnostic を introHint に表示する
+        // Show the diagnostic on introHint without waiting for a tap.
         rescanMidi(false).catch(() => {});
       }
     }
@@ -7111,7 +7111,7 @@
         }
         await startPracticeSection(practice.sectionIdx);
       } catch (e) {
-        alert('オーディオ初期化に失敗しました: ' + (e && e.message || e) + '\n\nブラウザを更新してリトライしてみてください。');
+        alert('Audio init failed: ' + (e && e.message || e) + '\n\nReload the browser and try again.');
       } finally {
         state.starting = false;
       }
@@ -7138,7 +7138,7 @@
       DOM.startScreen.style.display = 'none';
       DOM.songPanel.classList.add('visible');
       // Keep the invariant: if audio is already alive, the theme bar should be
-      // restored beneath the song panel so a subsequent "もどる" lands the user
+      // restored beneath the song panel so a subsequent "Back" lands the user
       // on a visualizer with full controls (not a bare canvas).
       if (state.running) showRunningUI();
       renderSongPanel();
@@ -7215,7 +7215,7 @@
       state.starting = true;
       DOM.startBtn.disabled = true;
       const prevBtnText = DOM.startBtn.textContent;
-      DOM.startBtn.textContent = '起動中...';
+      DOM.startBtn.textContent = 'Starting...';
       try {
         await initAudio();
         showRunningUI();
@@ -7225,7 +7225,7 @@
         state.sessionStartTimeMs = performance.now();
         requestAnimationFrame(loop);
       } catch (e) {
-        alert('オーディオ初期化に失敗しました: ' + (e && e.message || e) + '\n\nブラウザを更新してリトライしてみてください。');
+        alert('Audio init failed: ' + (e && e.message || e) + '\n\nReload the browser and try again.');
       } finally {
         if (!state.running) {
           DOM.startBtn.disabled = false;

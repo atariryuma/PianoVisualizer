@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Piano Visualizer is a single-file HTML application for iPad piano practice. It uses real-time microphone audio analysis to detect piano notes and render responsive visual effects on a canvas. The UI is in Japanese and designed for children.
+Piano Visualizer is a single-file HTML application for iPad piano practice. It uses real-time microphone audio analysis to detect piano notes and render responsive visual effects on a canvas. The UI is in English and designed for upper-elementary children.
 
 Current version: **v9** (`piano-visualizer.html`)
 
@@ -20,8 +20,8 @@ The app requires HTTPS for microphone access (especially on iPad/Safari). A Powe
 
 Stock Safari lets you bypass the self-signed-cert warning, but Web MIDI Browser and many WKWebView-based apps don't. Install the cert as trusted:
 
-1. iPad Safari → `https://<host-ip>:8443/cert.cer` → tap through the cert warning once → "プロファイルをダウンロード" → **OK**.
-2. **Settings → General → VPN & Device Management** → tap the downloaded *PianoVisualizer* profile → **インストール**.
+1. iPad Safari → `https://<host-ip>:8443/cert.cer` → tap through the cert warning once → tap **"Download Profile"** → **OK**.
+2. **Settings → General → VPN & Device Management** → tap the downloaded *PianoVisualizer* profile → tap **Install**.
 3. **Settings → General → About → Certificate Trust Settings** → enable the *PianoVisualizer* root certificate.
 4. Re-open `https://<host-ip>:8443/` in Web MIDI Browser — no more cert error.
 
@@ -64,9 +64,9 @@ Custom gain control via `GainNode` (browser's built-in AGC is disabled). Smoothl
 
 - **Flow meter** (0–100): rises with good notes, decays during silence. Affected by combo, pitch stability, and quality score.
 - **Combo**: consecutive notes within `COMBO_WINDOW_MS`. Drives encouragement tiers.
-- **Stages**: 6 visual tiers (`めざめ → はなひらく → オーロラ → コスモス → かがやき`) triggered by flow thresholds.
+- **Stages**: 6 visual tiers (`Awakening → Blooming → Aurora → Cosmos → Radiance → Legend`) triggered by flow thresholds.
 - **Quality scoring**: rhythm regularity (IOI coefficient of variation) + dynamics variation, weighted 50/50.
-- **Encouragement system (v9)**: replaces numeric combo display with escalating Japanese messages (`いいよ！→ すごい！→ ... → さいこう！`), each triggering a unique visual effect.
+- **Encouragement system (v9)**: replaces numeric combo display with escalating English messages (`Nice! → Great! → ... → Awesome!`), each triggering a unique visual effect.
 
 ### Rendering
 
