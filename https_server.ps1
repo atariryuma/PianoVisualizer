@@ -13,6 +13,20 @@ function Write-Log([string]$message) {
     "$timestamp $message" | Out-File $logPath -Append -Encoding utf8
 }
 
+# UA-based client tag for /log entries. Previously hardcoded as "iPad" which
+# misled when other devices (Steam Deck, desktop browsers) hit the same endpoint.
+function Get-ClientTag([hashtable]$hdrs) {
+    $ua = $hdrs["User-Agent"]
+    if (-not $ua) { return "Unknown" }
+    if ($ua -match "iPad")             { return "iPad" }
+    if ($ua -match "iPhone")           { return "iPhone" }
+    if ($ua -match "Android")          { return "Android" }
+    if ($ua -match "Macintosh|Mac OS X") { return "Mac" }
+    if ($ua -match "Linux")            { return "Linux" }
+    if ($ua -match "Windows")          { return "Windows" }
+    return "Web"
+}
+
 function Send-Response(
     [System.Net.Security.SslStream]$stream,
     [int]$statusCode,
@@ -118,8 +132,9 @@ while ($true) {
                 # Fix: Use [string]::new constructor to avoid array unrolling issues
                 $bodyStr = [string]::new($buffer)
                 $now = Get-Date -Format "HH:mm:ss"
-                Write-Host "[$now iPad Log] $bodyStr" -ForegroundColor Cyan
-                Write-Log "[iPad] $bodyStr"
+                $client = Get-ClientTag $headers
+                Write-Host "[$now $client Log] $bodyStr" -ForegroundColor Cyan
+                Write-Log "[$client] $bodyStr"
             }
             Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body ([System.Text.Encoding]::UTF8.GetBytes("Logged")) -contentType "text/plain; charset=utf-8"
             continue
