@@ -3,6 +3,10 @@ cert.pfx
 *.pfx
 *.pem
 *.key
+*.cer
+
+# Runtime artifacts
+server.log
 
 # OS files
 .DS_Store
