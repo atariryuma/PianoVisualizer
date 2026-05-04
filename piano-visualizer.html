@@ -294,6 +294,58 @@
       display: none
     }
 
+    #introHint {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 6;
+      font-size: 1.6rem;
+      color: rgba(255, 255, 255, .85);
+      letter-spacing: .12em;
+      text-align: center;
+      text-shadow: 0 0 30px rgba(180, 160, 255, .55), 0 2px 12px rgba(0, 0, 0, .35);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .6s
+    }
+
+    #introHint.visible {
+      opacity: 1;
+      animation: introHintPulse 2.4s ease-in-out infinite
+    }
+
+    @keyframes introHintPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50%      { transform: translate(-50%, -50%) scale(1.06); }
+    }
+
+    #micMeter {
+      position: fixed;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      z-index: 5;
+      width: 90px;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, .08);
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity .4s;
+      pointer-events: none
+    }
+
+    body.midi-on #micMeter { display: none }
+
+    #micMeter.visible { opacity: .7 }
+
+    #micMeterFill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(120, 220, 140, .85), rgba(255, 220, 100, .85), rgba(255, 130, 130, .85));
+      transition: width .08s linear
+    }
+
     #encouragement {
       position: fixed;
       top: 20px;
@@ -1369,6 +1421,8 @@
   <div id="sessionStatus"></div>
   <div id="qualityScore"></div>
   <div id="debugOverlay"></div>
+  <div id="introHint">🎹 ピアノを弾いてみよう</div>
+  <div id="micMeter"><div id="micMeterFill"></div></div>
 
   <!-- ===== Practice Mode ===== -->
   <div id="songPanel">
@@ -1788,7 +1842,10 @@
       resNext: document.getElementById('resNext'),
       resHome: document.getElementById('resHome'),
       resHistoryWrap: document.getElementById('resHistoryWrap'),
-      resHistoryChart: document.getElementById('resHistoryChart')
+      resHistoryChart: document.getElementById('resHistoryChart'),
+      introHint: document.getElementById('introHint'),
+      micMeter: document.getElementById('micMeter'),
+      micMeterFill: document.getElementById('micMeterFill')
     };
     const ctx = DOM.canvas.getContext('2d');
 
@@ -3594,7 +3651,16 @@
 
         updateAGC(timeMs, pitchResult.rms);
 
+        // mic level meter (visible feedback that audio is being captured)
+        if (DOM.micMeter && DOM.micMeter.classList.contains('visible')) {
+          const lvl = Math.min(1, pitchResult.rms * 25);
+          DOM.micMeterFill.style.width = (lvl * 100).toFixed(1) + '%';
+        }
+
         isGoodNote = updateGameState(timeMs, dt, pitchResult);
+        if (isGoodNote && DOM.introHint.classList.contains('visible')) {
+          hideIntroHint();
+        }
 
         // v12: Practice mode tick (must run before particle work so flow boost applies)
         if (practice.enabled) {
@@ -4769,6 +4835,7 @@
     }
 
     function spawnMidiNoteVisuals(midiNum, velocity, synColor) {
+      hideIntroHint();
       const v = Math.max(0.15, velocity / 127);
       const color = synColor || noteThemeColor(midiNum);
 
@@ -5331,6 +5398,7 @@
     }
 
     async function startPracticeSection(sectionIdx) {
+      hideIntroHint();
       if (!currentSong._loaded) {
         try { await loadCurrentScore(); }
         catch (e) { alert('楽譜の読み込みに失敗しました\n' + e.message); return; }
@@ -6039,6 +6107,14 @@
       DOM.startScreen.style.display = 'none';
       DOM.themeBar.classList.add('visible');
       DOM.hud.style.display = 'block';
+      // Free play: 起動時に「弾いてみよう」を見せて動作中であることを伝える。
+      // 練習モードはレーンが見えるので別途呼ばれる時に隠す。
+      if (!practice.enabled) DOM.introHint.classList.add('visible');
+      if (!midiInput.enabled) DOM.micMeter.classList.add('visible');
+    }
+
+    function hideIntroHint() {
+      if (DOM.introHint) DOM.introHint.classList.remove('visible');
     }
 
     DOM.songBack.addEventListener('click', () => {
@@ -6214,6 +6290,8 @@
       DOM.osmdContainer.classList.remove('visible');
       DOM.themeBar.classList.remove('visible');
       DOM.hud.style.display = 'none';
+      hideIntroHint();
+      DOM.micMeter.classList.remove('visible');
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
     }
