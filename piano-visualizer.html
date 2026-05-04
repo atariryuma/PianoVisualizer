@@ -6452,8 +6452,12 @@
       }
       if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
       else DOM.micMeter.classList.remove('visible');
-      // マイク不可 + MIDI未接続 → 裏で自動リスキャン開始
-      if (state.micPermissionFailed && !midiInput.enabled) startMidiAutoRescan();
+      // マイク不可 + MIDI未接続 → 即座に診断を実行＆裏で自動リスキャン
+      if (state.micPermissionFailed && !midiInput.enabled) {
+        startMidiAutoRescan();
+        // タップを待たず diagnostic を introHint に表示する
+        rescanMidi(false).catch(() => {});
+      }
     }
 
     function hideIntroHint() {
