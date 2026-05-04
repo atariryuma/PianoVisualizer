@@ -5562,14 +5562,52 @@
       }
     }
 
-    // Browsers drop the lock when the tab is hidden; re-acquire when visible again.
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'visible') return;
-      if (practice.enabled) requestWakeLock();
-      // Immediate rescan when the user returns from the WMB MIDI-pairing screen.
-      if (state.running && !midiInput.enabled && navigator.requestMIDIAccess) {
-        rescanMidi(true).catch(() => {});
+    // Single source of truth for the port-message handler. attachMidiPort and
+    // verifyMidiAlive both use this so re-binding after a suspend produces
+    // exactly the same routing.
+    function onMidiMessageHandler(e) {
+      if (e.data && e.data.length >= 2) {
+        dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
       }
+    }
+
+    // Verify the previously-attached MIDI port is still alive after the page
+    // came back from background. iOS WMB silently kills the onmidimessage
+    // handler when the page is suspended; the port object stays around but
+    // events no longer flow. Returns true if the port is still connected and
+    // the handler has been re-bound; false if it's gone (caller should rescan).
+    async function verifyMidiAlive() {
+      if (!midiInput.enabled || !midiInput.port || !_midiAccess) return false;
+      const ports = gatherMidiInputs(_midiAccess);
+      const stillThere = ports.find(p => p === midiInput.port && p.state === 'connected');
+      if (!stillThere) {
+        try { detachMidiPort(midiInput.port); } catch (e) {}
+        return false;
+      }
+      // Re-bind unconditionally. Cheap; idempotent on a healthy port; required on a suspended one.
+      midiInput.port.onmidimessage = onMidiMessageHandler;
+      return true;
+    }
+
+    // Browsers drop the wake lock when the tab is hidden, suspend AudioContext,
+    // and (on iOS WMB) silently disable MIDI port handlers. On every resume we
+    // refresh all three so the kid can pick up exactly where they left off
+    // without seeing a phantom "connection error".
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (state.running) requestWakeLock();
+      if (audioCtx && audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch (e) {}
+      }
+      if (!state.running || !navigator.requestMIDIAccess) return;
+      if (midiInput.enabled) {
+        // We *think* MIDI is connected — verify the port still responds.
+        const ok = await verifyMidiAlive();
+        if (ok) return;
+      }
+      // No MIDI / dead port → rescan silently. Auto-rescan poller keeps trying
+      // if this attempt fails. The user sees nothing unless they explicitly tap 🔄.
+      rescanMidi(true).catch(() => {});
     });
 
     // ========================================
@@ -5697,9 +5735,7 @@
       if (!wasMidiOn && audioCtx && !state.micSuspended) {
         suspendMic();
       }
-      port.onmidimessage = (e) => {
-        if (e.data && e.data.length >= 2) dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
-      };
+      port.onmidimessage = onMidiMessageHandler;
       setInputIndicator();
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
       DOM.micMeter?.classList.remove('visible');
@@ -7548,6 +7584,11 @@
       document.body.classList.remove('title-screen');
       DOM.themeBar.classList.add('visible');
       DOM.hud.style.display = 'block';
+      // Hold the screen awake whenever audio is alive — was practice-only
+      // before, but iOS will suspend the page (and silently break the MIDI
+      // port handler in WMB) the moment the screen sleeps. Free Play sessions
+      // should stay live for the same reason.
+      requestWakeLock();
       if (!practice.enabled) refreshIntroHint();
       if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
       else DOM.micMeter.classList.remove('visible');
