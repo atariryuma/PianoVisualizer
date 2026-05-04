@@ -1721,7 +1721,7 @@
       </button>
     </div>
     <!-- Bluetooth MIDI connection lives in the ⚙ settings panel. Element kept for legacy-code compatibility. -->
-    <button id="bleMidiBtn" title="Connect Bluetooth MIDI keyboard">🔵 Connect Bluetooth keyboard</button>
+    <button id="bleMidiBtn" data-i18n-title="connectBluetooth" data-i18n="connectBluetooth">🔵 Connect Bluetooth</button>
   </div>
   <canvas id="canvas"></canvas>
   <div id="hud">
@@ -1841,7 +1841,7 @@
   <div id="sessionStatus"></div>
   <div id="qualityScore"></div>
   <div id="debugOverlay"></div>
-  <div id="introHint">🎹 Try playing the piano</div>
+  <div id="introHint" data-i18n="introTryPlay">🎹 Try playing the piano</div>
   <button id="midiHintDismiss" data-i18n="later">Later</button>
   <!-- MIDI rescan moved to the ⚙ settings panel. Element kept for legacy-code compatibility. -->
   <button id="midiRescanBtn">🔄 Scan for MIDI keyboard</button>
@@ -2648,6 +2648,42 @@
       debugOverlay:       { en: 'Debug overlay',             jp: 'デバッグ表示' },
       language:           { en: 'Language',                  jp: '言語' },
       later:              { en: 'Later',                     jp: 'あとで' },
+      // Intro hint / MIDI diagnostics
+      introTryPlay:       { en: '🎹 Try playing the piano',
+                            jp: '🎹 ピアノを弾いてみよう' },
+      introNeedMidi:      { en: '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)',
+                            jp: '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）' },
+      diagWebMidiUnsupported: { en: '🎹 This browser does not support Web MIDI',
+                                jp: '🎹 このブラウザは Web MIDI 非対応' },
+      diagNoMidiPort:     { en: '🎹 No MIDI port found',
+                            jp: '🎹 MIDIポートが見つかりません' },
+      diagWmbHint:        { en: 'In WMB, disconnect → reconnect the keyboard, then tap 🔄 again',
+                            jp: 'WMBの設定でキーボードを一度切断→再接続してから🔄を再度タップ' },
+      diagConnectHint:    { en: 'Connect the keyboard via USB/Bluetooth, then tap 🔄',
+                            jp: 'キーボードをUSB/Bluetoothで接続してから🔄をタップ' },
+      diagDetectedFmt:    { en: '🎹 Detected: {v}',
+                            jp: '🎹 認識中: {v}' },
+      diagCouldNotConnect:{ en: 'Could not connect',          jp: '接続できませんでした' },
+      diagMidiError:      { en: '🎹 MIDI error',              jp: '🎹 MIDIエラー' },
+      midiConnectedFmt:   { en: '🎹 Connected: {v}',          jp: '🎹 接続: {v}' },
+      // Alerts
+      alertWebBluetoothUnsupported: { en: 'This browser does not support Web Bluetooth.\n\nAndroid Chrome / Mac Chrome / Linux Chrome are supported.\niPad Safari is not — use the "Web MIDI Browser" app instead.',
+                                      jp: 'このブラウザは Web Bluetooth に対応していません。\n\nAndroid Chrome / Mac Chrome / Linux Chrome は対応。\niPad Safari は非対応 → 「Web MIDI Browser」アプリを使ってください。' },
+      alertBleConnectFailedFmt: { en: 'Could not connect to Bluetooth keyboard:\n{v}',
+                                  jp: 'Bluetoothキーボードに接続できませんでした:\n{v}' },
+      alertScoreLoadFailedFmt: { en: 'Failed to load score\n{v}',
+                                 jp: '楽譜の読み込みに失敗しました\n{v}' },
+      // Session summary
+      sumBestFmt:         { en: '✨ All-time best: {combo} combo / Flow {flow}% (session #{n})',
+                            jp: '✨ 歴代ベスト: {combo}コンボ / フロー{flow}% (第{n}回セッション)' },
+      // Input indicator tooltips
+      tipMidiKeyboardFmt: { en: 'MIDI keyboard: {v}',         jp: 'MIDIキーボード: {v}' },
+      tipMicMode:         { en: 'Mic input mode',             jp: 'マイク入力モード' },
+      tipIosMidiBlocked:  { en: 'iPad/iPhone Safari does not support Web MIDI. Use mic input. (For BLE-MIDI keyboards, install the "Web MIDI Browser" iOS app)',
+                            jp: 'iPad/iPhone のSafariはWeb MIDI非対応。マイク入力で演奏してください。（BLE-MIDIキーボードを使うには「Web MIDI Browser」アプリが必要）' },
+      // Console-only iOS MIDI guidance
+      consoleIosMidi:     { en: 'iOS/iPadOS detected — Web MIDI is unavailable on Safari/WebKit. Use a desktop browser, Steam Deck, or the "Web MIDI Browser" iOS app for BLE-MIDI.',
+                            jp: 'iOS/iPadOS検出 — Safari/WebKitではWeb MIDI非対応。デスクトップブラウザ・Steam Deck・iOS「Web MIDI Browser」アプリのいずれかを利用。' },
       // Start screen
       tagline:            { en: 'Play the piano and watch the screen come alive',
                             jp: 'ピアノを弾くと画面がきれいに光るよ' },
@@ -4771,7 +4807,11 @@
       });
 
       const best = saveBestScores(state.bestCombo, state.peakFlow);
-      DOM.sumBest.textContent = '\u2728 \u6b74\u4ee3\u30d9\u30b9\u30c8: ' + best.bestCombo + '\u30b3\u30f3\u30dc / \u30d5\u30ed\u30fc' + best.peakFlow + '% (\u7b2c' + best.totalSessions + '\u56de\u30bb\u30c3\u30b7\u30e7\u30f3)';
+      DOM.sumBest.textContent = t('sumBestFmt', {
+        combo: best.bestCombo,
+        flow: best.peakFlow,
+        n: best.totalSessions
+      });
 
       DOM.sessionSummary.classList.add('visible');
 
@@ -5605,14 +5645,11 @@
       if (midiInput.enabled) {
         DOM.ptbInput.textContent = '🎹 MIDI';
         DOM.ptbInput.classList.add('midi');
-        DOM.ptbInput.title = 'MIDI keyboard: ' + (midiInput.port?.name || 'unknown');
+        DOM.ptbInput.title = t('tipMidiKeyboardFmt', { v: midiInput.port?.name || 'unknown' });
       } else {
         DOM.ptbInput.textContent = '🎙️ MIC';
         DOM.ptbInput.classList.remove('midi');
-        DOM.ptbInput.title = midiInput.platformBlocked
-          ? 'iPad/iPhone Safari does not support Web MIDI. Use mic input.'
-            + '(For BLE-MIDI keyboards, install the "Web MIDI Browser" iOS app)'
-          : 'Mic input mode';
+        DOM.ptbInput.title = midiInput.platformBlocked ? t('tipIosMidiBlocked') : t('tipMicMode');
       }
     }
 
@@ -5655,7 +5692,7 @@
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
       DOM.micMeter?.classList.remove('visible');
       stopMidiAutoRescan();
-      showHitChip('good', '🎹 Connected: ' + (port.name || 'MIDI'));
+      showHitChip('good', t('midiConnectedFmt', { v: port.name || 'MIDI' }));
       console.log('[MIDI] connected: ' + port.name);
       return true;
     }
@@ -5759,7 +5796,7 @@
 
     async function rescanMidi(silent) {
       if (!navigator.requestMIDIAccess) {
-        if (!silent) setIntroHintDiagnostic('🎹 This browser does not support Web MIDI');
+        if (!silent) setIntroHintDiagnostic(t('diagWebMidiUnsupported'));
         return false;
       }
       try {
@@ -5772,10 +5809,8 @@
           if (!silent) {
             // Web MIDI Browser quirk: devices already paired at startup are often
             // invisible — re-pairing usually surfaces them.
-            const wmbHint = isAppleMobile()
-              ? 'In WMB, disconnect → reconnect the keyboard, then tap 🔄 again'
-              : 'Connect the keyboard via USB/Bluetooth, then tap 🔄';
-            setIntroHintDiagnostic('🎹 No MIDI port found', wmbHint);
+            const hint = t(isAppleMobile() ? 'diagWmbHint' : 'diagConnectHint');
+            setIntroHintDiagnostic(t('diagNoMidiPort'), hint);
           }
           return false;
         }
@@ -5783,12 +5818,12 @@
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
         }
         if (!silent) {
-          setIntroHintDiagnostic('🎹 Detected: ' + portInfo, 'Could not connect');
+          setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect'));
         }
         return false;
       } catch (e) {
         console.warn('[MIDI] rescan failed:', e.message);
-        if (!silent) setIntroHintDiagnostic('🎹 MIDI error', e.message);
+        if (!silent) setIntroHintDiagnostic(t('diagMidiError'), e.message);
         return false;
       }
     }
@@ -5886,7 +5921,7 @@
 
     async function connectBleMidi() {
       if (!navigator.bluetooth) {
-        alert('This browser does not support Web Bluetooth.\n\nAndroid Chrome / Mac Chrome / Linux Chrome are supported.\niPad Safari is not — use the "Web MIDI Browser" app instead.');
+        alert(t('alertWebBluetoothUnsupported'));
         return;
       }
       if (bleMidi.connected) return;
@@ -5912,7 +5947,7 @@
         setInputIndicator();
         if (typeof refreshIntroHint === 'function') refreshIntroHint();
         DOM.micMeter?.classList.remove('visible');
-        showHitChip('good', '🎹 Connected: ' + (device.name || 'BLE-MIDI'));
+        showHitChip('good', t('midiConnectedFmt', { v: device.name || 'BLE-MIDI' }));
         console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
 
         device.addEventListener('gattserverdisconnected', () => {
@@ -5928,7 +5963,7 @@
       } catch (e) {
         console.warn('[BLE-MIDI] connect failed:', e.message);
         if (e.name !== 'NotFoundError') {
-          alert('Could not connect to Bluetooth keyboard:\n' + e.message);
+          alert(t('alertBleConnectFailedFmt', { v: e.message }));
         }
       }
     }
@@ -6583,7 +6618,7 @@
       hideIntroHint();
       if (!currentSong._loaded) {
         try { await loadCurrentScore(); }
-        catch (e) { alert('Failed to load score\n' + e.message); return; }
+        catch (e) { alert(t('alertScoreLoadFailedFmt', { v: e.message })); return; }
       }
 
       // Lock in the count-in / lookahead lengths for this section before notes
@@ -7432,9 +7467,9 @@
         DOM.midiHintDismiss?.classList.remove('visible');
         return;
       }
-      let txt = '🎹 Try playing the piano';
+      let txt = t('introTryPlay');
       if (state.micPermissionFailed && !midiInput.enabled) {
-        txt = '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)';
+        txt = t('introNeedMidi');
       }
       DOM.introHint.innerHTML = txt;
       const needRescan = state.micPermissionFailed && !midiInput.enabled
