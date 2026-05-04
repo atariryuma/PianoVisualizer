@@ -43,8 +43,14 @@ $certParams = @{
     KeyLength         = 2048
     HashAlgorithm     = "SHA256"
     NotAfter          = (Get-Date).AddDays($Days)
-    KeyUsage          = "DigitalSignature", "KeyEncipherment"
-    TextExtension     = @("2.5.29.37={text}1.3.6.1.5.5.7.3.1")   # serverAuth EKU
+    # CertSign + CRLSign needed so iOS will treat this as a CA cert.
+    # Without these (and BasicConstraints CA:TRUE below), iOS installs the
+    # profile but the trust toggle has no effect — chain validation still fails.
+    KeyUsage          = "DigitalSignature", "KeyEncipherment", "CertSign", "CRLSign"
+    TextExtension     = @(
+        "2.5.29.37={text}1.3.6.1.5.5.7.3.1",   # extendedKeyUsage: serverAuth
+        "2.5.29.19={text}CA=true"             # basicConstraints: CA:TRUE
+    )
     CertStoreLocation = "Cert:\CurrentUser\My"
 }
 
