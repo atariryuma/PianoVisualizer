@@ -320,6 +320,31 @@
       50%      { transform: translate(-50%, -50%) scale(1.06); }
     }
 
+    #midiBadge {
+      position: fixed;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      z-index: 5;
+      font-size: .75rem;
+      padding: 5px 12px;
+      border-radius: 14px;
+      background: rgba(80, 200, 120, .18);
+      border: 1px solid rgba(140, 230, 160, .45);
+      color: rgba(200, 255, 220, .92);
+      letter-spacing: .04em;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(1);
+      transition: opacity .35s, transform .12s ease-out, background .12s
+    }
+
+    #midiBadge.visible { opacity: 1 }
+
+    #midiBadge.pulse {
+      transform: scale(1.12);
+      background: rgba(120, 230, 160, .45)
+    }
+
     #micMeter {
       position: fixed;
       right: 16px;
@@ -1448,6 +1473,7 @@
   <div id="debugOverlay"></div>
   <div id="introHint">🎹 ピアノを弾いてみよう</div>
   <div id="micMeter"><div id="micMeterFill"></div></div>
+  <div id="midiBadge"></div>
 
   <!-- ===== Practice Mode ===== -->
   <div id="songPanel">
@@ -1871,7 +1897,8 @@
       introHint: document.getElementById('introHint'),
       micMeter: document.getElementById('micMeter'),
       micMeterFill: document.getElementById('micMeterFill'),
-      bleMidiBtn: document.getElementById('bleMidiBtn')
+      bleMidiBtn: document.getElementById('bleMidiBtn'),
+      midiBadge: document.getElementById('midiBadge')
     };
     const ctx = DOM.canvas.getContext('2d');
 
@@ -4674,12 +4701,32 @@
       const cmd = status & 0xF0;
       midiInput.lastEventTime = performance.now();
       if (cmd === 0x90 && b > 0) {
+        pulseMidiBadge();
         onMidiNoteOn(a, b);
         if (practice.enabled) matchNoteOnset(a, true);
       } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
         onMidiNoteOff(a);
       } else if (cmd === 0xB0) {
         onMidiCC(a, b);
+      }
+    }
+
+    let _midiBadgePulseTimer = 0;
+    function pulseMidiBadge() {
+      if (!DOM.midiBadge || !DOM.midiBadge.classList.contains('visible')) return;
+      DOM.midiBadge.classList.add('pulse');
+      clearTimeout(_midiBadgePulseTimer);
+      _midiBadgePulseTimer = setTimeout(() => DOM.midiBadge.classList.remove('pulse'), 140);
+    }
+
+    function refreshMidiBadge() {
+      if (!DOM.midiBadge) return;
+      if (midiInput.enabled && midiInput.port?.name) {
+        DOM.midiBadge.textContent = '🎹 ' + midiInput.port.name;
+        DOM.midiBadge.classList.add('visible');
+      } else {
+        DOM.midiBadge.classList.remove('visible');
+        DOM.midiBadge.classList.remove('pulse');
       }
     }
 
@@ -4699,6 +4746,7 @@
       // v13: Toggle a body class so CSS can reserve bottom space for the
       // virtual keyboard (lifts #stageLabel, #noteDisplay, #debugOverlay).
       document.body.classList.toggle('midi-on', !!midiInput.enabled);
+      if (typeof refreshMidiBadge === 'function') refreshMidiBadge();
       if (!DOM.ptbInput) return;
       if (midiInput.enabled) {
         DOM.ptbInput.textContent = '🎹 MIDI';
@@ -4896,6 +4944,7 @@
         setInputIndicator();
         if (typeof refreshIntroHint === 'function') refreshIntroHint();
         DOM.micMeter?.classList.remove('visible');
+        showHitChip('good', '🎹 接続: ' + (device.name || 'BLE-MIDI'));
         console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
 
         device.addEventListener('gattserverdisconnected', () => {
