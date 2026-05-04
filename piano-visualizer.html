@@ -4814,9 +4814,9 @@
     // Returns true if the port was successfully attached, false if it was skipped
     // (virtual/system port). Callers can use the return to decide whether to keep
     // searching the port list.
-    function attachMidiPort(port) {
+    function attachMidiPort(port, force) {
       if (midiInput.port === port) return true;
-      if (isVirtualMidiPort(port)) {
+      if (!force && isVirtualMidiPort(port)) {
         console.log('[MIDI] skip virtual/system port: ' + port.name);
         return false;
       }
@@ -4836,7 +4836,8 @@
       setInputIndicator();
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
       DOM.micMeter?.classList.remove('visible');
-      console.log('[MIDI] connected: ' + port.name);
+      showHitChip('good', '🎹 接続: ' + (port.name || 'MIDI'));
+      console.log('[MIDI] connected: ' + port.name + (force ? ' (forced)' : ''));
       return true;
     }
 
@@ -4891,8 +4892,9 @@
       }
     }
 
-    // 手動 MIDI 再検索 — ユーザが Web MIDI Browser や OS で後からキーボードを
-    // ペアリングしたが、onstatechange が(ポリフィル/環境差で)発火しない場合の救済。
+    // 手動 MIDI 再検索 — Web MIDI Browser のポリフィルが onstatechange を発火
+    // しない場合や、virtual filter が通常認識を弾いてる場合の救済。
+    // 二段階: (1) 通常フィルタで接続 (2) ダメなら virtual filter を無視して強制接続。
     async function rescanMidi() {
       if (!navigator.requestMIDIAccess) {
         showHitChip('miss', 'Web MIDI 非対応');
@@ -4901,17 +4903,28 @@
       try {
         const access = await navigator.requestMIDIAccess({ sysex: false });
         const ports = Array.from(access.inputs.values());
+        const portInfo = ports.map(p => (p.name || '無名') + '/' + p.state).join(', ');
+        console.log('[MIDI] rescan ports: [' + portInfo + ']');
+
+        if (ports.length === 0) {
+          showHitChip('miss', 'ポート0個 — WMB側でペアリングを');
+          return;
+        }
+        // (1) 通常: 接続済み・非virtual を試す
         for (const port of ports) {
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) {
             return;
           }
         }
-        if (!midiInput.enabled) {
-          showHitChip('miss', 'MIDIキーボードが見つかりません');
+        // (2) フォールバック: state関係なく force-attach（user explicit re-scan = 意思明確）
+        for (const port of ports) {
+          if (midiInput.enabled) return;
+          if (attachMidiPort(port, true)) return;
         }
+        showHitChip('miss', 'ポート: ' + portInfo);
       } catch (e) {
         console.warn('[MIDI] rescan failed:', e.message);
-        showHitChip('miss', 'MIDI再検索エラー');
+        showHitChip('miss', 'エラー: ' + e.message);
       }
     }
 
