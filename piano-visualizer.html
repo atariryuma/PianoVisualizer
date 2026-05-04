@@ -1121,6 +1121,17 @@
       background: rgba(140, 100, 220, .35);
     }
 
+    .mode-btn:disabled {
+      cursor: wait;
+      opacity: .85;
+    }
+
+    /* Loading-state swap: show "Starting..." text while audio init is running.
+       The label markup stays intact (so data-i18n re-render isn't fragile). */
+    .mode-btn .mode-btn-loading { display: none }
+    .mode-btn.is-loading .mode-btn-label { display: none }
+    .mode-btn.is-loading .mode-btn-loading { display: inline }
+
     /* Song select panel (after audio start, before practice begins) */
     #songPanel {
       position: fixed;
@@ -1696,9 +1707,18 @@
     <h1>Piano Visualizer</h1>
     <p data-i18n="tagline">Play the piano and watch the screen come alive</p>
     <div id="modeButtons">
-      <button id="startBtn" class="mode-btn">🎨 <span data-i18n="freePlay">Free Play</span></button>
-      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">🌸 <span data-i18n="furElise">Für Elise</span></button>
-      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">🥁 <span data-i18n="turkishMarch">Turkish March</span></button>
+      <button id="startBtn" class="mode-btn">
+        <span class="mode-btn-label">🎨 <span data-i18n="freePlay">Free Play</span></span>
+        <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+      </button>
+      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">
+        <span class="mode-btn-label">🌸 <span data-i18n="furElise">Für Elise</span></span>
+        <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+      </button>
+      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">
+        <span class="mode-btn-label">🥁 <span data-i18n="turkishMarch">Turkish March</span></span>
+        <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+      </button>
     </div>
     <!-- Bluetooth MIDI connection lives in the ⚙ settings panel. Element kept for legacy-code compatibility. -->
     <button id="bleMidiBtn" title="Connect Bluetooth MIDI keyboard">🔵 Connect Bluetooth keyboard</button>
@@ -7594,6 +7614,15 @@
     // ========================================
     // Start
     // ========================================
+    // Toggle the loading state on a start-screen mode button. The button's
+    // i18n markup stays intact so language re-renders keep working and a return
+    // to the title screen always finds the button in its resting state.
+    function setStartButtonLoading(btn, loading) {
+      if (!btn) return;
+      btn.classList.toggle('is-loading', !!loading);
+      btn.disabled = !!loading;
+    }
+
     DOM.startBtn.addEventListener('click', async () => {
       // Re-entry from title screen while audio is still alive — just resume.
       if (state.running) {
@@ -7603,9 +7632,7 @@
       }
       if (state.starting) return;
       state.starting = true;
-      DOM.startBtn.disabled = true;
-      const prevBtnText = DOM.startBtn.textContent;
-      DOM.startBtn.textContent = t('starting');
+      setStartButtonLoading(DOM.startBtn, true);
       try {
         await initAudio();
         showRunningUI();
@@ -7617,10 +7644,9 @@
       } catch (e) {
         alertAudioInitError(e);
       } finally {
-        if (!state.running) {
-          DOM.startBtn.disabled = false;
-          DOM.startBtn.textContent = prevBtnText;
-        }
+        // Unconditional reset — even on success, so a later returnToTitle
+        // shows the button in its resting state instead of a frozen "Starting...".
+        setStartButtonLoading(DOM.startBtn, false);
         state.starting = false;
       }
     });
