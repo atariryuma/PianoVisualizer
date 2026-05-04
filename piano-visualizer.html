@@ -6352,7 +6352,15 @@
 
     function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
     function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
-    function midiToPitchName(midi) { return CONFIG.NOTE_NAMES[notePitchClass(midi)]; }
+    // Japanese-mode note names. Kids in JP music ed read ド/レ/ミ on the staff,
+    // so when prefs.lang === 'jp' we surface those instead of C/D/E. Octave
+    // numbers stay as digits — a Japanese kid's textbook also uses C4-style
+    // octave numerals when needed.
+    const NOTE_NAMES_JP = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
+    function midiToPitchName(midi) {
+      const names = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+      return names[notePitchClass(midi)];
+    }
     function midiToName(midi) { return midiToPitchName(midi) + (Math.floor(midi / 12) - 1); }
 
     // ========================================
