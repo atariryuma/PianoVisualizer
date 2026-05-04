@@ -181,8 +181,14 @@ while ($true) {
         Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body $content -contentType $contentType
     }
     catch {
-        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Log $_.Exception.Message
+        $msg = $_.Exception.Message
+        $inner = $_.Exception.InnerException
+        while ($inner) {
+            $msg += " | inner: " + $inner.Message
+            $inner = $inner.InnerException
+        }
+        Write-Host "Error: $msg" -ForegroundColor Red
+        Write-Log $msg
     }
     finally {
         if ($reader) { $reader.Close() }
