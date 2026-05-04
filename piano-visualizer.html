@@ -1888,7 +1888,9 @@
 
       <div class="song-actions">
         <button id="songBack" data-i18n="back">Back</button>
-        <button id="songStart" class="primary" data-i18n="startPractice">▶ Start practice</button>
+        <!-- Label is owned by renderSongPanel (mode-aware: Listen vs Guided/Rhythm).
+             No data-i18n here — that would race renderSongPanel on lang change. -->
+        <button id="songStart" class="primary">▶ Start practice</button>
       </div>
     </div>
   </div>
@@ -2676,6 +2678,8 @@
       // Session summary
       sumBestFmt:         { en: '✨ All-time best: {combo} combo / Flow {flow}% (session #{n})',
                             jp: '✨ 歴代ベスト: {combo}コンボ / フロー{flow}% (第{n}回セッション)' },
+      sumAllClear:        { en: '🎉 ALL CLEAR! 🎉',             jp: '🎉 全クリア！ 🎉' },
+      sumQuestProgressFmt:{ en: '{n}/{total} cleared',          jp: '{n}/{total} クリア' },
       // Input indicator tooltips
       tipMidiKeyboardFmt: { en: 'MIDI keyboard: {v}',         jp: 'MIDIキーボード: {v}' },
       tipMicMode:         { en: 'Mic input mode',             jp: 'マイク入力モード' },
@@ -3046,11 +3050,21 @@
       laneLabelL = t('laneLeft');
       laneLabelR = t('laneRight');
 
+      // Re-render every screen with imperatively-set localized text. applyI18n
+      // walks [data-i18n], but these elements don't carry that — they're set
+      // from JS at event time, so we have to refresh them ourselves.
       if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
       if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
         const sec = currentSong.sections?.[practice.sectionIdx];
         if (sec) DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
       }
+      if (DOM.sectionResult?.classList.contains('visible')) renderResultCard();
+      if (DOM.sessionSummary?.classList.contains('visible')) renderSessionSummaryText(false);
+      if (DOM.stageLabel && state.currentStage > 0) {
+        DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[state.currentStage]);
+      }
+      // Re-run the cached intro diagnostic in the new language (if one's showing).
+      if (state.lastIntroDiag) state.lastIntroDiag();
     });
     // Lane labels — recomputed on lang change, used in the per-frame draw.
     let laneLabelL = t('laneLeft');
@@ -4758,60 +4772,70 @@
     // ========================================
     // v11: Session Reset
     // ========================================
-    function showSessionSummary() {
-      const elapsed = performance.now() - state.sessionStartTimeMs;
-      const stageName = stageLabel(CONFIG.STAGES[state.currentStage]) || '-';
+    // Re-render only the localized parts of the session summary. Pure: reads
+    // from `state._lastSummary` cache + current i18n. Used by both the initial
+    // show (with animation) and language toggle (without \u2014 we don't want a
+    // stagger replay).
+    function renderSessionSummaryText(animate) {
+      const s = state._lastSummary;
+      if (!s) return;
+      DOM.sumCombo.textContent = s.bestCombo;
+      DOM.sumStage.textContent = stageLabel(CONFIG.STAGES[s.stageIdx]) || '-';
+      DOM.sumTime.textContent = formatTime(s.elapsed);
 
-      DOM.sumCombo.textContent = state.bestCombo;
-      DOM.sumStage.textContent = stageName || '-';
-      DOM.sumTime.textContent = formatTime(elapsed);
-
-      // Build animated quest badge list
-      const doneCount = state.completedQuests.length;
-      const allDone = doneCount === CONFIG.QUESTS.length;
-      let badgeHtml = '';
-
-      // Show completed quests first, then uncompleted
+      const total = CONFIG.QUESTS.length;
       const sortedQuests = CONFIG.QUESTS.slice().sort((a, b) => {
-        const aDone = state.completedQuests.includes(a.id) ? 0 : 1;
-        const bDone = state.completedQuests.includes(b.id) ? 0 : 1;
+        const aDone = s.completedQuests.includes(a.id) ? 0 : 1;
+        const bDone = s.completedQuests.includes(b.id) ? 0 : 1;
         return aDone - bDone;
       });
-
+      let badgeHtml = '';
       for (let i = 0; i < sortedQuests.length; i++) {
         const q = sortedQuests[i];
-        const done = state.completedQuests.includes(q.id);
+        const done = s.completedQuests.includes(q.id);
         const cls = done ? 'sq-badge done' : 'sq-badge undone';
         const icon = done ? '\u2B50' : '\u2B1C';
         badgeHtml += '<div class="' + cls + '" style="animation-delay:' + (i * 0.25) + 's">' +
           '<span class="badge-icon">' + icon + '</span>' +
           '<span>' + t(q.nameKey) + '</span></div>';
       }
-
-      if (allDone) {
-        badgeHtml += '<div class="sq-all-clear" style="animation-delay:' + (CONFIG.QUESTS.length * 0.25) + 's">' +
-          '\ud83c\udf89 ALL CLEAR! \ud83c\udf89</div>';
+      if (s.completedQuests.length === total) {
+        badgeHtml += '<div class="sq-all-clear" style="animation-delay:' + (total * 0.25) + 's">' +
+          t('sumAllClear') + '</div>';
       } else {
         badgeHtml += '<div style="margin-top:6px;font-size:.75rem;color:rgba(255,255,255,.4);animation-delay:' +
-          (CONFIG.QUESTS.length * 0.25) + 's">' + doneCount + '/' + CONFIG.QUESTS.length + ' \u30af\u30ea\u30a2</div>';
+          (total * 0.25) + 's">' + t('sumQuestProgressFmt', { n: s.completedQuests.length, total }) + '</div>';
       }
-
       DOM.sumQuestList.innerHTML = badgeHtml;
 
-      // Trigger staggered badge animations
-      requestAnimationFrame(() => {
-        const badges = DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear');
-        badges.forEach((b, i) => {
-          setTimeout(() => b.classList.add('animate-in'), i * 250);
+      if (animate) {
+        requestAnimationFrame(() => {
+          const badges = DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear');
+          badges.forEach((b, i) => setTimeout(() => b.classList.add('animate-in'), i * 250));
         });
-      });
+      } else {
+        // On lang re-render, surface badges immediately without re-staggering.
+        DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear').forEach(b => b.classList.add('animate-in'));
+      }
 
-      const best = saveBestScores(state.bestCombo, state.peakFlow);
       DOM.sumBest.textContent = t('sumBestFmt', {
-        combo: best.bestCombo,
-        flow: best.peakFlow,
-        n: best.totalSessions
+        combo: s.bestStat.bestCombo,
+        flow: s.bestStat.peakFlow,
+        n: s.bestStat.totalSessions
       });
+    }
+
+    function showSessionSummary() {
+      const elapsed = performance.now() - state.sessionStartTimeMs;
+      const best = saveBestScores(state.bestCombo, state.peakFlow);
+      state._lastSummary = {
+        bestCombo: state.bestCombo,
+        stageIdx: state.currentStage,
+        elapsed,
+        completedQuests: state.completedQuests.slice(),
+        bestStat: best
+      };
+      renderSessionSummaryText(true);
 
       DOM.sessionSummary.classList.add('visible');
 
@@ -5796,7 +5820,7 @@
 
     async function rescanMidi(silent) {
       if (!navigator.requestMIDIAccess) {
-        if (!silent) setIntroHintDiagnostic(t('diagWebMidiUnsupported'));
+        if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagWebMidiUnsupported')));
         return false;
       }
       try {
@@ -5809,8 +5833,10 @@
           if (!silent) {
             // Web MIDI Browser quirk: devices already paired at startup are often
             // invisible — re-pairing usually surfaces them.
-            const hint = t(isAppleMobile() ? 'diagWmbHint' : 'diagConnectHint');
-            setIntroHintDiagnostic(t('diagNoMidiPort'), hint);
+            showIntroDiag(() => {
+              const hint = t(isAppleMobile() ? 'diagWmbHint' : 'diagConnectHint');
+              setIntroHintDiagnostic(t('diagNoMidiPort'), hint);
+            });
           }
           return false;
         }
@@ -5818,12 +5844,12 @@
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
         }
         if (!silent) {
-          setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect'));
+          showIntroDiag(() => setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect')));
         }
         return false;
       } catch (e) {
         console.warn('[MIDI] rescan failed:', e.message);
-        if (!silent) setIntroHintDiagnostic(t('diagMidiError'), e.message);
+        if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagMidiError'), e.message));
         return false;
       }
     }
@@ -5840,6 +5866,14 @@
       DOM.midiRescanBtn?.classList.add('visible');
       DOM.midiHintDismiss?.classList.add('visible');
     }
+    // Each callsite that produces a diagnostic with localized strings should
+    // wrap its call in showIntroDiag(() => setIntroHintDiagnostic(t(...), ...))
+    // so a language toggle can re-run the same closure with fresh translations.
+    function showIntroDiag(thunk) {
+      state.lastIntroDiag = thunk;
+      thunk();
+    }
+    function clearIntroDiagCache() { state.lastIntroDiag = null; }
 
     // Polling: when MIDI is required but not connected, detect when the user
     // has paired in the WMB UI in the background and returns to the page.
@@ -7131,6 +7165,43 @@
       return tier ? tier.stars : 0;
     }
 
+    // Apply localized text + visibility based on a cached result context. Called
+    // from completePracticeSection AND from the langchange listener so the card
+    // can re-render in the new language without re-computing scores/unlocks.
+    function renderResultCard() {
+      const r = practice._lastResult;
+      if (!r) return;
+      const sec = currentSong?.sections?.find(s => s.id === r.secId);
+      if (!sec) return;
+
+      if (r.mode === 'listen') {
+        DOM.resTitle.textContent = t('listenedTitle');
+        DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+        DOM.resStars.style.display = 'none';
+        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = 'none'; });
+        DOM.resMsg.textContent = t('listenedMsg');
+        DOM.resUnlock.textContent = '';
+        if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
+        DOM.resNext.style.display = 'none';
+        if (DOM.resTryPlay) DOM.resTryPlay.style.display = '';
+        return;
+      }
+
+      // Rhythm/guided result.
+      DOM.resStars.style.display = '';
+      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
+      if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
+      const tier = RESULT_TIERS[Math.max(0, Math.min(3, r.stars))];
+      DOM.resTitle.textContent = t(tier.titleKey);
+      DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      DOM.resMsg.textContent = t(tier.msgKey);
+      let unlockedMsg = '';
+      if (r.unlockedTempo)   unlockedMsg += t('tempoUnlockedFmt', { v: r.unlockedTempo });
+      if (r.unlockedSecKey)  unlockedMsg += t('sectionUnlockedFmt', { v: t(r.unlockedSecKey) });
+      if (r.streakDays)      unlockedMsg += t('streakDaysFmt', { v: r.streakDays });
+      DOM.resUnlock.textContent = unlockedMsg.trim();
+    }
+
     function completePracticeSection() {
       practice.enabled = false;
       stopPracticeAudio();
@@ -7143,23 +7214,12 @@
       // score rows/stars and offer a "Try playing" button that switches the
       // kid into Guided on the same section — natural pedagogical flow.
       if (practice.mode === 'listen') {
-        DOM.resTitle.textContent = t('listenedTitle');
-        DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-        DOM.resStars.style.display = 'none';
-        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = 'none'; });
-        DOM.resMsg.textContent = t('listenedMsg');
-        DOM.resUnlock.textContent = '';
-        if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
-        DOM.resNext.style.display = 'none';
-        if (DOM.resTryPlay) DOM.resTryPlay.style.display = '';
+        practice._lastResult = { mode: 'listen', secId: sec.id };
+        renderResultCard();
         DOM.sectionResult.classList.add('visible');
         practice._completing = false;
         return;
       }
-      // Restore stat visibility + hide the listen-only Try-playing button.
-      DOM.resStars.style.display = '';
-      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
-      if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
       const total = practice._sectionTargetCount || 0;
       const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
       const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
@@ -7177,7 +7237,12 @@
 
       recordPracticeDay();
 
-      let unlockedMsg = '';
+      // Compute unlocks (and persist them) — store the *facts* (which tempo /
+      // which section / streak count) so renderResultCard can re-build the
+      // localized message on language change.
+      let unlockedTempo = null;
+      let unlockedSecKey = null;
+      let streakDays = null;
       if (stars >= 2) {
         const tempos = [60, 75, 90, 100];
         const idx = tempos.indexOf(practice.tempoPct);
@@ -7185,7 +7250,7 @@
           const next = tempos[idx + 1];
           if (!sp.unlockedTempos[next]) {
             sp.unlockedTempos[next] = true;
-            unlockedMsg += t('tempoUnlockedFmt', { v: next });
+            unlockedTempo = next;
           }
         }
       }
@@ -7195,13 +7260,13 @@
           const next = SECTION_IDS[sIdx + 1];
           if (!sp.unlockedSections[next]) {
             sp.unlockedSections[next] = true;
-            unlockedMsg += t('sectionUnlockedFmt', { v: t(currentSong.sections.find(s => s.id === next).nameKey) });
+            unlockedSecKey = currentSong.sections.find(s => s.id === next).nameKey;
           }
         }
       }
       // Theme unlock at streak milestone
       if (practice.progress.streakCount === 3 || practice.progress.streakCount === 7) {
-        unlockedMsg += t('streakDaysFmt', { v: practice.progress.streakCount });
+        streakDays = practice.progress.streakCount;
       }
 
       if (!sp.history[sec.id]) sp.history[sec.id] = [];
@@ -7211,10 +7276,14 @@
 
       savePracticeProgress();
 
-      // Populate result UI
-      const tier = RESULT_TIERS[Math.max(0, Math.min(3, stars))];
-      DOM.resTitle.textContent = t(tier.titleKey);
-      DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      // Snapshot context for renderResultCard (handles localized strings) +
+      // re-render on language change. Numeric / visibility state below isn't
+      // language-dependent so it stays imperative.
+      practice._lastResult = {
+        mode: practice.mode, secId: sec.id, stars,
+        unlockedTempo, unlockedSecKey, streakDays
+      };
+      renderResultCard();
       DOM.resStars.innerHTML = '';
       for (let i = 0; i < 3; i++) {
         const span = document.createElement('span');
@@ -7231,8 +7300,6 @@
         DOM.resDuration.textContent = durPct + '%';
       }
       DOM.resCombo.textContent = practice.sectionBestCombo;
-      DOM.resMsg.textContent = t(tier.msgKey);
-      DOM.resUnlock.textContent = unlockedMsg.trim();
 
       const nextIdx = SECTION_IDS.indexOf(sec.id) + 1;
       const hasNext = nextIdx > 0 && nextIdx < SECTION_IDS.length
@@ -7499,6 +7566,7 @@
 
     function hideIntroHint() {
       if (DOM.introHint) DOM.introHint.classList.remove('visible');
+      clearIntroDiagCache();
       DOM.midiRescanBtn?.classList.remove('visible');
       DOM.midiHintDismiss?.classList.remove('visible');
     }
