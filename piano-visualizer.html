@@ -4888,23 +4888,16 @@
         return;
       }
       try {
-        const access = await safeMidiAccess();
+        const access = await ensureMidiAccess();
         const allPorts = gatherMidiInputs(access);
         console.log('[MIDI] available input ports: ' + allPorts.length);
         for (const p of allPorts) {
           console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
             + ' state=' + p.state + ' connection=' + p.connection);
         }
-        // Try every port; stop at the first non-virtual one we successfully attach.
         for (const port of allPorts) {
           if (port.state === 'connected' && attachMidiPort(port)) break;
         }
-        access.onstatechange = (e) => {
-          if (e.port.type !== 'input') return;
-          console.log('[MIDI] state change: "' + e.port.name + '" → ' + e.port.state);
-          if (e.port.state === 'connected' && !midiInput.enabled) attachMidiPort(e.port);
-          else if (e.port.state === 'disconnected') detachMidiPort(e.port);
-        };
       } catch (e) {
         console.warn('[MIDI] requestMIDIAccess failed:', e.message);
       }
@@ -4913,17 +4906,35 @@
     // MIDI 再検索 — 二段階で接続を試みる:
     // (1) 通常フィルタで接続 (2) ダメなら virtual filter を無視して強制接続。
     // silent=true なら失敗時にUIを更新しない(自動リトライ用)。
-    // requestMIDIAccess wrapper. Tries with sysex:true first because Web MIDI
-    // Browser on iOS only exposes paired BLE-MIDI devices when SysEx access is
-    // granted (documented community workaround). Falls back to sysex:false on
-    // any error so other browsers (where sysex needs explicit user grant) still
-    // work.
-    async function safeMidiAccess() {
-      try { return await navigator.requestMIDIAccess({ sysex: true }); }
+    // Cached MIDIAccess. Per spec the inputs collection updates live with
+    // onstatechange events, so we only need to request once and re-iterate
+    // for rescans. Re-requesting bypasses cached permission on some polyfills
+    // and may also fail outside the original user gesture.
+    let _midiAccess = null;
+
+    async function ensureMidiAccess() {
+      if (_midiAccess) return _midiAccess;
+      // Try sysex:true first (Web MIDI Browser exposes BLE-MIDI only with
+      // sysex granted). Fall back to sysex:false on rejection. Surface both
+      // failure reasons so debugging is possible.
+      let sysexErr = null;
+      try { _midiAccess = await navigator.requestMIDIAccess({ sysex: true }); }
       catch (e) {
-        try { return await navigator.requestMIDIAccess({ sysex: false }); }
-        catch (e2) { throw e2; }
+        sysexErr = e;
+        try { _midiAccess = await navigator.requestMIDIAccess({ sysex: false }); }
+        catch (e2) {
+          const reason = '[sysex:true] ' + (sysexErr.name || 'Err') + ': ' + sysexErr.message
+            + ' / [sysex:false] ' + (e2.name || 'Err') + ': ' + e2.message;
+          throw new Error(reason);
+        }
       }
+      _midiAccess.onstatechange = (e) => {
+        if (e.port.type !== 'input') return;
+        console.log('[MIDI] state change: "' + e.port.name + '" → ' + e.port.state);
+        if (e.port.state === 'connected' && !midiInput.enabled) attachMidiPort(e.port);
+        else if (e.port.state === 'disconnected') detachMidiPort(e.port);
+      };
+      return _midiAccess;
     }
 
     // Defensive iteration of access.inputs: handles both Map (per spec) and
@@ -4951,7 +4962,7 @@
         return false;
       }
       try {
-        const access = await safeMidiAccess();
+        const access = await ensureMidiAccess();
         const ports = gatherMidiInputs(access);
         const portInfo = ports.map(p => (p.name || '無名') + '/' + p.state).join(', ');
         console.log('[MIDI] rescan ports: [' + portInfo + ']');
