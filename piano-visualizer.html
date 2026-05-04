@@ -4558,8 +4558,23 @@
     const midiInput = {
       enabled: false,           // true while a MIDI input port is connected
       port: null,
-      _accessRequested: false
+      _accessRequested: false,
+      // Set when the platform is known to never expose Web MIDI (iOS Safari /
+      // any iPadOS browser). Drives a friendlier hint in the UI.
+      platformBlocked: false
     };
+
+    // iOS Safari (and every other browser on iPadOS / iOS — they all use WebKit)
+    // does not implement the Web MIDI API at all. WebKit Bug 107250 is unresolved
+    // and Apple has stated it is not on the roadmap. Detect this so we can show
+    // a useful hint rather than silently falling back to mic.
+    function isAppleMobile() {
+      const ua = navigator.userAgent || '';
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      // Modern iPadOS reports as Mac in UA, but exposes touch points.
+      const isIPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      return isIOS || isIPadOS;
+    }
 
     function setInputIndicator() {
       // v13: Toggle a body class so CSS can reserve bottom space for the
@@ -4573,7 +4588,10 @@
       } else {
         DOM.ptbInput.textContent = '🎙️ MIC';
         DOM.ptbInput.classList.remove('midi');
-        DOM.ptbInput.title = 'マイク入力モード';
+        DOM.ptbInput.title = midiInput.platformBlocked
+          ? 'iPad/iPhoneのSafariはWeb MIDI非対応。マイク入力で演奏してください。'
+            + '（BLE-MIDIキーボードを使うには「Web MIDI Browser」アプリが必要）'
+          : 'マイク入力モード';
       }
     }
 
@@ -4653,7 +4671,14 @@
       if (midiInput._accessRequested) return;
       midiInput._accessRequested = true;
       if (!navigator.requestMIDIAccess) {
-        console.log('[MIDI] Web MIDI API not available in this browser');
+        if (isAppleMobile()) {
+          midiInput.platformBlocked = true;
+          console.log('[MIDI] iOS/iPadOS detected — Web MIDI is unavailable on Safari/WebKit. '
+            + 'Use a desktop browser, Steam Deck, or the "Web MIDI Browser" iOS app for BLE-MIDI.');
+        } else {
+          console.log('[MIDI] Web MIDI API not available in this browser');
+        }
+        setInputIndicator();
         return;
       }
       try {

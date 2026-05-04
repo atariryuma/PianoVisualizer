@@ -18,6 +18,15 @@ The app requires HTTPS for microphone access (especially on iPad/Safari). A Powe
 
 For local development, any HTTPS-capable static server works, or simply open the HTML file directly in a desktop browser.
 
+## MIDI input by platform
+
+The app prefers Web MIDI input (polyphonic, velocity-aware) and falls back to mic detection. Support is **not uniform across platforms**:
+
+- **Desktop Chrome / Edge / Steam Deck browser**: Full Web MIDI API + USB MIDI + (on Chrome) BLE-MIDI. Best experience.
+- **Android Chrome**: Web MIDI API works for **USB MIDI only**. BLE-MIDI devices are not enumerated (long-standing Chromium limitation). Users must connect via USB-C OTG or fall back to mic.
+- **iPad / iPhone (any browser)**: **Web MIDI API is not implemented in WebKit** (Bug 107250, no roadmap). All iOS browsers use WebKit, so Chrome/Firefox/Edge on iPad are equally blocked. The app detects this via `isAppleMobile()` and surfaces a tooltip on the input indicator pointing users to the [Web MIDI Browser](https://apps.apple.com/us/app/web-midi-browser/id953846217) iOS app (a third-party browser that polyfills Web MIDI + BLE-MIDI). Without that app, iPad users are mic-only.
+- **Roland GO:PIANO88 / similar BLE-MIDI keyboards**: Pairing via Roland Piano App / GarageBand works for native iOS apps but does **not** make the keyboard available to Safari. Don't pair via iOS Settings → Bluetooth either; Roland's docs say to pair through the music app.
+
 ## Architecture
 
 Everything lives in `piano-visualizer.html` — a self-contained `<style>` + `<script>` single-page app with no dependencies or build step.
