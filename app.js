@@ -1655,80 +1655,72 @@
       }
     }
 
-    // ========================================
-    // v10: Magic Quest System Logic
-    // ========================================
-    function updateQuestState(timeMs) {
-      if (timeMs - state.lastQuestCheckMs < 300) return;
-      state.lastQuestCheckMs = timeMs;
+    // v10: Magic Quest System \u2014 Phase 0b.3: state machine in @piano/core.
+    // _questState owns completedIds + lastCheckMs internally (mirrored back
+    // to legacy state.completedQuests / state.lastQuestCheckMs for any
+    // outside reader: summary cards, save/load, debug overlay).
+    const _questState = PianoCore.initQuestTrackerState();
+    // Share the underlying array so state.completedQuests stays in sync
+    // automatically (no per-tick copy needed).
+    _questState.completedIds = state.completedQuests;
+    const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
 
-      // Check ALL uncompleted quests (parallel, non-blocking)
-      let justCompleted = false;
-      for (const q of CONFIG.QUESTS) {
-        if (state.completedQuests.includes(q.id)) continue;
-        if (q.condition(state)) {
-          completeQuest(q, timeMs);
-          justCompleted = true;
-          break; // one completion per tick to show CLEARED animation
-        }
+    function updateQuestState(timeMs) {
+      const result = PianoCore.applyQuestTick(
+        _questState,
+        state, // observation slice; quest.condition reads state.combo, state.flow, etc.
+        timeMs,
+        CONFIG.QUESTS,
+        _questOpts
+      );
+      if (!result) return; // throttled
+
+      // A quest just completed \u2014 fire the celebration UI
+      if (result.completedThisTick) {
+        const quest = CONFIG.QUESTS.find((q) => q.id === result.completedThisTick);
+        console.log('Quest Completed: ' + t(quest.nameKey));
+        DOM.toastTitle.textContent = '\u2728 ' + t(quest.nameKey) + ' \u2728';
+        DOM.toastSub.textContent =
+          quest.reward + ' (' + _questState.completedIds.length + '/' + CONFIG.QUESTS.length + ')';
+        DOM.questToast.classList.remove('show');
+        void DOM.questToast.offsetWidth; // force reflow to restart animation
+        DOM.questToast.classList.add('show');
+        DOM.questLabel.textContent = t('questClearedFmt', { v: t(quest.nameKey) });
+        effectGoldenBurst();
+        spawnBurst(W / 2, H / 2, 20, 1.5, '#ffd700');
+        state.activeQuestId = null;
+        setTimeout(() => DOM.questToast.classList.remove('show'), 2600);
       }
 
-      // Build dot progress display
+      // Mirror tracker state back to legacy fields for outside readers.
+      state.lastQuestCheckMs =
+        _questState.lastCheckMs === -Infinity ? 0 : _questState.lastCheckMs;
+
+      // Build dot progress display + active label
       let dotsHtml = '';
-      let firstUndone = null;
       for (let i = 0; i < CONFIG.QUESTS.length; i++) {
         const q = CONFIG.QUESTS[i];
-        const done = state.completedQuests.includes(q.id);
-        if (!done && !firstUndone) firstUndone = q;
-        const cls = done ? 'quest-dot done' :
-          (firstUndone === q && !justCompleted ? 'quest-dot current' : 'quest-dot');
+        const done = _questState.completedIds.includes(q.id);
+        const cls = done
+          ? 'quest-dot done'
+          : q.id === result.firstUndone && !result.completedThisTick
+          ? 'quest-dot current'
+          : 'quest-dot';
         dotsHtml += '<div class="' + cls + '" title="' + t(q.nameKey) + '"></div>';
       }
       DOM.questDots.innerHTML = dotsHtml;
-
-      // Show quest display
       DOM.questDisplay.classList.add('visible');
 
-      if (!firstUndone) {
-        // All done!
+      if (result.allDone) {
         DOM.questLabel.textContent = t('questAllClearFmt', { n: CONFIG.QUESTS.length });
         state.activeQuestId = QUEST_ALL_DONE;
         return;
       }
-
-      // Update label with next quest info
-      const doneCount = state.completedQuests.length;
-      if (!justCompleted) {
-        DOM.questLabel.textContent = t('questTargetFmt', { v: t(firstUndone.descKey) });
+      if (!result.completedThisTick) {
+        const firstQ = CONFIG.QUESTS.find((q) => q.id === result.firstUndone);
+        if (firstQ) DOM.questLabel.textContent = t('questTargetFmt', { v: t(firstQ.descKey) });
       }
-      state.activeQuestId = firstUndone.id;
-    }
-
-    function completeQuest(quest, timeMs) {
-      console.log('Quest Completed: ' + t(quest.nameKey));
-      state.completedQuests.push(quest.id);
-
-      // Center-screen toast animation
-      DOM.toastTitle.textContent = '\u2728 ' + t(quest.nameKey) + ' \u2728';
-      DOM.toastSub.textContent = quest.reward + ' (' + state.completedQuests.length + '/' + CONFIG.QUESTS.length + ')';
-      DOM.questToast.classList.remove('show');
-      void DOM.questToast.offsetWidth; // force reflow to restart animation
-      DOM.questToast.classList.add('show');
-
-      // Update HUD label temporarily
-      DOM.questLabel.textContent = t('questClearedFmt', { v: t(quest.nameKey) });
-
-      // Visual Reward
-      effectGoldenBurst();
-      spawnBurst(W / 2, H / 2, 20, 1.5, '#ffd700');
-
-      // Force next check delay to let user see toast (2.5s)
-      state.lastQuestCheckMs = timeMs + 2500;
-      state.activeQuestId = null;
-
-      setTimeout(() => {
-        DOM.questToast.classList.remove('show');
-      }, 2600);
+      state.activeQuestId = result.firstUndone;
     }
 
     // ========================================
@@ -2597,7 +2589,11 @@
       state.displayedQualityScore = 0;
       state.growthScore = 0;
       state.qualityHistory = [];
-      state.completedQuests = [];
+      // Reset quest tracker — keep the SAME completedQuests array reference
+      // (since _questState.completedIds shares it) by clearing in-place.
+      state.completedQuests.length = 0;
+      PianoCore.resetQuestTrackerState(_questState);
+      _questState.completedIds = state.completedQuests; // re-share after reset
       state.activeQuestId = null;
       state.lastQuestCheckMs = 0;
       PianoCore.resetEncouragementState(_encState);
