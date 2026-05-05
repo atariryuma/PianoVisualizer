@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for filing! Please be specific — for hard-to-reproduce audio bugs the
-        debug overlay (triple-tap bottom-left) often holds the answer.
+        debug overlay (⚙ → その他 → デバッグ表示) often holds the answer.
   - type: input
     id: version
     attributes:
@@ -63,5 +63,5 @@ body:
     attributes:
       label: Debug overlay snapshot (optional)
       description: |
-        Triple-tap the bottom-left of the canvas, then paste what's shown.
+        Enable the debug overlay (⚙ → その他 → デバッグ表示), then paste what's shown.
       render: text
