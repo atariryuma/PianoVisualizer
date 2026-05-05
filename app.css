@@ -17,6 +17,71 @@
     }
 
     :root {
+      /* === Design tokens — "starry-night kids' piano studio" ===
+         Goal: keep the playful + magical character (kids 9-12, bilingual,
+         celebratory game feel) while unifying spacing, color, radius, and
+         shadow so the chrome reads as crafted instead of random. We are
+         NOT moving to Apple-HIG cold minimalism; the warm purple/pink
+         dark palette and emoji-rich identity are intentional. */
+
+      /* Type scale — system fonts only (no webfonts; offline-friendly).
+         The display family adds personality to headings; body family is
+         the OS default for crisp legibility on settings labels etc. */
+      --font-body: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      --font-display: 'Hiragino Maru Gothic ProN', 'Quicksand', 'Avenir Next',
+                      'Hiragino Sans', -apple-system, sans-serif;
+      --fs-xs: .72rem;
+      --fs-sm: .85rem;
+      --fs-base: 1rem;
+      --fs-lg: 1.15rem;
+      --fs-xl: 1.4rem;
+      --fs-2xl: 1.8rem;
+      --fs-3xl: 2.6rem;
+      --fs-display: 3.4rem;
+
+      /* Radius scale — generous rounding for a friendly, kid-safe feel. */
+      --r-sm: 8px;
+      --r-md: 12px;
+      --r-lg: 18px;
+      --r-xl: 24px;
+      --r-pill: 999px;
+
+      /* Spacing scale — 4px grid. */
+      --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+      --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+
+      /* Shadow scale — soft + colored, not hard black. Matches the
+         "particle aurora" backdrop better than a stark drop shadow. */
+      --shadow-soft: 0 4px 16px rgba(80, 40, 120, .25);
+      --shadow-lift: 0 8px 28px rgba(80, 40, 120, .35);
+      --shadow-glow-purple: 0 0 24px rgba(180, 140, 255, .35);
+      --shadow-glow-pink: 0 0 24px rgba(255, 160, 210, .35);
+
+      /* Color tokens — surfaces + text + accents. Single palette for every
+         modal / button / chip so visual rhythm stays consistent. */
+      --c-bg-deep: #0a0a14;
+      --c-bg-soft: #151530;
+      --c-surface: rgba(20, 20, 36, .92);
+      --c-surface-raised: rgba(28, 28, 50, .96);
+      --c-surface-hover: rgba(40, 30, 70, .65);
+      --c-border-subtle: rgba(255, 255, 255, .08);
+      --c-border: rgba(255, 220, 230, .25);
+      --c-border-strong: rgba(255, 220, 230, .45);
+      --c-text-primary: #f4ecff;
+      --c-text-secondary: rgba(244, 236, 255, .72);
+      --c-text-muted: rgba(244, 236, 255, .45);
+      --c-accent-pink: #ff8cd8;
+      --c-accent-purple: #a98cff;
+      --c-accent-cyan: #6ce0ff;
+      --c-accent-mint: #98f0c8;
+
+      /* Motion */
+      --ease-out: cubic-bezier(.18, .9, .35, 1);
+      --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+      --t-fast: 150ms;
+      --t-base: 250ms;
+      --t-slow: 400ms;
+
       /* === Safe-area edges (notch / home-indicator) === */
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-right: env(safe-area-inset-right, 0px);
@@ -133,36 +198,83 @@
       align-items: center;
       justify-content: center;
       z-index: 10;
-      background: radial-gradient(ellipse at center, #151530 0%, #0a0a14 100%)
+      /* Mesh-gradient backdrop: 3 stacked radial gradients give the
+         title screen a "starry sky over an aurora" feel without needing
+         an image. Pure CSS, GPU-friendly, ages well. */
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 30%, rgba(160, 80, 220, .25), transparent 60%),
+        radial-gradient(ellipse 70% 60% at 80% 70%, rgba(255, 100, 180, .18), transparent 60%),
+        radial-gradient(ellipse at center, #181838 0%, #0a0a14 100%);
+    }
+
+    /* Decorative glow ring behind the title — pulses very gently so the
+       title screen feels alive without being noisy. Disabled when the
+       device opts into prefers-reduced-motion. */
+    #startScreen::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: min(900px, 90vw);
+      height: min(900px, 90vw);
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle,
+        rgba(180, 140, 255, .12) 0%,
+        rgba(180, 140, 255, .06) 30%,
+        transparent 60%);
+      pointer-events: none;
+      animation: titleGlowPulse 8s var(--ease-out) infinite;
+    }
+    @keyframes titleGlowPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: .9; }
+      50%      { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #startScreen::before { animation: none; }
     }
 
     #startScreen h1 {
-      font-size: 2.4rem;
-      color: #e8e0ff;
-      margin-bottom: .5rem;
-      font-weight: 300;
-      letter-spacing: .15em
+      position: relative;
+      font-family: var(--font-display);
+      font-size: var(--fs-3xl);
+      color: var(--c-text-primary);
+      margin-bottom: var(--sp-3);
+      font-weight: 400;
+      letter-spacing: .12em;
+      /* Subtle text-shadow stack: a tiny dark depth + a wide soft glow,
+         so the title reads as luminous on the dark background without
+         looking like a 90s bevel-and-emboss filter. */
+      text-shadow:
+        0 1px 2px rgba(0, 0, 0, .35),
+        0 0 24px rgba(180, 140, 255, .35),
+        0 0 48px rgba(180, 140, 255, .15);
+      background: linear-gradient(135deg, #fff 0%, #ffd9ee 60%, #b9a3ff 100%);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
     #startScreen p {
-      font-size: 1rem;
-      color: #8888aa;
-      margin-bottom: 2.5rem
+      position: relative;
+      font-size: var(--fs-lg);
+      color: var(--c-text-secondary);
+      margin-bottom: var(--sp-10);
+      letter-spacing: .04em;
     }
 
     /* Title text scales with layout: compress on short landscape, enlarge
        on tablet/desktop where there's headroom. */
     body[data-layout="phone-landscape"] #startScreen h1 {
-      font-size: 1.7rem;
-      margin-bottom: .25rem;
-      letter-spacing: .1em;
+      font-size: var(--fs-xl);
+      margin-bottom: var(--sp-1);
+      letter-spacing: .08em;
     }
     body[data-layout="phone-landscape"] #startScreen p {
-      margin-bottom: 1rem;
-      font-size: .85rem;
+      margin-bottom: var(--sp-4);
+      font-size: var(--fs-sm);
     }
-    body[data-layout="tablet"] #startScreen h1 { font-size: 2.8rem; }
-    body[data-layout="desktop"] #startScreen h1 { font-size: 3.4rem; }
+    body[data-layout="tablet"] #startScreen h1 { font-size: 3rem; }
+    body[data-layout="desktop"] #startScreen h1 { font-size: var(--fs-display); }
 
     #startBtn {
       font-size: 1.2rem;
@@ -212,18 +324,29 @@
     }
 
     .theme-dot {
-      width: 28px;
-      height: 28px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       border: 2px solid rgba(255, 255, 255, .2);
       cursor: pointer;
-      transition: all .3s;
-      -webkit-tap-highlight-color: transparent
+      transition: transform var(--t-base) var(--ease-spring),
+                  border-color var(--t-base) var(--ease-out),
+                  box-shadow var(--t-base) var(--ease-out);
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+    }
+
+    .theme-dot:hover {
+      transform: scale(1.06);
     }
 
     .theme-dot.active {
       border-color: #fff;
-      transform: scale(1.15)
+      transform: scale(1.18);
+      box-shadow:
+        0 2px 6px rgba(0, 0, 0, .25),
+        0 0 0 3px rgba(255, 255, 255, .15),
+        var(--shadow-glow-purple);
     }
 
     .theme-dot:nth-child(1) {
@@ -243,24 +366,32 @@
     }
 
     #synesthesiaToggle {
-      width: 28px;
-      height: 28px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.2);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
-      margin-left: 8px;
-      transition: all 0.3s;
+      font-size: 18px;
+      transition: transform var(--t-base) var(--ease-spring),
+                  background var(--t-base) var(--ease-out),
+                  border-color var(--t-base) var(--ease-out),
+                  box-shadow var(--t-base) var(--ease-out);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #synesthesiaToggle:hover {
+      transform: scale(1.06);
     }
 
     #synesthesiaToggle.active {
-      background: rgba(255, 255, 255, 0.9);
-      color: #000;
+      background: linear-gradient(135deg, #fff, #ffd9ee);
+      color: #1a1030;
       border-color: #fff;
+      transform: scale(1.1);
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
     }
 
@@ -304,65 +435,77 @@
     }
 
     .settings-card {
-      background: rgba(20, 20, 36, .96);
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 22px;
-      padding: 22px 24px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border-subtle);
+      border-radius: var(--r-xl);
+      padding: var(--sp-6);
       width: 92vw;
       max-width: 480px;
       max-height: 88vh;
       overflow-y: auto;
-      color: #e8e0ff;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+      color: var(--c-text-primary);
+      box-shadow: var(--shadow-lift);
+      backdrop-filter: blur(20px);
     }
 
     .settings-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 14px;
+      margin-bottom: var(--sp-5);
     }
 
     .settings-title {
-      font-size: 1.15rem;
+      font-family: var(--font-display);
+      font-size: var(--fs-xl);
       font-weight: 500;
-      letter-spacing: .08em;
+      letter-spacing: .04em;
     }
 
     .settings-close {
-      width: 32px;
-      height: 32px;
+      width: 36px;
+      height: 36px;
       border: none;
       background: rgba(255, 255, 255, .08);
-      color: #e8e0ff;
+      color: var(--c-text-primary);
       border-radius: 50%;
       font-size: 18px;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
+      transition: background var(--t-fast) var(--ease-out);
     }
+    .settings-close:hover { background: rgba(255, 255, 255, .15); }
 
+    /* Each settings group is now a soft card so the panel doesn't feel
+       like a flat 2010s admin form. Cards group related controls and
+       give the eye a clear scan rhythm. */
     .settings-section {
-      margin-bottom: 18px;
+      margin-bottom: var(--sp-3);
+      padding: var(--sp-4);
+      background: rgba(255, 255, 255, .03);
+      border: 1px solid var(--c-border-subtle);
+      border-radius: var(--r-lg);
     }
 
     .settings-section-label {
-      font-size: .78rem;
-      color: rgba(255, 255, 255, .55);
-      margin-bottom: 8px;
-      letter-spacing: .06em;
+      font-size: var(--fs-sm);
+      color: var(--c-text-secondary);
+      margin-bottom: var(--sp-3);
+      letter-spacing: .04em;
+      font-weight: 500;
     }
 
     .settings-row {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 6px 0;
+      gap: var(--sp-3);
+      padding: var(--sp-1) 0;
       flex-wrap: wrap;
     }
 
     .settings-theme-row {
       display: flex;
-      gap: 10px;
+      gap: var(--sp-3);
       align-items: center;
     }
 
@@ -373,18 +516,19 @@
     .settings-slider-row {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--sp-2);
     }
 
     .settings-slider-label {
       display: flex;
       justify-content: space-between;
-      font-size: .85rem;
+      font-size: var(--fs-sm);
     }
 
     .settings-slider-label .val {
       font-variant-numeric: tabular-nums;
-      color: rgba(180, 220, 255, .9);
+      color: var(--c-accent-cyan);
+      font-weight: 500;
     }
 
     .settings-slider {
@@ -392,28 +536,38 @@
       -webkit-appearance: none;
       appearance: none;
       height: 6px;
-      background: rgba(255, 255, 255, .12);
-      border-radius: 3px;
+      background: linear-gradient(90deg,
+        rgba(108, 224, 255, .35) 0%,
+        rgba(108, 224, 255, .12) 100%);
+      border-radius: var(--r-pill);
       outline: none;
+      margin: var(--sp-2) 0;
     }
 
     .settings-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
-      background: #b0e0ff;
+      background: radial-gradient(circle at 30% 30%, #fff, var(--c-accent-cyan) 70%);
       cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+      box-shadow:
+        0 2px 8px rgba(0, 0, 0, .35),
+        0 0 0 4px rgba(108, 224, 255, .2);
+      transition: transform var(--t-fast) var(--ease-spring);
     }
+    .settings-slider::-webkit-slider-thumb:hover { transform: scale(1.08); }
+    .settings-slider:active::-webkit-slider-thumb { transform: scale(1.12); }
 
     .settings-slider::-moz-range-thumb {
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
-      background: #b0e0ff;
+      background: radial-gradient(circle at 30% 30%, #fff, var(--c-accent-cyan) 70%);
       cursor: pointer;
       border: none;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .35),
+                  0 0 0 4px rgba(108, 224, 255, .2);
     }
 
     .settings-help {
@@ -1185,28 +1339,48 @@
     }
 
     .mode-btn {
-      font-size: 1.05rem;
-      padding: .9rem 2.2rem;
-      border: 1px solid rgba(180, 160, 255, .4);
-      border-radius: 50px;
-      background: rgba(100, 80, 200, .15);
-      color: #c8b8ff;
+      font-family: var(--font-display);
+      font-size: var(--fs-base);
+      padding: 14px 22px;
+      border: 1px solid var(--c-border-subtle);
+      border-radius: var(--r-pill);
+      background: rgba(40, 30, 70, .55);
+      color: var(--c-text-secondary);
       cursor: pointer;
-      transition: all .25s;
+      transition: transform var(--t-base) var(--ease-spring),
+                  background var(--t-base) var(--ease-out),
+                  border-color var(--t-base) var(--ease-out),
+                  box-shadow var(--t-base) var(--ease-out);
       -webkit-tap-highlight-color: transparent;
-      letter-spacing: .08em;
+      letter-spacing: .06em;
       width: 100%;
+      backdrop-filter: blur(8px);
     }
 
+    .mode-btn:hover {
+      transform: translateY(-1px);
+      background: rgba(60, 45, 100, .7);
+      border-color: rgba(180, 140, 255, .35);
+    }
+
+    /* Primary songs lift visually with a soft pink/purple glow so kids
+       can see at a glance which buttons are "the songs" vs the
+       Free Play / Add Song chrome. */
     .mode-btn.primary {
-      background: linear-gradient(135deg, rgba(255, 140, 200, .25), rgba(140, 100, 255, .25));
-      border-color: rgba(255, 200, 230, .55);
-      color: #ffe4f1;
+      background: linear-gradient(135deg,
+        rgba(255, 140, 200, .35) 0%,
+        rgba(160, 100, 230, .35) 100%);
+      border-color: var(--c-border-strong);
+      color: var(--c-text-primary);
+      box-shadow: var(--shadow-soft);
+    }
+    .mode-btn.primary:hover {
+      box-shadow: var(--shadow-lift), var(--shadow-glow-pink);
+      border-color: rgba(255, 220, 230, .7);
     }
 
     .mode-btn:active {
       transform: scale(.97);
-      background: rgba(140, 100, 220, .35);
     }
 
     .mode-btn:disabled {
@@ -1338,28 +1512,64 @@
     }
 
     .tempo-btn {
+      position: relative;
       flex: 1 1 auto;
-      min-width: 60px;
-      padding: 8px 10px;
-      border-radius: 12px;
+      min-width: 64px;
+      padding: 10px 12px;
+      border-radius: var(--r-md);
       background: rgba(255, 255, 255, .06);
-      border: 1px solid rgba(255, 255, 255, .14);
-      color: #e8e0ff;
+      border: 1px solid var(--c-border-subtle);
+      color: var(--c-text-primary);
       cursor: pointer;
-      font-size: .9rem;
-      transition: all .2s;
+      font-size: var(--fs-sm);
+      font-weight: 500;
+      transition: transform var(--t-fast) var(--ease-spring),
+                  background var(--t-base) var(--ease-out),
+                  border-color var(--t-base) var(--ease-out);
       -webkit-tap-highlight-color: transparent;
+    }
+    .tempo-btn:hover:not(.locked):not(:disabled) {
+      transform: translateY(-1px);
+      background: rgba(255, 255, 255, .10);
     }
 
     .tempo-btn.active {
-      background: rgba(255, 200, 230, .25);
-      border-color: rgba(255, 200, 230, .8);
+      background: linear-gradient(135deg,
+        rgba(255, 200, 230, .35), rgba(180, 140, 255, .35));
+      border-color: var(--c-border-strong);
       color: #fff;
+      box-shadow: var(--shadow-glow-pink);
     }
 
-    .tempo-btn.locked {
-      opacity: .35;
+    /* Locked tempo: muted pill with a small CSS-drawn padlock badge
+       in the corner. No more " 🔒" suffix on the text. */
+    .tempo-btn.locked, .tempo-btn:disabled {
+      opacity: .42;
       cursor: not-allowed;
+      filter: grayscale(.4);
+    }
+    .tempo-btn.locked::after {
+      content: '';
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      width: 12px;
+      height: 14px;
+      background: linear-gradient(180deg, transparent 0 4px,
+        rgba(244, 236, 255, .9) 4px 100%);
+      border-radius: 2px 2px 3px 3px;
+      box-shadow: inset 0 0 0 2px rgba(20, 10, 35, .85);
+    }
+    .tempo-btn.locked::before {
+      content: '';
+      position: absolute;
+      top: 1px;
+      right: 9px;
+      width: 6px;
+      height: 6px;
+      border: 2px solid rgba(244, 236, 255, .9);
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
     }
 
     .section-row {
@@ -1403,35 +1613,46 @@
       color: rgba(255, 255, 255, .7);
     }
 
+    /* iOS-style switch — pill body with a sliding knob, soft glow when on,
+       proper hit target. Replaces the previous 36×20 mini-toggle that
+       felt like a debug widget. */
     .opt-toggle {
-      width: 36px;
-      height: 20px;
-      border-radius: 10px;
+      width: 50px;
+      height: 30px;
+      border-radius: var(--r-pill);
       background: rgba(255, 255, 255, .12);
-      border: 1px solid rgba(255, 255, 255, .2);
+      border: 1px solid rgba(255, 255, 255, .15);
       position: relative;
       cursor: pointer;
-      transition: background .25s;
+      transition: background var(--t-base) var(--ease-out),
+                  border-color var(--t-base) var(--ease-out),
+                  box-shadow var(--t-base) var(--ease-out);
+      flex-shrink: 0;
     }
 
     .opt-toggle::after {
       content: '';
       position: absolute;
-      top: 1px;
-      left: 1px;
-      width: 16px;
-      height: 16px;
+      top: 2px;
+      left: 2px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
-      background: #fff;
-      transition: left .25s;
+      background: linear-gradient(135deg, #fff, #f0e6ff);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+      transition: transform var(--t-base) var(--ease-spring);
     }
 
     .opt-toggle.on {
-      background: rgba(180, 130, 255, .55);
+      background: linear-gradient(135deg,
+        rgba(255, 140, 200, .65),
+        rgba(160, 100, 230, .65));
+      border-color: rgba(255, 200, 230, .55);
+      box-shadow: var(--shadow-glow-pink);
     }
 
     .opt-toggle.on::after {
-      left: 17px;
+      transform: translateX(20px);
     }
 
     .song-actions {
@@ -1882,6 +2103,38 @@
       background: transparent; border: 1px solid rgba(255,130,150,.3);
       color: rgba(255,180,190,.85); font-size: .75rem;
       padding: 4px 10px; border-radius: 8px; cursor: pointer;
+    }
+    /* Compact icon-only action buttons in the My library row.
+       Three full-width pills (✎ Rename / ✂ Edit sections / Delete)
+       crowded the row; now each is a 32px square with a localized
+       title. Tinted by role so the destructive Delete is unambiguous. */
+    #addSongMyList .my-row .my-action-btn {
+      width: 32px; height: 32px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .06);
+      border: 1px solid var(--c-border-subtle);
+      color: var(--c-text-secondary);
+      border-radius: var(--r-md);
+      font-size: 1rem; cursor: pointer;
+      transition: background var(--t-fast) var(--ease-out),
+                  border-color var(--t-fast) var(--ease-out),
+                  color var(--t-fast) var(--ease-out);
+      -webkit-tap-highlight-color: transparent;
+    }
+    #addSongMyList .my-row .my-action-btn:hover {
+      background: rgba(255, 255, 255, .12);
+      color: var(--c-text-primary);
+    }
+    #addSongMyList .my-row .my-rename:hover { border-color: rgba(180, 200, 255, .5); }
+    #addSongMyList .my-row .my-edit:hover   { border-color: rgba(255, 220, 130, .5); }
+    #addSongMyList .my-row .my-delete {
+      color: rgba(255, 180, 190, .9);
+      border-color: rgba(255, 130, 150, .3);
+    }
+    #addSongMyList .my-row .my-delete:hover {
+      background: rgba(180, 40, 60, .35);
+      border-color: rgba(255, 130, 150, .6);
+      color: #fff;
     }
     .add-song-file-pick {
       display: block; padding: 18px; text-align: center;

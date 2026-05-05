@@ -757,21 +757,46 @@ var PianoCore = (() => {
     ctx.globalCompositeOperation = "source-over";
     ctx.shadowBlur = 0;
     ctx.shadowColor = "transparent";
-    ctx.fillStyle = "rgba(40, 60, 110, 0.55)";
+    const lhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+    lhGrad.addColorStop(0, "rgba(40, 60, 130, 0.25)");
+    lhGrad.addColorStop(1, "rgba(60, 80, 150, 0.55)");
+    ctx.fillStyle = lhGrad;
     ctx.fillRect(padX, laneTop, halfW, laneHeight);
-    ctx.fillStyle = "rgba(110, 50, 90, 0.55)";
+    const rhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+    rhGrad.addColorStop(0, "rgba(110, 50, 110, 0.25)");
+    rhGrad.addColorStop(1, "rgba(140, 60, 130, 0.55)");
+    ctx.fillStyle = rhGrad;
     ctx.fillRect(midX, laneTop, halfW, laneHeight);
-    ctx.strokeStyle = "rgba(255, 220, 230, 0.85)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(padX, laneTop, usableW, laneHeight);
-    ctx.fillStyle = "rgba(180, 200, 255, 0.7)";
-    ctx.font = "bold 11px sans-serif";
+    ctx.strokeStyle = "rgba(255, 220, 230, 0.5)";
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, padX, laneTop, usableW, laneHeight, 16);
+    ctx.stroke();
+    ctx.font = "bold 11px -apple-system, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(opts.laneLabelL, padX + halfW / 2, laneTop + 14);
-    ctx.fillStyle = "rgba(255, 200, 220, 0.7)";
-    ctx.fillText(opts.laneLabelR, midX + halfW / 2, laneTop + 14);
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
-    ctx.lineWidth = 1;
+    ctx.textBaseline = "middle";
+    drawChip(
+      ctx,
+      padX + halfW / 2,
+      laneTop + 16,
+      opts.laneLabelL,
+      "rgba(140, 180, 255, 0.95)",
+      "rgba(40, 60, 130, 0.9)"
+    );
+    drawChip(
+      ctx,
+      midX + halfW / 2,
+      laneTop + 16,
+      opts.laneLabelR,
+      "rgba(255, 180, 220, 0.95)",
+      "rgba(110, 50, 110, 0.9)"
+    );
+    ctx.textBaseline = "alphabetic";
+    const divGrad = ctx.createLinearGradient(0, laneTop, 0, hitLineY + 50);
+    divGrad.addColorStop(0, "rgba(255, 255, 255, 0.04)");
+    divGrad.addColorStop(0.6, "rgba(255, 255, 255, 0.28)");
+    divGrad.addColorStop(1, "rgba(255, 255, 255, 0.4)");
+    ctx.strokeStyle = divGrad;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(midX, laneTop);
     ctx.lineTo(midX, hitLineY + 50);
@@ -823,23 +848,35 @@ var PianoCore = (() => {
       const noteH = Math.max(14, n.durMs * pxPerMs * 0.9);
       const noteW = Math.min(70, halfW / 6);
       let fill;
-      if (n.hit) fill = "rgba(120, 255, 160, 0.9)";
+      if (n.hit) fill = "rgba(120, 255, 160, 0.95)";
       else if (n.missed) fill = "rgba(255, 90, 120, 0.5)";
       else fill = opts.noteRestingColor(n.midi);
-      ctx.fillStyle = fill;
-      ctx.shadowBlur = n.hit ? 18 : 8;
+      const tileX = x - noteW / 2;
+      const tileY = y - noteH;
+      const tileR = Math.min(10, noteH / 2);
+      ctx.shadowBlur = n.hit ? 22 : 10;
       ctx.shadowColor = fill;
-      roundRect(ctx, x - noteW / 2, y - noteH, noteW, noteH, 6);
+      ctx.fillStyle = fill;
+      roundRect(ctx, tileX, tileY, noteW, noteH, tileR);
       ctx.fill();
+      if (!n.hit && !n.missed && noteH > 14) {
+        ctx.shadowBlur = 0;
+        const gloss = ctx.createLinearGradient(0, tileY, 0, tileY + noteH * 0.55);
+        gloss.addColorStop(0, "rgba(255, 255, 255, 0.35)");
+        gloss.addColorStop(1, "rgba(255, 255, 255, 0)");
+        ctx.fillStyle = gloss;
+        roundRect(ctx, tileX, tileY, noteW, noteH * 0.55, tileR);
+        ctx.fill();
+      }
       ctx.shadowBlur = 0;
       ctx.fillStyle = n.hand === "L" ? "rgba(180, 220, 255, 0.95)" : "rgba(255, 200, 220, 0.95)";
-      ctx.font = "bold 9px sans-serif";
+      ctx.font = 'bold 10px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
       ctx.textAlign = "center";
       ctx.fillText(n.hand, x, y - noteH - 4);
       if (!n.hit && !n.missed && noteH > 18) {
-        ctx.fillStyle = "rgba(0,0,0,0.9)";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2 + 4);
+        ctx.fillStyle = "rgba(20, 10, 35, 0.92)";
+        ctx.font = 'bold 13px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+        ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2 + 5);
       }
     }
     const cur = notes[view.currentNoteIdx];
@@ -891,6 +928,18 @@ var PianoCore = (() => {
     ctx.arcTo(x, y + h, x, y, r);
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
+  }
+  function drawChip(ctx, cx, cy, label, textColor, bgColor) {
+    const padX = 10;
+    const h = 20;
+    const w = ctx.measureText(label).width + padX * 2;
+    const x = cx - w / 2;
+    const y = cy - h / 2;
+    ctx.fillStyle = bgColor;
+    roundRect(ctx, x, y, w, h, h / 2);
+    ctx.fill();
+    ctx.fillStyle = textColor;
+    ctx.fillText(label, cx, cy);
   }
 
   // src/render/background.ts

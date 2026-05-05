@@ -119,26 +119,57 @@ export function drawPracticeLane(
   ctx.shadowBlur = 0;
   ctx.shadowColor = 'transparent';
 
-  // Hand-tinted backgrounds + outline
-  ctx.fillStyle = 'rgba(40, 60, 110, 0.55)';
+  // Lane backgrounds — vertical gradient so the bottom (hit zone) feels
+  // grounded and the top fades into the score area. Replaces the flat
+  // rgba(...,0.55) fills which read as "blocky 2010s game lane".
+  const lhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+  lhGrad.addColorStop(0, 'rgba(40, 60, 130, 0.25)');
+  lhGrad.addColorStop(1, 'rgba(60, 80, 150, 0.55)');
+  ctx.fillStyle = lhGrad;
   ctx.fillRect(padX, laneTop, halfW, laneHeight);
-  ctx.fillStyle = 'rgba(110, 50, 90, 0.55)';
+  const rhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+  rhGrad.addColorStop(0, 'rgba(110, 50, 110, 0.25)');
+  rhGrad.addColorStop(1, 'rgba(140, 60, 130, 0.55)');
+  ctx.fillStyle = rhGrad;
   ctx.fillRect(midX, laneTop, halfW, laneHeight);
-  ctx.strokeStyle = 'rgba(255, 220, 230, 0.85)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(padX, laneTop, usableW, laneHeight);
 
-  // Hand labels
-  ctx.fillStyle = 'rgba(180, 200, 255, 0.7)';
-  ctx.font = 'bold 11px sans-serif';
+  // Outer outline: subtle, rounded.
+  ctx.strokeStyle = 'rgba(255, 220, 230, 0.5)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, padX, laneTop, usableW, laneHeight, 16);
+  ctx.stroke();
+
+  // Hand-label chips — pill-shaped, top-corner of each lane, always
+  // visible so the kid can see at a glance which side is which.
+  ctx.font = 'bold 11px -apple-system, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(opts.laneLabelL, padX + halfW / 2, laneTop + 14);
-  ctx.fillStyle = 'rgba(255, 200, 220, 0.7)';
-  ctx.fillText(opts.laneLabelR, midX + halfW / 2, laneTop + 14);
+  ctx.textBaseline = 'middle';
+  drawChip(
+    ctx,
+    padX + halfW / 2,
+    laneTop + 16,
+    opts.laneLabelL,
+    'rgba(140, 180, 255, 0.95)',
+    'rgba(40, 60, 130, 0.9)'
+  );
+  drawChip(
+    ctx,
+    midX + halfW / 2,
+    laneTop + 16,
+    opts.laneLabelR,
+    'rgba(255, 180, 220, 0.95)',
+    'rgba(110, 50, 110, 0.9)'
+  );
+  ctx.textBaseline = 'alphabetic';
 
-  // Center divider
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-  ctx.lineWidth = 1;
+  // Center divider — vertical gradient so it fades at the top into the
+  // score panel and reads strong near the hit zone where it matters.
+  const divGrad = ctx.createLinearGradient(0, laneTop, 0, hitLineY + 50);
+  divGrad.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
+  divGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.28)');
+  divGrad.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
+  ctx.strokeStyle = divGrad;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(midX, laneTop);
   ctx.lineTo(midX, hitLineY + 50);
@@ -204,26 +235,47 @@ export function drawPracticeLane(
     const noteW = Math.min(70, halfW / 6);
 
     let fill: string;
-    if (n.hit) fill = 'rgba(120, 255, 160, 0.9)';
+    if (n.hit) fill = 'rgba(120, 255, 160, 0.95)';
     else if (n.missed) fill = 'rgba(255, 90, 120, 0.5)';
     else fill = opts.noteRestingColor(n.midi);
 
-    ctx.fillStyle = fill;
-    ctx.shadowBlur = n.hit ? 18 : 8;
+    // Modern note tile: bigger radius (8px vs 6), vertical highlight so
+    // the tile reads as a glass pill instead of a flat block, and a
+    // soft glow scaled to the player's expected response. Fonts switch
+    // to a rounded family to match the kids-app feel.
+    const tileX = x - noteW / 2;
+    const tileY = y - noteH;
+    const tileR = Math.min(10, noteH / 2);
+    ctx.shadowBlur = n.hit ? 22 : 10;
     ctx.shadowColor = fill;
-    roundRect(ctx, x - noteW / 2, y - noteH, noteW, noteH, 6);
+
+    // Base fill.
+    ctx.fillStyle = fill;
+    roundRect(ctx, tileX, tileY, noteW, noteH, tileR);
     ctx.fill();
+
+    // Glossy top highlight — only on un-hit / un-missed notes.
+    if (!n.hit && !n.missed && noteH > 14) {
+      ctx.shadowBlur = 0;
+      const gloss = ctx.createLinearGradient(0, tileY, 0, tileY + noteH * 0.55);
+      gloss.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+      gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = gloss;
+      roundRect(ctx, tileX, tileY, noteW, noteH * 0.55, tileR);
+      ctx.fill();
+    }
     ctx.shadowBlur = 0;
 
+    // Hand letter — small + faded, above the tile. Friendlier rounded font.
     ctx.fillStyle = n.hand === 'L' ? 'rgba(180, 220, 255, 0.95)' : 'rgba(255, 200, 220, 0.95)';
-    ctx.font = 'bold 9px sans-serif';
+    ctx.font = 'bold 10px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(n.hand, x, y - noteH - 4);
 
     if (!n.hit && !n.missed && noteH > 18) {
-      ctx.fillStyle = 'rgba(0,0,0,0.9)';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2 + 4);
+      ctx.fillStyle = 'rgba(20, 10, 35, 0.92)';
+      ctx.font = 'bold 13px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+      ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2 + 5);
     }
   }
 
@@ -296,4 +348,29 @@ function roundRect(
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+/**
+ * Draw a small pill-shaped chip with text. Used for the L / R hand labels
+ * at the top of each lane half — replaces the previous tiny grey label
+ * that was nearly invisible.
+ */
+function drawChip(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  label: string,
+  textColor: string,
+  bgColor: string
+): void {
+  const padX = 10;
+  const h = 20;
+  const w = ctx.measureText(label).width + padX * 2;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  ctx.fillStyle = bgColor;
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.fillStyle = textColor;
+  ctx.fillText(label, cx, cy);
 }
