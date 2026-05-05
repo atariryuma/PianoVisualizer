@@ -13,8 +13,12 @@
 // branch in fetch() kept serving stale bytes, leaving Android users on a
 // pre-fix build that broke user-added song loading. v4 forces a one-time
 // re-cache on activate; ongoing updates ship via the network-first path.
+// 2026-05-05: bumped to v5 — deployed to GitHub Pages under /PianoVisualizer/
+// subpath. Shell/log path checks now use endsWith() so the SW works on both
+// `https://atariryuma.github.io/PianoVisualizer/` and the LAN root path.
+// Navigation fallback added for offline launches.
 
-const CACHE = 'piano-viz-v4';
+const CACHE = 'piano-viz-v5';
 const APP_SHELL = [
   './',
   './index.html',
@@ -67,7 +71,9 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  if (url.pathname === '/log') return;
+  // Skip the dev-time remote-log endpoint. endsWith handles both the LAN
+  // root path (/log) and the GH Pages sub-path (/PianoVisualizer/log).
+  if (url.pathname.endsWith('/log')) return;
 
   // HTML shell + CSS + JS — network-first so updates ship immediately when reachable.
   // CSS/JS join the shell here because they're effectively part of the same release
@@ -79,6 +85,7 @@ self.addEventListener('fetch', (e) => {
   const isShell =
     url.origin === self.location.origin &&
     (url.pathname === '/' ||
+      url.pathname.endsWith('/') ||                  // GH Pages sub-path root
       url.pathname.endsWith('/index.html') ||
       url.pathname.endsWith('/piano-visualizer.html') ||
       url.pathname.endsWith('/app.css') ||
@@ -94,7 +101,10 @@ self.addEventListener('fetch', (e) => {
           putInCache(req, resp);
           return resp;
         })
-        .catch(() => caches.match(req))
+        // Offline: try the exact request, then fall back to index.html for
+        // navigations so a stranded user gets the shell instead of a blank
+        // browser-error page.
+        .catch(() => caches.match(req).then((c) => c || (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))
     );
     return;
   }

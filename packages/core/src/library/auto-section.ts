@@ -127,6 +127,17 @@ export function autoSectionDefs(
   const cand = collectSectionCandidates(xmlText, opts);
   const total = Math.max(1, measureCount ?? cand.total);
 
+  // Degenerate output guard: with `total < 3`, the length-thirds fallback
+  // produces overlapping or out-of-range boundaries (B starting at the same
+  // measure as A1, or A2 = total - 1 = 0 / 1). Downstream `buildSectionNotes`
+  // then yields an empty section. Collapse to a single A1 spanning the whole
+  // piece — the section editor lets the user split it manually if desired.
+  if (total < 3) {
+    return [
+      { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: 0, isBoss: false },
+    ];
+  }
+
   const pool: Array<{ idx: number; score: number }> = [];
   const pushAll = (idxs: number[], score: number) => {
     for (const i of idxs) {

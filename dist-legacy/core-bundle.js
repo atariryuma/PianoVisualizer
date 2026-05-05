@@ -1375,12 +1375,13 @@ var PianoCore = (() => {
     }
     let refinedTau = bestTau;
     if (bestTau > 0 && bestTau < tauMax) {
-      const s0 = diff[bestTau - 1];
-      const s1 = diff[bestTau];
-      const s2 = diff[bestTau + 1];
+      const s0 = cmndf[bestTau - 1];
+      const s1 = cmndf[bestTau];
+      const s2 = cmndf[bestTau + 1];
       const denom = 2 * (2 * s1 - s0 - s2);
       if (Math.abs(denom) > 1e-10) {
-        refinedTau = bestTau + (s0 - s2) / denom;
+        const corr = (s0 - s2) / denom;
+        refinedTau = bestTau + Math.max(-1, Math.min(1, corr));
       }
     }
     if (refinedTau <= 0) return { pitch: -1, conf: 0, rms };
@@ -1832,6 +1833,11 @@ var PianoCore = (() => {
   function autoSectionDefs(xmlText, measureCount, opts = {}) {
     const cand = collectSectionCandidates(xmlText, opts);
     const total = Math.max(1, measureCount ?? cand.total);
+    if (total < 3) {
+      return [
+        { id: "A1", nameKey: "userSecA1", descKey: "userSecA1desc", startMeasure: 0, isBoss: false }
+      ];
+    }
     const pool = [];
     const pushAll = (idxs, score) => {
       for (const i of idxs) {

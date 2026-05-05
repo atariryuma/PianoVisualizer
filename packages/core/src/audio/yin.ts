@@ -120,14 +120,20 @@ export function detectPitchYIN(
   }
 
   // Parabolic interpolation around the minimum for sub-sample accuracy.
+  // Reference YIN uses cmndf (the normalized function) here, not raw diff —
+  // both have the same minimum location but different curvature, and using
+  // diff can shift the refined tau by up to ~0.5 samples (~3 Hz at 200 Hz).
+  // Clamp the result to [bestTau-1, bestTau+1] so a near-zero denominator
+  // can't produce a runaway-positive correction.
   let refinedTau = bestTau;
   if (bestTau > 0 && bestTau < tauMax) {
-    const s0 = diff[bestTau - 1];
-    const s1 = diff[bestTau];
-    const s2 = diff[bestTau + 1];
+    const s0 = cmndf[bestTau - 1];
+    const s1 = cmndf[bestTau];
+    const s2 = cmndf[bestTau + 1];
     const denom = 2 * (2 * s1 - s0 - s2);
     if (Math.abs(denom) > 1e-10) {
-      refinedTau = bestTau + (s0 - s2) / denom;
+      const corr = (s0 - s2) / denom;
+      refinedTau = bestTau + Math.max(-1, Math.min(1, corr));
     }
   }
   if (refinedTau <= 0) return { pitch: -1, conf: 0, rms };
