@@ -1354,83 +1354,38 @@
     const Ripple = PianoCore.Ripple;
 
     // ========================================
-    // Background Elements
-    // ========================================
-    let bgStars = [];
-
+    // Background composites — Phase 0b.3: delegated to @piano/core.
+    // Star field stored as { stars: [...] } via initBackground; drawBgStars
+    // mutates the twinkle phase in-place. Aurora + flowers are pure draws.
+    let _bg = null;
     function initBgStars() {
-      bgStars = [];
-      for (let i = 0; i < PERF_PROFILE.bgStarCount; i++) {
-        bgStars.push({
-          x: Math.random() * W, y: Math.random() * H,
-          size: Math.random() * 2 + 0.5,
-          twinkle: Math.random() * Math.PI * 2,
-          speed: 0.01 + Math.random() * 0.02
-        });
-      }
+      _bg = PianoCore.initBackground({
+        screenW: W,
+        screenH: H,
+        starCount: PERF_PROFILE.bgStarCount,
+      });
     }
-
-    function drawBgStars(time) {
-      const visibility = Math.min(1, state.flow / 30);
-      if (visibility < 0.01) return;
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      ctx.save();
-      for (const s of bgStars) {
-        s.twinkle += s.speed;
-        const a = visibility * (0.3 + 0.7 * (Math.sin(s.twinkle) * 0.5 + 0.5));
-        ctx.globalAlpha = a;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.size * (1 + state.flow * 0.01), 0, Math.PI * 2);
-        ctx.fillStyle = cols[Math.floor(s.twinkle) % cols.length] || '#fff';
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    function drawAurora(time) {
-      const intensity = Math.max(0, (state.flow - 40) / 60);
-      if (intensity < 0.01) return;
-      const theme = CONFIG.THEMES[state.currentTheme];
-      ctx.save();
-      ctx.globalAlpha = intensity * 0.15;
-      for (let band = 0; band < 3; band++) {
-        ctx.beginPath();
-        ctx.moveTo(0, H * 0.3 + band * 40);
-        for (let x = 0; x <= W; x += 20) {
-          const y = H * 0.3 + band * 40
-            + Math.sin(x * 0.005 + time * 0.0008 + band) * 50 * intensity
-            + Math.sin(x * 0.01 + time * 0.001) * 25 * intensity;
-          ctx.lineTo(x, y);
-        }
-        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
-        const grad = ctx.createLinearGradient(0, H * 0.2, 0, H * 0.7);
-        grad.addColorStop(0, theme.colors[band % theme.colors.length]);
-        grad.addColorStop(1, 'transparent');
-        ctx.fillStyle = grad;
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    function drawGroundFlowers(time) {
-      const intensity = Math.max(0, (state.flow - 55) / 45);
-      if (intensity < 0.01) return;
-      ctx.save();
-      ctx.globalAlpha = intensity * 0.5;
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      const count = Math.floor(intensity * 12);
-      for (let i = 0; i < count; i++) {
-        const x = (i / (count - 1 || 1)) * W;
-        const baseY = H - 20;
-        const sway = Math.sin(time * 0.001 + i * 0.7) * 5;
-        const s = 4 + intensity * 6;
-        ctx.strokeStyle = 'rgba(100,180,100,' + intensity * 0.4 + ')';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x + sway, baseY - 20 - s * 2); ctx.stroke();
-        drawFlower(ctx, x + sway, baseY - 20 - s * 2, s, cols[i % cols.length], intensity, false);
-      }
-      ctx.restore();
-    }
+    const _themeColors = () => CONFIG.THEMES[state.currentTheme].colors;
+    const drawBgStars = (_time) => {
+      if (!_bg) return;
+      PianoCore.drawBgStars(ctx, _bg, { flow: state.flow, themeColors: _themeColors() });
+    };
+    const drawAurora = (time) =>
+      PianoCore.drawAurora(ctx, {
+        screenW: W,
+        screenH: H,
+        flow: state.flow,
+        themeColors: _themeColors(),
+        timeMs: time,
+      });
+    const drawGroundFlowers = (time) =>
+      PianoCore.drawGroundFlowers(ctx, {
+        screenW: W,
+        screenH: H,
+        flow: state.flow,
+        themeColors: _themeColors(),
+        timeMs: time,
+      });
 
     // ========================================
     // Audio analysis — Phase 0b.3: delegated to @piano/core.
