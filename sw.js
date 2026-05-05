@@ -6,13 +6,16 @@
 // 2026-05-05: bumped to v2 after splitting the monolith into index.html +
 // app.css + app.js. Old v1 cache is purged on activate so no clients see
 // the stale piano-visualizer.html monolith.
+// 2026-05-05 (Phase 0b.3): bumped to v3 after wiring @piano/core's IIFE
+// bundle into index.html. v2 clients had no core-bundle.js so they'd 404.
 
-const CACHE = 'piano-viz-v2';
+const CACHE = 'piano-viz-v3';
 const APP_SHELL = [
   './',
   './index.html',
   './app.css',
   './app.js',
+  './dist-legacy/core-bundle.js',
   './manifest.json',
   './icon.svg',
   './assets/fur_elise.mxl',

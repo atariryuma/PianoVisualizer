@@ -16,7 +16,14 @@ Thumbs.db
 
 # Build outputs
 dist/
-dist-legacy/
+# `dist-legacy/*` (not `dist-legacy/`) so the negation below can re-include
+# specific files — git skips ignored directories entirely otherwise.
+dist-legacy/*
+# Exception: the unminified core bundle is the production artifact the legacy
+# index.html loads via <script>. Checked in so cloning + serving works without
+# requiring the build step. (Phase 0b.3 transition; replaced once the Vite
+# build in packages/web becomes the production entry.)
+!dist-legacy/core-bundle.js
 build/
 *.tsbuildinfo
 
