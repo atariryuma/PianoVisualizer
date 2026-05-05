@@ -1,0 +1,81 @@
+# Android build — runs on every push to main + on demand. Produces an
+# unsigned debug APK; signed release builds use Fastlane (see ios.yml pattern).
+#
+# Requires the Android project to have been generated locally first
+# (`pnpm cap:open:android`) and committed to packages/mobile/android/.
+
+name: Android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "app.js"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if android/ not generated yet
+        id: check
+        run: |
+          if [ ! -d "packages/mobile/android" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::warning ::packages/mobile/android not found — run 'pnpm cap:open:android' locally and commit the generated project."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.check.outputs.skip == 'false'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Vite build (mobile mode)
+        run: pnpm --filter @piano/mobile build:web
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Capacitor sync
+        run: pnpm --filter @piano/mobile sync
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Gradle assembleDebug
+        working-directory: packages/mobile/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: piano-visualizer-debug.apk
+          path: packages/mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

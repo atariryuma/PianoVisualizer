@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+# Conventional Commit gate. Skip with --no-verify if you really need to.
+# Pattern: type(scope?): subject
+#   types: feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert
+#   scopes: core|web|mobile|plugin|legacy|infra (free-form, but we suggest these)
+
+msg_file="$1"
+first_line="$(head -n1 "$msg_file")"
+
+# Allow merge / revert / fixup commits as-is.
+case "$first_line" in
+  Merge*|Revert*|"fixup!"*|"squash!"*) exit 0 ;;
+esac
+
+if ! echo "$first_line" | grep -qE '^(feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert)(\([a-z0-9-]+\))?!?: .{3,}$'; then
+  echo "✗ Commit subject must follow Conventional Commits."
+  echo "   Got:    $first_line"
+  echo "   Format: type(scope?): subject"
+  echo "   Types:  feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert"
+  echo "   Scopes (suggested): core|web|mobile|plugin|legacy|infra"
+  echo ""
+  echo "   Examples:"
+  echo "     feat(core): extract YIN pitch detector"
+  echo "     fix(legacy): AudioContext recreate on devicechange"
+  echo "     docs(plugin): add hardware-test instructions"
+  exit 1
+fi

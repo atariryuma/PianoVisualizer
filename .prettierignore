@@ -1,0 +1,26 @@
+# Generated / vendored
+dist/
+build/
+node_modules/
+*.min.js
+*.min.css
+coverage/
+.turbo/
+
+# Native generated projects
+packages/mobile/ios/
+packages/mobile/android/
+packages/plugins/*/dist/
+
+# Legacy single-file build — formatting it would explode the diff
+app.js
+app.css
+index.html
+piano-visualizer.html
+
+# Lockfiles
+pnpm-lock.yaml
+
+# Asset binaries
+*.mxl
+assets/

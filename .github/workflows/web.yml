@@ -1,0 +1,69 @@
+# Web build — runs on every PR + push to main.
+# Verifies the legacy single-file build (root index.html / app.css / app.js)
+# AND the Vite shell (packages/web). Once Phase 0b extraction completes,
+# the legacy step can be deleted.
+
+name: Web
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  legacy-syntax-check:
+    name: Legacy single-file build (syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify app.js parses
+        run: node --check app.js
+
+      - name: Verify HTML well-formed
+        run: |
+          # Quick well-formedness check via xmllint (loose mode for HTML5).
+          sudo apt-get update && sudo apt-get install -y libxml2-utils
+          xmllint --noout --html index.html 2>&1 | grep -iE 'error|fatal' && exit 1 || true
+
+      - name: Service worker syntax
+        run: node --check sw.js
+
+  vite-build:
+    name: Vite shell build
+    runs-on: ubuntu-latest
+    needs: legacy-syntax-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter @piano/core typecheck && pnpm --filter @piano/web typecheck
+
+      - name: Build web
+        run: pnpm --filter @piano/web build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: packages/web/dist/
+          if-no-files-found: warn
+          retention-days: 7

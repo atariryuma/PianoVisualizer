@@ -1,0 +1,21 @@
+<!--
+  Phase 0b placeholder. Until the legacy app.js is fully extracted into
+  src/ modules, the actual app shell lives in /index.html at the repo root.
+
+  When extraction completes:
+  1. Move root index.html → here, dropping the standalone <link>/<script> tags.
+  2. Replace with a single <script type="module" src="/src/main.ts"></script>.
+  3. Delete the root index.html, app.css, app.js, piano-visualizer.html.
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Piano Visualizer</title>
+</head>
+<body>
+<noscript>This app requires JavaScript.</noscript>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

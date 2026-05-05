@@ -1,0 +1,48 @@
+{
+  "name": "piano-visualizer",
+  "version": "0.14.0",
+  "private": true,
+  "description": "Real-time piano visualizer for upper-elementary children. Web + iOS + Android via Capacitor.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "packages/plugins/*"
+  ],
+  "scripts": {
+    "prepare": "husky",
+    "dev": "turbo run dev --filter=@piano/web",
+    "build": "turbo run build",
+    "build:web": "turbo run build --filter=@piano/web",
+    "build:mobile": "turbo run build --filter=@piano/mobile",
+    "test": "turbo run test",
+    "test:watch": "turbo run test -- --watch",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build:web",
+    "legacy:check": "node --check app.js && node --check sw.js",
+    "legacy:serve": "powershell -File https_server.ps1",
+    "cap:sync": "pnpm --filter @piano/mobile exec cap sync",
+    "cap:ios": "pnpm --filter @piano/mobile exec cap run ios",
+    "cap:android": "pnpm --filter @piano/mobile exec cap run android",
+    "cap:open:ios": "pnpm --filter @piano/mobile exec cap open ios",
+    "cap:open:android": "pnpm --filter @piano/mobile exec cap open android",
+    "assets:generate": "pnpm --filter @piano/mobile exec capacitor-assets generate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.15.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.15.0",
+    "vitest": "^2.1.5"
+  }
+}

@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# Runs on `git commit`. Bypass with `git commit --no-verify` only when truly necessary.
+
+# Format/lint anything under packages/** that's about to be committed.
+pnpm exec lint-staged
+
+# Cheap end-to-end syntax checks for the legacy build (no separate test runner needed).
+if git diff --cached --name-only | grep -qE '^(app\.js|sw\.js)$'; then
+  node --check app.js || { echo "✗ app.js syntax error" ; exit 1; }
+  node --check sw.js  || { echo "✗ sw.js syntax error" ; exit 1; }
+fi
+
+# Block commits that re-enable remoteLog by accident on a tagged release branch.
+if git symbolic-ref --short HEAD | grep -q '^release/'; then
+  if git diff --cached app.js 2>/dev/null | grep -qE "^\+.*REMOTE_LOG_ENABLED.*=.*true"; then
+    echo "✗ release branch must not enable REMOTE_LOG_ENABLED. Use pre-build replacement instead."
+    exit 1
+  fi
+fi

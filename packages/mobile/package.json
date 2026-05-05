@@ -1,0 +1,40 @@
+{
+  "name": "@piano/mobile",
+  "version": "0.14.0",
+  "private": true,
+  "description": "Capacitor wrapper for Piano Visualizer (iOS + Android).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode mobile",
+    "build": "vite build --mode mobile && cap sync",
+    "build:web": "vite build --mode mobile",
+    "sync": "cap sync",
+    "ios": "cap run ios",
+    "android": "cap run android",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@piano/core": "workspace:*",
+    "capacitor-piano-midi": "workspace:*",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.3",
+    "@capacitor/haptics": "^6.0.2",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/preferences": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.2",
+    "@capacitor-community/bluetooth-le": "^6.0.0",
+    "jszip": "^3.10.1",
+    "opensheetmusicdisplay": "^1.9.0",
+    "tone": "^14.9.17"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

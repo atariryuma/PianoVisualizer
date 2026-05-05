@@ -1,0 +1,117 @@
+# iOS build — runs on demand + on push to main. Uses Fastlane match for cert
+# sync. Requires repo secrets:
+#   MATCH_PASSWORD, MATCH_GIT_URL, APP_STORE_CONNECT_API_KEY_KEY,
+#   APP_STORE_CONNECT_API_KEY_KEY_ID, APP_STORE_CONNECT_API_KEY_ISSUER_ID,
+#   FASTLANE_USER, FASTLANE_PASSWORD
+#
+# Requires the iOS project to have been generated locally first
+# (`pnpm cap:open:ios`) and committed to packages/mobile/ios/.
+#
+# Capgo guide is the canonical reference for the match flow:
+#   https://capgo.app/blog/automatic-capacitor-ios-build-github-action-with-match/
+
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "app.js"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Fastlane lane"
+        required: true
+        default: "beta"
+        type: choice
+        options:
+          - beta
+          - release
+
+jobs:
+  build:
+    name: Build iOS app
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if ios/ not generated yet
+        id: check
+        run: |
+          if [ ! -d "packages/mobile/ios" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::warning ::packages/mobile/ios not found — run 'pnpm cap:open:ios' locally and commit the generated project."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - if: steps.check.outputs.skip == 'false'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - if: steps.check.outputs.skip == 'false'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: packages/mobile/ios
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Vite build (mobile mode)
+        run: pnpm --filter @piano/mobile build:web
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Capacitor sync
+        run: pnpm --filter @piano/mobile sync
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Pod install
+        working-directory: packages/mobile/ios/App
+        run: pod install --repo-update
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Fastlane lane
+        working-directory: packages/mobile/ios
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}
+          APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
+          FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
+          FASTLANE_DISABLE_COLORS: 1
+        run: |
+          if [ -f Gemfile ]; then bundle exec fastlane ${{ github.event.inputs.lane || 'beta' }}; \
+          else echo "::warning ::No Gemfile in packages/mobile/ios; skipping fastlane. Add a Fastfile when ready to ship."; \
+          fi
+
+      - if: steps.check.outputs.skip == 'false'
+        name: Upload .ipa (if produced)
+        uses: actions/upload-artifact@v4
+        with:
+          name: piano-visualizer.ipa
+          path: packages/mobile/ios/App/build/*.ipa
+          if-no-files-found: warn
+          retention-days: 14

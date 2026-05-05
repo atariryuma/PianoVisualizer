@@ -11,3 +11,37 @@ server.log
 # OS files
 .DS_Store
 Thumbs.db
+
+# === Monorepo additions (2026-05-05 split) ===
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+.pnpm-store/
+.turbo/
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Test / coverage
+coverage/
+
+# Capacitor — generated native artifacts (Pods/, build/, etc.).
+# The ios/ and android/ source trees themselves get checked in once Phase 1 stabilizes.
+packages/mobile/ios/App/Pods/
+packages/mobile/ios/App/build/
+packages/mobile/ios/App/DerivedData/
+packages/mobile/android/.gradle/
+packages/mobile/android/build/
+packages/mobile/android/app/build/
+packages/mobile/android/local.properties
+packages/mobile/android/.idea/
+packages/mobile/capacitor.config.json.bak
+
+# Audit / scratch
+docs/LICENSES/_drafts/
