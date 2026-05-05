@@ -1,10 +1,13 @@
 // Virtual MIDI keyboard renderer — 88-key piano (A0..C8) drawn at the
-// bottom of the canvas with active / sustained / idle key highlights.
+// bottom of the canvas with active / sustained / idle key highlights and
+// optional "press this key next" hints driven by the practice schedule.
 //
 // Pure: takes ctx + canvas dimensions + midi state slice + opts. No globals.
 // Key tables (KB_WHITE / KB_BLACK / KB_BLACK_LEFT_WHITE_IDX) are precomputed
 // at module load and exported for callers that need them (e.g. the lane drawer
 // uses KB_WHITE.length for x-positioning math).
+
+import type { Hand } from '../state/practice-state';
 
 // =====================================================================
 // Precomputed key tables (88-key piano: A0=21 ... C8=108)
@@ -44,9 +47,51 @@ export const KB_BLACK_LEFT_WHITE_IDX: Readonly<Record<number, number>> = (() => 
   return out;
 })();
 
+// O(1) reverse lookup: white-key MIDI number → its index in KB_WHITE.
+const WHITE_KEY_IDX: ReadonlyMap<number, number> = (() => {
+  const m = new Map<number, number>();
+  for (let i = 0; i < KB_WHITE.length; i++) m.set(KB_WHITE[i], i);
+  return m;
+})();
+
 // =====================================================================
-// Drawing
+// Layout + hint constants
 // =====================================================================
+
+// Side padding around the keyboard. Shared between drawMidiKeyboard and
+// keyboardKeyCenterX so a caller can ribbon-line a falling note's x-position
+// down to the exact key center.
+const KB_PADDING = 8;
+
+// Hint tints — bright on purpose so the translucent overlay reads on both
+// white and black keys.
+const HINT_TINT_LH = '120, 180, 255';
+const HINT_TINT_RH = '255, 150, 200';
+
+// Outline strings are constant per (hand × primary), so precompute the four
+// combinations rather than rebuild them per key per frame.
+const HINT_STROKE_LH_PRIMARY = `rgba(${HINT_TINT_LH}, 0.95)`;
+const HINT_STROKE_LH_MATE = `rgba(${HINT_TINT_LH}, 0.55)`;
+const HINT_STROKE_RH_PRIMARY = `rgba(${HINT_TINT_RH}, 0.95)`;
+const HINT_STROKE_RH_MATE = `rgba(${HINT_TINT_RH}, 0.55)`;
+
+const HINT_BREATHING_HZ = 1.4;
+
+// =====================================================================
+// Public types
+// =====================================================================
+
+/**
+ * "Press this key next" cue, drawn beneath the active/sustained overlay so a
+ * real key press always wins visually.
+ */
+export interface KeyboardHintNote {
+  hand: Hand;
+  /** Top of the chord (the next-up note). Gets the heavier outline + ▼ marker.
+   *  Other chord members render with the same tint at lower intensity so the
+   *  primary stays clearly leading. */
+  primary: boolean;
+}
 
 /** Snapshot of midiState that the keyboard renderer reads. Lets the caller
  *  inject a fresh shape (or a snapshot from a different source) for tests. */
@@ -72,14 +117,58 @@ export interface KeyboardDrawOptions {
   noteThemeColor: (midi: number) => string;
   /** Resolves the localized "SUSTAIN" label text. */
   sustainLabel: string;
+  /** Optional next-up hint set: midi → { hand, primary }. Idle keys with a
+   *  hint get a tinted overlay; active/sustained keys ignore the hint so a
+   *  real press is never visually competed-against. Pass null in listen mode
+   *  / free play so the keyboard renders as before. */
+  hintNotes?: ReadonlyMap<number, KeyboardHintNote> | null;
+  /** Animation clock (ms, monotonic). Drives the 1.4 Hz breathing of hint
+   *  keys. Ignored when `hintNotes` is empty. */
+  nowMs?: number;
 }
+
+// =====================================================================
+// Helpers
+// =====================================================================
+
+/**
+ * On-screen center x (logical px) of a given MIDI key, matching the layout
+ * drawn by drawMidiKeyboard. Lets a caller line up a vertical from a falling
+ * note (or any UI element) to the exact key it lands on. Returns NaN for midi
+ * outside the 88-key range (A0=21 .. C8=108).
+ */
+export function keyboardKeyCenterX(midi: number, screenW: number): number {
+  const kbW = screenW - KB_PADDING * 2;
+  const wKeyW = kbW / KB_WHITE.length;
+  const wi = WHITE_KEY_IDX.get(midi);
+  if (wi !== undefined) return KB_PADDING + (wi + 0.5) * wKeyW;
+  const lwi = KB_BLACK_LEFT_WHITE_IDX[midi];
+  if (lwi !== undefined) return KB_PADDING + (lwi + 1) * wKeyW;
+  return NaN;
+}
+
+function hintTintFor(hand: Hand): string {
+  return hand === 'L' ? HINT_TINT_LH : HINT_TINT_RH;
+}
+
+// =====================================================================
+// Drawing
+// =====================================================================
 
 /**
  * Draw the 88-key virtual keyboard at the bottom of the canvas.
  *
  * Layout: KB_WHITE.length white keys span (screenW - 16) px; black keys
  * are centered between adjacent whites at 65% width and 60% height.
- * Active / sustained keys paint their note color; idle ones paint default.
+ *
+ * Layer order per key:
+ *   1. resting fill (or active/sustained color if pressed)
+ *   2. hint tint overlay (idle keys only, when opts.hintNotes contains it)
+ *   3. outline (active > sustained > primary-hint > mate-hint > default)
+ *
+ * After both rows, primary-hint keys get a small ▼ marker just above the key
+ * to disambiguate the chord top from chord mates.
+ *
  * "SUSTAIN" label appears top-left when the pedal is held.
  */
 export function drawMidiKeyboard(
@@ -89,9 +178,15 @@ export function drawMidiKeyboard(
 ): void {
   const kbH = opts.kbHeight;
   const kbY = opts.screenH - kbH - opts.kbSafeBottom;
-  const kbX = 8;
-  const kbW = opts.screenW - 16;
+  const kbX = KB_PADDING;
+  const kbW = opts.screenW - KB_PADDING * 2;
   const wKeyW = kbW / KB_WHITE.length;
+
+  const hints = opts.hintNotes && opts.hintNotes.size > 0 ? opts.hintNotes : null;
+  // One breathing phase shared across all hints (cohesive pulse).
+  const breathe = hints
+    ? 0.5 + 0.5 * Math.sin(((opts.nowMs ?? 0) / 1000) * Math.PI * 2 * HINT_BREATHING_HZ)
+    : 0;
 
   ctx.save();
   ctx.fillStyle = 'rgba(20, 20, 35, 0.55)';
@@ -101,18 +196,36 @@ export function drawMidiKeyboard(
     const note = midi.activeNotes.get(m);
     const lit = !!note;
     const sustained = midi.sustainedNotes.has(m);
+    const hint = lit || sustained ? null : (hints?.get(m) ?? null);
+
     if (lit || sustained) {
       ctx.fillStyle = (note && note.synColor) || opts.noteThemeColor(m);
     } else {
       ctx.fillStyle = restingFill;
     }
     ctx.fillRect(x, kbY, w, h);
+
+    if (hint) {
+      const tint = hintTintFor(hint.hand);
+      const baseA = hint.primary ? 0.4 : 0.22;
+      const swingA = hint.primary ? 0.3 : 0.12;
+      const a = baseA + swingA * breathe;
+      ctx.fillStyle = `rgba(${tint}, ${a.toFixed(3)})`;
+      ctx.fillRect(x, kbY, w, h);
+    }
+
     if (lit) {
       ctx.lineWidth = 2;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     } else if (sustained) {
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    } else if (hint && hint.primary) {
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = hint.hand === 'L' ? HINT_STROKE_LH_PRIMARY : HINT_STROKE_RH_PRIMARY;
+    } else if (hint) {
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = hint.hand === 'L' ? HINT_STROKE_LH_MATE : HINT_STROKE_RH_MATE;
     } else {
       ctx.lineWidth = 1;
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
@@ -131,6 +244,31 @@ export function drawMidiKeyboard(
     const wi = KB_BLACK_LEFT_WHITE_IDX[m];
     const x = kbX + (wi + 1) * wKeyW - bKeyW / 2;
     paintKey(m, x, bKeyW, bKeyH, 'rgba(15, 15, 25, 0.95)');
+  }
+
+  // Markers drawn AFTER both key rows so a black key's ▼ isn't clipped by
+  // its overlapping white-key paint.
+  if (hints) {
+    const sz = Math.max(4, Math.min(7, wKeyW * 0.45));
+    const tipY = kbY - 3;
+    const baseY = tipY - sz * 1.2;
+    const a = (0.7 + 0.25 * breathe).toFixed(3);
+    for (const [m, hint] of hints) {
+      if (!hint.primary) continue;
+      if (midi.activeNotes.has(m) || midi.sustainedNotes.has(m)) continue;
+      const wi = WHITE_KEY_IDX.get(m);
+      const cx =
+        wi !== undefined
+          ? kbX + (wi + 0.5) * wKeyW
+          : kbX + (KB_BLACK_LEFT_WHITE_IDX[m] + 1) * wKeyW;
+      ctx.fillStyle = `rgba(${hintTintFor(hint.hand)}, ${a})`;
+      ctx.beginPath();
+      ctx.moveTo(cx - sz, baseY);
+      ctx.lineTo(cx + sz, baseY);
+      ctx.lineTo(cx, tipY);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   if (midi.sustainOn) {
