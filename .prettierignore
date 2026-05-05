@@ -1,5 +1,6 @@
 # Generated / vendored
 dist/
+dist-legacy/
 build/
 node_modules/
 *.min.js
