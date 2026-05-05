@@ -26,11 +26,9 @@ jobs:
       - name: Verify app.js parses
         run: node --check app.js
 
-      - name: Verify HTML well-formed
-        run: |
-          # Quick well-formedness check via xmllint (loose mode for HTML5).
-          sudo apt-get update && sudo apt-get install -y libxml2-utils
-          xmllint --noout --html index.html 2>&1 | grep -iE 'error|fatal' && exit 1 || true
+      # NOTE: HTML well-formedness via xmllint was removed — it flags HTML5
+      # elements like <canvas> as "invalid". Vite build (vite-build job below)
+      # is the authoritative HTML validator.
 
       - name: Service worker syntax
         run: node --check sw.js
