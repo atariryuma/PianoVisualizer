@@ -109,6 +109,17 @@ export type {
   SessionUIStrings,
 } from './state/session-confidence';
 
+// === State: MIDI input tracking (active notes / sustain / chord window) ===
+export {
+  initMidiState,
+  resetMidiState,
+  applyMidiNoteOn,
+  applyMidiNoteOff,
+  applyMidiCC,
+  dispatchMidiBytes,
+} from './state/midi-state';
+export type { MidiState, MidiStateOptions, ActiveNote, MidiEvent } from './state/midi-state';
+
 // === State: quality scoring + coaching feedback ===
 export {
   clamp01,
