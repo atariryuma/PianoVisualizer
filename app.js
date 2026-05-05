@@ -4964,6 +4964,15 @@
       if (!practice.enabled) return;
       const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
+      // Read the OSMD strip's actual bottom edge so the lane top adapts to
+      // the landscape-phone media query (which shrinks #osmdContainer to
+      // ~180px instead of the default 260px). Falls back to the legacy
+      // hardcoded layout when OSMD has zero rect (transition flicker).
+      let laneTopOverride;
+      if (osmdVisible) {
+        const r = DOM.osmdContainer.getBoundingClientRect();
+        if (r && r.height > 0) laneTopOverride = Math.round(r.bottom + 12);
+      }
       // Build a view that aliases practice fields (so cursor mutation flows
       // back) and adds the resolved isBoss flag the renderer needs.
       const view = {
@@ -4986,6 +4995,7 @@
           screenW: W,
           screenH: H,
           osmdVisible,
+          laneTopOverride,
           kbReserve,
           laneLookaheadMs: LANE_LOOKAHEAD_MS,
           countInMs: COUNT_IN_MS,
