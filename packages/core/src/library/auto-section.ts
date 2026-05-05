@@ -180,3 +180,62 @@ export function autoSectionDefs(
     { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', startMeasure: b2, isBoss: true },
   ];
 }
+
+// =====================================================================
+// Section assembly — turns SectionDef[] (start-measure markers) into the
+// PracticeSectionDef shape (start/end seconds) the practice runner consumes.
+// =====================================================================
+
+/** Source-note shape this assembler reads. Matches the bundled-song /
+ *  user-song schema's pre-section row. */
+export interface SectionBuildSourceNote {
+  measureIdx: number;
+  timeSec: number;
+}
+
+export interface BuiltSection<TDef extends { id: string }> {
+  id: TDef['id'];
+  nameKey: string;
+  descKey: string;
+  isBoss: boolean;
+  startSec: number;
+  endSec: number;
+}
+
+/** Section def shape this assembler accepts — superset of the bundled and
+ *  auto-section formats. */
+export interface BuildSectionsInputDef {
+  id: string;
+  nameKey: string;
+  descKey: string;
+  isBoss?: boolean;
+  startMeasure: number;
+}
+
+/**
+ * Build per-section play windows from start-measure defs + the song's note
+ * timeline. For each def, the section starts at the time of the first note
+ * whose `measureIdx >= def.startMeasure`. The end is the next def's start
+ * (or just past the last note for the final section).
+ *
+ * Pure: no DOM, no globals — both the bundled-song path and the user-song
+ * importer call this; previously each had its own inline copy.
+ */
+export function buildSectionsFromDefs<TDef extends BuildSectionsInputDef>(
+  notes: ReadonlyArray<SectionBuildSourceNote>,
+  totalSec: number,
+  defs: ReadonlyArray<TDef>
+): BuiltSection<TDef>[] {
+  const startSecs = defs.map((d) => {
+    const first = notes.find((n) => n.measureIdx >= d.startMeasure);
+    return first ? first.timeSec : totalSec;
+  });
+  return defs.map((d, i) => ({
+    id: d.id as TDef['id'],
+    nameKey: d.nameKey,
+    descKey: d.descKey,
+    isBoss: !!d.isBoss,
+    startSec: startSecs[i],
+    endSec: i + 1 < defs.length ? startSecs[i + 1] : totalSec + 1,
+  }));
+}

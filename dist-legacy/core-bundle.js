@@ -62,6 +62,7 @@ var PianoCore = (() => {
     buildAudioGraph: () => buildAudioGraph,
     buildCoachingFeedback: () => buildCoachingFeedback,
     buildSectionNotes: () => buildSectionNotes,
+    buildSectionsFromDefs: () => buildSectionsFromDefs,
     clamp01: () => clamp01,
     classifyStageTransition: () => classifyStageTransition,
     coefficientOfVariation: () => coefficientOfVariation,
@@ -103,6 +104,7 @@ var PianoCore = (() => {
     effectShimmer: () => effectShimmer,
     effectStarShower: () => effectStarShower,
     finalizeNoteHold: () => finalizeNoteHold,
+    formatTime: () => formatTime,
     freqToNote: () => freqToNote,
     getNoteColor: () => getNoteColor,
     initAgcState: () => initAgcState,
@@ -115,6 +117,7 @@ var PianoCore = (() => {
     initQuestTrackerState: () => initQuestTrackerState,
     initSessionConfidenceState: () => initSessionConfidenceState,
     keyboardKeyCenterX: () => keyboardKeyCenterX,
+    libraryEntryFromGhFile: () => libraryEntryFromGhFile,
     makeUserSong: () => makeUserSong,
     matchNoteOnset: () => matchNoteOnset,
     noteNamesFor: () => noteNamesFor,
@@ -122,6 +125,7 @@ var PianoCore = (() => {
     openUserDb: () => openUserDb,
     parseMusicXmlMetadata: () => parseMusicXmlMetadata,
     parseUserSongFromBlob: () => parseUserSongFromBlob,
+    pickAudioOffsetMs: () => pickAudioOffsetMs,
     pickTier: () => pickTier,
     practiceElapsedMs: () => practiceElapsedMs,
     project3D: () => project3D,
@@ -1737,6 +1741,16 @@ var PianoCore = (() => {
       micSource
     };
   }
+  function pickAudioOffsetMs(input) {
+    if (input.userOverrideMs != null && Number.isFinite(input.userOverrideMs)) {
+      return input.userOverrideMs;
+    }
+    const reported = input.reportedOutMs + input.reportedBaseMs;
+    const min = input.minReportedMs ?? 5;
+    const max = input.maxClampMs ?? 200;
+    if (reported > min) return Math.min(reported, max);
+    return input.defaultMs;
+  }
   async function recoverAudioContext(prev, opts, Ctor) {
     try {
       await prev.ctx.close();
@@ -1879,6 +1893,51 @@ var PianoCore = (() => {
       { id: "B", nameKey: "userSecB", descKey: "userSecBdesc", startMeasure: b1, isBoss: false },
       { id: "A2", nameKey: "userSecA2", descKey: "userSecA2desc", startMeasure: b2, isBoss: true }
     ];
+  }
+  function buildSectionsFromDefs(notes, totalSec, defs) {
+    const startSecs = defs.map((d) => {
+      const first = notes.find((n) => n.measureIdx >= d.startMeasure);
+      return first ? first.timeSec : totalSec;
+    });
+    return defs.map((d, i) => ({
+      id: d.id,
+      nameKey: d.nameKey,
+      descKey: d.descKey,
+      isBoss: !!d.isBoss,
+      startSec: startSecs[i],
+      endSec: i + 1 < defs.length ? startSecs[i + 1] : totalSec + 1
+    }));
+  }
+
+  // src/library/musetrainer-catalog.ts
+  function libraryEntryFromGhFile(file, opts) {
+    const stem = file.name.replace(/\.mxl$/i, "");
+    const parts = stem.split(/_-_|_/);
+    const composer = parts[0] || "";
+    const title = parts.slice(1).join(" ").replace(/_/g, " ").replace(/\s+/g, " ").trim();
+    const label = composer && title ? composer + " \u2014 " + title : composer || title || stem;
+    const jp = opts.jpOverrides ? opts.jpOverrides[file.name] || null : null;
+    return {
+      url: "https://cdn.jsdelivr.net/gh/musetrainer/library@" + opts.pinnedSha + "/scores/" + encodeURIComponent(file.name),
+      filename: file.name,
+      label,
+      composer,
+      title,
+      labelJp: jp ? jp.composerJp + " \u2014 " + jp.titleJp : null,
+      composerJp: jp ? jp.composerJp : null,
+      titleJp: jp ? jp.titleJp : null,
+      icon: opts.defaultIcon || "\u{1F3BC}",
+      size: file.size || 0
+    };
+  }
+
+  // src/util/format.ts
+  function formatTime(ms) {
+    if (!Number.isFinite(ms) || ms < 0) ms = 0;
+    const totalSec = Math.floor(ms / 1e3);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
   }
 
   // src/library/user-songs.ts

@@ -166,6 +166,7 @@ export {
   createAudioContext,
   buildAudioGraph,
   recoverAudioContext,
+  pickAudioOffsetMs,
 } from './audio/audio-context';
 export type {
   AudioContextLike,
@@ -176,14 +177,38 @@ export type {
   GainNodeLike,
   MediaStreamAudioSourceNodeLike,
   AudioParamLike,
+  PickAudioOffsetInput,
 } from './audio/audio-context';
 
 // === Library: MusicXML metadata + auto-sectioning ===
 export { parseMusicXmlMetadata } from './library/musicxml-meta';
 export type { MusicXmlMetadata, MetaParseOptions } from './library/musicxml-meta';
 
-export { autoSectionDefs, collectSectionCandidates } from './library/auto-section';
-export type { SectionDef, SectionCandidates, AutoSectionOptions } from './library/auto-section';
+export {
+  autoSectionDefs,
+  collectSectionCandidates,
+  buildSectionsFromDefs,
+} from './library/auto-section';
+export type {
+  SectionDef,
+  SectionCandidates,
+  AutoSectionOptions,
+  BuildSectionsInputDef,
+  BuiltSection,
+  SectionBuildSourceNote,
+} from './library/auto-section';
+
+// === Library: musetrainer catalog (jsDelivr-served, pinned-SHA) ===
+export { libraryEntryFromGhFile } from './library/musetrainer-catalog';
+export type {
+  GhContentsFile,
+  JpOverride,
+  LibraryEntry,
+  LibraryEntryFromGhOptions,
+} from './library/musetrainer-catalog';
+
+// === Util: tiny formatters used by both shells ===
+export { formatTime } from './util/format';
 
 // === Library: user-song storage + parsing ===
 export {
