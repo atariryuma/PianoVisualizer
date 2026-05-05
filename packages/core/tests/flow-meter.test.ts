@@ -37,6 +37,7 @@ describe('initFlowState', () => {
       lastGoodNoteTimeMs: 0,
       lastSilenceStartMs: -1,
       lastNoisePenaltyMs: 0,
+      comboDecayAccum: 0,
     });
   });
 });
@@ -51,6 +52,7 @@ describe('resetFlowState', () => {
       lastGoodNoteTimeMs: 1000,
       lastSilenceStartMs: 5000,
       lastNoisePenaltyMs: 200,
+      comboDecayAccum: 0.4,
     };
     resetFlowState(s);
     expect(s).toEqual(initFlowState());

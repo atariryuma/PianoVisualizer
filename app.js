@@ -691,18 +691,40 @@
     let currentLayoutMode = 'phone-portrait';
     let lastTopClusterPx = -1;
     let lastKbHeightPx = -1;
+    // Cached OSMD container rect — refreshed on resize / orientationchange and
+    // when the OSMD strip itself resizes. drawPracticeLane reads this every
+    // frame; calling getBoundingClientRect() per-frame instead would force a
+    // synchronous layout flush at 60fps.
+    const cachedOsmdRect = { top: 0, right: 0, bottom: 0, height: 0, width: 0 };
     function detectLayout() {
       const w = window.innerWidth;
       const h = window.innerHeight;
+      const longest = Math.max(w, h);
+      // Desktop: explicitly wide. Catches landscape iPad Pro 12.9 (1366×1024).
       if (w >= 1200) return 'desktop';
-      if (w > 640 && h > 600) return 'tablet';
-      if (w > h && h <= 520) return 'phone-landscape';
+      // Tablet: longest edge ≥ 900 covers iPad Air/mini/Pro in either
+      // orientation (768×1024, 820×1180, 834×1194, 1024×1366) without
+      // demoting them to phone in portrait.
+      if (longest >= 900 && Math.min(w, h) >= 600) return 'tablet';
+      // Phone landscape: short height + landscape AND not desktop-class width.
+      // The w<1024 cap stops 1199×500 desktop windows from being misclassified.
+      if (w > h && h <= 520 && w < 1024) return 'phone-landscape';
       return 'phone-portrait';
     }
     function measureBottom(el) {
       if (!el) return 0;
       const r = el.getBoundingClientRect();
       return r.height > 0 ? r.bottom : 0;
+    }
+    function refreshOsmdRect() {
+      const el = DOM.osmdContainer;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      cachedOsmdRect.top = r.top;
+      cachedOsmdRect.right = r.right;
+      cachedOsmdRect.bottom = r.bottom;
+      cachedOsmdRect.height = r.height;
+      cachedOsmdRect.width = r.width;
     }
     function syncLayout() {
       const layout = detectLayout();
@@ -730,12 +752,28 @@
         lastKbHeightPx = kbPx;
         root.setProperty('--kb-height', kbPx + 'px');
       }
+      refreshOsmdRect();
     }
     syncLayout();
-    window.addEventListener('resize', syncLayout);
-    window.addEventListener('orientationchange', syncLayout);
-    if (typeof ResizeObserver !== 'undefined' && DOM.practiceTopBar) {
-      new ResizeObserver(syncLayout).observe(DOM.practiceTopBar);
+    // Coalesce resize bursts (iPad URL-bar collapse, iOS keyboard show/hide
+    // each fire many resize events in rapid succession) onto a single rAF.
+    let _resizePending = false;
+    function onResizeBurst() {
+      if (_resizePending) return;
+      _resizePending = true;
+      requestAnimationFrame(() => {
+        _resizePending = false;
+        syncLayout();
+      });
+    }
+    window.addEventListener('resize', onResizeBurst);
+    window.addEventListener('orientationchange', onResizeBurst);
+    if (typeof ResizeObserver !== 'undefined') {
+      if (DOM.practiceTopBar) new ResizeObserver(syncLayout).observe(DOM.practiceTopBar);
+      // Watch OSMD too — its height changes on score load, OSMD re-render,
+      // and any layout-mode flip. Without this, drawPracticeLane would read
+      // stale rect after osmd renders fresh notation.
+      if (DOM.osmdContainer) new ResizeObserver(refreshOsmdRect).observe(DOM.osmdContainer);
     }
 
     // ========================================
@@ -2027,9 +2065,17 @@
           // Slow decay start
           state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_SOFT * dtSec);
           if (silenceDuration > CONFIG.SILENCE_HARD_DECAY_MS) {
-            // Hard decay later
+            // Hard decay later. Combo is integer, so accumulate fractional
+            // decay across frames — otherwise Math.ceil rounds up every
+            // frame and combo drops at framerate (144/sec on 144Hz vs
+            // 60/sec on 60Hz). The accumulator keeps drops/sec constant.
             state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_HARD * dtSec);
-            state.combo = Math.max(0, state.combo - Math.ceil(CONFIG.COMBO_DECAY_RATE * dtSec * 60));
+            state.comboDecayAccum = (state.comboDecayAccum || 0) + CONFIG.COMBO_DECAY_RATE * 60 * dtSec;
+            if (state.comboDecayAccum >= 1) {
+              const drops = Math.floor(state.comboDecayAccum);
+              state.combo = Math.max(0, state.combo - drops);
+              state.comboDecayAccum -= drops;
+            }
           }
         }
 
@@ -4494,6 +4540,10 @@
       const t = age / 1800;
       const alpha = (t < 0.12) ? (t / 0.12) : Math.max(0, 1 - (t - 0.12) / 0.88);
       ctx.save();
+      // shadowBlur on text forces software rasterization on iOS Safari /
+      // low-tier devices. Gate by PERF_PROFILE so the chord-name display
+      // doesn't drag low-tier framerates while it fades in/out for 1.8 s.
+      const useShadow = CONFIG.SHADOW_BLUR_ENABLED;
       if (practice.enabled) {
         // Quiet variant: just above the keyboard, small, fade-only.
         const yPos = H - kbHeight - kbSafeBottom - 22;
@@ -4502,8 +4552,10 @@
         ctx.font = '500 ' + Math.round(Math.min(28, W * 0.022)) + 'px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.shadowColor = 'rgba(255, 200, 80, 0.5)';
-        ctx.shadowBlur = 10;
+        if (useShadow) {
+          ctx.shadowColor = 'rgba(255, 200, 80, 0.5)';
+          ctx.shadowBlur = 10;
+        }
         ctx.fillText(midiState.lastChordName, 0, 0);
         ctx.restore();
         return;
@@ -4515,8 +4567,10 @@
       ctx.font = 'bold ' + Math.round(Math.min(72, W * 0.06)) + 'px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(255, 200, 80, 0.8)';
-      ctx.shadowBlur = 24;
+      if (useShadow) {
+        ctx.shadowColor = 'rgba(255, 200, 80, 0.8)';
+        ctx.shadowBlur = 24;
+      }
       ctx.fillText(midiState.lastChordName, 0, 0);
       ctx.restore();
     }
@@ -5117,71 +5171,88 @@
       if (!practice.enabled) return;
       const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
-      // split-h translates the canvas by laneLeft and passes screenW=laneWidth
-      // so lane.ts treats the right half as its full drawable region — the
-      // lane.ts math is reused unchanged.
+      // Lane region. cachedOsmdRect is refreshed by syncLayout +
+      // ResizeObserver, so this loop avoids a per-frame
+      // getBoundingClientRect() (which would force synchronous layout).
       let laneLeft = 0;
       let laneWidth = W;
       let laneTopOverride;
-      if (osmdVisible) {
-        const r = DOM.osmdContainer.getBoundingClientRect();
-        if (r && r.height > 0) {
-          if (currentLayoutMode === 'phone-landscape') {
-            laneLeft = Math.round(r.right + 8);
-            // Subtract safeRight so notes near the right edge don't fall into
-            // the home-indicator / notch zone on iPhones held landscape.
-            laneWidth = Math.max(160, W - laneLeft - 4 - safeRight);
-            laneTopOverride = Math.round(r.top);
-          } else {
-            laneTopOverride = Math.round(r.bottom + 12);
-          }
+      if (osmdVisible && cachedOsmdRect.height > 0) {
+        if (currentLayoutMode === 'phone-landscape') {
+          laneLeft = Math.round(cachedOsmdRect.right + 8);
+          // Subtract safeRight so notes near the right edge don't fall into
+          // the home-indicator / notch zone on iPhones held landscape.
+          laneWidth = Math.max(160, W - laneLeft - 4 - safeRight);
+          laneTopOverride = Math.round(cachedOsmdRect.top);
+        } else {
+          laneTopOverride = Math.round(cachedOsmdRect.bottom + 12);
         }
       }
-      // Build a view that aliases practice fields (so cursor mutation flows
-      // back) and adds the resolved isBoss flag the renderer needs.
-      const view = {
-        enabled: true,
-        sectionNotes: practice.sectionNotes,
-        handRanges: practice.handRanges,
-        laneDrawFromIdx: practice.laneDrawFromIdx,
-        currentNoteIdx: practice.currentNoteIdx,
-        isBoss: !!currentSong.sections[practice.sectionIdx].isBoss,
-      };
+      // View aliases practice slice in place — laneDrawFromIdx mutation by
+      // lane.ts flows back through the persistent reference. Hoisted instead
+      // of re-allocated per frame.
+      _laneView.sectionNotes = practice.sectionNotes;
+      _laneView.handRanges = practice.handRanges;
+      _laneView.laneDrawFromIdx = practice.laneDrawFromIdx;
+      _laneView.currentNoteIdx = practice.currentNoteIdx;
+      _laneView.isBoss = !!currentSong.sections[practice.sectionIdx].isBoss;
+      _laneTiming.elapsedMs = practiceElapsedMs();
+      _laneTiming.realElapsedMs = practiceRealElapsedMs();
+      _laneTiming.nowMs = timeMs;
+      _laneOpts.screenW = laneWidth;
+      _laneOpts.screenH = H;
+      _laneOpts.osmdVisible = osmdVisible;
+      _laneOpts.laneTopOverride = laneTopOverride;
+      _laneOpts.kbReserve = kbReserve;
       const translated = laneLeft !== 0;
       if (translated) {
         ctx.save();
         ctx.translate(laneLeft, 0);
       }
-      PianoCore.drawPracticeLane(
-        ctx,
-        view,
-        {
-          elapsedMs: practiceElapsedMs(),
-          realElapsedMs: practiceRealElapsedMs(),
-          nowMs: timeMs,
-        },
-        {
-          screenW: laneWidth,
-          screenH: H,
-          osmdVisible,
-          laneTopOverride,
-          kbReserve,
-          laneLookaheadMs: LANE_LOOKAHEAD_MS,
-          countInMs: COUNT_IN_MS,
-          hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
-          hitWindowMs: HIT_WINDOW_MS,
-          perfectMs: PERFECT_MS,
-          laneLabelL,
-          laneLabelR,
-          countInGoLabel: t('countInGo'),
-          midiToPitchName,
-          noteRestingColor: (m) => CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff',
-        }
-      );
+      PianoCore.drawPracticeLane(ctx, _laneView, _laneTiming, _laneOpts);
       if (translated) ctx.restore();
       // Thread the amortized cursor back so subsequent frames don't re-scan.
-      practice.laneDrawFromIdx = view.laneDrawFromIdx;
+      practice.laneDrawFromIdx = _laneView.laneDrawFromIdx;
     }
+    // Hoisted lane-draw scaffolding (see drawPracticeLane). Persistent objects
+    // avoid 60 fps allocations + give the JIT stable hidden classes.
+    const _laneNoteRestingColor = (m) =>
+      CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff';
+    const _laneView = {
+      enabled: true,
+      sectionNotes: null,
+      handRanges: null,
+      laneDrawFromIdx: 0,
+      currentNoteIdx: 0,
+      isBoss: false,
+    };
+    const _laneTiming = { elapsedMs: 0, realElapsedMs: 0, nowMs: 0 };
+    // Localized strings are refreshed on `langchange` (see refreshLaneOptsI18n)
+    // so the per-frame draw doesn't pay for t() lookups.
+    const _laneOpts = {
+      screenW: 0,
+      screenH: 0,
+      osmdVisible: false,
+      laneTopOverride: undefined,
+      kbReserve: 0,
+      laneLookaheadMs: LANE_LOOKAHEAD_MS,
+      countInMs: COUNT_IN_MS,
+      hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
+      hitWindowMs: HIT_WINDOW_MS,
+      perfectMs: PERFECT_MS,
+      laneLabelL: '',
+      laneLabelR: '',
+      countInGoLabel: '',
+      midiToPitchName,
+      noteRestingColor: _laneNoteRestingColor,
+    };
+    function refreshLaneOptsI18n() {
+      _laneOpts.laneLabelL = t('laneLeft');
+      _laneOpts.laneLabelR = t('laneRight');
+      _laneOpts.countInGoLabel = t('countInGo');
+    }
+    refreshLaneOptsI18n();
+    window.addEventListener('langchange', refreshLaneOptsI18n);
 
     function roundRect(c, x, y, w, h, r) {
       c.beginPath();
@@ -5820,9 +5891,18 @@
       for (const item of filtered) {
         const row = document.createElement('div');
         row.className = 'lib-row';
-        row.innerHTML = `<span class="lib-icon">${item.icon || '🎼'}</span><span class="lib-label"></span>`;
-        const displayLabel = libraryDisplayLabel(item);
-        row.querySelector('.lib-label').textContent = displayLabel;
+        // Build icon + label spans with textContent — `item.icon` originates
+        // from the library catalog JSON; if a future entry (or a tampered
+        // imported library) carries HTML in `icon`, innerHTML interpolation
+        // would execute it.
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'lib-icon';
+        iconSpan.textContent = item.icon || '🎼';
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'lib-label';
+        labelSpan.textContent = libraryDisplayLabel(item);
+        row.appendChild(iconSpan);
+        row.appendChild(labelSpan);
         row.addEventListener('click', async () => {
           if (row.classList.contains('busy')) return;
           row.classList.add('busy');
@@ -5869,22 +5949,37 @@
         // for the shared danger-pill styling; the visual difference is the
         // button label. Order matters: rename is the most common rescue
         // action when a kid imports a file with an ugly auto-derived title.
-        row.innerHTML = `<span class="my-icon">${song.icon || '🎵'}</span>
-          <span class="my-label"></span>
-          <button class="my-remove my-rename" type="button"></button>
-          <button class="my-remove my-edit" type="button"></button>
-          <button class="my-remove" type="button"></button>`;
-        const labelEl = row.querySelector('.my-label');
+        // Icon set via textContent (not interpolation) so a tampered import
+        // file with HTML in `song.icon` can't execute via innerHTML.
+        const iconEl = document.createElement('span');
+        iconEl.className = 'my-icon';
+        iconEl.textContent = song.icon || '🎵';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'my-label';
         labelEl.textContent = song._userTitle || song.id;
+        const renameBtnEl = document.createElement('button');
+        renameBtnEl.className = 'my-remove my-rename';
+        renameBtnEl.type = 'button';
+        const editBtnEl = document.createElement('button');
+        editBtnEl.className = 'my-remove my-edit';
+        editBtnEl.type = 'button';
+        const removeBtnEl = document.createElement('button');
+        removeBtnEl.className = 'my-remove';
+        removeBtnEl.type = 'button';
+        row.appendChild(iconEl);
+        row.appendChild(labelEl);
+        row.appendChild(renameBtnEl);
+        row.appendChild(editBtnEl);
+        row.appendChild(removeBtnEl);
         if (sub) {
           const sb = document.createElement('span');
           sb.className = 'my-sub';
           sb.textContent = sub;
           labelEl.appendChild(sb);
         }
-        const renameBtn = row.querySelector('.my-rename');
-        const editBtn = row.querySelector('.my-edit');
-        const removeBtn = row.querySelectorAll('button')[2];
+        const renameBtn = renameBtnEl;
+        const editBtn = editBtnEl;
+        const removeBtn = removeBtnEl;
         renameBtn.textContent = t('addSongRename');
         editBtn.textContent = t('addSongEditSections');
         removeBtn.textContent = t('addSongRemove');

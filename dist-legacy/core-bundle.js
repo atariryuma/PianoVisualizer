@@ -1103,7 +1103,8 @@ var PianoCore = (() => {
       peakFlow: 0,
       lastGoodNoteTimeMs: 0,
       lastSilenceStartMs: -1,
-      lastNoisePenaltyMs: 0
+      lastNoisePenaltyMs: 0,
+      comboDecayAccum: 0
     };
   }
   function resetFlowState(state) {
@@ -1114,6 +1115,7 @@ var PianoCore = (() => {
     state.lastGoodNoteTimeMs = 0;
     state.lastSilenceStartMs = -1;
     state.lastNoisePenaltyMs = 0;
+    state.comboDecayAccum = 0;
   }
   function applyFlowEvent(state, event, opts) {
     switch (event.type) {
@@ -1129,6 +1131,7 @@ var PianoCore = (() => {
         }
         state.lastGoodNoteTimeMs = event.timeMs;
         state.lastSilenceStartMs = -1;
+        state.comboDecayAccum = 0;
         return;
       }
       case "midiNote": {
@@ -1160,10 +1163,12 @@ var PianoCore = (() => {
           state.flow = Math.max(0, state.flow - opts.flowDecaySoft * event.dtSec);
           if (silenceDuration > opts.silenceHardDecayMs) {
             state.flow = Math.max(0, state.flow - opts.flowDecayHard * event.dtSec);
-            state.combo = Math.max(
-              0,
-              state.combo - Math.ceil(opts.comboDecayRate * event.dtSec * 60)
-            );
+            state.comboDecayAccum += opts.comboDecayRate * 60 * event.dtSec;
+            if (state.comboDecayAccum >= 1) {
+              const drops = Math.floor(state.comboDecayAccum);
+              state.combo = Math.max(0, state.combo - drops);
+              state.comboDecayAccum -= drops;
+            }
           }
         }
         return;
@@ -1585,10 +1590,9 @@ var PianoCore = (() => {
     const flatness = computeSpectralFlatness(spectrum, startBin, endBin);
     const crest = computeSpectralCrest(spectrum, startBin, endBin);
     const centroid = computeSpectralCentroid(spectrum, startBin, endBin, binHz);
-    const centroidHistory = prev.centroidHistory.concat(centroid);
-    if (centroidHistory.length > opts.centroidHistorySize) {
-      centroidHistory.splice(0, centroidHistory.length - opts.centroidHistorySize);
-    }
+    const centroidHistory = prev.centroidHistory;
+    centroidHistory.push(centroid);
+    while (centroidHistory.length > opts.centroidHistorySize) centroidHistory.shift();
     const centroidCV = coefficientOfVariation(centroidHistory);
     let harmonicity = 0;
     let harmonicityOk = true;
@@ -1598,10 +1602,9 @@ var PianoCore = (() => {
       harmonicityOk = harmonicity >= opts.harmonicityMin;
     }
     prev.prevSpectrum.set(spectrum);
-    const fluxHistory = prev.fluxHistory.concat(flux);
-    if (fluxHistory.length > opts.spectralFluxHistorySize) {
-      fluxHistory.splice(0, fluxHistory.length - opts.spectralFluxHistorySize);
-    }
+    const fluxHistory = prev.fluxHistory;
+    fluxHistory.push(flux);
+    while (fluxHistory.length > opts.spectralFluxHistorySize) fluxHistory.shift();
     let isOnset = false;
     let onsetReason = "";
     let threshold = 0;
