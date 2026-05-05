@@ -71,3 +71,22 @@ export type { MusicXmlMetadata, MetaParseOptions } from './library/musicxml-meta
 
 export { autoSectionDefs, collectSectionCandidates } from './library/auto-section';
 export type { SectionDef, SectionCandidates, AutoSectionOptions } from './library/auto-section';
+
+// === Library: user-song storage + parsing ===
+export {
+  USER_DB_NAME,
+  USER_DB_STORE,
+  openUserDb,
+  userDbAll,
+  userDbPut,
+  userDbDelete,
+  parseUserSongFromBlob,
+  makeUserSong,
+} from './library/user-songs';
+export type {
+  UserSongRecord,
+  UserSong,
+  OpenDbOptions,
+  ParseBlobOptions,
+  MakeSongOptions,
+} from './library/user-songs';

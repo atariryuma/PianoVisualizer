@@ -32,28 +32,7 @@ clean.**
 
 ## ⏳ In queue
 
-## 1. Extract `library/user-songs.ts`
-
-**What**: Move `openUserDb`, `userDbAll`, `userDbPut`, `userDbDelete`,
-`addUserSongFromBlob`, `addUserSongFromUrl`, `removeUserSong`,
-`registerUserSong`.
-
-**Why**: Largest user-data surface; lifting into a typed module makes
-export/import safer and unblocks IndexedDB-backed tests.
-
-**Acceptance**:
-
-- [ ] CRUD functions exported with TS types
-- [ ] `addUserSongFromBlob` becomes async, returns `UserSongRecord`
-- [ ] Tests use `fake-indexeddb` to verify put/get/delete round-trips
-- [ ] `registerUserSong` becomes side-effect-free factory returning a `Song`
-      object (the SONGS-registry mutation moves to the caller)
-- [ ] devDep added: `fake-indexeddb`
-
-**Playbook**: extract-module + needs `fake-indexeddb` devDep. **Est lines**:
-250 + 200 tests.
-
-## 2. Extract `state/session-confidence.ts`
+## 1. Extract `state/session-confidence.ts`
 
 **What**: Move `updateSessionConfidence` + the ring-buffer.
 
@@ -69,7 +48,7 @@ export/import safer and unblocks IndexedDB-backed tests.
 
 **Playbook**: extract-module + state-machine note. **Est**: 150 + 250 tests.
 
-## 3. Extract `state/quality.ts`
+## 2. Extract `state/quality.ts`
 
 **What**: Move `computeRhythmScore`, `computeDynamicsScore`,
 `computeStabilityScore`, `updateQualityScores`, `updateGrowthTrend`,
@@ -85,7 +64,7 @@ export/import safer and unblocks IndexedDB-backed tests.
 
 **Playbook**: extract-module. **Est**: 150 + 200 tests.
 
-## 4. Extract `i18n/index.ts`
+## 3. Extract `i18n/index.ts`
 
 **What**: Move `T_STRINGS` + `t()` + `applyI18n` (split: applyI18n stays in
 DOM-coupled web shell, `t()` and table go to core).
@@ -103,7 +82,7 @@ DOM-decoupled extraction.
 
 **Est**: 100 + 80 tests.
 
-## 5. Extract `config.ts`
+## 4. Extract `config.ts`
 
 **What**: Move the `CONFIG` object literal.
 
