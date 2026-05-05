@@ -6,50 +6,35 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (after 10-module extraction sweep, including the
-IndexedDB user-songs layer).
+Last refreshed: **2026-05-05** (after 11-module extraction including the
+session-confidence state machine).
 
 ---
 
 ## ✅ Completed (rotated out — see ROADMAP 0b.2)
 
-| #   | Module                     | Tests | Where                                        |
-| --- | -------------------------- | ----- | -------------------------------------------- |
-| 1   | `audio/chord.ts`           | 12    | `packages/core/src/audio/chord.ts`           |
-| 2   | `audio/yin.ts`             | 16    | `packages/core/src/audio/yin.ts`             |
-| 3   | `audio/spectral.ts`        | 18    | `packages/core/src/audio/spectral.ts`        |
-| 4   | `audio/harmonicity.ts`     | 6     | `packages/core/src/audio/harmonicity.ts`     |
-| 5   | `audio/audio-context.ts`   | 8     | `packages/core/src/audio/audio-context.ts`   |
-| 6   | `audio/agc.ts`             | 13    | `packages/core/src/audio/agc.ts`             |
-| 7   | `audio/onset.ts`           | 11    | `packages/core/src/audio/onset.ts`           |
-| 8   | `library/musicxml-meta.ts` | 4     | `packages/core/src/library/musicxml-meta.ts` |
-| 9   | `library/auto-section.ts`  | 11    | `packages/core/src/library/auto-section.ts`  |
-| 10  | `library/user-songs.ts`    | 15    | `packages/core/src/library/user-songs.ts`    |
+| #   | Module                        | Tests | Where                                           |
+| --- | ----------------------------- | ----- | ----------------------------------------------- |
+| 1   | `audio/chord.ts`              | 12    | `packages/core/src/audio/chord.ts`              |
+| 2   | `audio/yin.ts`                | 16    | `packages/core/src/audio/yin.ts`                |
+| 3   | `audio/spectral.ts`           | 18    | `packages/core/src/audio/spectral.ts`           |
+| 4   | `audio/harmonicity.ts`        | 6     | `packages/core/src/audio/harmonicity.ts`        |
+| 5   | `audio/audio-context.ts`      | 8     | `packages/core/src/audio/audio-context.ts`      |
+| 6   | `audio/agc.ts`                | 13    | `packages/core/src/audio/agc.ts`                |
+| 7   | `audio/onset.ts`              | 11    | `packages/core/src/audio/onset.ts`              |
+| 8   | `library/musicxml-meta.ts`    | 4     | `packages/core/src/library/musicxml-meta.ts`    |
+| 9   | `library/auto-section.ts`     | 11    | `packages/core/src/library/auto-section.ts`     |
+| 10  | `library/user-songs.ts`       | 15    | `packages/core/src/library/user-songs.ts`       |
+| 11  | `state/session-confidence.ts` | 17    | `packages/core/src/state/session-confidence.ts` |
 
-**Status: 117/117 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 134/134 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/session-confidence.ts`
-
-**What**: Move `updateSessionConfidence` + the ring-buffer.
-
-**Why**: First state-machine extraction; sets pattern for the others.
-
-**Acceptance**:
-
-- [ ] State machine is a pure reducer: `(state, sample) => newState`
-- [ ] Side effects (DOM, particle spawn) move to the caller
-- [ ] Tests for each transition: waiting→warmup, warmup→waiting (drop),
-      warmup→performing (warm-up complete), performing→warmup (drop), goal
-      celebration
-
-**Playbook**: extract-module + state-machine note. **Est**: 150 + 250 tests.
-
-## 2. Extract `state/quality.ts`
+## 1. Extract `state/quality.ts`
 
 **What**: Move `computeRhythmScore`, `computeDynamicsScore`,
 `computeStabilityScore`, `updateQualityScores`, `updateGrowthTrend`,
@@ -65,7 +50,7 @@ clean.**
 
 **Playbook**: extract-module. **Est**: 150 + 200 tests.
 
-## 3. Extract `i18n/index.ts`
+## 2. Extract `i18n/index.ts`
 
 **What**: Move `T_STRINGS` + `t()` + `applyI18n` (split: applyI18n stays in
 DOM-coupled web shell, `t()` and table go to core).
@@ -83,7 +68,7 @@ DOM-decoupled extraction.
 
 **Est**: 100 + 80 tests.
 
-## 4. Extract `config.ts`
+## 3. Extract `config.ts`
 
 **What**: Move the `CONFIG` object literal.
 

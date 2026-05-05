@@ -90,3 +90,21 @@ export type {
   ParseBlobOptions,
   MakeSongOptions,
 } from './library/user-songs';
+
+// === State: session confidence (waiting → warmup → performing) ===
+export {
+  SESSION_RING_CAP,
+  initSessionConfidenceState,
+  resetSessionConfidence,
+  stepSessionConfidence,
+  deriveSessionUIHint,
+} from './state/session-confidence';
+export type {
+  SessionPhase,
+  SessionConfidenceState,
+  SessionConfidenceOptions,
+  SessionEvent,
+  SessionStepResult,
+  SessionUIHint,
+  SessionUIStrings,
+} from './state/session-confidence';
