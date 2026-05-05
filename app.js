@@ -3810,17 +3810,17 @@
 
     // Song's quarter-note duration at the kid's chosen tempo. Falls back to a
     // gentle 72 BPM @ 60% if the score hasn't yielded a tempo yet.
+    // practiceBeatMs / count-in derivation — Phase 0b: delegated to @piano/core.
     function practiceBeatMs() {
-      const bpm = (currentSong && currentSong.bpm) || 72;
-      const tempoPct = practice.tempoPct || 100;
-      return 60000 / bpm * (100 / tempoPct);
+      return PianoCore.practiceBeatMs(
+        (currentSong && currentSong.bpm) || 72,
+        practice.tempoPct || 100
+      );
     }
     function recomputePracticeTimings() {
-      const beatMs = practiceBeatMs();
-      // 4 beats — standard musical count-in. Clamped so very fast/slow pieces
-      // still get a sane lane and pre-roll.
-      COUNT_IN_MS = Math.round(Math.max(2400, Math.min(7000, 4 * beatMs)));
-      LANE_LOOKAHEAD_MS = COUNT_IN_MS;
+      const t = PianoCore.computePracticeTimings(practiceBeatMs());
+      COUNT_IN_MS = t.countInMs;
+      LANE_LOOKAHEAD_MS = t.laneLookaheadMs;
     }
     // Asymmetric hit windows: early presses are punished much harder than late
     // ones. Pedagogical reason — kids should learn to *wait for the beat*, not

@@ -9,6 +9,8 @@ import {
   computeStars,
   resolveResultTier,
   computeUnlocks,
+  practiceBeatMs,
+  computePracticeTimings,
   type UnlockComputeInput,
   practiceElapsedMs,
   STAR_TIERS,
@@ -586,3 +588,64 @@ function mkNote(overrides: Partial<PracticeNote>): PracticeNote {
     ...overrides,
   };
 }
+
+// =====================================================================
+// practiceBeatMs / computePracticeTimings
+// =====================================================================
+
+describe('practiceBeatMs', () => {
+  it('60000 / bpm at 100% tempo (1 beat = 1 second at 60 BPM)', () => {
+    expect(practiceBeatMs(60, 100)).toBe(1000);
+    expect(practiceBeatMs(120, 100)).toBe(500);
+  });
+
+  it('scales by tempoPct (50% tempo → twice as long per beat)', () => {
+    expect(practiceBeatMs(120, 50)).toBe(1000);
+    expect(practiceBeatMs(120, 200)).toBe(250);
+  });
+
+  it('falls back to 72 BPM for non-positive bpm', () => {
+    expect(practiceBeatMs(0, 100)).toBe(60000 / 72);
+    expect(practiceBeatMs(-30, 100)).toBe(60000 / 72);
+  });
+
+  it('falls back to 100% tempo for non-positive tempoPct', () => {
+    expect(practiceBeatMs(120, 0)).toBe(500);
+    expect(practiceBeatMs(120, -50)).toBe(500);
+  });
+});
+
+describe('computePracticeTimings', () => {
+  it('4 × beatMs by default, with lookahead = countIn', () => {
+    const out = computePracticeTimings(500); // 120 BPM beat
+    expect(out.countInMs).toBe(2400); // 4 × 500 = 2000 → clamped up to 2400 floor
+    expect(out.laneLookaheadMs).toBe(out.countInMs);
+  });
+
+  it('clamps count-in below the floor (very fast tempo)', () => {
+    expect(computePracticeTimings(100).countInMs).toBe(2400); // 4×100=400 → floor
+  });
+
+  it('clamps count-in above the ceiling (very slow tempo)', () => {
+    expect(computePracticeTimings(2500).countInMs).toBe(7000); // 4×2500=10000 → cap
+  });
+
+  it('honors custom beat count', () => {
+    const out = computePracticeTimings(500, { countInBeats: 2 });
+    expect(out.countInMs).toBe(2400); // 2×500=1000 → still floored
+  });
+
+  it('honors custom min / max', () => {
+    const out = computePracticeTimings(500, {
+      minCountInMs: 1000,
+      maxCountInMs: 10000,
+    });
+    expect(out.countInMs).toBe(2000); // 4×500 within [1000, 10000]
+  });
+
+  it('rounds to integer ms', () => {
+    const out = computePracticeTimings(333.333);
+    // 4×333.333 = 1333.33; below floor 2400 → clamped to 2400
+    expect(Number.isInteger(out.countInMs)).toBe(true);
+  });
+});

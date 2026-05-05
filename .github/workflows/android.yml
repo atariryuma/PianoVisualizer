@@ -18,6 +18,10 @@ on:
       - "packages/**"
   workflow_dispatch:
 
+# See web.yml for the rationale on this flag.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     name: Build debug APK
@@ -42,7 +46,7 @@ jobs:
       - if: steps.check.outputs.skip == 'false'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - if: steps.check.outputs.skip == 'false'

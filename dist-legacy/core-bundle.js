@@ -71,6 +71,7 @@ var PianoCore = (() => {
     computeDynamicsScore: () => computeDynamicsScore,
     computeHandRanges: () => computeHandRanges,
     computeHarmonicity: () => computeHarmonicity,
+    computePracticeTimings: () => computePracticeTimings,
     computeRhythmScore: () => computeRhythmScore,
     computeSpectralCentroid: () => computeSpectralCentroid,
     computeSpectralCrest: () => computeSpectralCrest,
@@ -127,6 +128,7 @@ var PianoCore = (() => {
     parseUserSongFromBlob: () => parseUserSongFromBlob,
     pickAudioOffsetMs: () => pickAudioOffsetMs,
     pickTier: () => pickTier,
+    practiceBeatMs: () => practiceBeatMs,
     practiceElapsedMs: () => practiceElapsedMs,
     project3D: () => project3D,
     recoverAudioContext: () => recoverAudioContext,
@@ -2500,6 +2502,18 @@ var PianoCore = (() => {
       streakDays = input.streakCount;
     }
     return { unlockedTempo, unlockedSecKey, streakDays };
+  }
+  function practiceBeatMs(bpm, tempoPct) {
+    const safeBpm = bpm > 0 ? bpm : 72;
+    const safeTempo = tempoPct > 0 ? tempoPct : 100;
+    return 6e4 / safeBpm * (100 / safeTempo);
+  }
+  function computePracticeTimings(beatMs, opts = {}) {
+    const beats = opts.countInBeats ?? 4;
+    const lo = opts.minCountInMs ?? 2400;
+    const hi = opts.maxCountInMs ?? 7e3;
+    const countInMs = Math.round(Math.max(lo, Math.min(hi, beats * beatMs)));
+    return { countInMs, laneLookaheadMs: countInMs };
   }
   function practiceElapsedMs(s, realElapsed, countInMs) {
     if (s.mode === "guided") {
