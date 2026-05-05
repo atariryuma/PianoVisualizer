@@ -4689,38 +4689,11 @@
       lastChordTimeMs: 0,
     };
 
-    // Triad/seventh dictionary keyed by sorted pitch-class intervals from the bass note.
-    // Root-position only. Inversions are out of scope — keeps detection cheap & honest.
-    const CHORD_DICT = {
-      '0,4,7': '',     '0,3,7': 'm',
-      '0,4,8': 'aug',  '0,3,6': 'dim',
-      '0,4,7,10': '7', '0,4,7,11': 'maj7',
-      '0,3,7,10': 'm7','0,3,6,9': 'dim7',
-      '0,5,7': 'sus4', '0,2,7': 'sus2'
-    };
-
-    // Pitch-class buckets reused across calls — chord detection runs on every
-    // MIDI noteOn, and a 16th-note run can fire ~12×/sec. Avoiding the per-call
-    // Set/sort/spread allocations keeps the GC quiet during dense passages.
-    const _chordPCBuckets = new Uint8Array(12);
-    function detectChord(midis) {
-      if (midis.length < 3) return null;
-      let root = 128;
-      for (let i = 0; i < midis.length; i++) {
-        if (midis[i] < root) root = midis[i];
-      }
-      _chordPCBuckets.fill(0);
-      for (let i = 0; i < midis.length; i++) {
-        _chordPCBuckets[((midis[i] - root) % 12 + 12) % 12] = 1;
-      }
-      let sig = '';
-      for (let pc = 0; pc < 12; pc++) {
-        if (_chordPCBuckets[pc]) sig += (sig ? ',' : '') + pc;
-      }
-      const quality = CHORD_DICT[sig];
-      if (quality === undefined) return null;
-      return CONFIG.NOTE_NAMES[root % 12] + quality;
-    }
+    // Chord detection — Phase 0b.3: delegated to @piano/core's drop-in
+    // implementation (same algorithm, same NOTE_NAMES table, same CHORD_DICT).
+    // PianoCore is loaded via <script> in index.html before app.js, so it's
+    // safe to alias at parse time.
+    const detectChord = PianoCore.detectChord;
 
     function midiToScreenX(midiNum) {
       return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
