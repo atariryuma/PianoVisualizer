@@ -1,0 +1,178 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  createAudioContext,
+  buildAudioGraph,
+  recoverAudioContext,
+  AUDIO_SAMPLE_RATE,
+} from '../src/audio/audio-context';
+import {
+  StubAudioContext,
+  StubGainNode,
+  StubAnalyserNode,
+  fakeMediaStream,
+  clearRecordedConnections,
+  getRecordedConnections,
+} from './_fixtures/audio-context-stub';
+
+beforeEach(() => clearRecordedConnections());
+
+describe('createAudioContext', () => {
+  it('uses provided Ctor and passes 48 kHz options', () => {
+    const ctx = createAudioContext(StubAudioContext);
+    expect(ctx.sampleRate).toBe(AUDIO_SAMPLE_RATE);
+  });
+
+  it('falls back to bare ctor when options are rejected', () => {
+    class StrictCtor extends StubAudioContext {
+      constructor(opts?: any) {
+        if (opts) throw new TypeError('options not supported');
+        super(undefined);
+        this.sampleRate = 44100;
+      }
+    }
+    const ctx = createAudioContext(StrictCtor as any);
+    expect(ctx.sampleRate).toBe(44100); // fallback path
+  });
+
+  it('throws if no Ctor available', () => {
+    // Save + clear globals.
+    const saveAC = (globalThis as any).AudioContext;
+    const saveWk = (globalThis as any).webkitAudioContext;
+    delete (globalThis as any).AudioContext;
+    delete (globalThis as any).webkitAudioContext;
+    try {
+      expect(() => createAudioContext()).toThrow(/AudioContext.*not available/);
+    } finally {
+      if (saveAC) (globalThis as any).AudioContext = saveAC;
+      if (saveWk) (globalThis as any).webkitAudioContext = saveWk;
+    }
+  });
+});
+
+describe('buildAudioGraph', () => {
+  it('wires gain → both analysers', () => {
+    const ctx = new StubAudioContext({ sampleRate: 48000 });
+    const g = buildAudioGraph(ctx, {
+      fftSize: 4096,
+      smoothing: 0.82,
+      onsetFftSize: 2048,
+      onsetSmoothing: 0.15,
+    });
+    expect(g.gain).toBeInstanceOf(StubGainNode);
+    expect(g.mainAnalyser).toBeInstanceOf(StubAnalyserNode);
+    expect(g.onsetAnalyser).toBeInstanceOf(StubAnalyserNode);
+    expect(g.mainAnalyser.fftSize).toBe(4096);
+    expect(g.mainAnalyser.smoothingTimeConstant).toBe(0.82);
+    expect(g.onsetAnalyser.fftSize).toBe(2048);
+    expect(g.onsetAnalyser.smoothingTimeConstant).toBe(0.15);
+
+    const conns = getRecordedConnections();
+    // gain → main, gain → onset
+    expect(conns).toHaveLength(2);
+    expect(conns[0].from).toBe(g.gain);
+    expect(conns[0].to).toBe(g.mainAnalyser);
+    expect(conns[1].to).toBe(g.onsetAnalyser);
+  });
+
+  it('allocates Uint8/Float32 arrays sized to the analysers', () => {
+    const ctx = new StubAudioContext();
+    const g = buildAudioGraph(ctx, {
+      fftSize: 2048,
+      smoothing: 0.8,
+      onsetFftSize: 1024,
+      onsetSmoothing: 0.2,
+    });
+    expect(g.dataArray.length).toBe(1024); // frequencyBinCount = fftSize/2
+    expect(g.freqArray.length).toBe(2048);
+    expect(g.onsetDataArray.length).toBe(512);
+  });
+
+  it('wires mic source → gain when stream is active', () => {
+    const ctx = new StubAudioContext();
+    const g = buildAudioGraph(ctx, {
+      fftSize: 2048,
+      smoothing: 0.8,
+      onsetFftSize: 1024,
+      onsetSmoothing: 0.2,
+      micStream: fakeMediaStream(true),
+    });
+    expect(g.micSource).not.toBeNull();
+    const conns = getRecordedConnections();
+    // gain→main, gain→onset, micSource→gain
+    expect(conns.length).toBe(3);
+    const micWiring = conns.find((c) => c.to === g.gain);
+    expect(micWiring).toBeDefined();
+  });
+
+  it('skips mic wiring when stream is inactive', () => {
+    const ctx = new StubAudioContext();
+    const g = buildAudioGraph(ctx, {
+      fftSize: 2048,
+      smoothing: 0.8,
+      onsetFftSize: 1024,
+      onsetSmoothing: 0.2,
+      micStream: fakeMediaStream(false),
+    });
+    expect(g.micSource).toBeNull();
+  });
+
+  it('sets initial gain via setValueAtTime', () => {
+    const ctx = new StubAudioContext();
+    const g = buildAudioGraph(ctx, {
+      fftSize: 2048,
+      smoothing: 0.8,
+      onsetFftSize: 1024,
+      onsetSmoothing: 0.2,
+      initialGain: 0, // mic suspended
+    });
+    expect(g.gain.gain.value).toBe(0);
+  });
+});
+
+describe('recoverAudioContext', () => {
+  it('closes the prev context and returns a fresh graph', async () => {
+    const prevCtx = new StubAudioContext({ sampleRate: 48000 });
+    const prev = buildAudioGraph(prevCtx, {
+      fftSize: 4096,
+      smoothing: 0.82,
+      onsetFftSize: 2048,
+      onsetSmoothing: 0.15,
+    });
+    clearRecordedConnections();
+
+    const next = await recoverAudioContext(
+      prev,
+      { fftSize: 4096, smoothing: 0.82, onsetFftSize: 2048, onsetSmoothing: 0.15 },
+      StubAudioContext
+    );
+
+    // Old ctx should have been closed.
+    expect(prevCtx.closeCalls).toBe(1);
+    // New ctx is a fresh StubAudioContext.
+    expect(next.ctx).not.toBe(prev.ctx);
+    expect(next.ctx.state).toBe('running'); // resume() was awaited
+    // Wiring re-established (gain → main, gain → onset).
+    expect(getRecordedConnections().length).toBe(2);
+  });
+
+  it('survives prev.ctx.close() throwing', async () => {
+    class ThrowingClose extends StubAudioContext {
+      override async close(): Promise<void> {
+        throw new Error('already closed');
+      }
+    }
+    const prevCtx = new ThrowingClose();
+    const prev = buildAudioGraph(prevCtx, {
+      fftSize: 2048,
+      smoothing: 0.8,
+      onsetFftSize: 1024,
+      onsetSmoothing: 0.2,
+    });
+    const next = await recoverAudioContext(
+      prev,
+      { fftSize: 2048, smoothing: 0.8, onsetFftSize: 1024, onsetSmoothing: 0.2 },
+      StubAudioContext
+    );
+    expect(next.ctx).not.toBe(prevCtx);
+  });
+});

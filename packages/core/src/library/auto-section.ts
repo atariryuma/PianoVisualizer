@@ -1,0 +1,171 @@
+// Auto-section detection for user-added MusicXML scores.
+//
+// Always emits exactly 3 sections (A1 / B / A2) so the unlock plumbing
+// (SECTION_IDS, songProg().unlockedSections) doesn't need a per-song schema
+// migration. Boundary candidates are scored by musical priority:
+//
+//   1. <rehearsal> marks      — composer/editor's explicit roadmap
+//   2. Double bar lines       — strongest structural hint after rehearsal marks
+//   3. Forward repeat starts  — section boundary by convention
+//   4. Key signature changes  — modulations often == new section
+//   5. Time signature changes — meter shift often == new section
+//   6. Length-thirds          — last-resort fallback
+//
+// Best candidate near each ideal-third position wins, with a per-measure
+// distance penalty.
+
+export interface SectionDef {
+  id: 'A1' | 'B' | 'A2';
+  nameKey: 'userSecA1' | 'userSecB' | 'userSecA2';
+  descKey: 'userSecA1desc' | 'userSecBdesc' | 'userSecA2desc';
+  startMeasure: number;
+  isBoss: boolean;
+}
+
+export interface SectionCandidates {
+  rehearsal: number[];
+  doubleBar: number[];
+  repeatFwd: number[];
+  keyChange: number[];
+  timeChange: number[];
+  total: number;
+}
+
+export interface AutoSectionOptions {
+  parser?: { parseFromString(text: string, type: string): Document };
+}
+
+/**
+ * Walk MusicXML and collect all candidate boundary measures, keyed by signal type.
+ * Returned indices are 0-based source-measure indices.
+ */
+export function collectSectionCandidates(
+  xmlText: string,
+  opts: AutoSectionOptions = {}
+): SectionCandidates {
+  const ParserCtor = opts.parser ?? (typeof DOMParser !== 'undefined' ? new DOMParser() : null);
+  if (!ParserCtor) throw new Error('DOMParser not available; pass opts.parser');
+  const parser = 'parseFromString' in ParserCtor ? ParserCtor : new (ParserCtor as any)();
+  const dom = parser.parseFromString(xmlText, 'text/xml');
+  const out: SectionCandidates = {
+    rehearsal: [],
+    doubleBar: [],
+    repeatFwd: [],
+    keyChange: [],
+    timeChange: [],
+    total: 0,
+  };
+  const partEls = dom.querySelectorAll('part');
+  if (partEls.length === 0) return out;
+
+  const measures = partEls[0].querySelectorAll('measure');
+  out.total = measures.length;
+
+  let prevKey: string | null = null;
+  let prevTime: string | null = null;
+
+  for (let i = 0; i < measures.length; i++) {
+    const m = measures[i];
+
+    if (m.querySelector('direction-type > rehearsal')) out.rehearsal.push(i);
+
+    const barlines = m.querySelectorAll('barline') as NodeListOf<Element>;
+    for (let bi = 0; bi < barlines.length; bi++) {
+      const bl = barlines[bi];
+      const style = bl.querySelector('bar-style')?.textContent ?? '';
+      if (style === 'light-light') {
+        const loc = bl.getAttribute('location') ?? 'right';
+        const idx = loc === 'right' ? i + 1 : i;
+        if (idx > 0 && idx < measures.length) out.doubleBar.push(idx);
+      }
+      const repeats = bl.querySelectorAll('repeat') as NodeListOf<Element>;
+      for (let ri = 0; ri < repeats.length; ri++) {
+        if (repeats[ri].getAttribute('direction') === 'forward') out.repeatFwd.push(i);
+      }
+    }
+
+    const keyEl = m.querySelector('attributes > key > fifths');
+    if (keyEl) {
+      const k = keyEl.textContent ?? '';
+      if (prevKey != null && k !== prevKey) out.keyChange.push(i);
+      prevKey = k;
+    }
+
+    const timeEl = m.querySelector('attributes > time');
+    if (timeEl) {
+      const sig =
+        (timeEl.querySelector('beats')?.textContent ?? '') +
+        '/' +
+        (timeEl.querySelector('beat-type')?.textContent ?? '');
+      if (prevTime != null && sig !== prevTime) out.timeChange.push(i);
+      prevTime = sig;
+    }
+  }
+  return out;
+}
+
+const CANDIDATE_SCORES = {
+  rehearsal: 100,
+  doubleBar: 80,
+  repeatFwd: 60,
+  keyChange: 50,
+  timeChange: 40,
+} as const;
+const DISTANCE_PENALTY_PER_MEASURE = 4;
+
+/**
+ * Pick A1/B/A2 boundaries from the MusicXML text.
+ *
+ * @param xmlText Raw MusicXML.
+ * @param measureCount Optional override; if omitted, uses the count from the first part.
+ */
+export function autoSectionDefs(
+  xmlText: string,
+  measureCount?: number,
+  opts: AutoSectionOptions = {}
+): SectionDef[] {
+  const cand = collectSectionCandidates(xmlText, opts);
+  const total = Math.max(1, measureCount ?? cand.total);
+
+  const pool: Array<{ idx: number; score: number }> = [];
+  const pushAll = (idxs: number[], score: number) => {
+    for (const i of idxs) {
+      if (i > 0 && i < total) pool.push({ idx: i, score });
+    }
+  };
+  pushAll(cand.rehearsal, CANDIDATE_SCORES.rehearsal);
+  pushAll(cand.doubleBar, CANDIDATE_SCORES.doubleBar);
+  pushAll(cand.repeatFwd, CANDIDATE_SCORES.repeatFwd);
+  pushAll(cand.keyChange, CANDIDATE_SCORES.keyChange);
+  pushAll(cand.timeChange, CANDIDATE_SCORES.timeChange);
+
+  const idealB1 = Math.floor(total / 3);
+  const idealB2 = Math.floor((2 * total) / 3);
+  const tol = Math.max(2, Math.floor(total * 0.25));
+
+  const pickNear = (target: number, exclude: number): number => {
+    let best = target;
+    let bestScore = -Infinity;
+    for (const c of pool) {
+      if (c.idx === exclude) continue;
+      const dist = Math.abs(c.idx - target);
+      if (dist > tol) continue;
+      const score = c.score - dist * DISTANCE_PENALTY_PER_MEASURE;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c.idx;
+      }
+    }
+    return best;
+  };
+
+  const b1 = pickNear(idealB1, -1);
+  let b2 = pickNear(idealB2, b1);
+  if (b2 <= b1) b2 = Math.min(total - 1, b1 + 1);
+
+  return [
+    { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: 0, isBoss: false },
+    { id: 'B', nameKey: 'userSecB', descKey: 'userSecBdesc', startMeasure: b1, isBoss: false },
+    { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', startMeasure: b2, isBoss: true },
+  ];
+}
