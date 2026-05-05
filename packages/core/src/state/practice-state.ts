@@ -508,6 +508,51 @@ export function computeUnlocks(input: UnlockComputeInput): UnlockComputeResult {
 }
 
 // =====================================================================
+// Tempo / count-in / lane-lookahead derivations
+// =====================================================================
+
+/** Milliseconds per beat at the given BPM and tempo percent.
+ *  Caller resolves bpm (defaults to 72 in legacy app.js) and tempoPct
+ *  (defaults to 100). Pure: just unit math. */
+export function practiceBeatMs(bpm: number, tempoPct: number): number {
+  const safeBpm = bpm > 0 ? bpm : 72;
+  const safeTempo = tempoPct > 0 ? tempoPct : 100;
+  return (60000 / safeBpm) * (100 / safeTempo);
+}
+
+export interface PracticeTimings {
+  /** Count-in length in ms — clamped to a usable range so very slow songs
+   *  don't have a 30-second pre-roll and very fast ones aren't rushed. */
+  countInMs: number;
+  /** How far ahead in time the lane shows. We mirror count-in so falling
+   *  notes traverse the lane during the count-in animation. */
+  laneLookaheadMs: number;
+}
+
+export interface PracticeTimingOptions {
+  /** Lower clamp on count-in. Default 2400 ms (~4 beats at 100 BPM). */
+  minCountInMs?: number;
+  /** Upper clamp on count-in. Default 7000 ms. */
+  maxCountInMs?: number;
+  /** Beats counted in. Default 4 (standard musical count-in). */
+  countInBeats?: number;
+}
+
+/** Derive count-in + lane-lookahead from a beat length. Used by
+ *  recomputePracticeTimings() in the legacy app whenever tempoPct or
+ *  the song's BPM changes. */
+export function computePracticeTimings(
+  beatMs: number,
+  opts: PracticeTimingOptions = {}
+): PracticeTimings {
+  const beats = opts.countInBeats ?? 4;
+  const lo = opts.minCountInMs ?? 2400;
+  const hi = opts.maxCountInMs ?? 7000;
+  const countInMs = Math.round(Math.max(lo, Math.min(hi, beats * beatMs)));
+  return { countInMs, laneLookaheadMs: countInMs };
+}
+
+// =====================================================================
 // Clock
 // =====================================================================
 

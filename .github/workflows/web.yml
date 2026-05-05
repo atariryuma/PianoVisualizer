@@ -12,6 +12,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Opt the GitHub Actions JS runner into Node 24 ahead of the default flip
+# (currently 2026-06-02). Without this, the runner emits a deprecation
+# warning on every job because actions/checkout @ v4 + actions/setup-node
+# @ v4 still execute their JS shims on Node 20 internally.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # Allow only one Pages deploy at a time per ref; cancel in-progress runs
 # of the same ref so the latest push wins instead of stale ones racing.
 concurrency:
@@ -28,7 +35,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Verify app.js parses
         run: node --check app.js
@@ -52,7 +59,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install

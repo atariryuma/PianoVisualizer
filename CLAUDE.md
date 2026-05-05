@@ -18,6 +18,15 @@ This repo is mid-migration from a single-file HTML build (legacy, still
 authoritative as of 2026-05-05) to a Vite + Capacitor monorepo (scaffold in
 place, extraction in progress).
 
+**Phase 0b extraction status (2026-05-05)**: 570+ tests across 33+ test files;
+pure logic for audio detection, render layers, practice + free-play state
+machines, library catalog + section assembly, i18n, and result-tier / unlock
+gating now lives in `@piano/core`. Legacy `app.js` (~6400 lines) delegates each
+via `PianoCore.*`. Major remaining chunks: Vite shell at `packages/web` made a
+real entry, legacy `midiState` consolidation with
+`@piano/core/state/midi-state`, and OSMD adapter design for cursor / render
+wiring.
+
 ```text
 piano-visualizer/
 ├── index.html              # ★ Authoritative web app entry (LAN HTTPS server)

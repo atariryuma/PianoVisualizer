@@ -278,6 +278,8 @@ export {
   computeStars,
   resolveResultTier,
   computeUnlocks,
+  practiceBeatMs,
+  computePracticeTimings,
   practiceElapsedMs,
 } from './state/practice-state';
 export type {
@@ -296,6 +298,8 @@ export type {
   StarTier,
   UnlockComputeInput,
   UnlockComputeResult,
+  PracticeTimings,
+  PracticeTimingOptions,
 } from './state/practice-state';
 
 // === State: quality scoring + coaching feedback ===
