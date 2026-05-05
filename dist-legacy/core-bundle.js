@@ -2413,7 +2413,7 @@ var PianoCore = (() => {
       jp: "\u97F3\u968E\u8272\u30E2\u30FC\u30C9\uFF08\u97F3\u3054\u3068\u306B\u8272\u304C\u5909\u308F\u308B\uFF09"
     },
     synesthesiaTitle: { en: "Synesthesia mode", jp: "\u97F3\u968E\u8272\u30E2\u30FC\u30C9" },
-    timingCalibration: { en: "Timing Calibration", jp: "\u30BF\u30A4\u30DF\u30F3\u30B0\u88DC\u6B63" },
+    timingCalibration: { en: "Timing Calibration", jp: "\u30BF\u30A4\u30DF\u30F3\u30B0\u8ABF\u6574" },
     audioOffset: { en: "Audio offset", jp: "\u97F3\u3068\u753B\u9762\u306E\u305A\u308C\u88DC\u6B63" },
     audioOffsetHelp: {
       en: `If you play on the beat but it's judged "late", raise the number. If your press is rejected as "early", lower it.`,
@@ -2528,8 +2528,8 @@ var PianoCore = (() => {
     tryAgainBtn: { en: "Try again", jp: "\u3082\u3046\u4E00\u5EA6" },
     nextBtn: { en: "Next \u2192", jp: "\u3064\u304E\u3078 \u2192" },
     // Hit chips / dynamic
-    perfect: { en: "Perfect!", jp: "\u30D1\u30FC\u30D5\u30A7\u30AF\u30C8\uFF01" },
-    nice: { en: "Nice!", jp: "\u30CA\u30A4\u30B9\uFF01" },
+    perfect: { en: "Perfect!" },
+    nice: { en: "Nice!" },
     missChip: { en: "Miss", jp: "\u30DF\u30B9" },
     youPlayedFmt: { en: "You played: {v}", jp: "\u5F3E\u3044\u305F\u97F3: {v}" },
     tooShort: { en: "\u23F1 Too short", jp: "\u23F1 \u77ED\u3044" },
@@ -2537,8 +2537,7 @@ var PianoCore = (() => {
     // Lane labels
     laneLeft: { en: "LEFT", jp: "\u5DE6\u624B" },
     laneRight: { en: "RIGHT", jp: "\u53F3\u624B" },
-    // Count-in
-    countInGo: { en: "GO!", jp: "\u30B9\u30BF\u30FC\u30C8\uFF01" },
+    countInGo: { en: "GO!" },
     // Stages
     stage1: { en: "Awakening", jp: "\u3081\u3056\u3081" },
     stage2: { en: "Blooming", jp: "\u306F\u306A\u3072\u3089\u304F" },
@@ -2624,8 +2623,7 @@ var PianoCore = (() => {
     // Result-screen growth chart
     growthChartFmt: { en: "Growth ({v} attempts)", jp: "\u6210\u9577\u30B0\u30E9\u30D5 ({v}\u56DE)" },
     trendSimilar: { en: "\u2192 similar", jp: "\u2192 \u304A\u306A\u3058\u304F\u3089\u3044" },
-    // Sustain pedal label (drawn on the keyboard when pedal is held)
-    sustainLabel: { en: "SUSTAIN", jp: "\u30B5\u30B9\u30C6\u30A4\u30F3" },
+    sustainLabel: { en: "SUSTAIN" },
     // Free-play HUD (session status while playing without a song)
     listeningFmt: { en: "{p}Listening{p}", jp: "{p}\u304D\u3044\u3066\u308B\u3088{p}" },
     goalCelebrate: { en: "\u2728 Goal reached! Keep it up! \u2728", jp: "\u2728 \u76EE\u6A19\u9054\u6210\uFF01\u3053\u306E\u8ABF\u5B50\uFF01 \u2728" },
@@ -2682,7 +2680,7 @@ var PianoCore = (() => {
     questClearedFmt: { en: "\u2705 {v} CLEARED!", jp: "\u2705 {v} \u30AF\u30EA\u30A2\uFF01" },
     // Session summary (post free-play)
     sumTitle: { en: "\u{1F3B9} Session Results", jp: "\u{1F3B9} \u30BB\u30C3\u30B7\u30E7\u30F3\u7D50\u679C" },
-    sumBestCombo: { en: "\u{1F3B5} Best Combo", jp: "\u{1F3B5} \u6700\u9AD8\u30B3\u30F3\u30DC" },
+    sumBestCombo: { en: "\u{1F3B5} Best Combo", jp: "\u{1F3B5} \u30D9\u30B9\u30C8\u30B3\u30F3\u30DC" },
     sumStageReached: { en: "\u{1F3D4} Stage Reached", jp: "\u{1F3D4} \u5230\u9054\u30B9\u30C6\u30FC\u30B8" },
     sumPlayTime: { en: "\u23F1 Play Time", jp: "\u23F1 \u6F14\u594F\u6642\u9593" },
     sumQuests: { en: "\u2B50 Quests", jp: "\u2B50 \u30AF\u30A8\u30B9\u30C8" },
@@ -2693,7 +2691,7 @@ var PianoCore = (() => {
     addSongTitle: { en: "Add a song", jp: "\u66F2\u3092\u8FFD\u52A0" },
     addSongTabLibrary: { en: "\u{1F4DA} Library", jp: "\u{1F4DA} \u30E9\u30A4\u30D6\u30E9\u30EA" },
     addSongTabFile: { en: "\u{1F4C1} File", jp: "\u{1F4C1} \u30D5\u30A1\u30A4\u30EB" },
-    addSongTabUrl: { en: "\u{1F517} URL", jp: "\u{1F517} URL" },
+    addSongTabUrl: { en: "\u{1F517} URL" },
     addSongLibraryHelp: {
       en: "Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.",
       jp: "MuseTrainer \u306E\u30D1\u30D6\u30EA\u30C3\u30AF\u30C9\u30E1\u30A4\u30F3\u66F2\uFF08jsDelivr\u7D4C\u7531\uFF09\u3002\u30BF\u30C3\u30D7\u3067\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3002"
@@ -2710,10 +2708,7 @@ var PianoCore = (() => {
       en: "I confirm this score is public domain or my own work",
       jp: "\u30D1\u30D6\u30EA\u30C3\u30AF\u30C9\u30E1\u30A4\u30F3\u307E\u305F\u306F\u81EA\u4F5C\u306E\u66F2\u3067\u3059"
     },
-    addSongUrlPlaceholder: {
-      en: "https://cdn.jsdelivr.net/.../score.mxl",
-      jp: "https://cdn.jsdelivr.net/.../score.mxl"
-    },
+    addSongUrlPlaceholder: { en: "https://cdn.jsdelivr.net/.../score.mxl" },
     addSongUrlHelp: {
       en: "Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).",
       jp: ".mxl / .musicxml \u306E\u76F4\u30EA\u30F3\u30AF\uFF08CORS\u5BFE\u5FDCURL\u3001\u4F8B: jsDelivr\uFF09\u3002"

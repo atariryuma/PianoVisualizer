@@ -1,7 +1,9 @@
 // T_STRINGS — the translation table for practice-flow UI strings.
 //
 // Conventions:
-//   - Every key has both `en` and `jp`. Adding one without the other fails review.
+//   - Every key has `en`. `jp` is optional — omit it ONLY for true loanwords
+//     that read identically in JP context (Perfect, Nice, GO!, SUSTAIN, URL).
+//     `translate()` falls back to `en` when `jp` is missing.
 //   - Keys ending in `Fmt` use {placeholder} interpolation.
 //   - Free-play / quest / dev-only strings stay English (they're intentionally not in here).
 //
@@ -21,7 +23,7 @@ export const T_STRINGS: TranslationTable = {
     jp: '音階色モード（音ごとに色が変わる）',
   },
   synesthesiaTitle: { en: 'Synesthesia mode', jp: '音階色モード' },
-  timingCalibration: { en: 'Timing Calibration', jp: 'タイミング補正' },
+  timingCalibration: { en: 'Timing Calibration', jp: 'タイミング調整' },
   audioOffset: { en: 'Audio offset', jp: '音と画面のずれ補正' },
   audioOffsetHelp: {
     en: 'If you play on the beat but it\'s judged "late", raise the number. If your press is rejected as "early", lower it.',
@@ -136,8 +138,8 @@ export const T_STRINGS: TranslationTable = {
   tryAgainBtn: { en: 'Try again', jp: 'もう一度' },
   nextBtn: { en: 'Next →', jp: 'つぎへ →' },
   // Hit chips / dynamic
-  perfect: { en: 'Perfect!', jp: 'パーフェクト！' },
-  nice: { en: 'Nice!', jp: 'ナイス！' },
+  perfect: { en: 'Perfect!' },
+  nice: { en: 'Nice!' },
   missChip: { en: 'Miss', jp: 'ミス' },
   youPlayedFmt: { en: 'You played: {v}', jp: '弾いた音: {v}' },
   tooShort: { en: '⏱ Too short', jp: '⏱ 短い' },
@@ -145,8 +147,7 @@ export const T_STRINGS: TranslationTable = {
   // Lane labels
   laneLeft: { en: 'LEFT', jp: '左手' },
   laneRight: { en: 'RIGHT', jp: '右手' },
-  // Count-in
-  countInGo: { en: 'GO!', jp: 'スタート！' },
+  countInGo: { en: 'GO!' },
   // Stages
   stage1: { en: 'Awakening', jp: 'めざめ' },
   stage2: { en: 'Blooming', jp: 'はなひらく' },
@@ -232,8 +233,7 @@ export const T_STRINGS: TranslationTable = {
   // Result-screen growth chart
   growthChartFmt: { en: 'Growth ({v} attempts)', jp: '成長グラフ ({v}回)' },
   trendSimilar: { en: '→ similar', jp: '→ おなじくらい' },
-  // Sustain pedal label (drawn on the keyboard when pedal is held)
-  sustainLabel: { en: 'SUSTAIN', jp: 'サステイン' },
+  sustainLabel: { en: 'SUSTAIN' },
   // Free-play HUD (session status while playing without a song)
   listeningFmt: { en: '{p}Listening{p}', jp: '{p}きいてるよ{p}' },
   goalCelebrate: { en: '✨ Goal reached! Keep it up! ✨', jp: '✨ 目標達成！この調子！ ✨' },
@@ -290,7 +290,7 @@ export const T_STRINGS: TranslationTable = {
   questClearedFmt: { en: '✅ {v} CLEARED!', jp: '✅ {v} クリア！' },
   // Session summary (post free-play)
   sumTitle: { en: '🎹 Session Results', jp: '🎹 セッション結果' },
-  sumBestCombo: { en: '🎵 Best Combo', jp: '🎵 最高コンボ' },
+  sumBestCombo: { en: '🎵 Best Combo', jp: '🎵 ベストコンボ' },
   sumStageReached: { en: '🏔 Stage Reached', jp: '🏔 到達ステージ' },
   sumPlayTime: { en: '⏱ Play Time', jp: '⏱ 演奏時間' },
   sumQuests: { en: '⭐ Quests', jp: '⭐ クエスト' },
@@ -301,7 +301,7 @@ export const T_STRINGS: TranslationTable = {
   addSongTitle: { en: 'Add a song', jp: '曲を追加' },
   addSongTabLibrary: { en: '📚 Library', jp: '📚 ライブラリ' },
   addSongTabFile: { en: '📁 File', jp: '📁 ファイル' },
-  addSongTabUrl: { en: '🔗 URL', jp: '🔗 URL' },
+  addSongTabUrl: { en: '🔗 URL' },
   addSongLibraryHelp: {
     en: 'Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.',
     jp: 'MuseTrainer のパブリックドメイン曲（jsDelivr経由）。タップでダウンロード。',
@@ -318,10 +318,7 @@ export const T_STRINGS: TranslationTable = {
     en: 'I confirm this score is public domain or my own work',
     jp: 'パブリックドメインまたは自作の曲です',
   },
-  addSongUrlPlaceholder: {
-    en: 'https://cdn.jsdelivr.net/.../score.mxl',
-    jp: 'https://cdn.jsdelivr.net/.../score.mxl',
-  },
+  addSongUrlPlaceholder: { en: 'https://cdn.jsdelivr.net/.../score.mxl' },
   addSongUrlHelp: {
     en: 'Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).',
     jp: '.mxl / .musicxml の直リンク（CORS対応URL、例: jsDelivr）。',
