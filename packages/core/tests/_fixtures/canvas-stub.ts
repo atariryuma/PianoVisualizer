@@ -84,6 +84,13 @@ export function makeCanvasStub(): CanvasStub {
     return fakeGradient;
   };
 
+  // measureText returns a coarse 6px-per-character estimate so chip-style
+  // labels can size themselves; tests don't need exact metrics.
+  ctx.measureText = (text: string) => {
+    calls.push({ method: 'measureText', args: [text] });
+    return { width: (text || '').length * 6 } as TextMetrics;
+  };
+
   for (const p of STATE_PROPS) {
     Object.defineProperty(ctx, p, {
       get: () => props[p],

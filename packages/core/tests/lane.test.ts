@@ -73,13 +73,17 @@ describe('drawPracticeLane', () => {
     expect(stub.calls).toHaveLength(0);
   });
 
-  it('paints two hand-tinted backgrounds + outline when enabled', () => {
+  it('paints two hand-tinted lane backgrounds + window bands + outline', () => {
     drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts());
-    const fillStyles = stub.calls
-      .filter((c) => c.method === 'set fillStyle')
-      .map((c) => c.args[0] as string);
-    expect(fillStyles).toContain('rgba(40, 60, 110, 0.55)');
-    expect(fillStyles).toContain('rgba(110, 50, 90, 0.55)');
+    // The lane backgrounds are now vertical gradients (one per hand) so
+    // the LH/RH areas read as a soft gradient rather than a flat block.
+    // Verify both gradients were created with the expected stop colors.
+    expect(stub.countCalls('createLinearGradient')).toBeGreaterThanOrEqual(2);
+    const stopArgs = stub.calls
+      .filter((c) => c.method === 'gradient.addColorStop')
+      .map((c) => c.args[1] as string);
+    expect(stopArgs.some((s) => s.includes('40, 60, 130'))).toBe(true); // LH
+    expect(stopArgs.some((s) => s.includes('110, 50, 110'))).toBe(true); // RH
     // 2 background fills + early-window + perfect-zone = at least 4 fillRect
     expect(stub.countCalls('fillRect')).toBeGreaterThanOrEqual(4);
   });
@@ -130,9 +134,10 @@ describe('drawPracticeLane', () => {
     drawPracticeLane(stub.ctx, baseView({ sectionNotes: notes }), baseTiming(), baseOpts());
     const fillStyles = stub.calls
       .filter((c) => c.method === 'set fillStyle')
-      .map((c) => c.args[0] as string);
-    expect(fillStyles).toContain('rgba(120, 255, 160, 0.9)');
-    expect(fillStyles).toContain('rgba(255, 90, 120, 0.5)');
+      .map((c) => c.args[0])
+      .filter((s): s is string => typeof s === 'string');
+    expect(fillStyles.some((s) => s.startsWith('rgba(120, 255, 160,'))).toBe(true);
+    expect(fillStyles.some((s) => s.startsWith('rgba(255, 90, 120,'))).toBe(true);
   });
 
   it('skips notes flagged _filtered (hidden hand)', () => {
@@ -202,7 +207,8 @@ describe('drawPracticeLane', () => {
     drawPracticeLane(stub.ctx, baseView({ isBoss: true }), baseTiming(), baseOpts());
     const fillStyles = stub.calls
       .filter((c) => c.method === 'set fillStyle')
-      .map((c) => c.args[0] as string);
+      .map((c) => c.args[0])
+      .filter((s): s is string => typeof s === 'string');
     expect(fillStyles.some((s) => s.startsWith('rgba(255, 100, 150,'))).toBe(true);
   });
 

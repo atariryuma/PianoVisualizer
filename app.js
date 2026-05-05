@@ -825,26 +825,6 @@
     }
 
     // ========================================
-    // Debug toggle — triple-tap bottom-left
-    // ========================================
-    let debugTapCount = 0;
-    let debugTapTimer = 0;
-    document.addEventListener('click', (e) => {
-      if (e.clientX < 80 && e.clientY > H - 80) {
-        debugTapCount++;
-        clearTimeout(debugTapTimer);
-        debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 600);
-        if (debugTapCount >= 3) {
-          // Route through applyDebug so settings-panel state and the
-          // overlay's actual visibility + textContent stay in sync.
-          applyDebug(!prefs.debug);
-          savePrefs();
-          debugTapCount = 0;
-        }
-      }
-    });
-
-    // ========================================
     // Theme switching + persisted user preferences
     // ========================================
     const prefs = {
@@ -1453,11 +1433,8 @@
       if (state.running && typeof showSessionSummary === 'function') showSessionSummary();
     });
 
-    // Single source of truth for the debug overlay. Two entry points (the
-    // settings-panel toggle and the triple-tap on the bottom-left corner)
-    // both flow through this so prefs.debug and state.debugMode never
-    // drift; updateDebugOverlay() reads state.debugMode to decide whether
-    // to refresh the textContent each frame.
+    // updateDebugOverlay() reads state.debugMode each frame, so applyDebug
+    // must keep prefs.debug and state.debugMode in lockstep.
     function applyDebug(on) {
       prefs.debug = on;
       state.debugMode = on;
@@ -5804,7 +5781,12 @@
       for (const t of tempos) {
         const btn = document.createElement('button');
         btn.className = 'tempo-btn' + (t === practice.tempoPct ? ' active' : '') + (sp.unlockedTempos[t] ? '' : ' locked');
-        btn.textContent = t + '%' + (sp.unlockedTempos[t] ? '' : ' 🔒');
+        // Lock indicator now lives in CSS (.tempo-btn.locked::after) so the
+        // disabled state reads as a designed UI, not a "60% 🔒" emoji
+        // pasted after the percent.
+        btn.textContent = t + '%';
+        btn.disabled = !sp.unlockedTempos[t];
+        if (!sp.unlockedTempos[t]) btn.setAttribute('aria-label', t + '% locked');
         btn.onclick = () => {
           if (!sp.unlockedTempos[t]) return;
           practice.tempoPct = t;
@@ -6179,12 +6161,12 @@
         const subParts = [];
         if (song._userComposer) subParts.push(song._userComposer);
         const sub = subParts.join(' · ');
-        // 3-button row: rename / edit-sections / delete. All carry .my-remove
-        // for the shared danger-pill styling; the visual difference is the
-        // button label. Order matters: rename is the most common rescue
-        // action when a kid imports a file with an ugly auto-derived title.
-        // Icon set via textContent (not interpolation) so a tampered import
-        // file with HTML in `song.icon` can't execute via innerHTML.
+        // 3 compact icon-only action buttons (✎ rename / ✂ edit-sections /
+        // ✕ delete). The text labels were "✎ 名前を変更" / "✎ 章を編集" /
+        // "削除" — three full-width pills that crowded the row. Now each
+        // is a 32px icon with a localized title for hover / aria-label
+        // for assistive tech. createElement + textContent (not innerHTML)
+        // so a tampered import file with HTML in `song.icon` can't execute.
         const iconEl = document.createElement('span');
         iconEl.className = 'my-icon';
         iconEl.textContent = song.icon || '🎵';
@@ -6192,14 +6174,17 @@
         labelEl.className = 'my-label';
         labelEl.textContent = song._userTitle || song.id;
         const renameBtnEl = document.createElement('button');
-        renameBtnEl.className = 'my-remove my-rename';
+        renameBtnEl.className = 'my-action-btn my-rename';
         renameBtnEl.type = 'button';
+        renameBtnEl.textContent = '✎';
         const editBtnEl = document.createElement('button');
-        editBtnEl.className = 'my-remove my-edit';
+        editBtnEl.className = 'my-action-btn my-edit';
         editBtnEl.type = 'button';
+        editBtnEl.textContent = '✂';
         const removeBtnEl = document.createElement('button');
-        removeBtnEl.className = 'my-remove';
+        removeBtnEl.className = 'my-action-btn my-delete';
         removeBtnEl.type = 'button';
+        removeBtnEl.textContent = '✕';
         row.appendChild(iconEl);
         row.appendChild(labelEl);
         row.appendChild(renameBtnEl);
@@ -6214,9 +6199,12 @@
         const renameBtn = renameBtnEl;
         const editBtn = editBtnEl;
         const removeBtn = removeBtnEl;
-        renameBtn.textContent = t('addSongRename');
-        editBtn.textContent = t('addSongEditSections');
-        removeBtn.textContent = t('addSongRemove');
+        renameBtn.title = t('addSongRename');
+        renameBtn.setAttribute('aria-label', t('addSongRename'));
+        editBtn.title = t('addSongEditSections');
+        editBtn.setAttribute('aria-label', t('addSongEditSections'));
+        removeBtn.title = t('addSongRemove');
+        removeBtn.setAttribute('aria-label', t('addSongRemove'));
         renameBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           const newTitle = prompt(t('addSongRenamePromptTitle'), song._userTitle || '');
