@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (28 modules extracted; render layer fully in
-core, plus flow-meter and the encouragement tier escalator. Remaining work is
-the quest tracker, IOI/dynamics history, and a few audio helpers.)
+Last refreshed: **2026-05-05** (29 modules extracted; render layer fully in
+core; state machines for flow, encouragement, and quests done. Remaining work is
+IOI/dynamics history, pitch stability, and a few audio helpers.)
 
 ---
 
@@ -44,32 +44,16 @@ the quest tracker, IOI/dynamics history, and a few audio helpers.)
 | 26  | `render/stage.ts`             | 19    | `packages/core/src/render/stage.ts`             |
 | 27  | `state/flow-meter.ts`         | 27    | `packages/core/src/state/flow-meter.ts`         |
 | 28  | `state/encouragement.ts`      | 22    | `packages/core/src/state/encouragement.ts`      |
+| 29  | `state/quest-tracker.ts`      | 16    | `packages/core/src/state/quest-tracker.ts`      |
 
-**Status: 481/481 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 497/497 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/quest-tracker.ts`
-
-**What**: Move the v10 magic-quests engine — given current QUESTS table +
-runtime state slice, returns active quest + completion progress + reward events
-on transition.
-
-**Acceptance**:
-
-- [ ] `(state, questsState) → { questsState, completedThisTick: QuestId[] }`
-      reducer
-- [ ] No DOM, no toast emission (caller handles UI)
-- [ ] QUESTS table injected (already in core/config.ts)
-- [ ] Tests: condition evaluation, monotonic completion, no double-completion,
-      multi-quest completion in single tick
-
-**Est**: 180 + 100 tests.
-
-## 2. Extract `state/quality-history.ts`
+## 1. Extract `state/quality-history.ts`
 
 **What**: Move the IOI + dynamics ring buffer that feeds `state/quality.ts`.
 Currently lives as `noteOnsetTimes` + `noteVelocities` arrays directly in
@@ -84,7 +68,7 @@ app.js.
 
 **Est**: 130 + 80 tests.
 
-## 3. Extract `state/pitch-stability.ts`
+## 2. Extract `state/pitch-stability.ts`
 
 **What**: Move the per-onset semitone-deviation tracker. Currently mixed in with
 the onset branch in app.js — when a clean onset arrives, compares its detected
@@ -98,14 +82,28 @@ pitch to the previous and grows or decays a 0..1 stability score.
 
 **Est**: 100 + 50 tests.
 
+## 3. Extract `audio/chord-window.ts`
+
+**What**: Move the chord aggregation window — collects MIDI/onset note events
+within a short tolerance and emits a chord signature once the window closes.
+
+**Acceptance**:
+
+- [ ] `(state, event) → state` reducer; window closes on quiet-tick
+- [ ] Pure: tolerance + window length from opts
+- [ ] Tests: single-note (no chord), 3-note triad, late note dropped,
+      chord-after-chord debounce
+
+**Est**: 140 + 80 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `audio/chord-window.ts` — chord aggregation + progression detection
 - `render/midi-beams.ts` — sustained-note beam overlay
 - `state/streak.ts` — daily-streak persistence + calendar formatting
 - `state/quest-cooldown.ts` — toast spacing + completion notification queue
+- `state/wake-up-flash.ts` — input-flash decay state
 
 ---
 

@@ -113,6 +113,20 @@ export type {
   EncouragementOutput,
 } from './state/encouragement';
 
+// === State: quest tracker (one-completion-per-tick + post-completion delay) ===
+export {
+  initQuestTrackerState,
+  resetQuestTrackerState,
+  applyQuestTick,
+} from './state/quest-tracker';
+export type {
+  Quest,
+  QuestPredicate,
+  QuestTrackerState,
+  QuestTrackerOptions,
+  QuestTickResult,
+} from './state/quest-tracker';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
