@@ -6,10 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (24 modules extracted; engine, 3D particles,
+Last refreshed: **2026-05-05** (25 modules extracted; engine, 3D particles,
 encouragement effects, 88-key keyboard, practice lane, background composites,
-theme tables, and frequency spectrum now in core. Remaining render is
-center-glow and stage banner.)
+theme tables, frequency spectrum, and center-glow now in core. Remaining render
+is the stage banner; then state machines (flow / encouragement / quests).)
 
 ---
 
@@ -41,28 +41,16 @@ center-glow and stage banner.)
 | 22  | `render/background.ts`        | 17    | `packages/core/src/render/background.ts`        |
 | 23  | `render/theme.ts`             | 17    | `packages/core/src/render/theme.ts`             |
 | 24  | `render/spectrum.ts`          | 12    | `packages/core/src/render/spectrum.ts`          |
+| 25  | `render/center-glow.ts`       | 9     | `packages/core/src/render/center-glow.ts`       |
 
-**Status: 404/404 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 413/413 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/center-glow.ts`
-
-**What**: Move the energy-reactive radial gradient (the soft glow at canvas
-center that swells with RMS / quality).
-
-**Acceptance**:
-
-- [ ] `drawCenterGlow(ctx, opts)` — pure
-- [ ] Takes `screenW/H/intensity/themeColor` — no state ownership
-- [ ] Tests: intensity scaling, palette injection, no-op at 0
-
-**Est**: 90 + 40 tests.
-
-## 2. Extract `render/stage.ts`
+## 1. Extract `render/stage.ts`
 
 **What**: Move stage tier banner + transitions (Awakening → Blooming → Aurora →
 Cosmos → Radiance → Legend). Animates a top-of-screen banner when the flow tier
@@ -77,7 +65,7 @@ changes.
 
 **Est**: 140 + 70 tests.
 
-## 3. Extract `state/flow-meter.ts`
+## 2. Extract `state/flow-meter.ts`
 
 **What**: Move the flow + combo state machine — onset adds, silence decay, combo
 window expiry, best-combo tracking. Currently scattered across the loop's "good
@@ -92,14 +80,30 @@ note" branch in app.js.
 
 **Est**: 220 + 130 tests.
 
+## 3. Extract `state/encouragement.ts`
+
+**What**: Move the tier escalator that picks the right Nice/Great/Awesome
+message at each combo milestone, and dispatches the matching effect.
+
+**Acceptance**:
+
+- [ ] `pickTier(combo, opts)` returns the active tier or null
+- [ ] `applyEncouragement(state, combo, opts)` returns
+      `{ state, events: ['effect:starShower'], tier: 'great' }`
+- [ ] Tier table + thresholds injected via opts (no CONFIG dep)
+- [ ] Tests: threshold transitions, no-tier below first threshold, effect-name
+      mapping, debounce within same tier
+
+**Est**: 160 + 90 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `state/encouragement.ts` — tier escalator (Nice → Awesome) + dispatch
 - `state/quest-tracker.ts` — quest progress + completion accounting
 - `audio/chord-window.ts` — chord aggregation + progression detection
 - `state/quality-history.ts` — IOI / dynamics ring buffer feeding quality.ts
+- `render/midi-beams.ts` — sustained-note beam overlay
 
 ---
 

@@ -85,6 +85,10 @@ export type { Theme, SynColorOptions, DrawBackgroundFadeOptions } from './render
 export { drawSpectrumBars } from './render/spectrum';
 export type { SpectrumDrawOptions } from './render/spectrum';
 
+// === Render: center radial-gradient glow ===
+export { drawCenterGlow } from './render/center-glow';
+export type { CenterGlowOptions } from './render/center-glow';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
