@@ -3103,162 +3103,33 @@
     //   existing OSMD load path doesn't need to know they came from local cache,
     //   and surface alongside the hardcoded songs in the picker.
     // ========================================
-    const USER_DB_NAME = 'pianoViz_v1';
-    const USER_DB_STORE = 'userSongs';
+    // Library — Phase 0b.3: delegated to @piano/core.
+    // - User song IndexedDB ops (open / all / put / delete) wired through
+    //   PianoCore's stateless versions but with the legacy connection-cache
+    //   pattern preserved (call sites pass no db arg).
+    // - parseMusicXmlMetadata + auto-section heuristic — pure DOM-only,
+    //   drop-in. Core uses globalThis.DOMParser so the browser path is
+    //   identical to the deleted legacy implementation.
+    const USER_DB_NAME = PianoCore.USER_DB_NAME;
+    const USER_DB_STORE = PianoCore.USER_DB_STORE;
     let _userDbPromise = null;
     function openUserDb() {
       if (_userDbPromise) return _userDbPromise;
-      _userDbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(USER_DB_NAME, 1);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(USER_DB_STORE)) {
-            db.createObjectStore(USER_DB_STORE, { keyPath: 'id' });
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
+      _userDbPromise = PianoCore.openUserDb();
       return _userDbPromise;
     }
     async function userDbAll() {
-      const db = await openUserDb();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(USER_DB_STORE, 'readonly');
-        const req = tx.objectStore(USER_DB_STORE).getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => reject(req.error);
-      });
+      return PianoCore.userDbAll(await openUserDb());
     }
     async function userDbPut(record) {
-      const db = await openUserDb();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(USER_DB_STORE, 'readwrite');
-        tx.objectStore(USER_DB_STORE).put(record);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      return PianoCore.userDbPut(await openUserDb(), record);
     }
     async function userDbDelete(id) {
-      const db = await openUserDb();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(USER_DB_STORE, 'readwrite');
-        tx.objectStore(USER_DB_STORE).delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      return PianoCore.userDbDelete(await openUserDb(), id);
     }
-
-    // Pull <work-title> / <creator type="composer"> / measure count out of a
-    // raw MusicXML string. .mxl is a zip — we use OSMD's loader for that.
-    // For metadata we just need the inner XML text, so this helper is XML-only.
-    function parseMusicXmlMetadata(xmlText) {
-      const dom = new DOMParser().parseFromString(xmlText, 'text/xml');
-      // Fail-fast on malformed XML so the user gets a real error message.
-      if (dom.querySelector('parsererror')) throw new Error('MusicXML parse error');
-      const titleEl = dom.querySelector('work > work-title') || dom.querySelector('movement-title');
-      const composerEl = dom.querySelector('identification > creator[type="composer"]')
-                     || dom.querySelector('identification > creator');
-      const parts = dom.querySelectorAll('part');
-      const measureCount = parts.length > 0 ? parts[0].querySelectorAll('measure').length : 0;
-      return {
-        title: (titleEl?.textContent || '').trim(),
-        composer: (composerEl?.textContent || '').trim(),
-        measureCount
-      };
-    }
-
-    // Auto-section heuristic. Always emits exactly 3 sections (A1/B/A2) to keep
-    // the unlock plumbing simple. Candidate boundaries are scored by musical
-    // priority; we pick the two best that land closest to even thirds.
-    //
-    // Priority (highest first):
-    //   1. <rehearsal> marks      — composer/editor's explicit roadmap
-    //   2. Double bar lines       — strongest structural hint after rehearsal marks
-    //   3. Repeat starts          — section boundary by convention
-    //   4. Key signature changes  — modulations often == new section
-    //   5. Length-based thirds    — last-resort fallback
-    //
-    // Returns metadata so the section-edit UI can show what was detected.
-    function collectSectionCandidates(xmlText) {
-      const dom = new DOMParser().parseFromString(xmlText, 'text/xml');
-      const partEls = dom.querySelectorAll('part');
-      const out = { rehearsal: [], doubleBar: [], repeatFwd: [], keyChange: [], timeChange: [], total: 0 };
-      if (partEls.length === 0) return out;
-      const measures = partEls[0].querySelectorAll('measure');
-      out.total = measures.length;
-      let prevKey = null, prevTime = null;
-      for (let i = 0; i < measures.length; i++) {
-        const m = measures[i];
-        // Rehearsal mark — gold standard.
-        if (m.querySelector('direction-type > rehearsal')) out.rehearsal.push(i);
-        // Bar lines — double = section, light-heavy = final (skip final).
-        for (const bl of m.querySelectorAll('barline')) {
-          const style = bl.querySelector('bar-style')?.textContent || '';
-          if (style === 'light-light') {
-            // Double bar at end of measure i means section starts at i+1.
-            const loc = bl.getAttribute('location') || 'right';
-            const idx = loc === 'right' ? i + 1 : i;
-            if (idx > 0 && idx < measures.length) out.doubleBar.push(idx);
-          }
-          for (const r of bl.querySelectorAll('repeat')) {
-            if (r.getAttribute('direction') === 'forward') out.repeatFwd.push(i);
-          }
-        }
-        // Key change (only count after the first measure — initial key is not a "change").
-        const keyEl = m.querySelector('attributes > key > fifths');
-        if (keyEl) {
-          const k = keyEl.textContent;
-          if (prevKey != null && k !== prevKey) out.keyChange.push(i);
-          prevKey = k;
-        }
-        // Time signature change.
-        const timeEl = m.querySelector('attributes > time');
-        if (timeEl) {
-          const sig = (timeEl.querySelector('beats')?.textContent || '') + '/' +
-                      (timeEl.querySelector('beat-type')?.textContent || '');
-          if (prevTime != null && sig !== prevTime) out.timeChange.push(i);
-          prevTime = sig;
-        }
-      }
-      return out;
-    }
-
-    function autoSectionDefs(xmlText, measureCount) {
-      const cand = collectSectionCandidates(xmlText);
-      const total = Math.max(1, measureCount || cand.total);
-      // Build a scored candidate pool. Higher score beats lower at equal distance.
-      const pool = [];
-      const push = (idx, score) => { if (idx > 0 && idx < total) pool.push({ idx, score }); };
-      cand.rehearsal.forEach(i => push(i, 100));
-      cand.doubleBar.forEach(i => push(i, 80));
-      cand.repeatFwd.forEach(i => push(i, 60));
-      cand.keyChange.forEach(i => push(i, 50));
-      cand.timeChange.forEach(i => push(i, 40));
-      // Pick best near each ideal third. Distance penalty scales with total length.
-      const idealB1 = Math.floor(total / 3);
-      const idealB2 = Math.floor(2 * total / 3);
-      const tol = Math.max(2, Math.floor(total * 0.25));
-      const pickNear = (target, exclude) => {
-        let best = null, bestScore = -Infinity;
-        for (const c of pool) {
-          if (c.idx === exclude) continue;
-          const dist = Math.abs(c.idx - target);
-          if (dist > tol) continue;
-          const score = c.score - dist * 4;   // -4 pts per measure off
-          if (score > bestScore) { bestScore = score; best = c.idx; }
-        }
-        return best;
-      };
-      let b1 = pickNear(idealB1, -1) ?? idealB1;
-      let b2 = pickNear(idealB2, b1) ?? idealB2;
-      if (b2 <= b1) b2 = Math.min(total - 1, b1 + 1);
-      return [
-        { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: 0,  isBoss: false },
-        { id: 'B',  nameKey: 'userSecB',  descKey: 'userSecBdesc',  startMeasure: b1, isBoss: false },
-        { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', startMeasure: b2, isBoss: true  }
-      ];
-    }
+    const parseMusicXmlMetadata = PianoCore.parseMusicXmlMetadata;
+    const collectSectionCandidates = PianoCore.collectSectionCandidates;
+    const autoSectionDefs = PianoCore.autoSectionDefs;
 
     // Promote a stored-or-just-fetched record into the SONGS registry. Returns
     // the song so the caller can selectSong(...) it immediately.
