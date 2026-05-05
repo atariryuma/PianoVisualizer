@@ -242,6 +242,8 @@ export {
   DURATION_MIN_TOL_MS,
   DURATION_TOL_FRACTION,
   STAR_TIERS,
+  RESULT_TIER_KEYS,
+  TEMPO_TIERS,
   initPracticeState,
   resetPracticeState,
   buildSectionNotes,
@@ -249,6 +251,8 @@ export {
   matchNoteOnset,
   finalizeNoteHold,
   computeStars,
+  resolveResultTier,
+  computeUnlocks,
   practiceElapsedMs,
 } from './state/practice-state';
 export type {
@@ -265,6 +269,8 @@ export type {
   MatchOutcome,
   FinalizeHoldResult,
   StarTier,
+  UnlockComputeInput,
+  UnlockComputeResult,
 } from './state/practice-state';
 
 // === State: quality scoring + coaching feedback ===

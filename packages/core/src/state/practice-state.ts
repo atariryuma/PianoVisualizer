@@ -407,6 +407,107 @@ export function computeStars(
 }
 
 // =====================================================================
+// Result-screen tier + unlock gating
+// =====================================================================
+
+/** i18n key pairs for the result-screen banner — index = star count (0..3).
+ *  Listen mode bypasses these entirely; the caller renders 'listenedTitle'
+ *  / 'listenedMsg' instead. */
+export const RESULT_TIER_KEYS: ReadonlyArray<{ titleKey: string; msgKey: string }> = [
+  { titleKey: 'tier0Title', msgKey: 'tier0Msg' },
+  { titleKey: 'tier1Title', msgKey: 'tier1Msg' },
+  { titleKey: 'tier2Title', msgKey: 'tier2Msg' },
+  { titleKey: 'tier3Title', msgKey: 'tier3Msg' },
+];
+
+/** Pick the title/msg keys for a given star count. Stars are clamped to
+ *  0..3 (legacy callers used Math.max(0, Math.min(3, stars)) inline). */
+export function resolveResultTier(stars: number): { titleKey: string; msgKey: string } {
+  const idx = Math.max(0, Math.min(RESULT_TIER_KEYS.length - 1, stars | 0));
+  return RESULT_TIER_KEYS[idx];
+}
+
+/** Tempo speeds the practice flow gates: a section cleared at one tempo
+ *  unlocks the next one (gated on stars >= 2). */
+export const TEMPO_TIERS: readonly number[] = [60, 75, 90, 100];
+
+export interface UnlockComputeInput {
+  stars: number;
+  /** Tempo % at which this section was just played (e.g. 60, 75, 90, 100). */
+  tempoPct: number;
+  /** Section just completed (e.g. 'A1'). */
+  sectionId: string;
+  /** Section IDs in play order — caller passes the SECTION_IDS const. */
+  sectionIds: readonly string[];
+  /** id → nameKey map for the current song's sections. Used to surface the
+   *  next-section's localizable label without coupling the core to the song
+   *  schema. */
+  sectionNameKeys: Readonly<Record<string, string>>;
+  /** Tempos already unlocked for this song. Read-only here; caller mutates
+   *  after applying the result. */
+  unlockedTempos: Readonly<Record<number, boolean>>;
+  /** Sections already unlocked. Read-only here; caller mutates. */
+  unlockedSections: Readonly<Record<string, boolean>>;
+  /** Practice-day streak count (e.g. progress.streakCount). */
+  streakCount: number;
+  /** Optional override for the streak milestones that fire a celebration.
+   *  Defaults to 3 and 7 days (matching the legacy behavior). */
+  streakMilestones?: readonly number[];
+}
+
+export interface UnlockComputeResult {
+  /** New tempo unlocked, or null. */
+  unlockedTempo: number | null;
+  /** Next section's i18n nameKey, or null when no section unlocked. */
+  unlockedSecKey: string | null;
+  /** Streak milestone reached this session (e.g. 3 or 7), or null. */
+  streakDays: number | null;
+}
+
+const DEFAULT_STREAK_MILESTONES: readonly number[] = [3, 7];
+
+/**
+ * Pure: given the result of a section, determine which gates fire.
+ *
+ * Stars >= 2 unlocks the next tempo tier (if any).
+ * Stars >= 1 unlocks the next section (if any).
+ * Streak count hitting a milestone (default: 3 or 7) fires a celebration.
+ *
+ * Caller persists the unlocks by mutating the song-progress record.
+ */
+export function computeUnlocks(input: UnlockComputeInput): UnlockComputeResult {
+  let unlockedTempo: number | null = null;
+  let unlockedSecKey: string | null = null;
+  let streakDays: number | null = null;
+
+  if (input.stars >= 2) {
+    const idx = TEMPO_TIERS.indexOf(input.tempoPct);
+    if (idx >= 0 && idx < TEMPO_TIERS.length - 1) {
+      const next = TEMPO_TIERS[idx + 1];
+      if (!input.unlockedTempos[next]) unlockedTempo = next;
+    }
+  }
+
+  if (input.stars >= 1) {
+    const sIdx = input.sectionIds.indexOf(input.sectionId);
+    if (sIdx >= 0 && sIdx < input.sectionIds.length - 1) {
+      const next = input.sectionIds[sIdx + 1];
+      if (!input.unlockedSections[next]) {
+        const nameKey = input.sectionNameKeys[next];
+        if (nameKey) unlockedSecKey = nameKey;
+      }
+    }
+  }
+
+  const milestones = input.streakMilestones ?? DEFAULT_STREAK_MILESTONES;
+  if (milestones.indexOf(input.streakCount) !== -1) {
+    streakDays = input.streakCount;
+  }
+
+  return { unlockedTempo, unlockedSecKey, streakDays };
+}
+
+// =====================================================================
 // Clock
 // =====================================================================
 

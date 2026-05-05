@@ -5552,18 +5552,15 @@
     // ========================================
     const SECTION_IDS = ['A1', 'B', 'A2'];
 
-    const RESULT_TIERS = [
-      { titleKey: 'tier0Title', msgKey: 'tier0Msg' },
-      { titleKey: 'tier1Title', msgKey: 'tier1Msg' },
-      { titleKey: 'tier2Title', msgKey: 'tier2Msg' },
-      { titleKey: 'tier3Title', msgKey: 'tier3Msg' }
-    ];
-
+    // Result-screen tier + unlock gating delegated to @piano/core
+    // (resolveResultTier / computeUnlocks). RESULT_TIERS / TEMPO_TIERS / streak
+    // milestone constants now live in practice-state.ts.
     // durPct is null in guided mode (no audio clock to score length against), in
     // which case the dur threshold is skipped.
-    // STAR_TIERS + computeStars — Phase 0b.3: delegated to @piano/core.
     const STAR_TIERS = PianoCore.STAR_TIERS;
     const computeStars = PianoCore.computeStars;
+    const resolveResultTier = PianoCore.resolveResultTier;
+    const computeUnlocks = PianoCore.computeUnlocks;
 
     // Apply localized text + visibility based on a cached result context. Called
     // from completePracticeSection AND from the langchange listener so the card
@@ -5591,7 +5588,7 @@
       DOM.resStars.style.display = '';
       document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
       if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
-      const tier = RESULT_TIERS[Math.max(0, Math.min(3, r.stars))];
+      const tier = resolveResultTier(r.stars);
       DOM.resTitle.textContent = t(tier.titleKey);
       DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
       DOM.resMsg.textContent = t(tier.msgKey);
@@ -5637,36 +5634,27 @@
 
       recordPracticeDay();
 
-      // Compute unlocks (and persist them) — store the *facts* (which tempo /
-      // which section / streak count) so renderResultCard can re-build the
-      // localized message on language change.
-      let unlockedTempo = null;
-      let unlockedSecKey = null;
-      let streakDays = null;
-      if (stars >= 2) {
-        const tempos = [60, 75, 90, 100];
-        const idx = tempos.indexOf(practice.tempoPct);
-        if (idx >= 0 && idx < tempos.length - 1) {
-          const next = tempos[idx + 1];
-          if (!sp.unlockedTempos[next]) {
-            sp.unlockedTempos[next] = true;
-            unlockedTempo = next;
-          }
-        }
-      }
-      if (stars >= 1) {
-        const sIdx = SECTION_IDS.indexOf(sec.id);
-        if (sIdx >= 0 && sIdx < SECTION_IDS.length - 1) {
-          const next = SECTION_IDS[sIdx + 1];
-          if (!sp.unlockedSections[next]) {
-            sp.unlockedSections[next] = true;
-            unlockedSecKey = currentSong.sections.find(s => s.id === next).nameKey;
-          }
-        }
-      }
-      // Theme unlock at streak milestone
-      if (practice.progress.streakCount === 3 || practice.progress.streakCount === 7) {
-        streakDays = practice.progress.streakCount;
+      // Decide which unlocks fire (pure, in @piano/core), then persist them.
+      // The result is the *facts* (which tempo / which section / streak count)
+      // so renderResultCard can re-build the localized message on language
+      // change without re-running the gating logic.
+      const sectionNameKeys = {};
+      for (const s of currentSong.sections) sectionNameKeys[s.id] = s.nameKey;
+      const unlocks = computeUnlocks({
+        stars,
+        tempoPct: practice.tempoPct,
+        sectionId: sec.id,
+        sectionIds: SECTION_IDS,
+        sectionNameKeys,
+        unlockedTempos: sp.unlockedTempos,
+        unlockedSections: sp.unlockedSections,
+        streakCount: practice.progress.streakCount,
+      });
+      const { unlockedTempo, unlockedSecKey, streakDays } = unlocks;
+      if (unlockedTempo != null) sp.unlockedTempos[unlockedTempo] = true;
+      if (unlockedSecKey != null) {
+        const nextSec = SECTION_IDS[SECTION_IDS.indexOf(sec.id) + 1];
+        sp.unlockedSections[nextSec] = true;
       }
 
       if (!sp.history[sec.id]) sp.history[sec.id] = [];

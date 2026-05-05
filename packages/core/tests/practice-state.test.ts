@@ -7,6 +7,9 @@ import {
   matchNoteOnset,
   finalizeNoteHold,
   computeStars,
+  resolveResultTier,
+  computeUnlocks,
+  type UnlockComputeInput,
   practiceElapsedMs,
   STAR_TIERS,
   HIT_WINDOW_MS,
@@ -402,6 +405,127 @@ describe('computeStars', () => {
     for (let i = 1; i < STAR_TIERS.length; i++) {
       expect(STAR_TIERS[i].stars).toBeLessThan(STAR_TIERS[i - 1].stars);
     }
+  });
+});
+
+// =====================================================================
+// resolveResultTier
+// =====================================================================
+
+describe('resolveResultTier', () => {
+  it('maps each star count 0..3 to its tierN keys', () => {
+    expect(resolveResultTier(0)).toEqual({ titleKey: 'tier0Title', msgKey: 'tier0Msg' });
+    expect(resolveResultTier(1)).toEqual({ titleKey: 'tier1Title', msgKey: 'tier1Msg' });
+    expect(resolveResultTier(2)).toEqual({ titleKey: 'tier2Title', msgKey: 'tier2Msg' });
+    expect(resolveResultTier(3)).toEqual({ titleKey: 'tier3Title', msgKey: 'tier3Msg' });
+  });
+
+  it('clamps stars below zero to tier 0', () => {
+    expect(resolveResultTier(-5)).toEqual({ titleKey: 'tier0Title', msgKey: 'tier0Msg' });
+  });
+
+  it('clamps stars above 3 to tier 3', () => {
+    expect(resolveResultTier(99)).toEqual({ titleKey: 'tier3Title', msgKey: 'tier3Msg' });
+  });
+
+  it('coerces fractional stars by truncation', () => {
+    expect(resolveResultTier(2.9)).toEqual({ titleKey: 'tier2Title', msgKey: 'tier2Msg' });
+  });
+});
+
+// =====================================================================
+// computeUnlocks
+// =====================================================================
+
+describe('computeUnlocks', () => {
+  const baseInput: UnlockComputeInput = {
+    stars: 3,
+    tempoPct: 60,
+    sectionId: 'A1',
+    sectionIds: ['A1', 'B', 'A2'],
+    sectionNameKeys: { A1: 'feA1', B: 'feB', A2: 'feA2' },
+    unlockedTempos: { 60: true },
+    unlockedSections: { A1: true },
+    streakCount: 0,
+  };
+
+  it('unlocks the next tempo tier when stars >= 2', () => {
+    const r = computeUnlocks(baseInput);
+    expect(r.unlockedTempo).toBe(75);
+  });
+
+  it('does not unlock the next tempo when stars < 2', () => {
+    const r = computeUnlocks({ ...baseInput, stars: 1 });
+    expect(r.unlockedTempo).toBeNull();
+  });
+
+  it('does not re-unlock an already-unlocked tempo', () => {
+    const r = computeUnlocks({
+      ...baseInput,
+      unlockedTempos: { 60: true, 75: true },
+    });
+    expect(r.unlockedTempo).toBeNull();
+  });
+
+  it('does not advance past the last tempo tier', () => {
+    const r = computeUnlocks({ ...baseInput, tempoPct: 100 });
+    expect(r.unlockedTempo).toBeNull();
+  });
+
+  it('unlocks the next section when stars >= 1', () => {
+    const r = computeUnlocks({ ...baseInput, stars: 1 });
+    expect(r.unlockedSecKey).toBe('feB');
+  });
+
+  it('does not unlock the next section when stars < 1', () => {
+    const r = computeUnlocks({ ...baseInput, stars: 0 });
+    expect(r.unlockedSecKey).toBeNull();
+  });
+
+  it('does not re-unlock an already-unlocked section', () => {
+    const r = computeUnlocks({
+      ...baseInput,
+      unlockedSections: { A1: true, B: true },
+    });
+    expect(r.unlockedSecKey).toBeNull();
+  });
+
+  it('does not advance past the last section', () => {
+    const r = computeUnlocks({ ...baseInput, sectionId: 'A2' });
+    expect(r.unlockedSecKey).toBeNull();
+  });
+
+  it('reports the streak when streakCount hits the default 3-day milestone', () => {
+    const r = computeUnlocks({ ...baseInput, streakCount: 3 });
+    expect(r.streakDays).toBe(3);
+  });
+
+  it('reports the streak at the default 7-day milestone', () => {
+    const r = computeUnlocks({ ...baseInput, streakCount: 7 });
+    expect(r.streakDays).toBe(7);
+  });
+
+  it('returns null streak for non-milestone counts', () => {
+    const r = computeUnlocks({ ...baseInput, streakCount: 5 });
+    expect(r.streakDays).toBeNull();
+  });
+
+  it('honors custom streak milestones', () => {
+    const r = computeUnlocks({
+      ...baseInput,
+      streakCount: 30,
+      streakMilestones: [10, 30, 100],
+    });
+    expect(r.streakDays).toBe(30);
+  });
+
+  it('returns null section when sectionNameKeys lacks the next entry', () => {
+    const r = computeUnlocks({
+      ...baseInput,
+      stars: 1,
+      sectionNameKeys: { A1: 'feA1' }, // missing B + A2
+    });
+    expect(r.unlockedSecKey).toBeNull();
   });
 });
 
