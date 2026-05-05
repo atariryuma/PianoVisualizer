@@ -53,7 +53,7 @@ export/import safer and unblocks IndexedDB-backed tests.
 **Playbook**: extract-module + needs `fake-indexeddb` devDep. **Est lines**:
 250 + 200 tests.
 
-## 3. Extract `state/session-confidence.ts`
+## 2. Extract `state/session-confidence.ts`
 
 **What**: Move `updateSessionConfidence` + the ring-buffer.
 
@@ -69,7 +69,7 @@ export/import safer and unblocks IndexedDB-backed tests.
 
 **Playbook**: extract-module + state-machine note. **Est**: 150 + 250 tests.
 
-## 4. Extract `state/quality.ts`
+## 3. Extract `state/quality.ts`
 
 **What**: Move `computeRhythmScore`, `computeDynamicsScore`,
 `computeStabilityScore`, `updateQualityScores`, `updateGrowthTrend`,
@@ -85,7 +85,7 @@ export/import safer and unblocks IndexedDB-backed tests.
 
 **Playbook**: extract-module. **Est**: 150 + 200 tests.
 
-## 5. Extract `i18n/index.ts`
+## 4. Extract `i18n/index.ts`
 
 **What**: Move `T_STRINGS` + `t()` + `applyI18n` (split: applyI18n stays in
 DOM-coupled web shell, `t()` and table go to core).
@@ -103,7 +103,7 @@ DOM-decoupled extraction.
 
 **Est**: 100 + 80 tests.
 
-## 6. Extract `config.ts`
+## 5. Extract `config.ts`
 
 **What**: Move the `CONFIG` object literal.
 
