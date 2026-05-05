@@ -3175,37 +3175,57 @@
       osmd.cursor.reset();
       const it = osmd.cursor.iterator;
       let cursorStep = 0;
+      let skippedNotes = 0;
       while (!it.endReached && cursorStep < 20000) {
-        const measureIdx = it.CurrentMeasureIndex;
-        stepToMeasure.push(measureIdx);
-        const measure = osmd.Sheet?.SourceMeasures?.[measureIdx];
-        const bpm = measure?.TempoInBPM || 72;
-        const tsFrac = it.currentTimeStamp;
-        const timeSec = tsFrac.realValue * 4 * 60 / bpm;
-        const voiceEntries = it.CurrentVoiceEntries;
-        if (voiceEntries) {
-          for (const ve of voiceEntries) {
-            let hand;
-            try {
-              const idx = ve.parentSourceStaffEntry?.parentStaff?.idInMusicSheet;
-              if (typeof idx === 'number') hand = idx === 0 ? 'R' : 'L';
-            } catch (e) { /* pitch fallback below */ }
-            const noteList = ve.Notes || ve.notes || [];
-            for (const note of noteList) {
-              if (!note || (note.isRest && note.isRest()) || note.halfTone == null) continue;
-              const midi = note.halfTone + 12;
-              if (!hand) hand = midi >= 60 ? 'R' : 'L';
-              const lengthVal = note.length?.realValue ?? 0.25;
-              const durSec = Math.max(0.05, lengthVal * 4 * 60 / bpm);
-              notes.push({ hand, midi, timeSec, durSec, measureIdx });
+        // Per-step try/catch — OSMD 1.8.7 throws "Can't call GetWidth on an
+        // unformatted note" on some grace notes / cadenza passages in dense
+        // scores (La Campanella reproduces it). Skipping the offending step
+        // loses a beat or two but lets the rest of the score load instead of
+        // failing the whole song.
+        try {
+          const measureIdx = it.CurrentMeasureIndex;
+          stepToMeasure.push(measureIdx);
+          const measure = osmd.Sheet?.SourceMeasures?.[measureIdx];
+          const bpm = measure?.TempoInBPM || 72;
+          const tsFrac = it.currentTimeStamp;
+          const timeSec = tsFrac.realValue * 4 * 60 / bpm;
+          const voiceEntries = it.CurrentVoiceEntries;
+          if (voiceEntries) {
+            for (const ve of voiceEntries) {
+              let hand;
+              try {
+                const idx = ve.parentSourceStaffEntry?.parentStaff?.idInMusicSheet;
+                if (typeof idx === 'number') hand = idx === 0 ? 'R' : 'L';
+              } catch (_) { /* pitch fallback below */ }
+              const noteList = ve.Notes || ve.notes || [];
+              for (const note of noteList) {
+                try {
+                  if (!note || (note.isRest && note.isRest()) || note.halfTone == null) continue;
+                  const midi = note.halfTone + 12;
+                  if (!hand) hand = midi >= 60 ? 'R' : 'L';
+                  const lengthVal = note.length?.realValue ?? 0.25;
+                  const durSec = Math.max(0.05, lengthVal * 4 * 60 / bpm);
+                  notes.push({ hand, midi, timeSec, durSec, measureIdx });
+                } catch (_) {
+                  skippedNotes++;
+                }
+              }
             }
           }
+        } catch (_) {
+          // Whole-step failure (very rare). Just advance and hope the next
+          // step is recoverable. Counted into skippedNotes for the log.
+          skippedNotes++;
         }
-        it.moveToNext();
+        try { it.moveToNext(); }
+        catch (_) { break; } // iterator-level failure → bail; we have what we have
         cursorStep++;
       }
-      osmd.cursor.reset();
+      try { osmd.cursor.reset(); } catch (_) { /* ignore */ }
       notes.sort((a, b) => a.timeSec - b.timeSec || a.midi - b.midi);
+      if (skippedNotes > 0) {
+        console.warn('[OSMD] skipped ' + skippedNotes + ' unformattable note(s)');
+      }
       return { notes, stepToMeasure };
     }
 
