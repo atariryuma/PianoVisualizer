@@ -2220,16 +2220,15 @@
         state.glowPulseIntensity *= 0.96; // decay
       }
 
-      if (state.smoothEnergy > 0.04 || glowExtra > 0.02) {
-        const baseGlow = W * 0.3 * state.smoothEnergy + 100 + state.flow * 3;
-        const glowSize = baseGlow + glowExtra * W * 0.2;
-        const glowAlpha = 0.08 + state.flow * 0.002 + glowExtra * 0.15;
-        const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, glowSize);
-        grad.addColorStop(0, theme.glow + Math.min(glowAlpha, 0.4) + ')');
-        grad.addColorStop(1, 'transparent');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, W, H);
-      }
+      // Center radial halo — Phase 0b.3: delegated to @piano/core.
+      PianoCore.drawCenterGlow(ctx, {
+        screenW: W,
+        screenH: H,
+        smoothEnergy: state.smoothEnergy,
+        flow: state.flow,
+        glowExtra,
+        glowPrefix: theme.glow,
+      });
 
       // v9: Shimmer effect
       if (state.shimmerPhase >= 0) {
@@ -2363,22 +2362,20 @@
         }
       }
 
+      // Frequency spectrum bars — Phase 0b.3: delegated to @piano/core.
+      // Caller still owns the analyser + the silence gate (smoothEnergy > 0.03)
+      // so silent frames skip the work entirely.
       if (analyser && state.smoothEnergy > 0.03) {
         const binHz = audioCtx.sampleRate / analyser.fftSize;
-        const sB = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
-        const eB = Math.floor(CONFIG.PIANO_FREQ_MAX / binHz);
-        const step = Math.floor((eB - sB) / CONFIG.BAR_COUNT);
-        const barW = W / CONFIG.BAR_COUNT;
-        const barAlphaScale = 0.15 + state.flow * 0.003;
-        for (let i = 0; i < CONFIG.BAR_COUNT; i++) {
-          const idx = sB + i * step;
-          const val = dataArray[idx] / 255;
-          const barH = val * H * (0.1 + state.flow * 0.001);
-          ctx.fillStyle = theme.colors[Math.floor((i / CONFIG.BAR_COUNT) * theme.colors.length) % theme.colors.length];
-          ctx.globalAlpha = val * barAlphaScale;
-          ctx.fillRect(i * barW, H - barH, barW - 1, barH);
-        }
-        ctx.globalAlpha = 1;
+        PianoCore.drawSpectrumBars(ctx, dataArray, {
+          screenW: W,
+          screenH: H,
+          startBin: Math.floor(CONFIG.PIANO_FREQ_MIN / binHz),
+          endBin: Math.floor(CONFIG.PIANO_FREQ_MAX / binHz),
+          barCount: CONFIG.BAR_COUNT,
+          themeColors: theme.colors,
+          flow: state.flow,
+        });
       }
 
       // v13: MIDI sustained beams sit between background and particles.
