@@ -2742,21 +2742,72 @@
     const collectSectionCandidates = PianoCore.collectSectionCandidates;
     const autoSectionDefs = PianoCore.autoSectionDefs;
 
+    // Unzip an .mxl blob and return the inner MusicXML text. Used both at
+    // add-time (to extract metadata) and at register-time (to feed OSMD a
+    // plain XML blob — blob: URLs strip filename/MIME hints, so OSMD can't
+    // reliably auto-detect a zip via the URL alone, especially on Android
+    // Chrome where it parses the bytes as XML and fails).
+    async function unzipMxlToXmlText(blob) {
+      const JSZipLib = window.JSZip || (typeof JSZip !== 'undefined' ? JSZip : null);
+      if (!JSZipLib) throw new Error('JSZip not available — cannot read .mxl');
+      const zip = await JSZipLib.loadAsync(await blob.arrayBuffer());
+      let scorePath = null;
+      const containerFile = zip.file('META-INF/container.xml');
+      if (containerFile) {
+        const containerXml = await containerFile.async('text');
+        const m = containerXml.match(/full-path="([^"]+)"/);
+        if (m) scorePath = m[1];
+      }
+      if (!scorePath) {
+        for (const name of Object.keys(zip.files)) {
+          if (name.endsWith('.xml') && !name.startsWith('META-INF')) { scorePath = name; break; }
+        }
+      }
+      if (!scorePath) throw new Error('No score file inside .mxl archive');
+      return zip.file(scorePath).async('text');
+    }
+
     // Promote a stored-or-just-fetched record into the SONGS registry. Returns
     // the song so the caller can selectSong(...) it immediately.
-    function registerUserSong(record) {
-      const url = URL.createObjectURL(record.mxlBlob);
+    //
+    // For .mxl records we always feed OSMD a plain-XML blob URL (built from
+    // the cached `record.xmlText` if present, else lazily unzipped here and
+    // written back to IndexedDB so subsequent loads are instant). This sidesteps
+    // OSMD's blob-MIME-detection issue on Android Chrome.
+    async function registerUserSong(record) {
       const isMxl = (record.mimeType !== 'application/vnd.recordare.musicxml+xml');
-      // makeSong was designed for hardcoded assets/<id>.mxl paths; user songs
-      // live under blob: URLs, so we shape the result manually but keep the
-      // same field names so the rest of the codebase doesn't branch.
+      let xmlText = record.xmlText;
+      if (isMxl && !xmlText) {
+        // Lazy migration: existing records (added before this fix) didn't
+        // cache xmlText. Unzip on the fly now and persist for next time.
+        try {
+          xmlText = await unzipMxlToXmlText(record.mxlBlob);
+          record.xmlText = xmlText;
+          try { await userDbPut(record); } catch (e) { /* DB save best-effort */ }
+        } catch (e) {
+          console.warn('[UserSongs] mxl unzip failed for ' + record.id + ': ' + e.message);
+        }
+      } else if (!isMxl && !xmlText) {
+        // Plain .musicxml/.xml record — unwrap to text so the load path is uniform.
+        try { xmlText = await record.mxlBlob.text(); } catch (e) { /* fallthrough */ }
+      }
+      // Always present OSMD with a plain-XML blob URL when we could read xmlText;
+      // fall back to the raw blob URL only if unzip failed.
+      let url;
+      if (xmlText) {
+        url = URL.createObjectURL(new Blob([xmlText], { type: 'application/vnd.recordare.musicxml+xml' }));
+      } else {
+        url = URL.createObjectURL(record.mxlBlob);
+      }
       const song = {
         id: record.id,
         titleKey: '__userTitle:' + record.id,   // resolved by t() override below
         composerKey: '__userComposer:' + record.id,
         icon: '🎵',
-        mxlUrl: isMxl ? url : null,
-        xmlUrl: !isMxl ? url : null,
+        // After unzip, the song carries an xml URL whether the source was .mxl or .xml.
+        // The few branches that key off "is this a user .mxl?" use _isUser instead now.
+        mxlUrl: null,
+        xmlUrl: url,
         sectionDefs: record.sectionDefs,
         notes: null, totalSec: 0, sections: [], playbackOrder: [],
         measureToCursorStep: [], _loaded: false, _loadingPromise: null,
@@ -2771,7 +2822,7 @@
     async function loadUserSongs() {
       try {
         const all = await userDbAll();
-        for (const rec of all) registerUserSong(rec);
+        for (const rec of all) await registerUserSong(rec);
         return all.length;
       } catch (e) {
         console.warn('[UserSongs] load failed:', e.message);
@@ -2787,34 +2838,7 @@
       const isMxl = blob.type === 'application/vnd.recordare.musicxml+zip'
                   || (opts.filename || '').toLowerCase().endsWith('.mxl')
                   || blob.size > 0 && (await blob.slice(0, 2).text()) === 'PK';
-      let xmlText;
-      if (isMxl) {
-        // .mxl is a zip with a META-INF + the actual MusicXML. OSMD includes JSZip.
-        if (typeof JSZip === 'undefined' && typeof window.JSZip === 'undefined') {
-          // OSMD bundles JSZip but doesn't always expose it on window. Fall back to
-          // letting OSMD load it later; for metadata, refuse and prompt re-upload.
-          throw new Error('Cannot read .mxl metadata in this browser. Use .musicxml instead.');
-        }
-        const JSZipLib = window.JSZip || JSZip;
-        const zip = await JSZipLib.loadAsync(await blob.arrayBuffer());
-        // Find the score file: META-INF/container.xml points at it; fallback = first .xml.
-        let scorePath = null;
-        const containerFile = zip.file('META-INF/container.xml');
-        if (containerFile) {
-          const containerXml = await containerFile.async('text');
-          const m = containerXml.match(/full-path="([^"]+)"/);
-          if (m) scorePath = m[1];
-        }
-        if (!scorePath) {
-          for (const name of Object.keys(zip.files)) {
-            if (name.endsWith('.xml') && !name.startsWith('META-INF')) { scorePath = name; break; }
-          }
-        }
-        if (!scorePath) throw new Error('No score file inside .mxl archive');
-        xmlText = await zip.file(scorePath).async('text');
-      } else {
-        xmlText = await blob.text();
-      }
+      const xmlText = isMxl ? await unzipMxlToXmlText(blob) : await blob.text();
       const meta = parseMusicXmlMetadata(xmlText);
       if (meta.measureCount < 1) throw new Error('Score has no measures');
       const id = 'usr_' + Date.now().toString(36) + '_'
@@ -2825,6 +2849,9 @@
         title: opts.titleOverride || meta.title || (opts.filename || 'Untitled').replace(/\.[^.]+$/, ''),
         composer: opts.composerOverride || meta.composer || '',
         mxlBlob: blob,
+        // Cached so registerUserSong + section-editor reload don't have to
+        // re-unzip on every app start. Same xml the score is rendered from.
+        xmlText,
         mimeType: isMxl ? 'application/vnd.recordare.musicxml+zip'
                         : 'application/vnd.recordare.musicxml+xml',
         sectionDefs,
@@ -2832,7 +2859,7 @@
         source: opts.source || 'upload'
       };
       await userDbPut(record);
-      registerUserSong(record);
+      await registerUserSong(record);
       return record;
     }
 
@@ -5179,11 +5206,20 @@
 
       DOM.sectionList.innerHTML = '';
       if (!currentSong._loaded || currentSong.sections.length === 0) {
-        const loading = document.createElement('div');
-        loading.className = 'section-row';
-        loading.style.opacity = '0.6';
-        loading.innerHTML = '<div class="section-icon">⏳</div><div>' + t('loadingScore') + '</div><div></div>';
-        DOM.sectionList.appendChild(loading);
+        const row = document.createElement('div');
+        row.className = 'section-row';
+        if (currentSong._loadError) {
+          row.style.opacity = '0.85';
+          const safe = String(currentSong._loadError).replace(/[<>&]/g, (c) =>
+            c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;');
+          row.innerHTML = '<div class="section-icon">❌</div>' +
+            '<div style="font-size:.78rem;color:rgba(255,180,180,.95);line-height:1.35;">' + safe + '</div>' +
+            '<div></div>';
+        } else {
+          row.style.opacity = '0.6';
+          row.innerHTML = '<div class="section-icon">⏳</div><div>' + t('loadingScore') + '</div><div></div>';
+        }
+        DOM.sectionList.appendChild(row);
         return;
       }
       currentSong.sections.forEach((sec, i) => {
@@ -5377,11 +5413,19 @@
       // restored beneath the song panel so a subsequent "Back" lands the user
       // on a visualizer with full controls (not a bare canvas).
       if (state.running) showRunningUI();
+      // Clear any prior load error so the spinner shows on fresh attempts
+      // (e.g. user backed out then re-tapped the same song).
+      song._loadError = null;
       renderSongPanel();
       initWebMIDI();
       loadCurrentScore().then(() => {
+        currentSong._loadError = null;
         if (DOM.songPanel.classList.contains('visible')) renderSongPanel();
-      }).catch(e => console.error('preload', e));
+      }).catch((e) => {
+        console.error('preload', e);
+        currentSong._loadError = (e && (e.message || String(e))) || 'Score load failed';
+        if (DOM.songPanel.classList.contains('visible')) renderSongPanel();
+      });
     }
 
     document.querySelectorAll('.practice-song-btn').forEach((btn) => {
@@ -5516,7 +5560,13 @@
         btns[1].addEventListener('click', async (e) => {
           e.stopPropagation();
           if (!confirm(t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
-          await removeUserSong(song.id);
+          try {
+            await removeUserSong(song.id);
+          } catch (err) {
+            console.error('removeUserSong failed', err);
+            setAddSongStatus(t('addSongFailed', { v: (err && err.message) || 'delete' }), true);
+            return;
+          }
           renderAddSongMyList();
           renderUserSongButtons();
         });
@@ -5541,27 +5591,16 @@
       });
       if (!rec) return;
       _sectionEditingId = songId;
-      // Need measure count — extract from the cached blob the same way addUserSong did.
-      const isMxl = rec.mimeType !== 'application/vnd.recordare.musicxml+xml';
-      let xmlText;
-      try {
-        if (isMxl) {
-          const JSZipLib = window.JSZip;
-          const zip = await JSZipLib.loadAsync(await rec.mxlBlob.arrayBuffer());
-          const containerXml = await zip.file('META-INF/container.xml')?.async('text');
-          let scorePath = containerXml?.match(/full-path="([^"]+)"/)?.[1];
-          if (!scorePath) {
-            for (const name of Object.keys(zip.files)) {
-              if (name.endsWith('.xml') && !name.startsWith('META-INF')) { scorePath = name; break; }
-            }
-          }
-          xmlText = await zip.file(scorePath).async('text');
-        } else {
-          xmlText = await rec.mxlBlob.text();
+      // Re-use cached xmlText from add-time if present; otherwise unzip on demand.
+      let xmlText = rec.xmlText;
+      if (!xmlText) {
+        const isMxl = rec.mimeType !== 'application/vnd.recordare.musicxml+xml';
+        try {
+          xmlText = isMxl ? await unzipMxlToXmlText(rec.mxlBlob) : await rec.mxlBlob.text();
+        } catch (e) {
+          alert('Failed to read score: ' + e.message);
+          return;
         }
-      } catch (e) {
-        alert('Failed to read score: ' + e.message);
-        return;
       }
       const meta = parseMusicXmlMetadata(xmlText);
       const total = meta.measureCount;
@@ -5620,6 +5659,10 @@
 
     // Inject user-song buttons into the start screen, between the hardcoded songs
     // and the "+ Add" button. Re-rendered after every add/remove.
+    // Each tile carries an in-place ✕ delete button (CSS in app.css under
+    // `#userSongList .mode-btn .my-remove`) so users can prune broken / wrong
+    // songs without diving into the add-song modal — important escape hatch
+    // when a song fails to load and the user just wants it gone.
     function renderUserSongButtons() {
       DOM_ADDSONG.userSongList.innerHTML = '';
       const userSongs = Object.values(SONGS).filter(s => s._isUser);
@@ -5630,9 +5673,25 @@
         btn.style.position = 'relative';
         const labelText = (song.icon || '🎵') + ' ' + (song._userTitle || song.id);
         btn.innerHTML = `<span class="mode-btn-label"></span>
-          <span class="mode-btn-loading" data-i18n="starting">Starting...</span>`;
+          <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+          <button class="my-remove" type="button" aria-label="delete">✕</button>`;
         btn.querySelector('.mode-btn-label').textContent = labelText;
         btn.addEventListener('click', () => selectSong(song.id));
+        const removeBtn = btn.querySelector('.my-remove');
+        removeBtn.title = t('addSongRemove');
+        removeBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm(t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
+          try {
+            await removeUserSong(song.id);
+          } catch (err) {
+            console.error('removeUserSong failed', err);
+            alert((err && err.message) || 'Delete failed');
+            return;
+          }
+          renderUserSongButtons();
+          if (DOM_ADDSONG.modal.classList.contains('visible')) renderAddSongMyList();
+        });
         DOM_ADDSONG.userSongList.appendChild(btn);
       }
     }
@@ -5802,7 +5861,7 @@
           source: 'import'
         };
         await userDbPut(rec);
-        registerUserSong(rec);
+        await registerUserSong(rec);
         added++;
       }
       return added;
