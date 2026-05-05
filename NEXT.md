@@ -6,8 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (17 modules extracted; engine + 3D particle
-system in core. Remaining render layer is largely thin Canvas glue.)
+Last refreshed: **2026-05-05** (20 modules extracted; engine + 3D particles +
+encouragement effects + 88-key keyboard now in core. Remaining render layer is
+the practice lane + background composites.)
 
 ---
 
@@ -18,8 +19,8 @@ system in core. Remaining render layer is largely thin Canvas glue.)
 | 1   | `audio/chord.ts`              | 12    | `packages/core/src/audio/chord.ts`              |
 | 2   | `audio/yin.ts`                | 16    | `packages/core/src/audio/yin.ts`                |
 | 3   | `audio/spectral.ts`           | 18    | `packages/core/src/audio/spectral.ts`           |
-| 4   | `audio/harmonicity.ts`        | 6     | `packages/core/src/audio/harmonicity.ts`        |
-| 5   | `audio/audio-context.ts`      | 8     | `packages/core/src/audio/audio-context.ts`      |
+| 4   | `audio/harmonicity.ts`        | 7     | `packages/core/src/audio/harmonicity.ts`        |
+| 5   | `audio/audio-context.ts`      | 10    | `packages/core/src/audio/audio-context.ts`      |
 | 6   | `audio/agc.ts`                | 13    | `packages/core/src/audio/agc.ts`                |
 | 7   | `audio/onset.ts`              | 11    | `packages/core/src/audio/onset.ts`              |
 | 8   | `library/musicxml-meta.ts`    | 4     | `packages/core/src/library/musicxml-meta.ts`    |
@@ -32,68 +33,76 @@ system in core. Remaining render layer is largely thin Canvas glue.)
 | 15  | `state/midi-state.ts`         | 21    | `packages/core/src/state/midi-state.ts`         |
 | 16  | `state/practice-state.ts`     | 41    | `packages/core/src/state/practice-state.ts`     |
 | 17  | `render/particles.ts`         | 34    | `packages/core/src/render/particles.ts`         |
+| 18  | `render/ripples.ts`           | 10    | `packages/core/src/render/ripples.ts`           |
+| 19  | `render/effects.ts`           | 17    | `packages/core/src/render/effects.ts`           |
+| 20  | `render/keyboard.ts`          | 16    | `packages/core/src/render/keyboard.ts`          |
 
-**Status: 297/297 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 340/340 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/effects.ts`
-
-**What**: Move encouragement effects (`effectGlowPulse`, `effectGlowParticles`,
-`effectColorWave`, `effectStarShower`, `effectFlowerBurst`, `effectShimmer`,
-`effectRadiance`, `effectGoldenBurst`) and the `triggerEffect(name)` dispatcher.
-
-**Why**: These are the celebration feedback fired at combo milestones. Each is a
-thin wrapper over `spawnBurst` / `Ripple` / state nudges, so extraction is
-mostly mechanical now that particles is in core.
-
-**Acceptance**:
-
-- [ ] Each effect takes a deps bag (particles, ripples, themeColors, W/H/flow)
-      and returns void / event records
-- [ ] No reads of globals (`state`, `CONFIG`, `W`, `H`)
-- [ ] `triggerEffect(name, deps)` looks up by name and dispatches
-- [ ] Tests assert each effect spawns the expected particle types/counts
-
-**Est**: 250 + 150 tests.
-
-## 2. Extract `render/keyboard.ts`
-
-**What**: Move `drawMidiKeyboard()` + the `KB_WHITE` / `KB_BLACK` /
-`KB_BLACK_LEFT_WHITE_IDX` precomputed tables.
-
-**Acceptance**:
-
-- [ ] Pure helper: `drawMidiKeyboard(ctx, opts)` where opts carries the
-      midiState (active/sustained), W/kbHeight/kbY/sustainLabel
-- [ ] Key tables exposed as exports (built once at module load)
-- [ ] Tests: white/black indexing, paint per-key state (lit/sustained/idle)
-
-**Est**: 200 + 100 tests.
-
-## 3. Extract `render/lane.ts`
+## 1. Extract `render/lane.ts`
 
 **What**: Move `drawPracticeLane(ctx, opts, practiceState)` — the falling-notes
 lane + count-in countdown + hit zones.
 
+**Why**: This is the most user-visible piece of practice mode. With particles +
+keyboard already in core, the lane is the last big render module before the
+background composites.
+
 **Acceptance**:
 
 - [ ] Pure: takes ctx + state + opts (W/H/kbHeight/laneTop/etc.) + i18n callback
-- [ ] Computes geometry without globals
-- [ ] Tests: visible window culling, position math, count-in countdown timing
+- [ ] Computes geometry without globals (no reads of `state`, `W`, `H`,
+      `CONFIG`)
+- [ ] Tests: visible window culling, position math, count-in countdown timing,
+      hit-zone painting, two-hand split
+- [ ] Uses `KB_WHITE` / `KB_BLACK_LEFT_WHITE_IDX` from `render/keyboard` for
+      x-positioning math
 
 **Est**: 350 + 150 tests.
+
+## 2. Extract `render/background.ts`
+
+**What**: Move bg-stars init + draw + aurora bands + ground flowers into a
+single background composite module.
+
+**Acceptance**:
+
+- [ ] `initBackground(opts) → BgState` builds the star field once
+- [ ] `drawBackground(ctx, bgState, opts)` paints stars, aurora, flowers given
+      `flow`, `themeColors`, `W`, `H`, `time`
+- [ ] No globals; no shared mutable star array outside the returned state
+- [ ] Tests: star count by flow tier, aurora visibility threshold (>40), flower
+      visibility threshold (>55)
+
+**Est**: 250 + 100 tests.
+
+## 3. Extract `render/theme.ts`
+
+**What**: Move `THEMES`, `noteThemeColor()`, synesthesia mapping, and the
+center-glow gradient builder.
+
+**Acceptance**:
+
+- [ ] `THEMES` exported as readonly tuple
+- [ ] `noteThemeColor(midi, themeIdx, opts)` returns the resting key color
+- [ ] Synesthesia per-note mapping pure
+- [ ] Tests: theme cycling, note→color stability, synesthesia ordering
+
+**Est**: 180 + 80 tests.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/theme.ts` — theme application + synesthesia
-- `render/background.ts` — bg stars + aurora + ground flowers
-- `render/ripples.ts` — Ripple class
+- `render/spectrum.ts` — frequency spectrum bars (64-bar piano range)
+- `render/center-glow.ts` — energy-reactive radial gradient
+- `render/stage.ts` — stage banner + transitions
+- `state/flow-meter.ts` — flow + combo + silence-decay state machine
 
 ---
 
