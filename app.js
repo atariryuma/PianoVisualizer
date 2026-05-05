@@ -1438,34 +1438,23 @@
       triggerEffect(tier.effect);
     }
 
-    // ========================================
-    // Ripples
-    // ========================================
+    // Ripples — Phase 0b.3: delegated to @piano/core.
+    // Same monkey-patch pattern as Particle: keep legacy positional
+    // r.update() / r.draw(c) call sites by injecting closures into the
+    // shared prototype.
     let ripples = [];
-    class Ripple {
-      constructor(x, y, color, size) {
-        this.x = x; this.y = y; this.radius = 0;
-        this.maxRadius = size || 200; this.color = color; this.life = 1;
-      }
-      update() {
-        this.radius += 2.5 + state.flow * 0.03;
-        this.life = 1 - this.radius / this.maxRadius;
-      }
-      draw(c) {
-        if (this.life <= 0) return;
-        c.save();
-        c.globalAlpha = this.life * 0.3;
-        c.beginPath(); c.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        c.strokeStyle = this.color;
-        c.lineWidth = 1.5 + state.flow * 0.02;
-        if (CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15) {
-          c.shadowColor = this.color;
-          c.shadowBlur = 10 + state.flow * 0.15;
-        }
-        c.stroke();
-        c.restore();
-      }
-    }
+    const _coreRippleUpdate = PianoCore.Ripple.prototype.update;
+    PianoCore.Ripple.prototype.update = function () {
+      return _coreRippleUpdate.call(this, { flow: state.flow });
+    };
+    const _coreRippleDraw = PianoCore.Ripple.prototype.draw;
+    PianoCore.Ripple.prototype.draw = function (c) {
+      return _coreRippleDraw.call(this, c, {
+        flow: state.flow,
+        useShadow: CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15,
+      });
+    };
+    const Ripple = PianoCore.Ripple;
 
     // ========================================
     // Background Elements
