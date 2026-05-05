@@ -77,6 +77,10 @@ export type {
   DrawGroundFlowersOptions,
 } from './render/background';
 
+// === Render: theme tables + per-note color resolvers ===
+export { THEMES, noteThemeColor, synColorFor, drawBackgroundFade } from './render/theme';
+export type { Theme, SynColorOptions, DrawBackgroundFadeOptions } from './render/theme';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

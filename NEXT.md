@@ -6,9 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (22 modules extracted; engine + 3D particles +
+Last refreshed: **2026-05-05** (23 modules extracted; engine + 3D particles +
 encouragement effects + 88-key keyboard + practice lane + background composites
-now in core. Remaining render is theme tables + spectrum bars.)
+
+- theme tables now in core. Remaining render is spectrum bars + center-glow.)
 
 ---
 
@@ -38,29 +39,16 @@ now in core. Remaining render is theme tables + spectrum bars.)
 | 20  | `render/keyboard.ts`          | 16    | `packages/core/src/render/keyboard.ts`          |
 | 21  | `render/lane.ts`              | 18    | `packages/core/src/render/lane.ts`              |
 | 22  | `render/background.ts`        | 17    | `packages/core/src/render/background.ts`        |
+| 23  | `render/theme.ts`             | 17    | `packages/core/src/render/theme.ts`             |
 
-**Status: 375/375 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 392/392 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/theme.ts`
-
-**What**: Move `THEMES`, `noteThemeColor()`, synesthesia mapping, and the
-center-glow gradient builder.
-
-**Acceptance**:
-
-- [ ] `THEMES` exported as readonly tuple
-- [ ] `noteThemeColor(midi, themeIdx, opts)` returns the resting key color
-- [ ] Synesthesia per-note mapping pure
-- [ ] Tests: theme cycling, note→color stability, synesthesia ordering
-
-**Est**: 180 + 80 tests.
-
-## 2. Extract `render/spectrum.ts`
+## 1. Extract `render/spectrum.ts`
 
 **What**: Move the frequency spectrum bar drawer (64 bars, piano range) into
 core. Currently reads `analyser.getByteFrequencyData()` then paints bars
@@ -75,7 +63,7 @@ proportional to magnitude.
 
 **Est**: 120 + 60 tests.
 
-## 3. Extract `render/center-glow.ts`
+## 2. Extract `render/center-glow.ts`
 
 **What**: Move the energy-reactive radial gradient (the soft glow at canvas
 center that swells with RMS / quality).
@@ -88,14 +76,29 @@ center that swells with RMS / quality).
 
 **Est**: 90 + 40 tests.
 
+## 3. Extract `render/stage.ts`
+
+**What**: Move stage tier banner + transitions (Awakening → Blooming → Aurora →
+Cosmos → Radiance → Legend). Animates a top-of-screen banner when the flow tier
+changes.
+
+**Acceptance**:
+
+- [ ] `STAGES` exported as a readonly tuple of `{ id, nameKey, threshold }`
+- [ ] `stageForFlow(flow)` returns the active stage (pure)
+- [ ] `drawStageBanner(ctx, opts)` paints the transition flash + label
+- [ ] Tests: tier mapping, threshold edges, banner visibility window
+
+**Est**: 140 + 70 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/stage.ts` — stage banner + transitions
 - `state/flow-meter.ts` — flow + combo + silence-decay state machine
 - `state/encouragement.ts` — tier escalator (Nice → Awesome) + dispatch
 - `state/quest-tracker.ts` — quest progress + completion accounting
+- `audio/chord-window.ts` — chord aggregation + progression detection
 
 ---
 
