@@ -4205,75 +4205,20 @@
       }
     }
 
-    // KB_BLACK_LEFT_WHITE_IDX[m] tells the keyboard renderer where to overlay each
-    // black key (between two whites). Built once at module load.
-    const KB_WHITE = [];
-    const KB_BLACK = [];
-    const KB_BLACK_LEFT_WHITE_IDX = {};
-    (function () {
-      for (let m = 21; m <= 108; m++) {
-        const pc = m % 12;
-        if (pc === 1 || pc === 3 || pc === 6 || pc === 8 || pc === 10) KB_BLACK.push(m);
-        else KB_WHITE.push(m);
-      }
-      for (const bm of KB_BLACK) {
-        const wi = KB_WHITE.indexOf(bm - 1);
-        if (wi >= 0) KB_BLACK_LEFT_WHITE_IDX[bm] = wi;
-      }
-    })();
+    // Virtual keyboard tables + drawer — Phase 0b.3: delegated to @piano/core.
+    const KB_WHITE = PianoCore.KB_WHITE;
+    const KB_BLACK = PianoCore.KB_BLACK;
+    const KB_BLACK_LEFT_WHITE_IDX = PianoCore.KB_BLACK_LEFT_WHITE_IDX;
 
     function drawMidiKeyboard() {
-      const kbH = kbHeight;
-      const kbY = H - kbH - kbSafeBottom;
-      const kbX = 8;
-      const kbW = W - 16;
-      const wKeyW = kbW / KB_WHITE.length;
-
-      ctx.save();
-      ctx.fillStyle = 'rgba(20, 20, 35, 0.55)';
-      ctx.fillRect(kbX, kbY, kbW, kbH);
-
-      const paintKey = (m, x, w, h, restingFill) => {
-        const note = midiState.activeNotes.get(m);
-        const lit = !!note;
-        const sustained = midiState.sustainedNotes.has(m);
-        if (lit || sustained) {
-          ctx.fillStyle = (note && note.synColor) || noteThemeColor(m);
-        } else {
-          ctx.fillStyle = restingFill;
-        }
-        ctx.fillRect(x, kbY, w, h);
-        if (lit) {
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        } else if (sustained) {
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        } else {
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-        }
-        ctx.strokeRect(x, kbY, w, h);
-      };
-
-      for (let i = 0; i < KB_WHITE.length; i++) {
-        paintKey(KB_WHITE[i], kbX + i * wKeyW + 0.5, wKeyW - 1, kbH, 'rgba(245, 245, 250, 0.85)');
-      }
-      const bKeyW = wKeyW * 0.65;
-      const bKeyH = kbH * 0.6;
-      for (const m of KB_BLACK) {
-        const wi = KB_BLACK_LEFT_WHITE_IDX[m];
-        const x = kbX + (wi + 1) * wKeyW - bKeyW / 2;
-        paintKey(m, x, bKeyW, bKeyH, 'rgba(15, 15, 25, 0.95)');
-      }
-
-      if (midiState.sustainOn) {
-        ctx.fillStyle = 'rgba(255, 200, 100, 0.85)';
-        ctx.font = 'bold 12px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(t('sustainLabel'), kbX + 6, kbY - 5);
-      }
-      ctx.restore();
+      PianoCore.drawMidiKeyboard(ctx, midiState, {
+        screenW: W,
+        screenH: H,
+        kbHeight,
+        kbSafeBottom,
+        noteThemeColor,
+        sustainLabel: t('sustainLabel'),
+      });
     }
 
     function drawMidiBeams(timeMs) {
@@ -4930,200 +4875,51 @@
     //   Lane is split into LH (left half) and RH (right half). Notes fall from the top
     //   toward the hit line. Time-to-pixel scale = (laneHeight - 40) / LANE_LOOKAHEAD_MS.
     // ========================================
+    // Practice lane drawer — Phase 0b.3: delegated to @piano/core.
+    // The view + timing + opts triple is rebuilt per frame from legacy
+    // closures so call sites pass nothing changed. core mutates the
+    // view.laneDrawFromIdx cursor in-place each frame.
     function drawPracticeLane(timeMs) {
       if (!practice.enabled) return;
-      const elapsed = practiceElapsedMs();
-      const notes = practice.sectionNotes;
-
-      // Dynamic lane sizing — start below the visible OSMD score (so falling
-      // notes aren't hidden behind it) and stretch to just above the virtual
-      // keyboard at the bottom (so the unused dark space is filled).
-      const osmdVisible = DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible');
-      const laneTop = osmdVisible ? 332 : 50;   // OSMD top:60 + h:260 + margin:12
+      const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
-      const laneHeight = Math.max(280, H - laneTop - kbReserve);
-      // Lift the hit line a bit higher than the lane bottom so it sits in the
-      // kid's natural focus zone (was -30 = almost flush with the keyboard).
-      const hitLineY = laneTop + laneHeight - 60;
-      const pxPerMs = (laneHeight - 40) / LANE_LOOKAHEAD_MS;
-      const padX = 24;
-      const usableW = W - padX * 2;
-      const halfW = usableW / 2;
-      const midX = padX + halfW;
-
-      ctx.save();
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.shadowBlur = 0;
-      ctx.shadowColor = 'transparent';
-
-      // Backgrounds — distinct tints for the two hands
-      ctx.fillStyle = 'rgba(40, 60, 110, 0.55)';
-      ctx.fillRect(padX, laneTop, halfW, laneHeight);
-      ctx.fillStyle = 'rgba(110, 50, 90, 0.55)';
-      ctx.fillRect(midX, laneTop, halfW, laneHeight);
-      ctx.strokeStyle = 'rgba(255, 220, 230, 0.85)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(padX, laneTop, usableW, laneHeight);
-
-      // Hand labels
-      ctx.fillStyle = 'rgba(180, 200, 255, 0.7)';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(laneLabelL, padX + halfW / 2, laneTop + 14);
-      ctx.fillStyle = 'rgba(255, 200, 220, 0.7)';
-      ctx.fillText(laneLabelR, midX + halfW / 2, laneTop + 14);
-
-      // Center divider
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(midX, laneTop);
-      ctx.lineTo(midX, hitLineY + 50);
-      ctx.stroke();
-
-      // Hit window band — asymmetric: above-line (early) is small, below-line
-      // (late) is the full HIT_WINDOW_MS. Visual matches the judgment so kids
-      // can read "if my note is in the band when I press, that counts."
-      const earlyPx = HIT_WINDOW_EARLY_MS * pxPerMs;
-      const latePx = HIT_WINDOW_MS * pxPerMs;
-      const perfectPx = PERFECT_MS * pxPerMs;
-      ctx.fillStyle = 'rgba(255, 200, 230, 0.20)';
-      ctx.fillRect(padX, hitLineY - earlyPx, usableW, earlyPx + latePx);
-      // Inner Perfect zone — brighter strip ±PERFECT_MS so kids see the sweet spot.
-      ctx.fillStyle = 'rgba(170, 255, 200, 0.30)';
-      ctx.fillRect(padX, hitLineY - perfectPx, usableW, perfectPx * 2);
-      // Hit line — thicker and with a soft glow so it reads from the score area.
-      ctx.save();
-      ctx.shadowColor = 'rgba(255, 220, 230, 0.8)';
-      ctx.shadowBlur = 8;
-      ctx.strokeStyle = 'rgba(255, 240, 245, 0.95)';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(padX, hitLineY);
-      ctx.lineTo(W - padX, hitLineY);
-      ctx.stroke();
-      ctx.restore();
-      // Keep the legacy `winPx` symbol in scope for the ▼ indicator below; it
-      // points at the top of the early-zone (the moment a note becomes hittable).
-      const winPx = earlyPx;
-
-      const { lhMin, lhMax, rhMin, rhMax } = practice.handRanges;
-      const noteX = (n) => {
-        if (n.hand === 'L') {
-          const r = (n.midi - lhMin) / (lhMax - lhMin);
-          return padX + r * (halfW - 20) + 10;
-        }
-        const r = (n.midi - rhMin) / (rhMax - rhMin);
-        return midX + r * (halfW - 20) + 10;
+      // Build a view that aliases practice fields (so cursor mutation flows
+      // back) and adds the resolved isBoss flag the renderer needs.
+      const view = {
+        enabled: true,
+        sectionNotes: practice.sectionNotes,
+        handRanges: practice.handRanges,
+        laneDrawFromIdx: practice.laneDrawFromIdx,
+        currentNoteIdx: practice.currentNoteIdx,
+        isBoss: !!currentSong.sections[practice.sectionIdx].isBoss,
       };
-
-      // Notes are sorted by timeMs. Visible time window spans from the moment a note
-      // would slide off the bottom of the lane to the moment it would appear at the top.
-      // laneDrawFromIdx is an amortized cursor: we never re-scan notes that have passed.
-      const visibleMinTimeMs = elapsed - 80 / pxPerMs;             // ones earlier are below
-      const visibleMaxTimeMs = elapsed + laneHeight / pxPerMs;     // ones later not yet here
-      while (practice.laneDrawFromIdx < notes.length
-        && notes[practice.laneDrawFromIdx].timeMs < visibleMinTimeMs) {
-        practice.laneDrawFromIdx++;
-      }
-      // Cap the number of notes drawn per frame. Dense passages (Mozart Turkish March
-      // 16th-note runs) can put 60+ notes in the visible window; capping at 25 keeps
-      // the canvas fast on Steam Deck / iPad without losing the read-ahead preview.
-      let drawnCount = 0;
-      for (let i = practice.laneDrawFromIdx; i < notes.length; i++) {
-        if (drawnCount >= 25) break;
-        const n = notes[i];
-        if (n.timeMs > visibleMaxTimeMs) break;
-        if (n._filtered) continue;   // One-hand practice: do not draw the other hand.
-        drawnCount++;
-        const dy = (n.timeMs - elapsed) * pxPerMs;
-        const y = hitLineY - dy;
-        const x = noteX(n);
-        const noteH = Math.max(14, n.durMs * pxPerMs * 0.9);
-        const noteW = Math.min(70, halfW / 6);
-
-        let fill;
-        if (n.hit) fill = 'rgba(120, 255, 160, 0.9)';
-        else if (n.missed) fill = 'rgba(255, 90, 120, 0.5)';
-        else fill = CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[n.midi % 12]] || '#fff';
-
-        ctx.fillStyle = fill;
-        ctx.shadowBlur = n.hit ? 18 : 8;
-        ctx.shadowColor = fill;
-        roundRect(ctx, x - noteW / 2, y - noteH, noteW, noteH, 6);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = n.hand === 'L' ? 'rgba(180, 220, 255, 0.95)' : 'rgba(255, 200, 220, 0.95)';
-        ctx.font = 'bold 9px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(n.hand, x, y - noteH - 4);
-
-        if (!n.hit && !n.missed && noteH > 18) {
-          ctx.fillStyle = 'rgba(0,0,0,0.9)';
-          ctx.font = 'bold 12px sans-serif';
-          ctx.fillText(midiToPitchName(n.midi), x, y - noteH / 2 + 4);
+      PianoCore.drawPracticeLane(
+        ctx,
+        view,
+        {
+          elapsedMs: practiceElapsedMs(),
+          realElapsedMs: practiceRealElapsedMs(),
+          nowMs: timeMs,
+        },
+        {
+          screenW: W,
+          screenH: H,
+          osmdVisible,
+          kbReserve,
+          laneLookaheadMs: LANE_LOOKAHEAD_MS,
+          countInMs: COUNT_IN_MS,
+          hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
+          hitWindowMs: HIT_WINDOW_MS,
+          perfectMs: PERFECT_MS,
+          laneLabelL,
+          laneLabelR,
+          countInGoLabel: t('countInGo'),
+          midiToPitchName,
+          noteRestingColor: (m) => CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff',
         }
-      }
-
-      // Current expected note indicator at the hit line
-      const cur = notes[practice.currentNoteIdx];
-      if (cur && !cur.hit && !cur.missed) {
-        const x = noteX(cur);
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
-        ctx.font = 'bold 28px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('▼', x, hitLineY - winPx - 4);
-        ctx.font = 'bold 18px sans-serif';
-        ctx.fillStyle = cur.hand === 'L' ? 'rgba(180,220,255,1)' : 'rgba(255,200,220,1)';
-        ctx.fillText(cur.hand + ' · ' + midiToPitchName(cur.midi), x, hitLineY + 32);
-      }
-
-      // Boss flair
-      if (currentSong.sections[practice.sectionIdx].isBoss) {
-        ctx.fillStyle = 'rgba(255, 100, 150, ' + (0.05 + 0.05 * Math.sin(timeMs * 0.005)) + ')';
-        ctx.fillRect(padX, laneTop, usableW, laneHeight);
-      }
-
-      // Count-in countdown — one number per song-beat, synced with the audible
-      // ticks scheduled in scheduleCountInBeeps. Always 4 beats ("4 → 3 → 2 → 1
-      // → GO!") with the last bright tone landing exactly when the first note
-      // hits the line. Driven by real wall-clock time (not the parked-lane
-      // clock) so guided mode animates and the GO! fade-out can complete before
-      // the kid plays anything.
-      const ctElapsed = practiceRealElapsedMs();
-      if (ctElapsed < COUNT_IN_MS + 400) {
-        const totalBeats = 4;
-        const beatMs = COUNT_IN_MS / totalBeats;
-        const beatIdx = Math.min(totalBeats - 1, Math.max(0, Math.floor(ctElapsed / beatMs)));
-        const remaining = totalBeats - beatIdx;    // 4 → 3 → 2 → 1
-        const slotMs = ctElapsed - beatIdx * beatMs;
-        const slotProgress = 1 - Math.min(1, slotMs / beatMs);
-        const text = ctElapsed >= COUNT_IN_MS ? t('countInGo') : String(remaining);
-        const isGo = ctElapsed >= COUNT_IN_MS;
-        // pop-in scale
-        const pop = isGo
-          ? Math.max(0, 1 + 0.4 * Math.sin(((ctElapsed - COUNT_IN_MS) / 400) * Math.PI))
-          : 0.7 + 0.6 * slotProgress;
-        const alpha = isGo ? Math.max(0, 1 - (ctElapsed - COUNT_IN_MS) / 400) : 0.95;
-
-        ctx.save();
-        ctx.translate(W / 2, hitLineY - 60);
-        ctx.scale(pop, pop);
-        ctx.textAlign = 'center';
-        ctx.font = 'bold ' + (isGo ? '72' : '120') + 'px sans-serif';
-        // Glow
-        ctx.shadowBlur = 30;
-        ctx.shadowColor = isGo ? 'rgba(255, 220, 130, .9)' : 'rgba(255, 180, 220, .9)';
-        ctx.fillStyle = isGo ? 'rgba(255, 230, 130, ' + alpha + ')'
-                             : 'rgba(255, 230, 240, ' + alpha + ')';
-        ctx.fillText(text, 0, 0);
-        ctx.shadowBlur = 0;
-        ctx.restore();
-      }
-
-      ctx.restore();
+      );
+      // Thread the amortized cursor back so subsequent frames don't re-scan.
+      practice.laneDrawFromIdx = view.laneDrawFromIdx;
     }
 
     function roundRect(c, x, y, w, h, r) {
