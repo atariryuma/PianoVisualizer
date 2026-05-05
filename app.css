@@ -65,15 +65,19 @@
 
     /* tablet / desktop: stacked but centered with max-width and roomier
        height so the score doesn't stretch awkwardly across a 1440px monitor. */
+    /* tablet / desktop: max 1280 wide (iPad Pro 12.9 landscape, 27"+ desktop)
+       so the score panel uses the available headroom rather than feeling
+       cramped at 960. Heights bumped to 32–40 vh range so two-staff scores
+       with high ledger lines (Liszt, La Campanella) don't get clipped. */
     body[data-layout="tablet"],
     body[data-layout="desktop"] {
-      --osmd-left: max(16px, calc(50vw - 480px));
-      --osmd-right: max(16px, calc(50vw - 480px));
+      --osmd-left: max(16px, calc(50vw - 640px));
+      --osmd-right: max(16px, calc(50vw - 640px));
       --osmd-top: calc(var(--top-cluster-bottom) + 12px);
-      --osmd-height: clamp(200px, 32vh, 440px);
+      --osmd-height: clamp(220px, 36vh, 560px);
     }
     body[data-layout="desktop"] {
-      --osmd-height: clamp(220px, 34vh, 480px);
+      --osmd-height: clamp(240px, 40vh, 640px);
     }
 
     /* phone-landscape elements that would otherwise sit behind the OSMD
@@ -1539,6 +1543,18 @@
 
     #practiceTopBar button:active {
       background: rgba(255, 255, 255, .25);
+    }
+
+    /* Icon-only buttons (📜 score toggle, ✕ quit) — emoji-sized so they
+       read at a glance on every layout, with a square-ish tap region that
+       still meets the 32 px iOS minimum. Title attr carries the localized
+       label for hover / long-press. */
+    #practiceTopBar .ptb-icon-btn {
+      font-size: 1rem;
+      line-height: 1;
+      padding: 4px 9px;
+      min-width: 32px;
+      text-align: center;
     }
 
     /* Narrow-viewport overrides — phone widths (≤520 px) regardless of

@@ -835,8 +835,10 @@
         clearTimeout(debugTapTimer);
         debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 600);
         if (debugTapCount >= 3) {
-          state.debugMode = !state.debugMode;
-          DOM.debugOverlay.style.display = state.debugMode ? 'block' : 'none';
+          // Route through applyDebug so settings-panel state and the
+          // overlay's actual visibility + textContent stay in sync.
+          applyDebug(!prefs.debug);
+          savePrefs();
           debugTapCount = 0;
         }
       }
@@ -1451,11 +1453,19 @@
       if (state.running && typeof showSessionSummary === 'function') showSessionSummary();
     });
 
+    // Single source of truth for the debug overlay. Two entry points (the
+    // settings-panel toggle and the triple-tap on the bottom-left corner)
+    // both flow through this so prefs.debug and state.debugMode never
+    // drift; updateDebugOverlay() reads state.debugMode to decide whether
+    // to refresh the textContent each frame.
     function applyDebug(on) {
       prefs.debug = on;
+      state.debugMode = on;
       DOM.settingsDebugToggle.classList.toggle('on', on);
-      const overlay = document.getElementById('debugOverlay');
-      if (overlay) overlay.classList.toggle('visible', on);
+      if (DOM.debugOverlay) {
+        DOM.debugOverlay.classList.toggle('visible', on);
+        DOM.debugOverlay.style.display = on ? 'block' : 'none';
+      }
     }
     applyDebug(prefs.debug);
     DOM.settingsDebugToggle.addEventListener('click', () => {
@@ -4144,14 +4154,20 @@
       document.body.classList.toggle('midi-on', !!midiInput.enabled);
       if (typeof refreshMidiBadge === 'function') refreshMidiBadge();
       if (!DOM.ptbInput) return;
+      // Pill is emoji-only on every layout — saves topbar width in the
+      // narrow phone case + frees horizontal room for the centered section
+      // name on iPad. Mode + device name stay accessible via title (long-press
+      // / hover) and aria-label (screen readers).
       if (midiInput.enabled) {
-        DOM.ptbInput.textContent = '🎹 MIDI';
+        DOM.ptbInput.textContent = '🎹';
         DOM.ptbInput.classList.add('midi');
         DOM.ptbInput.title = t('tipMidiKeyboardFmt', { v: midiInput.port?.name || 'unknown' });
+        DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
       } else {
-        DOM.ptbInput.textContent = '🎙️ MIC';
+        DOM.ptbInput.textContent = '🎙️';
         DOM.ptbInput.classList.remove('midi');
         DOM.ptbInput.title = midiInput.platformBlocked ? t('tipIosMidiBlocked') : t('tipMicMode');
+        DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
       }
     }
 
