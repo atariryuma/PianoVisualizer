@@ -6,10 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (26 modules extracted; the entire render layer is
-now in core (engine, 3D particles, encouragement effects, 88-key keyboard,
-practice lane, background, theme, spectrum, center-glow, stage tiers). Remaining
-work is state machines (flow / encouragement / quests) and a few audio helpers.)
+Last refreshed: **2026-05-05** (27 modules extracted; render layer fully in
+core, plus the flow + combo state machine. Remaining work is the encouragement
+escalator, the quest tracker, and a few audio helpers.)
 
 ---
 
@@ -43,30 +42,16 @@ work is state machines (flow / encouragement / quests) and a few audio helpers.)
 | 24  | `render/spectrum.ts`          | 12    | `packages/core/src/render/spectrum.ts`          |
 | 25  | `render/center-glow.ts`       | 9     | `packages/core/src/render/center-glow.ts`       |
 | 26  | `render/stage.ts`             | 19    | `packages/core/src/render/stage.ts`             |
+| 27  | `state/flow-meter.ts`         | 27    | `packages/core/src/state/flow-meter.ts`         |
 
-**Status: 432/432 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 459/459 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/flow-meter.ts`
-
-**What**: Move the flow + combo state machine — onset adds, silence decay, combo
-window expiry, best-combo tracking. Currently scattered across the loop's "good
-note" branch in app.js.
-
-**Acceptance**:
-
-- [ ] `(state, event) → { state, events }` reducer over MIDI/onset events
-- [ ] Pure: silence decay rate, combo window, peak-tracking all from opts
-- [ ] Tests: combo accumulation, window expiry, decay during silence, best-combo
-      monotonicity, flow ceiling at 100
-
-**Est**: 220 + 130 tests.
-
-## 2. Extract `state/encouragement.ts`
+## 1. Extract `state/encouragement.ts`
 
 **What**: Move the tier escalator that picks the right Nice/Great/Awesome
 message at each combo milestone, and dispatches the matching effect.
@@ -82,7 +67,7 @@ message at each combo milestone, and dispatches the matching effect.
 
 **Est**: 160 + 90 tests.
 
-## 3. Extract `state/quest-tracker.ts`
+## 2. Extract `state/quest-tracker.ts`
 
 **What**: Move the v10 magic-quests engine — given current QUESTS table +
 runtime state slice, returns active quest + completion progress + reward events
@@ -99,14 +84,29 @@ on transition.
 
 **Est**: 180 + 100 tests.
 
+## 3. Extract `state/quality-history.ts`
+
+**What**: Move the IOI + dynamics ring buffer that feeds `state/quality.ts`.
+Currently lives as `noteOnsetTimes` + `noteVelocities` arrays directly in
+app.js.
+
+**Acceptance**:
+
+- [ ] `(state, onset) → state` reducer; bounded buffer length via opts
+- [ ] Computes derived stats (IOI mean / std, velocity CV) on demand
+- [ ] Tests: bounded growth, FIFO eviction, IOI rejection of duplicate onsets
+      within debounce window
+
+**Est**: 130 + 80 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
 - `audio/chord-window.ts` — chord aggregation + progression detection
-- `state/quality-history.ts` — IOI / dynamics ring buffer feeding quality.ts
 - `render/midi-beams.ts` — sustained-note beam overlay
 - `state/streak.ts` — daily-streak persistence + calendar formatting
+- `state/pitch-stability.ts` — semitone-deviation tracker
 
 ---
 

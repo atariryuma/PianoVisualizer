@@ -93,6 +93,10 @@ export type { CenterGlowOptions } from './render/center-glow';
 export { STAGES, stageForFlow, stageLabel, classifyStageTransition } from './render/stage';
 export type { Stage, StageTransition } from './render/stage';
 
+// === State: flow + combo meter (silence decay, noise penalty, MIDI gain) ===
+export { initFlowState, resetFlowState, applyFlowEvent } from './state/flow-meter';
+export type { FlowState, FlowMeterOptions, FlowEvent } from './state/flow-meter';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
