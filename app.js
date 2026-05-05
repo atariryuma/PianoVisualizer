@@ -3339,16 +3339,14 @@
     // anticipate it; reaction-lag is also natural and partly compensates for
     // audio output latency. Symmetric windows let kids develop a "rush ahead"
     // habit that's hard to unlearn.
-    const HIT_WINDOW_EARLY_MS = 120;   // before cur.timeMs (anticipation side)
-    const HIT_WINDOW_MS = 350;         // after cur.timeMs (reaction side)
-    const PERFECT_MS = 90;             // |dt| ≤ this counts as perfect (both sides)
-    const CHORD_MATE_TOLERANCE_MS = 30;
-    // Note-length tolerance: |held - written| up to max(MIN_TOL, written × FRACTION)
-    // counts. Floor protects short notes where finger release physics dominate over
-    // written length. Tuned for upper-elementary kids — release-timing variability
-    // at this age is noticeably wider than onset variability (Bonacina 2019).
-    const DURATION_MIN_TOL_MS = 120;
-    const DURATION_TOL_FRACTION = 0.4;
+    // Hit-window + duration-tolerance constants — Phase 0b.3: re-exported
+    // from @piano/core (same values, single source of truth).
+    const HIT_WINDOW_EARLY_MS = PianoCore.HIT_WINDOW_EARLY_MS;
+    const HIT_WINDOW_MS = PianoCore.HIT_WINDOW_MS;
+    const PERFECT_MS = PianoCore.PERFECT_MS;
+    const CHORD_MATE_TOLERANCE_MS = PianoCore.CHORD_MATE_TOLERANCE_MS;
+    const DURATION_MIN_TOL_MS = PianoCore.DURATION_MIN_TOL_MS;
+    const DURATION_TOL_FRACTION = PianoCore.DURATION_TOL_FRACTION;
     // Audio output latency compensation. Speaker buffer delay means the kid hears
     // the metronome ~30-100ms after Tone schedules it, so a press timed to the
     // audible beat registers as "late" without compensation. We try to read
@@ -4914,18 +4912,9 @@
 
     // durPct is null in guided mode (no audio clock to score length against), in
     // which case the dur threshold is skipped.
-    const STAR_TIERS = [
-      { stars: 3, acc: 90, timing: 70, dur: 70 },
-      { stars: 2, acc: 75, timing: 0,  dur: 50 },
-      { stars: 1, acc: 50, timing: 0,  dur: 0  }
-    ];
-    function computeStars(accPct, timingPct, durPct) {
-      const tier = STAR_TIERS.find(t =>
-        accPct >= t.acc &&
-        timingPct >= t.timing &&
-        (durPct == null || durPct >= t.dur));
-      return tier ? tier.stars : 0;
-    }
+    // STAR_TIERS + computeStars — Phase 0b.3: delegated to @piano/core.
+    const STAR_TIERS = PianoCore.STAR_TIERS;
+    const computeStars = PianoCore.computeStars;
 
     // Apply localized text + visibility based on a cached result context. Called
     // from completePracticeSection AND from the langchange listener so the card
