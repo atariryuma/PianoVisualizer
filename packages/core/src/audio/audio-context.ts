@@ -148,6 +148,48 @@ export function buildAudioGraph(ctx: AudioContextLike, opts: AudioGraphOptions):
 }
 
 /**
+ * Pick the audio offset (ms) used to compensate for the speaker → ear lag.
+ *
+ * Order:
+ *   1. User override (slider in ⚙ settings) wins outright.
+ *   2. Sum of `outputLatency` + `baseLatency` from the AudioContext when
+ *      both populate (Chrome / Edge / Steam Deck reliably do; Firefox
+ *      often returns 0; older Safari undefined). Clamp to `maxClampMs`
+ *      so a Bluetooth headset's 250 ms tail doesn't shove the hit window
+ *      out of usable range.
+ *   3. Otherwise the platform default (caller passes DEFAULT_AUDIO_OFFSET_MS).
+ *
+ * Pure: no DOM, no AudioContext access — caller reads the latency figures
+ * and passes them in. That keeps test setup trivial.
+ */
+export interface PickAudioOffsetInput {
+  /** prefs.audioOffsetMs — user slider override; null = auto-detect. */
+  userOverrideMs: number | null;
+  /** AudioContext.outputLatency * 1000 (or 0 if unsupported). */
+  reportedOutMs: number;
+  /** AudioContext.baseLatency * 1000 (or 0 if unsupported). */
+  reportedBaseMs: number;
+  /** Default to fall back to when the browser doesn't report a useful value. */
+  defaultMs: number;
+  /** Cap on auto-detected total. Default 200 ms. */
+  maxClampMs?: number;
+  /** Below this combined value the reading is considered "not populated"
+   *  and the default is used instead. Default 5 ms. */
+  minReportedMs?: number;
+}
+
+export function pickAudioOffsetMs(input: PickAudioOffsetInput): number {
+  if (input.userOverrideMs != null && Number.isFinite(input.userOverrideMs)) {
+    return input.userOverrideMs;
+  }
+  const reported = input.reportedOutMs + input.reportedBaseMs;
+  const min = input.minReportedMs ?? 5;
+  const max = input.maxClampMs ?? 200;
+  if (reported > min) return Math.min(reported, max);
+  return input.defaultMs;
+}
+
+/**
  * Close the existing context and create a fresh one with the same graph.
  * Use on `visibilitychange` recovery and `devicechange` (AirPods etc.).
  *

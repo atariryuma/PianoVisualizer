@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createAudioContext,
   buildAudioGraph,
+  pickAudioOffsetMs,
   recoverAudioContext,
   AUDIO_SAMPLE_RATE,
 } from '../src/audio/audio-context';
@@ -174,5 +175,105 @@ describe('recoverAudioContext', () => {
       StubAudioContext
     );
     expect(next.ctx).not.toBe(prevCtx);
+  });
+});
+
+describe('pickAudioOffsetMs', () => {
+  it('user override always wins, even when reported latency is large', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: 25,
+        reportedOutMs: 100,
+        reportedBaseMs: 50,
+        defaultMs: 40,
+      })
+    ).toBe(25);
+  });
+
+  it('user override of 0 is honored (kid wants no compensation)', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: 0,
+        reportedOutMs: 80,
+        reportedBaseMs: 20,
+        defaultMs: 40,
+      })
+    ).toBe(0);
+  });
+
+  it('falls back to default when reported latency is below the noise floor', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 0,
+        reportedBaseMs: 0,
+        defaultMs: 40,
+      })
+    ).toBe(40);
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 2,
+        reportedBaseMs: 1,
+        defaultMs: 40,
+      })
+    ).toBe(40);
+  });
+
+  it('uses out + base when both populate', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 80,
+        reportedBaseMs: 20,
+        defaultMs: 40,
+      })
+    ).toBe(100);
+  });
+
+  it('clamps to maxClampMs (default 200) so AirPods 250 ms tail is bounded', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 240,
+        reportedBaseMs: 20,
+        defaultMs: 40,
+      })
+    ).toBe(200);
+  });
+
+  it('honors custom maxClampMs', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 100,
+        reportedBaseMs: 0,
+        defaultMs: 40,
+        maxClampMs: 75,
+      })
+    ).toBe(75);
+  });
+
+  it('honors custom minReportedMs', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 8,
+        reportedBaseMs: 0,
+        defaultMs: 40,
+        minReportedMs: 10,
+      })
+    ).toBe(40);
+  });
+
+  it('treats non-finite override as "not set" and falls back', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: NaN,
+        reportedOutMs: 80,
+        reportedBaseMs: 20,
+        defaultMs: 40,
+      })
+    ).toBe(100);
   });
 });

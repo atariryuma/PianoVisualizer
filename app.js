@@ -2674,12 +2674,8 @@
     // ========================================
     // v11: Format Time (mm:ss)
     // ========================================
-    function formatTime(ms) {
-      const totalSec = Math.floor(ms / 1000);
-      const m = Math.floor(totalSec / 60);
-      const s = totalSec % 60;
-      return m + ':' + (s < 10 ? '0' : '') + s;
-    }
+    // formatTime — Phase 0b: delegated to @piano/core/util/format.
+    const formatTime = PianoCore.formatTime;
 
     // ========================================
     // v11: Update Play Time Display
@@ -3345,30 +3341,14 @@
       'moonlight_sonata_3rd_movement.mxl':                                { titleJp: '月光ソナタ 第3楽章',              composerJp: 'ベートーヴェン' }
     };
 
+    // libraryEntryFromGhFile — Phase 0b: delegated to @piano/core. The
+    // pinned SHA + JP overrides flow in from the legacy module-scope
+    // constants; the core stays catalog-source-agnostic.
     function libraryEntryFromGhFile(f) {
-      // f.name = "Bach_Minuet_in_G_Major_BWV_Anh._114.mxl"
-      // Show as "Bach — Minuet in G Major BWV Anh. 114" (spaces, em-dash for first underscore).
-      const stem = f.name.replace(/\.mxl$/i, '');
-      const parts = stem.split(/_-_|_/);
-      // First token is treated as composer; rest is title.
-      const composer = parts[0] || '';
-      const title = parts.slice(1).join(' ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-      const label = (composer && title) ? (composer + ' — ' + title)
-                  : (composer || title || stem);
-      const jp = LIBRARY_JP[f.name] || null;
-      return {
-        url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@' + LIBRARY_PINNED_SHA
-           + '/scores/' + encodeURIComponent(f.name),
-        filename: f.name,
-        label,
-        composer,
-        title,
-        labelJp:    jp ? (jp.composerJp + ' — ' + jp.titleJp) : null,
-        composerJp: jp ? jp.composerJp : null,
-        titleJp:    jp ? jp.titleJp    : null,
-        icon: '🎼',
-        size: f.size || 0
-      };
+      return PianoCore.libraryEntryFromGhFile(f, {
+        pinnedSha: LIBRARY_PINNED_SHA,
+        jpOverrides: LIBRARY_JP,
+      });
     }
 
     async function fetchLibrary(force) {
@@ -3408,20 +3388,8 @@
     // finding the first occurrence of each boundary measure in the unfolded note
     // timeline. This keeps sections contiguous in playback time even when the
     // source score has repeats that revisit early measures later.
-    function buildSectionsFromDefs(notes, totalSec, defs) {
-      const startSecs = defs.map(d => {
-        const first = notes.find(n => n.measureIdx >= d.startMeasure);
-        return first ? first.timeSec : totalSec;
-      });
-      return defs.map((d, i) => ({
-        id: d.id,
-        nameKey: d.nameKey,
-        descKey: d.descKey,
-        isBoss: d.isBoss,
-        startSec: startSecs[i],
-        endSec: i + 1 < defs.length ? startSecs[i + 1] : (totalSec + 1)
-      }));
-    }
+    // buildSectionsFromDefs — Phase 0b: delegated to @piano/core/library/auto-section.
+    const buildSectionsFromDefs = PianoCore.buildSectionsFromDefs;
 
     // ========================================
     // OSMD — single source of truth.
@@ -5282,18 +5250,15 @@
           const ctx = Tone.context.rawContext || Tone.context;
           const out = (ctx.outputLatency || 0) * 1000;
           const base = (ctx.baseLatency || 0) * 1000;
-          // User override (slider in ⚙ settings) wins over auto-detection.
-          // Otherwise prefer the browser's reported figure when populated
-          // (Chrome/Edge desktop reliably do; Firefox often returns 0, older
-          // Safari undefined), else fall back to DEFAULT_AUDIO_OFFSET_MS.
-          if (prefs.audioOffsetMs != null) {
-            practice.audioOffsetMs = prefs.audioOffsetMs;
-          } else {
-            const reported = out + base;
-            practice.audioOffsetMs = reported > 5
-              ? Math.min(reported, 200)   // clamp absurd values (e.g. AirPods 250ms)
-              : DEFAULT_AUDIO_OFFSET_MS;
-          }
+          // pickAudioOffsetMs in @piano/core encapsulates the user-override-
+          // wins / clamp-AirPods-tail / fall-back-to-default decision so it's
+          // testable without standing up an AudioContext.
+          practice.audioOffsetMs = PianoCore.pickAudioOffsetMs({
+            userOverrideMs: prefs.audioOffsetMs,
+            reportedOutMs: out,
+            reportedBaseMs: base,
+            defaultMs: DEFAULT_AUDIO_OFFSET_MS,
+          });
           remoteLog('[Practice] mode=' + practice.mode
             + ' tempoPct=' + practice.tempoPct
             + ' audioOutputLatency=' + out.toFixed(1) + 'ms'
