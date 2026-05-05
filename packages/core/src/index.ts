@@ -81,6 +81,10 @@ export type {
 export { THEMES, noteThemeColor, synColorFor, drawBackgroundFade } from './render/theme';
 export type { Theme, SynColorOptions, DrawBackgroundFadeOptions } from './render/theme';
 
+// === Render: frequency spectrum bars ===
+export { drawSpectrumBars } from './render/spectrum';
+export type { SpectrumDrawOptions } from './render/spectrum';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

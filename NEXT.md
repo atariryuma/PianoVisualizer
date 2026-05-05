@@ -6,10 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (23 modules extracted; engine, 3D particles,
+Last refreshed: **2026-05-05** (24 modules extracted; engine, 3D particles,
 encouragement effects, 88-key keyboard, practice lane, background composites,
-and theme tables now in core. Remaining render is spectrum bars and
-center-glow.)
+theme tables, and frequency spectrum now in core. Remaining render is
+center-glow and stage banner.)
 
 ---
 
@@ -40,30 +40,16 @@ center-glow.)
 | 21  | `render/lane.ts`              | 18    | `packages/core/src/render/lane.ts`              |
 | 22  | `render/background.ts`        | 17    | `packages/core/src/render/background.ts`        |
 | 23  | `render/theme.ts`             | 17    | `packages/core/src/render/theme.ts`             |
+| 24  | `render/spectrum.ts`          | 12    | `packages/core/src/render/spectrum.ts`          |
 
-**Status: 392/392 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 404/404 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/spectrum.ts`
-
-**What**: Move the frequency spectrum bar drawer (64 bars, piano range) into
-core. Currently reads `analyser.getByteFrequencyData()` then paints bars
-proportional to magnitude.
-
-**Acceptance**:
-
-- [ ] `drawSpectrum(ctx, freqData: Uint8Array, opts)` — pure
-- [ ] No analyser ownership; caller passes the freqData buffer
-- [ ] Bar count + colors injected via opts
-- [ ] Tests: bar count, palette mapping, height scaling, no-op on empty buffer
-
-**Est**: 120 + 60 tests.
-
-## 2. Extract `render/center-glow.ts`
+## 1. Extract `render/center-glow.ts`
 
 **What**: Move the energy-reactive radial gradient (the soft glow at canvas
 center that swells with RMS / quality).
@@ -76,7 +62,7 @@ center that swells with RMS / quality).
 
 **Est**: 90 + 40 tests.
 
-## 3. Extract `render/stage.ts`
+## 2. Extract `render/stage.ts`
 
 **What**: Move stage tier banner + transitions (Awakening → Blooming → Aurora →
 Cosmos → Radiance → Legend). Animates a top-of-screen banner when the flow tier
@@ -91,14 +77,29 @@ changes.
 
 **Est**: 140 + 70 tests.
 
+## 3. Extract `state/flow-meter.ts`
+
+**What**: Move the flow + combo state machine — onset adds, silence decay, combo
+window expiry, best-combo tracking. Currently scattered across the loop's "good
+note" branch in app.js.
+
+**Acceptance**:
+
+- [ ] `(state, event) → { state, events }` reducer over MIDI/onset events
+- [ ] Pure: silence decay rate, combo window, peak-tracking all from opts
+- [ ] Tests: combo accumulation, window expiry, decay during silence, best-combo
+      monotonicity, flow ceiling at 100
+
+**Est**: 220 + 130 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `state/flow-meter.ts` — flow + combo + silence-decay state machine
 - `state/encouragement.ts` — tier escalator (Nice → Awesome) + dispatch
 - `state/quest-tracker.ts` — quest progress + completion accounting
 - `audio/chord-window.ts` — chord aggregation + progression detection
+- `state/quality-history.ts` — IOI / dynamics ring buffer feeding quality.ts
 
 ---
 
