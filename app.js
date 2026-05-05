@@ -1,0 +1,6934 @@
+    'use strict';
+
+    // PWA registration — failure is non-fatal (HTTPS required, self-signed certs may reject).
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+          console.warn('[SW] register failed:', err && err.message);
+        });
+      });
+    }
+
+    // ========================================
+    // Remote Logging (v10)
+    // Only active when served from the bundled PowerShell HTTPS server (LAN/dev).
+    // Production / static-host deploys (file://, github.io, etc.) get a no-op so we
+    // don't waste bandwidth POSTing to a non-existent /log endpoint, and so OSMD/Tone
+    // console output isn't unexpectedly forwarded off-device.
+    // Toggle at runtime: set localStorage.pianoViz_remoteLog = '1' / '0'.
+    // ========================================
+    const REMOTE_LOG_ENABLED = (() => {
+      try {
+        const override = localStorage.getItem('pianoViz_remoteLog');
+        if (override === '1') return true;
+        if (override === '0') return false;
+      } catch (e) {}
+      const h = location.hostname;
+      return location.protocol === 'https:' &&
+        (h === 'localhost' || h === '127.0.0.1' || /^192\.168\./.test(h) || /^10\./.test(h));
+    })();
+
+    const remoteLog = REMOTE_LOG_ENABLED
+      ? (msg) => {
+          fetch('/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: (typeof msg === 'string') ? msg : JSON.stringify(msg)
+          }).catch(() => {});
+        }
+      : () => {};
+
+    if (REMOTE_LOG_ENABLED) {
+      const _log = console.log;
+      console.log = (...args) => { _log(...args); remoteLog(args.join(' ')); };
+      const _err = console.error;
+      console.error = (...args) => { _err(...args); remoteLog('[ERROR] ' + args.join(' ')); };
+      window.onerror = (msg, url, line) => { remoteLog(`[FATAL] ${msg} (${line})`); };
+    }
+
+    console.log("App Started: Piano Visualizer");
+
+    const CONFIG = {
+      // Audio — main analyser (for pitch + visualisation)
+      FFT_SIZE: 4096,
+      SMOOTHING: 0.82,
+      PIANO_FREQ_MIN: 27,
+      PIANO_FREQ_MAX: 4200,
+
+      // Onset analyser — dedicated low-smoothing node for transient detection
+      ONSET_FFT_SIZE: 2048,
+      ONSET_SMOOTHING: 0.15,
+
+      // =============================================
+      // Software AGC via GainNode (v8)
+      // =============================================
+      AGC_TARGET_RMS: 0.06,
+      AGC_ATTACK_COEFF: 0.02,
+      AGC_RELEASE_COEFF: 0.08,
+      AGC_MIN_GAIN: 1.0,
+      AGC_MAX_GAIN: 40.0,
+      AGC_UPDATE_INTERVAL_MS: 100,
+      AGC_SILENCE_FLOOR: 0.0003,
+
+      // v9: AGC voice suppression
+      AGC_VOICE_REJECT_COUNT: 5,      // consecutive high-RMS rejections to trigger suppression
+      AGC_VOICE_SUPPRESS_MAX: 8.0,    // temporary max gain during voice suppression
+      AGC_VOICE_SUPPRESS_MS: 500,     // how long to suppress after voice detected
+      AGC_VOICE_RMS_MIN: 0.02,        // minimum RMS to count as "high-RMS rejection"
+
+      // v10: Synesthesia Colors (Educational Mode)
+      NOTE_COLORS: {
+        'C': '#ff0000', // Red
+        'C#': '#ff4000', // Red-Orange
+        'D': '#ff8000', // Orange
+        'D#': '#ffbf00', // Yellow-Orange
+        'E': '#ffff00', // Yellow
+        'F': '#80ff00', // Light Green
+        'F#': '#00ff00', // Green
+        'G': '#00ffff', // Cyan
+        'G#': '#0080ff', // Blue
+        'A': '#0000ff', // Dark Blue
+        'A#': '#8000ff', // Purple
+        'B': '#ff00ff'  // Magenta
+      },
+
+      // =============================================
+      // YIN Pitch Detection (v6+)
+      // =============================================
+      YIN_THRESHOLD: 0.20,
+      YIN_PROBABILITY_THRESHOLD: 0.10,
+      RMS_SILENCE_THRESHOLD: 0.008,   // v10: Slightly raised (0.005 -> 0.008) to reduce noise
+      PITCH_MIN_HZ: 25,
+      // Practice-mode floor — YIN frequently locks onto a sub-harmonic 1-2 octaves
+      // below the actual note. Für Elise's lowest written pitch is around A2 (~110Hz),
+      // so anything below E2 (~82Hz) is almost always an octave-down error.
+      PITCH_MIN_HZ_PRACTICE: 80,
+      PITCH_MAX_HZ: 5000,
+      GOOD_NOTE_RMS: 0.008,           // v10: Raised (0.005 -> 0.008) - reject key clatter
+      CONFIDENCE_THRESHOLD: 0.60,     // v10: Final (0.65 -> 0.60) - Sweet spot for sensitivity/noise
+
+      // =============================================
+      // Multi-Feature Onset Classification (v10 — tuned for sensitivity)
+      // =============================================
+      SPECTRAL_FLUX_THRESHOLD: 4.0,       // v10: Slight increase (3.0 -> 4.0)
+      SPECTRAL_FLUX_ADAPTIVE_K: 1.3,
+      SPECTRAL_FLUX_HISTORY_SIZE: 20,
+      ONSET_SPREAD_THRESHOLD: 0.05,       // v10: Low Min (0.15->0.05) to pass pure notes
+      ONSET_SPREAD_MAX: 0.70,             // v10: Relaxed Max (0.60 -> 0.70) for big chords
+      ONSET_SPREAD_MIN_CHANGE: 1.5,
+      // Spectral flatness lower bound. Piano single notes are very tonal (low flatness),
+      // so this threshold must be small or the gate rejects clean playing. The
+      // harmonicity gate above already filters non-pitched sounds, so we keep this
+      // low and use it only as a last-resort sanity check.
+      FLATNESS_PIANO_MIN: 0.03,
+      CREST_VOICE_MAX: 8.0,
+      ONSET_GATE_DURATION_MS: 1500,
+      ONSET_COOLDOWN_MS: 60,
+      FLUX_FREQ_MIN_HZ: 20,
+      FLUX_FREQ_MAX_HZ: 4200,
+
+      // =============================================
+      // Harmonicity Gate (v9 — new)
+      // =============================================
+      HARMONICITY_MIN: 0.0,               // free-play: lenient so chords don't get rejected
+      HARMONICITY_MIN_PRACTICE: 0.12,     // practice: light filter for voice/key clatter.
+      //   iPad mic on acoustic piano typically yields 0.10–0.30 harmonicity, so 0.12
+      //   keeps real notes through while still catching pure-noise events.
+      HARMONICITY_PARTIALS: 6,            // number of harmonics to check (2x..7x)
+      HARMONICITY_BIN_TOLERANCE: 2,       // ±bins around each harmonic peak
+
+      // =============================================
+      // Session Confidence Layer (v7+)
+      // =============================================
+      SESSION_WINDOW_MS: 4000,
+      SESSION_CONFIRM_THRESHOLD: 0.35,
+      SESSION_LOSE_THRESHOLD: 0.10,
+      SESSION_WARMUP_MS: 2000,
+      SESSION_SAMPLE_INTERVAL_MS: 50,
+
+      // =============================================
+      // Spectral Centroid Tracking (debug only)
+      // =============================================
+      CENTROID_HISTORY_SIZE: 20,
+
+      // =============================================
+      // Quality Scoring — simplified for kids (v8+)
+      // =============================================
+      SCORE_RHYTHM_WEIGHT: 0.4,
+      SCORE_DYNAMICS_WEIGHT: 0.35,
+      SCORE_STABILITY_WEIGHT: 0.25,
+      IOI_HISTORY_SIZE: 16,
+      IOI_IDEAL_CV: 0.30,
+      IOI_MAX_CV: 1.5,
+      AMPLITUDE_HISTORY_SIZE: 30,
+      DYNAMICS_IDEAL_CV_MIN: 0.03,
+      DYNAMICS_IDEAL_CV_MAX: 0.60,
+      SCORE_UPDATE_INTERVAL_MS: 500,
+      SCORE_SMOOTHING: 0.08,
+      GROWTH_WINDOW_MS: 30000,
+      MOTIVATION_GOAL_MS: 30000,
+
+      // Game timing
+      COMBO_WINDOW_MS: 3000,
+      SILENCE_DECAY_START_MS: 8000,       // v10: Increased to 8s (was 4s) for longer pauses
+      SILENCE_HARD_DECAY_MS: 12000,       // v10: Increased Hard Decay start
+      NOISE_PENALTY_COOLDOWN_MS: 300,
+      NOTE_DISPLAY_DURATION_MS: 1200,
+      MIN_NOTE_INTERVAL_MS: 70,
+
+      // Game balance
+      FLOW_GAIN_BASE: 8,                  // v10: Final Tune (10 -> 8) - Gentle climb
+      FLOW_GAIN_COMBO_MAX: 10,            // v10: Reduced (16 -> 10)
+      FLOW_GAIN_STABILITY_MAX: 20,
+      FLOW_GAIN_QUALITY_MAX: 25,
+      FLOW_DECAY_SOFT: 0.5,               // v10: Very gentle decay (was 2.0)
+      FLOW_DECAY_HARD: 2.0,               // v10: Slower hard decay (was 8.0)
+      NOISE_RMS_THRESHOLD: 0.05,
+      FLOW_NOISE_PENALTY: 3,
+      COMBO_DECAY_RATE: 0.5,
+      COMBO_NOISE_PENALTY: 1,
+
+      // Pitch stability
+      STABILITY_SEMITONE_THRESHOLD: 3,
+      STABILITY_GROWTH: 0.05,
+      STABILITY_DECAY_GOOD: 0.90,         // v10: Slower decay active
+      STABILITY_DECAY_IDLE: 0.995,        // v10: Much slower decay idle (was 0.98)
+
+      // Rendering
+      MAX_PARTICLES: 800,
+      SHADOW_BLUR_ENABLED: true,
+      AMBIENT_PARTICLE_CHANCE: 0.03,
+      BAR_COUNT: 64,
+
+      // Stages — `nameKey` is resolved via t() so labels follow prefs.lang.
+      STAGES: [
+        { nameKey: null,     prefix: '',             minFlow: 0 },
+        { nameKey: 'stage1', prefix: '\u2726 ',       minFlow: 15 },
+        { nameKey: 'stage2', prefix: '\u2726\u2726 ', minFlow: 35 },
+        { nameKey: 'stage3', prefix: '\u2726\u2726\u2726 ', minFlow: 55 },
+        { nameKey: 'stage4', prefix: '\u2726\u2726\u2726\u2726 ', minFlow: 75 },
+        { nameKey: 'stage5', prefix: '\u2726\u2726\u2726\u2726\u2726 ', minFlow: 90 },
+        { nameKey: 'stage6', prefix: '\u2726\u2726\u2726\u2726\u2726\u2726 ', minFlow: 98 }
+      ],
+
+      // =============================================
+      // Encouragement Tiers (v9 — replaces combo numbers)
+      // =============================================
+      ENCOURAGEMENT_TIERS: [
+        { minCombo: 3,   messageKey: 'enc1', effect: 'glowPulse' },
+        { minCombo: 8,   messageKey: 'enc2', effect: 'glowParticles' },
+        { minCombo: 15,  messageKey: 'enc3', effect: 'colorWave' },
+        { minCombo: 25,  messageKey: 'enc4', effect: 'starShower' },
+        { minCombo: 40,  messageKey: 'enc5', effect: 'flowerBurst' },
+        { minCombo: 60,  messageKey: 'enc6', effect: 'shimmer' },
+        { minCombo: 80,  messageKey: 'enc7', effect: 'radiance' },
+        { minCombo: 100, messageKey: 'enc8', effect: 'goldenBurst' }
+      ],
+      ENCOURAGEMENT_COOLDOWN_MS: 8000,   // don't repeat same tier within this window
+      ENCOURAGEMENT_DISPLAY_MS: 2500,    // how long message stays visible
+
+      // Note mapping
+      NOTE_NAMES: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+      PIANO_KEY_MIN: 21,
+      PIANO_KEY_COUNT: 88,
+
+      // Themes
+      THEMES: [
+        { bg: [10, 10, 20], colors: ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#6366f1', '#818cf8'], glow: 'rgba(139,92,246,' },
+        { bg: [8, 18, 20], colors: ['#06b6d4', '#22d3ee', '#34d399', '#10b981', '#14b8a6', '#67e8f9'], glow: 'rgba(6,182,212,' },
+        { bg: [20, 12, 8], colors: ['#f97316', '#fb923c', '#ef4444', '#f43f5e', '#eab308', '#fbbf24'], glow: 'rgba(249,115,22,' },
+        { bg: [12, 12, 18], colors: ['#e0e7ff', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#f0f0ff', '#ffffff'], glow: 'rgba(200,200,255,' }
+      ],
+
+      // v10: Magic Quests — name/desc are i18n keys, resolved via t() at use.
+      QUESTS: [
+        { id: 'q1',  nameKey: 'qst1Name',  descKey: 'qst1Desc',  condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
+        { id: 'q2',  nameKey: 'qst2Name',  descKey: 'qst2Desc',  condition: s => s.flow >= 50, reward: 'Good Flow!' },
+        { id: 'q3',  nameKey: 'qst3Name',  descKey: 'qst3Desc',  condition: s => s.combo >= 30, reward: 'Combo Master!' },
+        { id: 'q4',  nameKey: 'qst4Name',  descKey: 'qst4Desc',  condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
+        { id: 'q5',  nameKey: 'qst5Name',  descKey: 'qst5Desc',  condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
+        { id: 'q6',  nameKey: 'qst6Name',  descKey: 'qst6Desc',  condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
+        { id: 'q7',  nameKey: 'qst7Name',  descKey: 'qst7Desc',  condition: s => s.flow >= 95, reward: 'Peak Flow!' },
+        { id: 'q8',  nameKey: 'qst8Name',  descKey: 'qst8Desc',  condition: s => s.combo >= 100, reward: 'Century Combo!' },
+        { id: 'q9',  nameKey: 'qst9Name',  descKey: 'qst9Desc',  condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
+        { id: 'q10', nameKey: 'qst10Name', descKey: 'qst10Desc', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
+        { id: 'q11', nameKey: 'qst11Name', descKey: 'qst11Desc', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
+      ]
+    };
+
+    // ========================================
+    // DOM references
+    // ========================================
+    const DOM = {
+      canvas: document.getElementById('canvas'),
+      startScreen: document.getElementById('startScreen'),
+      startBtn: document.getElementById('startBtn'),
+      themeBar: document.getElementById('themeBar'),
+      hud: document.getElementById('hud'),
+      encouragement: document.getElementById('encouragement'),
+      flowFill: document.getElementById('flowFill'),
+      stageLabel: document.getElementById('stageLabel'),
+      noteDisplay: document.getElementById('noteDisplay'),
+      sessionStatus: document.getElementById('sessionStatus'),
+      qualityScore: document.getElementById('qualityScore'),
+      debugOverlay: document.getElementById('debugOverlay'),
+      // v10: Quest UI
+      questDisplay: document.getElementById('questDisplay'),
+      questDots: document.getElementById('questDots'),
+      questLabel: document.getElementById('questLabel'),
+      questToast: document.getElementById('questToast'),
+      toastTitle: document.getElementById('toastTitle'),
+      toastSub: document.getElementById('toastSub'),
+      // v11: Reset & Summary
+      resetBtn: document.getElementById('resetBtn'),
+      homeBtn: document.getElementById('homeBtn'),
+      sessionSummary: document.getElementById('sessionSummary'),
+      sumCombo: document.getElementById('sumCombo'),
+      sumQuestList: document.getElementById('sumQuestList'),
+      sumStage: document.getElementById('sumStage'),
+      sumTime: document.getElementById('sumTime'),
+      radarChart: document.getElementById('radarChart'),
+      sumBest: document.getElementById('sumBest'),
+      sumClose: document.getElementById('sumClose'),
+      sumHome: document.getElementById('sumHome'),
+      playTime: document.getElementById('playTime'),
+      // v12: Practice Mode (Für Elise)
+      songTitle: document.getElementById('songTitle'),
+      songComposer: document.getElementById('songComposer'),
+      songPanel: document.getElementById('songPanel'),
+      streakCount: document.getElementById('streakCount'),
+      streakCal: document.getElementById('streakCal'),
+      tempoRow: document.getElementById('tempoRow'),
+      sectionList: document.getElementById('sectionList'),
+      ghostToggle: document.getElementById('ghostToggle'),
+      ghostRow: document.getElementById('ghostRow'),
+      metronomeToggle: document.getElementById('metronomeToggle'),
+      metronomeRow: document.getElementById('metronomeRow'),
+      songBack: document.getElementById('songBack'),
+      songStart: document.getElementById('songStart'),
+      practiceHud: document.getElementById('practiceHud'),
+      ptbSection: document.getElementById('ptbSection'),
+      ptbTempo: document.getElementById('ptbTempo'),
+      ptbProgress: document.getElementById('ptbProgress'),
+      ptbToggleOsmd: document.getElementById('ptbToggleOsmd'),
+      ptbQuit: document.getElementById('ptbQuit'),
+      ptbInput: document.getElementById('ptbInput'),
+      osmdContainer: document.getElementById('osmdContainer'),
+      sectionBanner: document.getElementById('sectionBanner'),
+      sectionResult: document.getElementById('sectionResult'),
+      resTitle: document.getElementById('resTitle'),
+      resSectionName: document.getElementById('resSectionName'),
+      resStars: document.getElementById('resStars'),
+      resAcc: document.getElementById('resAcc'),
+      resTiming: document.getElementById('resTiming'),
+      resDuration: document.getElementById('resDuration'),
+      resDurationRow: document.getElementById('resDurationRow'),
+      resCombo: document.getElementById('resCombo'),
+      resMsg: document.getElementById('resMsg'),
+      resUnlock: document.getElementById('resUnlock'),
+      resQuit: document.getElementById('resQuit'),
+      resRetry: document.getElementById('resRetry'),
+      resNext: document.getElementById('resNext'),
+      resTryPlay: document.getElementById('resTryPlay'),
+      resHome: document.getElementById('resHome'),
+      resHistoryWrap: document.getElementById('resHistoryWrap'),
+      resHistoryChart: document.getElementById('resHistoryChart'),
+      introHint: document.getElementById('introHint'),
+      micMeter: document.getElementById('micMeter'),
+      micMeterFill: document.getElementById('micMeterFill'),
+      bleMidiBtn: document.getElementById('bleMidiBtn'),
+      midiBadge: document.getElementById('midiBadge'),
+      midiRescanBtn: document.getElementById('midiRescanBtn'),
+      // Settings panel
+      settingsBtn: document.getElementById('settingsBtn'),
+      settingsPanel: document.getElementById('settingsPanel'),
+      settingsCloseBtn: document.getElementById('settingsCloseBtn'),
+      audioOffsetSlider: document.getElementById('audioOffsetSlider'),
+      audioOffsetVal: document.getElementById('audioOffsetVal'),
+      audioOffsetAuto: document.getElementById('audioOffsetAuto'),
+      audioOffsetReset: document.getElementById('audioOffsetReset'),
+      settingsRescanBtn: document.getElementById('settingsRescanBtn'),
+      settingsBleBtn: document.getElementById('settingsBleBtn'),
+      settingsResetBtn: document.getElementById('settingsResetBtn'),
+      settingsInputStatus: document.getElementById('settingsInputStatus'),
+      settingsDebugToggle: document.getElementById('settingsDebugToggle')
+    };
+    const ctx = DOM.canvas.getContext('2d');
+
+    // ========================================
+    // Game State
+    // ========================================
+    const state = {
+      running: false,
+      starting: false,
+      flow: 0,
+      combo: 0,
+      bestCombo: 0,
+      currentStage: 0,
+      lastGoodNoteTimeMs: 0,
+      lastSilenceStartMs: -1,
+      lastNoisePenaltyMs: 0,
+      lastPitch: -1,
+
+      // v10: Synesthesia Mode
+      useSynesthesiaMode: false,
+
+      // v10: Magic Quests
+      completedQuests: [],
+      lastQuestCheckMs: 0,
+      activeQuestId: null,
+
+      pitchStability: 0,
+      lastNoteTimeMs: 0,
+      smoothEnergy: 0,
+      lastDetectedNote: '',
+      noteShowTimeMs: 0,
+      currentTheme: 0,
+      lastFrameTimeMs: 0,
+      prevSpectrum: null,
+      spectralFluxHistory: [],
+      lastOnsetTimeMs: -9999,
+
+      // v13: Mic source state. True when getUserMedia hasn't been called or
+      // the mic has been torn down because MIDI took over.
+      micSuspended: false,
+
+      // Software AGC (v8)
+      agcGain: 1.0,
+      agcSmoothedRms: 0,
+      agcLastUpdateMs: 0,
+
+      // v9: AGC voice suppression
+      agcVoiceRejectCount: 0,
+      agcVoiceSuppressUntilMs: 0,
+
+      // Session Confidence (ring buffer)
+      sessionState: 'waiting',
+      sessionStartMs: 0,
+      sessionConfidence: 0,
+      sessionPerformingStartMs: 0,
+      lastSessionSampleMs: 0,
+      sessionRingHead: 0,
+      sessionRingTail: 0,
+      sessionRingSize: 0,
+      sessionPianoCount: 0,
+      goalWindowStartMs: 0,
+      goalCelebrateUntilMs: 0,
+      goalCompletedCount: 0,
+
+      // Quality Scoring
+      noteOnsetTimes: [],
+      ioiHistory: [],
+      amplitudeHistory: [],
+      centroidHistory: [],
+      rhythmScore: 0,
+      dynamicsScore: 0,
+      stabilityScore: 0,
+      qualityScore: 0,
+      displayedQualityScore: 0,
+      growthScore: 0,
+      qualityHistory: [],
+      feedbackGood: '',
+      feedbackNext: '',
+      lastScoreUpdateMs: 0,
+
+      // v9: Encouragement system
+      currentEncouragementTier: -1,
+      lastEncouragementTimeMs: 0,
+      encouragementHideTimeMs: 0,
+
+      // v9: Special effects state
+      glowPulseIntensity: 0,
+      shimmerPhase: -1,
+      shimmerStartMs: 0,
+      inputFlash: 0,
+
+      // Debug
+      debugMode: false,
+      debugLastFlux: 0,
+      debugLastSpread: 0,
+      debugLastThreshold: 0,
+      debugGateOpen: false,
+      debugLastRms: 0,
+      debugLastConf: 0,
+      debugLastPitch: 0,
+      debugIsGoodNote: false,
+      debugIsActivePlay: false,
+      debugLastFlatness: 0,
+      debugLastCrest: 0,
+      debugOnsetReason: '',
+      debugLastCentroid: 0,
+      debugCentroidCV: 0,
+      debugSessionConf: 0,
+      debugSessionState: 'waiting',
+      debugAgcGain: 1.0,
+      debugHarmonicity: 0,
+
+      // YIN throttle
+      yinSkipCounter: 0,
+      cachedPitchResult: { pitch: -1, conf: 0, rms: 0 },
+
+      // v11: Session tracking
+      sessionStartTimeMs: 0,
+      peakFlow: 0,
+
+      // Pre-declared dynamic fields — initializing here keeps V8's hidden class
+      // stable across the per-frame hot path (used to be lazy `state.x ||= 0`
+      // initializers scattered through updateGameState / matchNoteOnset).
+      adaptiveSilenceRms: null,
+      recentPitches: null,
+      consecutiveOnsetFrames: 0,
+      lastDebugLogMs: 0,
+      debugMaxRms: 0,
+      debugMaxConf: 0,
+      debugMaxHarm: 0,
+      debugOnsetCount: 0,
+      lastMidiNoteForStability: null,
+      micPermissionFailed: false,
+      micIntentionallySkipped: false,
+      lastIntroDiag: null,
+      _lastSummary: null
+    };
+
+    // ========================================
+    // Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime)
+    // ========================================
+    const SESSION_RING_CAP = 100;
+    const sessionRing = new Array(SESSION_RING_CAP);
+    for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i] = { timeMs: 0, isPiano: false };
+
+    // ========================================
+    // Audio — dual analyser + software AGC
+    // ========================================
+    let audioCtx;
+    let analyser;
+    let onsetAnalyser;
+    let gainNode;
+    let dataArray, freqArray;
+    let onsetDataArray;
+    let micStream;       // v13: keep ref so we can stop tracks when MIDI takes over
+    let micSourceNode;   // v13: rewireable source between gainNode and the live mic
+
+    const MIC_CONSTRAINTS = {
+      audio: {
+        autoGainControl: false,
+        noiseSuppression: false,
+        echoCancellation: false,
+        sampleRate: { ideal: 48000 }
+      }
+    };
+
+    // Pinned to 48000 Hz so AirPods (which flip between 24kHz input and 48kHz
+    // output) don't cause stutter when the mic activates. Browsers do automatic
+    // resampling — we eat the SRC cost in exchange for stability.
+    // WebKit Bug 154538 (open as of 2025) confirms the underlying flip persists.
+    const AUDIO_SAMPLE_RATE = 48000;
+
+    function createAudioContext() {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      try {
+        return new Ctor({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: 'interactive' });
+      } catch (e) {
+        // Some older Safaris reject the options bag — fall back to default ctor.
+        return new Ctor();
+      }
+    }
+
+    async function initAudio() {
+      console.log("Initializing Audio...");
+      audioCtx = createAudioContext();
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+        console.log("AudioContext resumed @" + audioCtx.sampleRate + "Hz");
+      }
+
+      // Audio graph (sourceless): gain → analyser, gain → onsetAnalyser.
+      // The mic source is wired in separately so we can drop / re-acquire it
+      // when MIDI attaches / detaches without rebuilding everything.
+      gainNode = audioCtx.createGain();
+      gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = CONFIG.FFT_SIZE;
+      analyser.smoothingTimeConstant = CONFIG.SMOOTHING;
+      gainNode.connect(analyser);
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      freqArray = new Float32Array(analyser.fftSize);
+
+      onsetAnalyser = audioCtx.createAnalyser();
+      onsetAnalyser.fftSize = CONFIG.ONSET_FFT_SIZE;
+      onsetAnalyser.smoothingTimeConstant = CONFIG.ONSET_SMOOTHING;
+      gainNode.connect(onsetAnalyser);
+      onsetDataArray = new Uint8Array(onsetAnalyser.frequencyBinCount);
+
+      // Probe MIDI BEFORE asking for the mic. If a MIDI keyboard is already
+      // plugged in, we skip getUserMedia entirely — no permission prompt,
+      // no privacy LED, no idle CPU on YIN/FFT. The user gesture from the
+      // start-button click is still alive, so getUserMedia later (on MIDI
+      // detach) works without re-prompting.
+      try { await initWebMIDI(); } catch (e) { /* fall back to mic */ }
+
+      if (midiInput.enabled) {
+        console.log('[AUDIO] MIDI detected — skipping microphone acquisition');
+        state.micSuspended = true;
+      } else if (isAppleMobile() && navigator.requestMIDIAccess) {
+        // Web MIDI Browser (or any iOS WKWebView wrapper that polyfills Web MIDI):
+        // mic permission is consistently broken on iOS WKWebView wrappers, so we
+        // skip it on purpose. Note we set `micIntentionallySkipped` (not
+        // `micPermissionFailed`) so downstream code doesn't pop a "MIDI required"
+        // diagnostic on every screen entry — the kid is fine to wait for a
+        // keyboard or just listen passively.
+        state.micSuspended = true;
+        state.micIntentionallySkipped = true;
+        console.log('[AUDIO] iOS WKWebView with Web MIDI polyfill — running MIDI-only (mic skipped)');
+      } else {
+        // Try to acquire the mic. The earlier hang case (iOS WKWebView wrappers
+        // freezing on getUserMedia) is already handled by the
+        // micIntentionallySkipped branch above, so the regular browser path
+        // doesn't need the aggressive 5s timeout — that was firing while the
+        // kid was still reading the permission dialog and falsely flipping the
+        // app into "mic failed" mode. Use a generous 20s safety net only.
+        try {
+          await Promise.race([
+            acquireMic(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('mic permission timeout')), 20000))
+          ]);
+        } catch (e) {
+          state.micSuspended = true;
+          state.micPermissionFailed = true;
+          console.warn('[AUDIO] mic unavailable — running in MIDI-only mode:', e && e.message);
+        }
+      }
+    }
+
+    async function acquireMic() {
+      if (micStream) return;
+      const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+      micStream = stream;
+      micSourceNode = audioCtx.createMediaStreamSource(stream);
+      micSourceNode.connect(gainNode);
+      gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      state.micSuspended = false;
+      // Clear any stale failure flag from a prior race-timeout — if the user
+      // eventually clicked Allow after the safety-net timeout fired, we still
+      // get here and need to update the UI gates that read this flag.
+      if (state.micPermissionFailed) {
+        state.micPermissionFailed = false;
+        if (typeof refreshIntroHint === 'function') refreshIntroHint();
+        if (typeof DOM !== 'undefined' && DOM.micMeter) DOM.micMeter.classList.add('visible');
+      }
+      console.log('[AUDIO] Mic acquired');
+    }
+
+    // Tear down the mic when MIDI takes over: silence the graph, disconnect
+    // the source, and stop all tracks (the privacy LED follows track state).
+    function suspendMic() {
+      if (state.micSuspended) return;
+      state.micSuspended = true;
+      gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      if (micSourceNode) {
+        // disconnect can throw InvalidAccessError if already disconnected.
+        try { micSourceNode.disconnect(); } catch (e) {}
+        micSourceNode = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      // Clear stale mic-derived state so the radar / quality reset cleanly.
+      state.adaptiveSilenceRms = null;
+      state.recentPitches = [];
+      console.log('[AUDIO] Mic suspended (MIDI active)');
+    }
+
+    // Re-acquire mic when MIDI detaches mid-session.
+    async function resumeMic() {
+      if (!audioCtx || !state.micSuspended) return;
+      try {
+        await acquireMic();
+      } catch (e) {
+        console.warn('[AUDIO] Failed to resume mic:', e.message || e);
+      }
+    }
+
+    // ========================================
+    // Canvas
+    // ========================================
+    let W, H;
+    let kbSafeBottom = 4;
+    let kbHeight = 50;
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      W = window.innerWidth;
+      H = window.innerHeight;
+      DOM.canvas.width = W * dpr;
+      DOM.canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // Cached so the per-frame draw can skip getComputedStyle / Math.min/max.
+      const sb = parseFloat(getComputedStyle(document.documentElement)
+        .getPropertyValue('--safe-bottom')) || 0;
+      kbSafeBottom = sb + 4;
+      kbHeight = Math.min(56, Math.max(38, H * 0.065));
+      if (state.running) initBgStars();
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ========================================
+    // Debug toggle — triple-tap bottom-left
+    // ========================================
+    let debugTapCount = 0;
+    let debugTapTimer = 0;
+    document.addEventListener('click', (e) => {
+      if (e.clientX < 80 && e.clientY > H - 80) {
+        debugTapCount++;
+        clearTimeout(debugTapTimer);
+        debugTapTimer = setTimeout(() => { debugTapCount = 0; }, 600);
+        if (debugTapCount >= 3) {
+          state.debugMode = !state.debugMode;
+          DOM.debugOverlay.style.display = state.debugMode ? 'block' : 'none';
+          debugTapCount = 0;
+        }
+      }
+    });
+
+    // ========================================
+    // Theme switching + persisted user preferences
+    // ========================================
+    const prefs = {
+      theme: 0,
+      synesthesia: false,
+      audioOffsetMs: null,   // null = auto-detect from AudioContext.outputLatency
+      debug: false,
+      lang: 'en'             // 'en' | 'jp' — practice-flow UI language
+    };
+    function loadJSON(key, fallback) {
+      try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+      catch (e) { return fallback; }
+    }
+    function saveJSON(key, val) {
+      try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+    }
+    Object.assign(prefs, loadJSON('pianoViz_prefs', {}));
+    function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
+
+    // ========================================
+    // i18n — practice-flow strings only (free-play / quest / dev strings stay English)
+    // ========================================
+    const T_STRINGS = {
+      // Settings panel
+      settings:           { en: 'Settings',                  jp: '設定' },
+      close:              { en: 'Close',                     jp: '閉じる' },
+      backToTitle:        { en: 'Back to title',             jp: 'タイトルにもどる' },
+      display:            { en: 'Display',                   jp: '表示' },
+      synesthesia:        { en: 'Synesthesia mode (each note has its own color)',
+                            jp: '音階色モード（音ごとに色が変わる）' },
+      synesthesiaTitle:   { en: 'Synesthesia mode',          jp: '音階色モード' },
+      timingCalibration:  { en: 'Timing Calibration',        jp: 'タイミング補正' },
+      audioOffset:        { en: 'Audio offset',              jp: '音と画面のずれ補正' },
+      audioOffsetHelp:    { en: 'If you play on the beat but it\'s judged "late", raise the number. If your press is rejected as "early", lower it.',
+                            jp: '拍に合わせて弾いてるのに「遅い」判定になる時は数値を上げる。「早い」判定になる時は下げる。' },
+      autoDetectedFmt:    { en: 'Auto-detected value in use (currently {v} ms)',
+                            jp: '自動検出値を使用中（現在: {v} ms）' },
+      resetToAuto:        { en: 'Use auto-detected value',   jp: '自動検出に戻す' },
+      input:              { en: 'Input',                     jp: '入力' },
+      micInput:           { en: 'Mic input',                 jp: 'マイク入力' },
+      micStandby:         { en: 'Standby',                   jp: '待機中' },
+      scanMidi:           { en: 'Scan for MIDI keyboard',    jp: 'MIDIキーボードを探す' },
+      connectBluetooth:   { en: 'Connect Bluetooth',         jp: 'Bluetooth接続' },
+      other:              { en: 'Other',                     jp: 'その他' },
+      resetSession:       { en: 'Reset session',             jp: 'セッションをリセット' },
+      debugOverlay:       { en: 'Debug overlay',             jp: 'デバッグ表示' },
+      language:           { en: 'Language',                  jp: '言語' },
+      // Intro hint / MIDI diagnostics
+      introNeedMidi:      { en: '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)',
+                            jp: '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）' },
+      diagWebMidiUnsupported: { en: '🎹 This browser does not support Web MIDI',
+                                jp: '🎹 このブラウザは Web MIDI 非対応' },
+      diagNoMidiPort:     { en: '🎹 No MIDI port found',
+                            jp: '🎹 MIDIポートが見つかりません' },
+      diagWmbHint:        { en: 'In WMB, disconnect → reconnect the keyboard, then tap 🔄 again',
+                            jp: 'WMBの設定でキーボードを一度切断→再接続してから🔄を再度タップ' },
+      diagConnectHint:    { en: 'Connect the keyboard via USB/Bluetooth, then tap 🔄',
+                            jp: 'キーボードをUSB/Bluetoothで接続してから🔄をタップ' },
+      diagDetectedFmt:    { en: '🎹 Detected: {v}',
+                            jp: '🎹 認識中: {v}' },
+      diagCouldNotConnect:{ en: 'Could not connect',          jp: '接続できませんでした' },
+      diagMidiError:      { en: '🎹 MIDI error',              jp: '🎹 MIDIエラー' },
+      midiConnectedFmt:   { en: '🎹 Connected: {v}',          jp: '🎹 接続: {v}' },
+      // Alerts
+      alertWebBluetoothUnsupported: { en: 'This browser does not support Web Bluetooth.\n\nAndroid Chrome / Mac Chrome / Linux Chrome are supported.\niPad Safari is not — use the "Web MIDI Browser" app instead.',
+                                      jp: 'このブラウザは Web Bluetooth に対応していません。\n\nAndroid Chrome / Mac Chrome / Linux Chrome は対応。\niPad Safari は非対応 → 「Web MIDI Browser」アプリを使ってください。' },
+      alertBleConnectFailedFmt: { en: 'Could not connect to Bluetooth keyboard:\n{v}',
+                                  jp: 'Bluetoothキーボードに接続できませんでした:\n{v}' },
+      alertScoreLoadFailedFmt: { en: 'Failed to load score\n{v}',
+                                 jp: '楽譜の読み込みに失敗しました\n{v}' },
+      // Session summary
+      sumBestFmt:         { en: '✨ All-time best: {combo} combo / Flow {flow}% (session #{n})',
+                            jp: '✨ 歴代ベスト: {combo}コンボ / フロー{flow}% (第{n}回セッション)' },
+      sumAllClear:        { en: '🎉 ALL CLEAR! 🎉',             jp: '🎉 全クリア！ 🎉' },
+      sumQuestProgressFmt:{ en: '{n}/{total} cleared',          jp: '{n}/{total} クリア' },
+      // Input indicator tooltips
+      tipMidiKeyboardFmt: { en: 'MIDI keyboard: {v}',         jp: 'MIDIキーボード: {v}' },
+      tipMicMode:         { en: 'Mic input mode',             jp: 'マイク入力モード' },
+      tipIosMidiBlocked:  { en: 'iPad/iPhone Safari does not support Web MIDI. Use mic input. (For BLE-MIDI keyboards, install the "Web MIDI Browser" iOS app)',
+                            jp: 'iPad/iPhone のSafariはWeb MIDI非対応。マイク入力で演奏してください。（BLE-MIDIキーボードを使うには「Web MIDI Browser」アプリが必要）' },
+      // Console-only iOS MIDI guidance
+      consoleIosMidi:     { en: 'iOS/iPadOS detected — Web MIDI is unavailable on Safari/WebKit. Use a desktop browser, Steam Deck, or the "Web MIDI Browser" iOS app for BLE-MIDI.',
+                            jp: 'iOS/iPadOS検出 — Safari/WebKitではWeb MIDI非対応。デスクトップブラウザ・Steam Deck・iOS「Web MIDI Browser」アプリのいずれかを利用。' },
+      // Start screen
+      tagline:            { en: 'Play the piano and watch the screen come alive',
+                            jp: 'ピアノを弾くと画面がきれいに光るよ' },
+      freePlay:           { en: 'Free Play',                 jp: 'フリープレイ' },
+      // Song panel
+      // Leading space lives in the EN value so JP renders "1日れんしゅう中"
+      // without a half-width gap between the digit and 日.
+      dayStreak:          { en: ' day streak',               jp: '日れんしゅう中' },
+      tempo:              { en: 'Tempo',                     jp: 'テンポ' },
+      startFrom:          { en: 'Start from',                jp: 'どこからはじめる？' },
+      whichHand:          { en: 'Which hand?',               jp: 'どの手で弾く？' },
+      leftOnly:           { en: '👈 Left only',              jp: '👈 左手だけ' },
+      bothHands:          { en: '🤝 Both',                    jp: '🤝 両手' },
+      rightOnly:          { en: 'Right only 👉',             jp: '右手だけ 👉' },
+      modeLabel:          { en: 'Mode',                      jp: 'モード' },
+      modeListen:         { en: '🎧 Listen',                 jp: '🎧 きく' },
+      modeGuided:         { en: '✨ Guided',                  jp: '✨ ガイド' },
+      modeRhythm:         { en: '🎵 Rhythm',                 jp: '🎵 リズム' },
+      ghostPlayback:      { en: '👻 Ghost playback (demo)',  jp: '👻 おてほん再生（ゴースト）' },
+      metronome:          { en: '🥁 Metronome',              jp: '🥁 メトロノーム' },
+      back:               { en: 'Back',                      jp: 'もどる' },
+      startPractice:      { en: '▶ Start practice',          jp: '▶ れんしゅうスタート' },
+      startListening:     { en: '🎧 Start listening',         jp: '🎧 きいてみる' },
+      // Listen-mode result
+      listenedTitle:      { en: '🎧 Nicely listened!',        jp: '🎧 さいごまで聴けたね！' },
+      listenedMsg:        { en: 'Now try playing along.',     jp: 'つぎは弾いてみよう。' },
+      tryPlayingNow:      { en: '▶ Try playing',              jp: '▶ 弾いてみる' },
+      // Practice HUD
+      score:              { en: 'Score',                     jp: '楽譜' },
+      quit:               { en: 'Quit',                      jp: 'やめる' },
+      inputSource:        { en: 'Input source',              jp: '入力ソース' },
+      // Result screen
+      pitchAccuracy:      { en: 'Pitch accuracy',            jp: '音程の正確さ' },
+      timing:             { en: 'Timing',                    jp: 'タイミング' },
+      noteLength:         { en: 'Note length',               jp: '音の長さ' },
+      bestComboLabel:     { en: 'Best combo',                jp: '連続成功（最高）' },
+      songSelect:         { en: 'Song select',               jp: 'きょく選択' },
+      tryAgainBtn:        { en: 'Try again',                 jp: 'もう一度' },
+      nextBtn:            { en: 'Next →',                    jp: 'つぎへ →' },
+      // Hit chips / dynamic
+      perfect:            { en: 'Perfect!',                  jp: 'パーフェクト！' },
+      nice:               { en: 'Nice!',                     jp: 'ナイス！' },
+      missChip:           { en: 'Miss',                      jp: 'ミス' },
+      youPlayedFmt:       { en: 'You played: {v}',           jp: '弾いた音: {v}' },
+      tooShort:           { en: '⏱ Too short',               jp: '⏱ 短い' },
+      tooLong:            { en: '⏱ Too long',                jp: '⏱ 長い' },
+      // Lane labels
+      laneLeft:           { en: 'LEFT',                      jp: '左手' },
+      laneRight:          { en: 'RIGHT',                     jp: '右手' },
+      // Count-in
+      countInGo:          { en: 'GO!',                       jp: 'スタート！' },
+      // Stages
+      stage1:             { en: 'Awakening',                 jp: 'めざめ' },
+      stage2:             { en: 'Blooming',                  jp: 'はなひらく' },
+      stage3:             { en: 'Aurora',                    jp: 'オーロラ' },
+      stage4:             { en: 'Cosmos',                    jp: 'コスモス' },
+      stage5:             { en: 'Radiance',                  jp: 'かがやき' },
+      stage6:             { en: 'Legend',                    jp: 'でんせつ' },
+      // Encouragement tiers
+      enc1:               { en: 'Nice!',                     jp: 'いいよ！' },
+      enc2:               { en: 'Great!',                    jp: 'すごい！' },
+      enc3:               { en: 'On a roll!',                jp: 'のってきた！' },
+      enc4:               { en: 'Sparkle!',                  jp: 'きらきら！' },
+      enc5:               { en: 'Beautiful!',                jp: 'すてきなおと！' },
+      enc6:               { en: 'Like magic!',               jp: 'まほうみたい！' },
+      enc7:               { en: 'Shining!',                  jp: 'かがやいてる！' },
+      enc8:               { en: 'Awesome!',                  jp: 'さいこう！' },
+      // Result tiers
+      tier0Title:         { en: 'Try again!',                jp: 'もういちど！' },
+      tier0Msg:           { en: 'Start with a slow tempo. Give it another try!',
+                            jp: 'まずはゆっくりテンポでも大丈夫。リトライしてみよう！' },
+      tier1Title:         { en: 'Clear!',                    jp: 'クリア！' },
+      tier1Msg:           { en: 'Clear! Keep practicing to get even better.',
+                            jp: 'クリアおめでとう！くりかえしで上達するよ。' },
+      tier2Title:         { en: '🎉 Part Clear!',            jp: '🎉 章クリア！' },
+      tier2Msg:           { en: 'Great job! Almost perfect!',
+                            jp: 'よくがんばったね！もう少しでパーフェクト！' },
+      tier3Title:         { en: '🌟 Perfect!',               jp: '🌟 パーフェクト！' },
+      tier3Msg:           { en: 'Brilliant! Try the next difficulty!',
+                            jp: 'すばらしい！次の難しさにチャレンジ！' },
+      // Songs (Für Elise)
+      furElise:           { en: 'Für Elise',                 jp: 'エリーゼのために' },
+      feA1:               { en: 'Part 1: Theme',             jp: '第1章 主題' },
+      feA1desc:           { en: 'The famous melody. Start gently.',
+                            jp: '有名なあのメロディ。やさしく始めよう。' },
+      feB:                { en: 'Part 2: Gentle Middle',     jp: '第2章 おだやかな中間' },
+      feBdesc:            { en: 'A bright C-major section, then back to the theme.',
+                            jp: 'C長調のあかるい部分→主題に戻ります。' },
+      feA2:               { en: 'Part 3: Storm & Finale',    jp: '第3章 嵐とフィナーレ' },
+      feA2desc:           { en: 'A D-minor storm, then back to the theme — the climax!',
+                            jp: 'D短調の嵐→主題に戻りラスト！ここがクライマックス。' },
+      // Songs (Turkish March)
+      turkishMarch:       { en: 'Turkish March',             jp: 'トルコ行進曲' },
+      taA1:               { en: 'Part 1: Light Theme',       jp: '第1章 軽やかな主題' },
+      taA1desc:           { en: 'The famous theme plus an A-major contrasting section. Right-hand scales feel great.',
+                            jp: '有名な主題＋A長調の対比部。右手のスケールが気持ちいい。' },
+      taB:                { en: 'Part 2: Theme Variations',  jp: '第2章 主題のへんそう' },
+      taBdesc:            { en: 'The theme returns transformed — chord practice.',
+                            jp: '主題が形を変えてかえってくる。和音の練習。' },
+      taA2:               { en: 'Part 3: March Festival',    jp: '第3章 マルチアの祭り' },
+      taA2desc:           { en: "The coda's powerful octaves! Race to the finale.",
+                            jp: 'コーダの力強いオクターブ！フィナーレに駆けあがろう。' },
+      // Misc
+      loadingScore:       { en: 'Loading score…',            jp: '楽譜を読み込み中…' },
+      starting:           { en: 'Starting...',               jp: '起動中...' },
+      audioInitFailedFmt: { en: 'Audio init failed: {v}\n\nReload the browser and try again.',
+                            jp: 'オーディオ初期化に失敗しました: {v}\n\nブラウザを更新してリトライしてみてください。' },
+      // Composers — last-name katakana for JP (common in JP music ed)
+      composerBeethoven:  { en: 'L. v. Beethoven',             jp: 'ベートーヴェン' },
+      composerMozart:     { en: 'W. A. Mozart',                jp: 'モーツァルト' },
+      // Result-screen unlock messages
+      tempoUnlockedFmt:   { en: '🚀 Tempo {v}% unlocked!  ',   jp: '🚀 テンポ {v}% 解放！  ' },
+      sectionUnlockedFmt: { en: '🔓 {v} unlocked!',            jp: '🔓 {v} 解放！' },
+      streakDaysFmt:      { en: ' ✨ {v}-day streak!',          jp: ' ✨ ストリーク {v}日！' },
+      // Result-screen growth chart
+      growthChartFmt:     { en: 'Growth ({v} attempts)',        jp: '成長グラフ ({v}回)' },
+      trendSimilar:       { en: '→ similar',                    jp: '→ おなじくらい' },
+      // Sustain pedal label (drawn on the keyboard when pedal is held)
+      sustainLabel:       { en: 'SUSTAIN',                      jp: 'サステイン' },
+      // Free-play HUD (session status while playing without a song)
+      listeningFmt:       { en: '{p}Listening{p}',              jp: '{p}きいてるよ{p}' },
+      goalCelebrate:      { en: '✨ Goal reached! Keep it up! ✨',
+                            jp: '✨ 目標達成！この調子！ ✨' },
+      goalCountdownFmt:   { en: 'Goal: stable play for {v}s',   jp: '目標: 安定演奏 {v}秒' },
+      // Free-play quality coaching (shown in the qualityScore HUD)
+      strengthFmt:        { en: 'Strength: {v}',                jp: 'できた点: {v}' },
+      nextStepFmt:        { en: 'Next: {v}',                    jp: '次の1手: {v}' },
+      // Quality coaching strengths
+      strNotesClear:      { en: 'playing each note clearly',    jp: '音をしっかり鳴らせている' },
+      strGrowing:         { en: 'improving steadily over the last 30s',
+                            jp: '直近30秒で着実に伸びている' },
+      strRhythmSteady:    { en: 'rhythm is steady',             jp: 'リズムが安定している' },
+      strDynamicsGood:    { en: 'good dynamic control',         jp: '強弱のコントロールが良い' },
+      strPitchStable:     { en: 'pitch is stable',              jp: '音程の安定感が高い' },
+      // Quality coaching next steps
+      nxtBreathe:         { en: 'breathe and hold tempo for 20s',
+                            jp: '深呼吸して同じテンポを20秒キープ' },
+      nxtOneHand:         { en: 'one hand slowly, hold tempo for 20s',
+                            jp: '片手でゆっくり、一定テンポを20秒キープ' },
+      nxtSoftLoud:        { en: 'build soft to loud across one phrase',
+                            jp: '1フレーズの中で弱→強を2段階つける' },
+      nxtHoldNotes:       { en: 'hold each note fully before moving on',
+                            jp: '1音ずつ最後まで伸ばしてから次の音へ' },
+      // Quest names + descriptions (free-play). Reward strings are short enough
+      // to leave English (they're brief celebratory tokens).
+      qst1Name:           { en: 'First Notes',                  jp: 'はじまりの音' },
+      qst1Desc:           { en: 'Play 3 notes',                 jp: '音を3回鳴らしてみよう' },
+      qst2Name:           { en: 'Catch the Flow',               jp: '流れに乗って' },
+      qst2Desc:           { en: 'Fill the flow gauge halfway',  jp: 'フローゲージを半分までためよう' },
+      qst3Name:           { en: 'Combo Master',                 jp: 'コンボマスター' },
+      qst3Desc:           { en: 'Reach 30 combo!',              jp: '30コンボ達成！' },
+      qst4Name:           { en: 'Clean Tone',                   jp: 'きれいな音' },
+      qst4Desc:           { en: 'Keep stability at 80%+',       jp: '安定性80%以上をキープ' },
+      qst5Name:           { en: 'Pianist',                      jp: 'ピアニスト' },
+      qst5Desc:           { en: 'Play with confidence',         jp: '自信を持って演奏しよう' },
+      qst6Name:           { en: 'Rhythm Master',                jp: 'リズムの達人' },
+      qst6Desc:           { en: 'Rhythm score 85%+',            jp: 'リズムスコア85%以上！' },
+      qst7Name:           { en: 'Peak Flow',                    jp: 'フローの極み' },
+      qst7Desc:           { en: 'Reach 95% flow',               jp: 'フローゲージを95%以上にしよう' },
+      qst8Name:           { en: '100 Combo',                    jp: '100コンボ' },
+      qst8Desc:           { en: 'Reach 100 combo!',             jp: '100コンボ達成！' },
+      qst9Name:           { en: 'Dynamics',                     jp: 'ダイナミクス' },
+      qst9Desc:           { en: 'Dynamics 80%+',                jp: 'ダイナミクス80%以上！' },
+      qst10Name:          { en: 'Full Focus',                   jp: '全集中' },
+      qst10Desc:          { en: 'Overall score 85%+',           jp: '総合スコア85%以上！' },
+      qst11Name:          { en: 'Legendary Pianist',            jp: '伝説のピアニスト' },
+      qst11Desc:          { en: '200 combo & 90% flow',         jp: '200コンボ&フロー90%以上' },
+      // Quest display chrome
+      questAllClearFmt:   { en: '🎉 {n}/{n} All Clear!',         jp: '🎉 {n}/{n} 全クリア！' },
+      questTargetFmt:     { en: '🎯 {v}',                        jp: '🎯 {v}' },
+      questClearedFmt:    { en: '✅ {v} CLEARED!',               jp: '✅ {v} クリア！' },
+      // Session summary (post free-play)
+      sumTitle:           { en: '🎹 Session Results',           jp: '🎹 セッション結果' },
+      sumBestCombo:       { en: '🎵 Best Combo',                jp: '🎵 最高コンボ' },
+      sumStageReached:    { en: '🏔 Stage Reached',             jp: '🏔 到達ステージ' },
+      sumPlayTime:        { en: '⏱ Play Time',                  jp: '⏱ 演奏時間' },
+      sumQuests:          { en: '⭐ Quests',                     jp: '⭐ クエスト' },
+      sumTitleBtn:        { en: '🏠 Title',                     jp: '🏠 タイトル' },
+      sumContinue:        { en: 'Continue →',                   jp: 'つづける →' },
+      // User-song UI
+      addSongBtn:         { en: '➕ Add a song',                  jp: '➕ 曲を追加' },
+      addSongTitle:       { en: 'Add a song',                    jp: '曲を追加' },
+      addSongTabLibrary:  { en: '📚 Library',                    jp: '📚 ライブラリ' },
+      addSongTabFile:     { en: '📁 File',                       jp: '📁 ファイル' },
+      addSongTabUrl:      { en: '🔗 URL',                        jp: '🔗 URL' },
+      addSongLibraryHelp: { en: 'Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.',
+                            jp: 'MuseTrainer のパブリックドメイン曲（jsDelivr経由）。タップでダウンロード。' },
+      addSongFilePick:    { en: 'Choose .mxl / .musicxml / .xml file',
+                            jp: '.mxl / .musicxml / .xml ファイルを選択' },
+      addSongFileHelp:    { en: 'Drop a MusicXML file. I confirm it is public domain or my own work.',
+                            jp: 'MusicXML ファイルをドロップ。パブリックドメインまたは自作の曲であることを確認します。' },
+      addSongPdAttest:    { en: 'I confirm this score is public domain or my own work',
+                            jp: 'パブリックドメインまたは自作の曲です' },
+      addSongUrlPlaceholder: { en: 'https://cdn.jsdelivr.net/.../score.mxl',
+                            jp: 'https://cdn.jsdelivr.net/.../score.mxl' },
+      addSongUrlHelp:     { en: 'Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).',
+                            jp: '.mxl / .musicxml の直リンク（CORS対応URL、例: jsDelivr）。' },
+      addSongFetch:       { en: '⬇ Download',                   jp: '⬇ ダウンロード' },
+      addSongAdded:       { en: 'Added!',                        jp: '追加しました！' },
+      addSongFailed:      { en: 'Failed: {v}',                   jp: '失敗: {v}' },
+      myLibrary:          { en: 'My library',                    jp: 'マイライブラリ' },
+      addSongRemove:      { en: 'Delete',                        jp: '削除' },
+      addSongConfirmRemove: { en: 'Delete "{v}"? This cannot be undone.',
+                              jp: '「{v}」を削除しますか？元に戻せません。' },
+      addSongSearch:      { en: 'Search composer / title…',     jp: '作曲家・曲名で検索…' },
+      addSongLibraryLoading: { en: 'Loading catalog…',          jp: 'カタログ取得中…' },
+      addSongLibraryCount:{ en: '{n} pieces',                   jp: '{n} 曲' },
+      addSongLibraryOffline: { en: 'Catalog offline — showing seed list',
+                               jp: 'カタログ取得失敗 — 既定リストを表示' },
+      addSongExport:      { en: '⬇ Export library',             jp: '⬇ エクスポート' },
+      addSongImport:      { en: '⬆ Import',                     jp: '⬆ インポート' },
+      addSongImportDone:  { en: 'Imported {n} song(s)',         jp: '{n} 曲をインポートしました' },
+      addSongEditSections:{ en: '✎ Edit sections',              jp: '✎ 章を編集' },
+      sectionEditTitle:   { en: 'Edit sections',                jp: '章の編集' },
+      sectionEditHelp:    { en: 'Set start measure (1-based) for each part. Total: {v} measures.',
+                            jp: '各章の開始小節を入力（1始まり）。全{v}小節。' },
+      sectionEditSave:    { en: 'Save',                         jp: '保存' },
+      sectionEditCancel:  { en: 'Cancel',                       jp: 'キャンセル' },
+      sectionEditError:   { en: 'Boundaries must be increasing and within range.',
+                            jp: '小節番号は昇順かつ範囲内で入力してください。' },
+      // Auto-section names for user-added songs (no human-curated descriptions)
+      userSecA1:          { en: 'Part 1',                        jp: '第1章' },
+      userSecA1desc:      { en: 'Opening section',               jp: '冒頭の部分' },
+      userSecB:           { en: 'Part 2',                        jp: '第2章' },
+      userSecBdesc:       { en: 'Middle section',                jp: 'まんなかの部分' },
+      userSecA2:          { en: 'Part 3 (climax)',               jp: '第3章（クライマックス）' },
+      userSecA2desc:      { en: 'Final section',                 jp: 'おわりの部分' }
+    };
+
+    function t(key, vars) {
+      // User-added songs use synthetic key prefixes to avoid polluting T_STRINGS:
+      //   __userTitle:<id>     → song title from IndexedDB record
+      //   __userComposer:<id>  → composer string
+      // Falls through to the normal lookup for everything else.
+      if (typeof key === 'string' && key.startsWith('__user')) {
+        const colon = key.indexOf(':');
+        const which = key.slice(2, colon);
+        const id = key.slice(colon + 1);
+        const song = (typeof SONGS !== 'undefined') ? SONGS[id] : null;
+        if (song) {
+          if (which === 'userTitle') return song._userTitle || id;
+          if (which === 'userComposer') return song._userComposer || '';
+        }
+        return '';
+      }
+      const entry = T_STRINGS[key];
+      if (!entry) return key;
+      let s = entry[prefs.lang] || entry.en || key;
+      if (vars) for (const k in vars) s = s.replace('{' + k + '}', vars[k]);
+      return s;
+    }
+
+    function applyI18n() {
+      document.querySelectorAll('[data-i18n], [data-i18n-title], [data-i18n-placeholder]').forEach(el => {
+        const k = el.getAttribute('data-i18n');
+        const tk = el.getAttribute('data-i18n-title');
+        const pk = el.getAttribute('data-i18n-placeholder');
+        if (k) el.textContent = t(k);
+        if (tk) el.title = t(tk);
+        if (pk) el.placeholder = t(pk);
+      });
+      // Notify code paths that re-render their own text (song panel, result screen, etc.).
+      window.dispatchEvent(new CustomEvent('langchange'));
+    }
+
+    function setLang(lang) {
+      prefs.lang = lang === 'jp' ? 'jp' : 'en';
+      savePrefs();
+      applyI18n();
+    }
+
+    // Build a stage label out of its prefix (✦ marks) + its translated name.
+    function stageLabel(stage) {
+      if (!stage || !stage.nameKey) return '';
+      return stage.prefix + t(stage.nameKey);
+    }
+
+    function applyTheme(idx) {
+      prefs.theme = idx;
+      state.currentTheme = idx;
+      document.querySelectorAll('.theme-dot').forEach(d => {
+        d.classList.toggle('active', parseInt(d.dataset.theme) === idx);
+      });
+    }
+    applyTheme(prefs.theme);
+    document.querySelectorAll('.theme-dot').forEach(d => {
+      d.addEventListener('click', () => {
+        applyTheme(parseInt(d.dataset.theme));
+        savePrefs();
+      });
+    });
+
+    const synToggle = document.getElementById('synesthesiaToggle');
+    function applySynesthesia(on) {
+      prefs.synesthesia = on;
+      state.useSynesthesiaMode = on;
+      synToggle.classList.toggle('active', on);
+    }
+    applySynesthesia(prefs.synesthesia);
+    synToggle.addEventListener('click', () => {
+      applySynesthesia(!state.useSynesthesiaMode);
+      savePrefs();
+    });
+
+    // ========================================
+    // Settings panel
+    // ========================================
+    function openSettings() {
+      DOM.settingsPanel.classList.add('visible');
+      refreshSettingsPanel();
+    }
+    function closeSettings() {
+      DOM.settingsPanel.classList.remove('visible');
+    }
+
+    function refreshAudioOffsetUI() {
+      const isAuto = prefs.audioOffsetMs == null;
+      const value = Math.round(
+        isAuto ? (typeof practice !== 'undefined' && practice.audioOffsetMs)
+                 || DEFAULT_AUDIO_OFFSET_MS
+               : prefs.audioOffsetMs);
+      DOM.audioOffsetSlider.value = value;
+      DOM.audioOffsetVal.textContent = value;
+      DOM.audioOffsetAuto.textContent = isAuto ? t('autoDetectedFmt', { v: value }) : '';
+    }
+
+    function refreshSettingsPanel() {
+      refreshAudioOffsetUI();
+      // Input source status
+      if (typeof midiInput !== 'undefined' && midiInput.enabled && midiInput.port?.name) {
+        DOM.settingsInputStatus.textContent = '🎹 ' + midiInput.port.name;
+      } else if (typeof state !== 'undefined' && state.micSuspended) {
+        DOM.settingsInputStatus.textContent = '🎙️ ' + t('micStandby');
+      } else {
+        DOM.settingsInputStatus.textContent = '🎙️ ' + t('micInput');
+      }
+      // BLE button only when Web Bluetooth is supported (Chrome/Edge desktop, Android Chrome)
+      const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+      DOM.settingsBleBtn.style.display = bleSupported ? '' : 'none';
+      // Reset session is only meaningful when audio is alive — disable on title.
+      const running = !!(state && state.running);
+      DOM.settingsResetBtn.disabled = !running;
+      DOM.settingsResetBtn.style.opacity = running ? '' : '.45';
+      DOM.settingsResetBtn.style.cursor = running ? 'pointer' : 'not-allowed';
+    }
+
+    DOM.settingsBtn.addEventListener('click', openSettings);
+    DOM.settingsCloseBtn.addEventListener('click', closeSettings);
+    DOM.settingsPanel.addEventListener('click', (e) => {
+      if (e.target === DOM.settingsPanel) closeSettings();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && DOM.settingsPanel.classList.contains('visible')) closeSettings();
+    });
+
+    DOM.audioOffsetSlider.addEventListener('input', () => {
+      const v = parseInt(DOM.audioOffsetSlider.value, 10);
+      prefs.audioOffsetMs = v;
+      if (typeof practice !== 'undefined') practice.audioOffsetMs = v;
+      DOM.audioOffsetVal.textContent = v;
+      DOM.audioOffsetAuto.textContent = '';
+      savePrefs();
+    });
+    DOM.audioOffsetReset.addEventListener('click', () => {
+      prefs.audioOffsetMs = null;
+      savePrefs();
+      // Re-trigger auto-detect on next session start; meanwhile use the default.
+      if (typeof practice !== 'undefined') practice.audioOffsetMs = DEFAULT_AUDIO_OFFSET_MS;
+      refreshAudioOffsetUI();
+    });
+
+    DOM.settingsRescanBtn.addEventListener('click', () => {
+      // 明示的な再スキャン = dismiss 状態を解除して再エンゲージ
+      if (typeof rescanMidi === 'function') rescanMidi();
+      closeSettings();
+    });
+    DOM.settingsBleBtn.addEventListener('click', () => {
+      if (typeof connectBleMidi === 'function') {
+        connectBleMidi().finally(() => {
+          if (typeof refreshBleMidiButton === 'function') refreshBleMidiButton();
+          refreshSettingsPanel();
+        });
+      }
+      closeSettings();
+    });
+    DOM.settingsResetBtn.addEventListener('click', () => {
+      closeSettings();
+      if (state.running && typeof showSessionSummary === 'function') showSessionSummary();
+    });
+
+    function applyDebug(on) {
+      prefs.debug = on;
+      DOM.settingsDebugToggle.classList.toggle('on', on);
+      const overlay = document.getElementById('debugOverlay');
+      if (overlay) overlay.classList.toggle('visible', on);
+    }
+    applyDebug(prefs.debug);
+    DOM.settingsDebugToggle.addEventListener('click', () => {
+      applyDebug(!prefs.debug);
+      savePrefs();
+    });
+
+    // Language toggle (en ↔ jp). Highlight current; click flips.
+    function refreshLangToggle() {
+      const btn = document.getElementById('langToggleBtn');
+      if (!btn) return;
+      btn.textContent = prefs.lang === 'jp' ? '🇯🇵 日本語' : '🇬🇧 EN';
+    }
+    document.getElementById('langToggleBtn')?.addEventListener('click', () => {
+      setLang(prefs.lang === 'jp' ? 'en' : 'jp');
+      refreshLangToggle();
+      refreshSettingsPanel();   // input status / audio offset use t()
+    });
+    // Apply persisted language at startup. The langchange event lets song
+    // panel / result screen re-render their dynamic text if they're visible.
+    applyI18n();
+    refreshLangToggle();
+    // Page loads on the title screen — body class drives the home-button hide
+    // (no point in 🏠 when home is right here) and any future title-only styling.
+    document.body.classList.add('title-screen');
+    window.addEventListener('langchange', () => {
+      // Refresh hot-path caches read from the per-frame lane draw.
+      if (typeof activeNoteNames !== 'undefined') {
+        activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+      }
+      laneLabelL = t('laneLeft');
+      laneLabelR = t('laneRight');
+
+      // Re-render every screen with imperatively-set localized text. applyI18n
+      // walks [data-i18n], but these elements don't carry that — they're set
+      // from JS at event time, so we have to refresh them ourselves.
+      if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
+      if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
+        const sec = currentSong.sections?.[practice.sectionIdx];
+        if (sec) DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      }
+      if (DOM.sectionResult?.classList.contains('visible')) renderResultCard();
+      if (DOM.sessionSummary?.classList.contains('visible')) renderSessionSummaryText(false);
+      if (DOM.stageLabel && state.currentStage > 0) {
+        DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[state.currentStage]);
+      }
+      // Re-run the cached intro diagnostic in the new language (if one's showing).
+      if (state.lastIntroDiag) state.lastIntroDiag();
+    });
+    // Lane labels — recomputed on lang change, used in the per-frame draw.
+    let laneLabelL = t('laneLeft');
+    let laneLabelR = t('laneRight');
+
+    // ========================================
+    // 3D Projection Helpers
+    // ========================================
+    const FOCAL_LENGTH = 800;
+    const NEAR_CLIPPING = -100;
+
+    function project3D(x, y, z, size) {
+      if (z < NEAR_CLIPPING) return null; // Behind camera
+      const scale = FOCAL_LENGTH / (FOCAL_LENGTH + z);
+      const px = W / 2 + x * scale;
+      const py = H / 2 + y * scale;
+      return { x: px, y: py, scale: scale, size: size * scale, visible: true };
+    }
+
+    // ========================================
+    // Particle System (3D)
+    // ========================================
+    let particles = [];
+    class Particle {
+      constructor(x, y, z, color, size, vx, vy, vz, life, type) {
+        this.x = x; this.y = y; this.z = z;
+        this.color = color; this.baseSize = size;
+        this.vx = vx; this.vy = vy; this.vz = vz;
+        this.life = life; this.maxLife = life;
+        this.type = type || 'circle';
+        this.angle = Math.random() * Math.PI * 2;
+        this.spin = (Math.random() - 0.5) * 0.04;
+        this.gravity = 0; // Set individually if needed
+      }
+
+      update() {
+        this.x += this.vx; this.y += this.vy; this.z += this.vz;
+        // Simple gravity effect based on type
+        if (this.type !== 'star' && this.type !== 'note') {
+          this.vy += 0.15;
+        }
+        this.vx *= 0.99; this.vy *= 0.99; this.vz *= 0.99; // Drag
+        this.life--; this.angle += this.spin;
+      }
+
+      draw(c) {
+        // Project 3D to 2D
+        const savedX = this.x; // Logical coords (0,0 is center)
+        const savedY = this.y;
+
+        // Project
+        const p = project3D(this.x, this.y, this.z, this.baseSize);
+        if (!p || !p.visible) return;
+
+        const a = Math.max(0, this.life / this.maxLife);
+        let size = p.size * (0.4 + 0.6 * a);
+
+        // Size check optimization
+        if (size < 0.5) return;
+
+        c.save();
+        c.globalAlpha = a;
+        c.translate(p.x, p.y);
+        c.rotate(this.angle);
+        const useShadow = CONFIG.SHADOW_BLUR_ENABLED && particles.length < 300; // stricter limit
+
+        if (this.type === 'circle') {
+          c.beginPath(); c.arc(0, 0, size, 0, Math.PI * 2);
+          c.fillStyle = this.color;
+          if (useShadow) { c.shadowColor = this.color; c.shadowBlur = size * 2; }
+          c.fill();
+        } else if (this.type === 'ring') {
+          c.beginPath(); c.arc(0, 0, size, 0, Math.PI * 2);
+          c.strokeStyle = this.color; c.lineWidth = 1.5 * p.scale;
+          if (useShadow) { c.shadowColor = this.color; c.shadowBlur = size; }
+          c.stroke();
+        } else if (this.type === 'star') {
+          drawStar(c, 0, 0, 5, size, size * 0.45, this.color, useShadow);
+        } else if (this.type === 'note') {
+          // Scale font size
+          c.font = (size * 2.5) + 'px serif';
+          c.fillStyle = this.color;
+          if (useShadow) { c.shadowColor = this.color; c.shadowBlur = 10 * p.scale; }
+          c.textAlign = 'center'; c.textBaseline = 'middle';
+          c.fillText('\u266A', 0, 0);
+        } else if (this.type === 'flower') {
+          drawFlower(c, 0, 0, size, this.color, a, useShadow);
+        }
+        c.restore();
+      }
+    }
+
+    function drawStar(c, cx, cy, sp, oR, iR, col, useShadow) {
+      c.beginPath();
+      for (let i = 0; i < sp * 2; i++) {
+        const r = i % 2 === 0 ? oR : iR;
+        const a = (Math.PI * i) / sp - Math.PI / 2;
+        if (i === 0) c.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+        else c.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+      }
+      c.closePath(); c.fillStyle = col;
+      if (useShadow) { c.shadowColor = col; c.shadowBlur = oR * 1.5; }
+      c.fill();
+    }
+
+    function drawFlower(c, cx, cy, s, col, a, useShadow) {
+      c.fillStyle = col;
+      if (useShadow) { c.shadowColor = col; c.shadowBlur = s; }
+      for (let i = 0; i < 5; i++) {
+        const angle = (Math.PI * 2 * i) / 5;
+        c.beginPath();
+        c.ellipse(cx + Math.cos(angle) * s * 0.5, cy + Math.sin(angle) * s * 0.5, s * 0.5, s * 0.25, angle, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.shadowBlur = 0;
+      c.beginPath(); c.arc(cx, cy, s * 0.25, 0, Math.PI * 2);
+      c.fillStyle = 'rgba(255,255,200,' + a + ')'; c.fill();
+    }
+
+    // ========================================
+    // Device performance tier — auto-detected at startup
+    //   Apple Forum #768404: iPad 10 Canvas 2D = ~half iPad Air 4. shadowBlur
+    //   forces software rendering on Safari (web.dev/canvas-performance).
+    //   Tier maps:
+    //     low  → ~400 particles, no shadowBlur
+    //     mid  → ~600 particles, shadowBlur on
+    //     high → ~1200 particles, shadowBlur on (M-series iPads / desktop)
+    //   Detection signals: deviceMemory, hardwareConcurrency, UA hints.
+    //   Manual override via localStorage.pianoViz_perfTier = 'low'|'mid'|'high'.
+    // ========================================
+    const PERF_TIER = (() => {
+      try {
+        const override = localStorage.getItem('pianoViz_perfTier');
+        if (override === 'low' || override === 'mid' || override === 'high') return override;
+      } catch (e) {}
+      const mem = navigator.deviceMemory || 4;
+      const cores = navigator.hardwareConcurrency || 4;
+      const ua = navigator.userAgent || '';
+      const isAppleSilicon = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;   // iPad masquerading as Mac
+      const isOlderIPad = /iPad/.test(ua) && !/iPad.*Pro/.test(ua) && cores <= 4;
+      if (isAppleSilicon || cores >= 8 || mem >= 8) return 'high';
+      if (isOlderIPad || mem <= 2 || cores <= 2) return 'low';
+      return 'mid';
+    })();
+    const PERF_PROFILE = {
+      low:  { maxParticles3D: 400,  shadowBlur: false, ambientChance: 0.015, bgStarCount: 50 },
+      mid:  { maxParticles3D: 600,  shadowBlur: true,  ambientChance: 0.030, bgStarCount: 80 },
+      high: { maxParticles3D: 1200, shadowBlur: true,  ambientChance: 0.045, bgStarCount: 120 }
+    }[PERF_TIER];
+    console.log('[PERF] tier=' + PERF_TIER + ' particles=' + PERF_PROFILE.maxParticles3D
+      + ' shadowBlur=' + PERF_PROFILE.shadowBlur);
+
+    // Override the static CONFIG flags so existing reads pick up the tier.
+    CONFIG.SHADOW_BLUR_ENABLED = PERF_PROFILE.shadowBlur;
+    CONFIG.MAX_PARTICLES = PERF_PROFILE.maxParticles3D + 200;   // 2D + 3D combined cap
+    CONFIG.AMBIENT_PARTICLE_CHANCE = PERF_PROFILE.ambientChance;
+
+    const MAX_PARTICLES_3D = PERF_PROFILE.maxParticles3D;
+    // Sentinel for state.activeQuestId when every quest in CONFIG.QUESTS is cleared.
+    const QUEST_ALL_DONE = 'ALL_DONE';
+
+    function getNoteColor(noteName) {
+      if (!noteName) return null;
+      // Remove octave if present (C4 -> C)
+      const name = noteName.replace(/[0-9]/g, '');
+      return CONFIG.NOTE_COLORS[name] || null;
+    }
+
+    function spawnBurst(screenX, screenY, count, energy, overrideColor) {
+      // Convert screen coords to logical 3D coords (assuming z=0 plane)
+      // Center is (0,0)
+      const lx = screenX - W / 2;
+      const ly = screenY - H / 2;
+      const lz = 0;
+
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      const typePool = ['circle', 'circle', 'ring', 'star', 'note'];
+      if (state.flow > 35) typePool.push('flower');
+      if (state.flow > 60) typePool.push('star', 'star');
+
+      const actualCount = Math.min(count, MAX_PARTICLES_3D - particles.length);
+      for (let i = 0; i < actualCount; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 1 + Math.random() * 3.5 * energy;
+        const zSpd = (Math.random() - 0.5) * 10 * energy; // explode in Z too
+
+        // Choose color: override > random theme color
+        const color = overrideColor || cols[Math.floor(Math.random() * cols.length)];
+
+        particles.push(new Particle(
+          lx, ly, lz,
+          color,
+          3 + Math.random() * 9 * energy,
+          Math.cos(ang) * spd, Math.sin(ang) * spd - 1.2, zSpd,
+          70 + Math.random() * 90,
+          typePool[Math.floor(Math.random() * typePool.length)]
+        ));
+      }
+    }
+
+    function spawnStream(screenX, screenY, energy, overrideColor) {
+      const lx = screenX - W / 2;
+      const ly = screenY - H / 2;
+
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      const count = 2 + Math.floor(state.flow / 25);
+      for (let i = 0; i < count; i++) {
+        if (particles.length >= MAX_PARTICLES_3D) break;
+
+        // Spread in Z
+        const z = (Math.random() - 0.5) * 50;
+
+        const color = overrideColor || cols[Math.floor(Math.random() * cols.length)];
+
+        particles.push(new Particle(
+          lx + (Math.random() - 0.5) * 40, ly, z,
+          color,
+          2 + Math.random() * 5 * energy,
+          (Math.random() - 0.5) * 1.2, -1.5 - Math.random() * 2.5 * energy,
+          (Math.random() - 0.5) * 2, // Slight Z drift
+          90 + Math.random() * 70,
+          Math.random() > 0.6 ? 'note' : 'circle'
+        ));
+      }
+    }
+
+    // ========================================
+    // v9: Encouragement Effects (Updated to 3D)
+    // ========================================
+
+    function effectGlowPulse() {
+      state.glowPulseIntensity = 0.4;
+    }
+
+    function effectGlowParticles() {
+      state.glowPulseIntensity = 0.5;
+      spawnBurst(W / 2, H * 0.3, 5, 0.6);
+    }
+
+    function effectColorWave() {
+      state.glowPulseIntensity = 0.6;
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      for (let i = 0; i < 8; i++) {
+        const ang = (Math.PI * 2 * i) / 8;
+        const dist = 80;
+        // Ripples are 2D canvas/screen space, so kept as is or need update?
+        // Ripples are separate class. Let's keep them 2D overlay for now.
+        ripples.push(new Ripple(W / 2 + Math.cos(ang) * dist, H * 0.4 + Math.sin(ang) * dist,
+          cols[i % cols.length], 250 + state.flow * 2));
+      }
+    }
+
+    function effectStarShower(count) {
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      const n = count || 12;
+      for (let i = 0; i < n; i++) {
+        if (particles.length >= MAX_PARTICLES_3D) break;
+
+        // Spawn high up, deep in Z, falling forward
+        const startX = (Math.random() - 0.5) * W * 1.5;
+        const startY = -H / 2 - 50;
+        const startZ = 200 + Math.random() * 400; // Deep background
+
+        particles.push(new Particle(
+          startX, startY, startZ,
+          cols[Math.floor(Math.random() * cols.length)],
+          4 + Math.random() * 8,
+          (Math.random() - 0.5) * 1.5, 1 + Math.random() * 2, -4 - Math.random() * 2, // Move towards camera (negative Z)
+          180 + Math.random() * 80,
+          'star'
+        ));
+      }
+    }
+
+    function effectFlowerBurst() {
+      state.glowPulseIntensity = 0.7;
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      for (let i = 0; i < 15; i++) {
+        if (particles.length >= MAX_PARTICLES_3D) break;
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 1.5 + Math.random() * 3;
+        const zSpd = (Math.random() - 0.5) * 10;
+
+        particles.push(new Particle(
+          0, -H * 0.1, 0, // Center-ish
+          cols[Math.floor(Math.random() * cols.length)],
+          5 + Math.random() * 10,
+          Math.cos(ang) * spd, Math.sin(ang) * spd - 1.5, zSpd,
+          100 + Math.random() * 80,
+          'flower'
+        ));
+      }
+    }
+
+    function effectShimmer() {
+      state.shimmerPhase = 0;
+      state.shimmerStartMs = performance.now();
+      state.glowPulseIntensity = 0.8;
+      spawnBurst(W / 2, H * 0.4, 20, 1.0);
+      effectStarShower(8);
+    }
+
+    function effectRadiance() {
+      state.glowPulseIntensity = 1.0;
+      effectStarShower(15);
+      for (let i = 0; i < 12; i++) {
+        if (particles.length >= MAX_PARTICLES_3D) break;
+        const ang = (Math.PI * 2 * i) / 12;
+        ripples.push(new Ripple(W / 2, H * 0.4,
+          CONFIG.THEMES[state.currentTheme].colors[i % 6], 300 + i * 30));
+      }
+    }
+
+    const GOLDEN_BURST_COLORS = ['#ffd700', '#ffec8b', '#fff8dc', '#ffe4b5', '#ffc125', '#eec900'];
+    function effectGoldenBurst() {
+      state.glowPulseIntensity = 1.0;
+      state.shimmerPhase = 0;
+      state.shimmerStartMs = performance.now();
+      const goldColors = GOLDEN_BURST_COLORS;
+      for (let i = 0; i < 30; i++) {
+        if (particles.length >= MAX_PARTICLES_3D) break;
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 2 + Math.random() * 4;
+        const zSpd = (Math.random() - 0.5) * 15;
+
+        particles.push(new Particle(
+          0, -H * 0.15, 0,
+          goldColors[Math.floor(Math.random() * goldColors.length)],
+          4 + Math.random() * 12,
+          Math.cos(ang) * spd, Math.sin(ang) * spd - 2, zSpd,
+          100 + Math.random() * 100,
+          Math.random() > 0.5 ? 'star' : 'circle'
+        ));
+      }
+      effectStarShower(10);
+    }
+
+    function triggerEffect(effectName) {
+      switch (effectName) {
+        case 'glowPulse': effectGlowPulse(); break;
+        case 'glowParticles': effectGlowParticles(); break;
+        case 'colorWave': effectColorWave(); break;
+        case 'starShower': effectStarShower(12); break;
+        case 'flowerBurst': effectFlowerBurst(); break;
+        case 'shimmer': effectShimmer(); break;
+        case 'radiance': effectRadiance(); break;
+        case 'goldenBurst': effectGoldenBurst(); break;
+      }
+    }
+
+    function showEncouragement(tierIndex, timeMs) {
+      const tier = CONFIG.ENCOURAGEMENT_TIERS[tierIndex];
+      if (!tier) return;
+
+      // Check cooldown — don't show same or lower tier too frequently
+      if (timeMs - state.lastEncouragementTimeMs < CONFIG.ENCOURAGEMENT_COOLDOWN_MS
+        && tierIndex <= state.currentEncouragementTier) return;
+
+      state.currentEncouragementTier = tierIndex;
+      state.lastEncouragementTimeMs = timeMs;
+      state.encouragementHideTimeMs = timeMs + CONFIG.ENCOURAGEMENT_DISPLAY_MS;
+
+      // Show message with animation
+      DOM.encouragement.textContent = t(tier.messageKey);
+      DOM.encouragement.classList.remove('visible');
+      DOM.encouragement.classList.add('entering');
+
+      // Force reflow for animation restart
+      void DOM.encouragement.offsetWidth;
+
+      DOM.encouragement.classList.remove('entering');
+      DOM.encouragement.classList.add('visible');
+
+      // Trigger visual effect
+      triggerEffect(tier.effect);
+    }
+
+    // ========================================
+    // Ripples
+    // ========================================
+    let ripples = [];
+    class Ripple {
+      constructor(x, y, color, size) {
+        this.x = x; this.y = y; this.radius = 0;
+        this.maxRadius = size || 200; this.color = color; this.life = 1;
+      }
+      update() {
+        this.radius += 2.5 + state.flow * 0.03;
+        this.life = 1 - this.radius / this.maxRadius;
+      }
+      draw(c) {
+        if (this.life <= 0) return;
+        c.save();
+        c.globalAlpha = this.life * 0.3;
+        c.beginPath(); c.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        c.strokeStyle = this.color;
+        c.lineWidth = 1.5 + state.flow * 0.02;
+        if (CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15) {
+          c.shadowColor = this.color;
+          c.shadowBlur = 10 + state.flow * 0.15;
+        }
+        c.stroke();
+        c.restore();
+      }
+    }
+
+    // ========================================
+    // Background Elements
+    // ========================================
+    let bgStars = [];
+
+    function initBgStars() {
+      bgStars = [];
+      for (let i = 0; i < PERF_PROFILE.bgStarCount; i++) {
+        bgStars.push({
+          x: Math.random() * W, y: Math.random() * H,
+          size: Math.random() * 2 + 0.5,
+          twinkle: Math.random() * Math.PI * 2,
+          speed: 0.01 + Math.random() * 0.02
+        });
+      }
+    }
+
+    function drawBgStars(time) {
+      const visibility = Math.min(1, state.flow / 30);
+      if (visibility < 0.01) return;
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      ctx.save();
+      for (const s of bgStars) {
+        s.twinkle += s.speed;
+        const a = visibility * (0.3 + 0.7 * (Math.sin(s.twinkle) * 0.5 + 0.5));
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size * (1 + state.flow * 0.01), 0, Math.PI * 2);
+        ctx.fillStyle = cols[Math.floor(s.twinkle) % cols.length] || '#fff';
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawAurora(time) {
+      const intensity = Math.max(0, (state.flow - 40) / 60);
+      if (intensity < 0.01) return;
+      const theme = CONFIG.THEMES[state.currentTheme];
+      ctx.save();
+      ctx.globalAlpha = intensity * 0.15;
+      for (let band = 0; band < 3; band++) {
+        ctx.beginPath();
+        ctx.moveTo(0, H * 0.3 + band * 40);
+        for (let x = 0; x <= W; x += 20) {
+          const y = H * 0.3 + band * 40
+            + Math.sin(x * 0.005 + time * 0.0008 + band) * 50 * intensity
+            + Math.sin(x * 0.01 + time * 0.001) * 25 * intensity;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+        const grad = ctx.createLinearGradient(0, H * 0.2, 0, H * 0.7);
+        grad.addColorStop(0, theme.colors[band % theme.colors.length]);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawGroundFlowers(time) {
+      const intensity = Math.max(0, (state.flow - 55) / 45);
+      if (intensity < 0.01) return;
+      ctx.save();
+      ctx.globalAlpha = intensity * 0.5;
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      const count = Math.floor(intensity * 12);
+      for (let i = 0; i < count; i++) {
+        const x = (i / (count - 1 || 1)) * W;
+        const baseY = H - 20;
+        const sway = Math.sin(time * 0.001 + i * 0.7) * 5;
+        const s = 4 + intensity * 6;
+        ctx.strokeStyle = 'rgba(100,180,100,' + intensity * 0.4 + ')';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x + sway, baseY - 20 - s * 2); ctx.stroke();
+        drawFlower(ctx, x + sway, baseY - 20 - s * 2, s, cols[i % cols.length], intensity, false);
+      }
+      ctx.restore();
+    }
+
+    // ========================================
+    // YIN Pitch Detection (v6+)
+    // ========================================
+    function freqToNote(f) {
+      if (f < CONFIG.PITCH_MIN_HZ || f > CONFIG.PITCH_MAX_HZ) return null;
+      const n = 12 * (Math.log2(f / 440)) + 69;
+      const r = Math.round(n);
+      return {
+        name: CONFIG.NOTE_NAMES[r % 12],
+        octave: Math.floor(r / 12) - 1,
+        noteNum: r,
+        freq: f
+      };
+    }
+
+    let yinDiffBuf = null;
+    let yinCMNDFBuf = null;
+
+    function detectPitchYIN(buf, sr) {
+      const SIZE = buf.length;
+      let rms = 0;
+      for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+      rms = Math.sqrt(rms / SIZE);
+      if (rms < CONFIG.RMS_SILENCE_THRESHOLD) return { pitch: -1, conf: 0, rms: rms };
+
+      const halfLen = Math.floor(SIZE / 2);
+      const tauMin = Math.floor(sr / CONFIG.PITCH_MAX_HZ);
+      const tauMax = Math.min(halfLen, Math.floor(sr / CONFIG.PITCH_MIN_HZ));
+
+      if (tauMax <= tauMin + 2) return { pitch: -1, conf: 0, rms: rms };
+
+      if (!yinDiffBuf || yinDiffBuf.length < tauMax + 1) {
+        yinDiffBuf = new Float32Array(tauMax + 1);
+        yinCMNDFBuf = new Float32Array(tauMax + 1);
+      }
+      const diff = yinDiffBuf;
+      diff[0] = 0;
+
+      for (let tau = 1; tau <= tauMax; tau++) {
+        let sum = 0;
+        for (let j = 0; j < halfLen; j++) {
+          const delta = buf[j] - buf[j + tau];
+          sum += delta * delta;
+        }
+        diff[tau] = sum;
+      }
+
+      const cmndf = yinCMNDFBuf;
+      cmndf[0] = 1;
+      let runningSum = 0;
+      for (let tau = 1; tau <= tauMax; tau++) {
+        runningSum += diff[tau];
+        cmndf[tau] = (runningSum > 0) ? diff[tau] * tau / runningSum : 0;
+      }
+
+      let bestTau = -1;
+      for (let tau = tauMin; tau < tauMax; tau++) {
+        if (cmndf[tau] < CONFIG.YIN_THRESHOLD) {
+          while (tau + 1 < tauMax && cmndf[tau + 1] < cmndf[tau]) {
+            tau++;
+          }
+          bestTau = tau;
+          break;
+        }
+      }
+
+      if (bestTau < 0) {
+        let minVal = Infinity;
+        for (let tau = tauMin; tau <= tauMax; tau++) {
+          if (cmndf[tau] < minVal) {
+            minVal = cmndf[tau];
+            bestTau = tau;
+          }
+        }
+        if (minVal > 0.5) return { pitch: -1, conf: 0, rms: rms };
+      }
+
+      let refinedTau = bestTau;
+      if (bestTau > 0 && bestTau < tauMax) {
+        const s0 = diff[bestTau - 1];
+        const s1 = diff[bestTau];
+        const s2 = diff[bestTau + 1];
+        const denom = 2 * (2 * s1 - s0 - s2);
+        if (Math.abs(denom) > 1e-10) {
+          refinedTau = bestTau + (s0 - s2) / denom;
+        }
+      }
+
+      if (refinedTau <= 0) return { pitch: -1, conf: 0, rms: rms };
+
+      const pitch = sr / refinedTau;
+      const conf = 1 - cmndf[bestTau];
+
+      if (pitch < CONFIG.PITCH_MIN_HZ || pitch > CONFIG.PITCH_MAX_HZ) {
+        return { pitch: -1, conf: conf, rms: rms };
+      }
+      if (conf < CONFIG.YIN_PROBABILITY_THRESHOLD) {
+        return { pitch: -1, conf: conf, rms: rms };
+      }
+
+      return { pitch: pitch, conf: conf, rms: rms };
+    }
+
+    // ========================================
+    // Spectral Features
+    // ========================================
+
+    function computeSpectralFlatness(spectrum, startBin, endBin) {
+      const n = endBin - startBin;
+      if (n < 2) return 0;
+      let logSum = 0;
+      let arithSum = 0;
+      let validBins = 0;
+      for (let i = startBin; i < endBin; i++) {
+        const val = spectrum[i] + 1e-10;
+        logSum += Math.log(val);
+        arithSum += val;
+        validBins++;
+      }
+      if (validBins === 0 || arithSum < 1e-8) return 0;
+      const geometricMean = Math.exp(logSum / validBins);
+      const arithmeticMean = arithSum / validBins;
+      return geometricMean / arithmeticMean;
+    }
+
+    function computeSpectralCrest(spectrum, startBin, endBin) {
+      const n = endBin - startBin;
+      if (n < 2) return 0;
+      let maxVal = 0;
+      let sum = 0;
+      for (let i = startBin; i < endBin; i++) {
+        if (spectrum[i] > maxVal) maxVal = spectrum[i];
+        sum += spectrum[i];
+      }
+      const mean = sum / n;
+      if (mean < 1e-8) return 0;
+      return maxVal / mean;
+    }
+
+    function computeSpectralCentroid(spectrum, startBin, endBin, binHz) {
+      let weightedSum = 0;
+      let totalEnergy = 0;
+      for (let i = startBin; i < endBin; i++) {
+        const val = spectrum[i];
+        weightedSum += val * (i * binHz);
+        totalEnergy += val;
+      }
+      if (totalEnergy < 1e-8) return 0;
+      return weightedSum / totalEnergy;
+    }
+
+    function coefficientOfVariation(arr) {
+      if (arr.length < 3) return 0;
+      let mean = 0;
+      for (let i = 0; i < arr.length; i++) mean += arr[i];
+      mean /= arr.length;
+      if (Math.abs(mean) < 1e-10) return 0;
+      let variance = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const d = arr[i] - mean;
+        variance += d * d;
+      }
+      variance /= arr.length;
+      return Math.sqrt(variance) / Math.abs(mean);
+    }
+
+    // ========================================
+    // v9: Harmonicity — checks harmonic partial energy
+    // ========================================
+    // Piano sound has strong energy at integer multiples of the fundamental.
+    // Voice (especially vowels) has formant peaks that don't align as well.
+    // Returns ratio of harmonic energy to total energy (0-1).
+    function computeHarmonicity(spectrum, fundamentalBin, startBin, endBin) {
+      if (fundamentalBin <= 0 || fundamentalBin >= endBin) return 0;
+
+      const tol = CONFIG.HARMONICITY_BIN_TOLERANCE;
+      let harmonicEnergy = 0;
+      let totalEnergy = 0;
+
+      // Sum total energy (squared magnitude)
+      for (let i = startBin; i < endBin; i++) {
+        const val = spectrum[i] / 255.0; // normalize
+        totalEnergy += val * val;
+      }
+      if (totalEnergy < 1e-6) return 0;
+
+      // Sum energy at fundamental + harmonics
+      for (let h = 1; h <= CONFIG.HARMONICITY_PARTIALS + 1; h++) {
+        const harmonicBin = Math.round(fundamentalBin * h);
+        if (harmonicBin >= endBin) break;
+
+        const lo = Math.max(startBin, harmonicBin - tol);
+        const hi = Math.min(endBin - 1, harmonicBin + tol);
+        for (let i = lo; i <= hi; i++) {
+          const val = spectrum[i] / 255.0;
+          harmonicEnergy += val * val;
+        }
+      }
+
+      return harmonicEnergy / totalEnergy;
+    }
+
+    // ========================================
+    // Multi-Feature Onset Detection (v9 — with harmonicity)
+    // ========================================
+    function updateMultiFeatureOnset(timeMs, currentPitchHz) {
+      if (!onsetAnalyser || !onsetDataArray) {
+        state.debugGateOpen = false;
+        return { isOnset: false, gateOpen: false };
+      }
+
+      onsetAnalyser.getByteFrequencyData(onsetDataArray);
+
+      const binHz = audioCtx.sampleRate / onsetAnalyser.fftSize;
+      const startBin = Math.max(1, Math.floor(CONFIG.FLUX_FREQ_MIN_HZ / binHz));
+      const endBin = Math.min(onsetDataArray.length, Math.floor(CONFIG.FLUX_FREQ_MAX_HZ / binHz));
+      const numBins = endBin - startBin;
+
+      if (numBins < 10) {
+        const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
+        state.debugGateOpen = gateOpen;
+        return { isOnset: false, gateOpen };
+      }
+
+      if (!state.prevSpectrum) {
+        state.prevSpectrum = new Float32Array(onsetDataArray.length);
+        state.prevSpectrum.set(onsetDataArray);
+        state.debugGateOpen = false;
+        return { isOnset: false, gateOpen: false };
+      }
+
+      // Feature 1: Spectral Flux
+      let flux = 0;
+      let spreadCount = 0;
+      for (let i = startBin; i < endBin; i++) {
+        const diff = onsetDataArray[i] - state.prevSpectrum[i];
+        if (diff > 0) {
+          flux += diff;
+          if (diff > CONFIG.ONSET_SPREAD_MIN_CHANGE) {
+            spreadCount++;
+          }
+        }
+      }
+      const spread = spreadCount / numBins;
+
+      // Feature 2: Spectral Flatness
+      const flatness = computeSpectralFlatness(onsetDataArray, startBin, endBin);
+
+      // Feature 3: Spectral Crest
+      const crest = computeSpectralCrest(onsetDataArray, startBin, endBin);
+
+      // Feature 4: Spectral Centroid (debug tracking)
+      const centroid = computeSpectralCentroid(onsetDataArray, startBin, endBin, binHz);
+      state.centroidHistory.push(centroid);
+      if (state.centroidHistory.length > CONFIG.CENTROID_HISTORY_SIZE) {
+        state.centroidHistory.shift();
+      }
+      const centroidCV = coefficientOfVariation(state.centroidHistory);
+
+      // v9: Feature 5 — Harmonicity check.
+      // Practice mode tightens the threshold so non-pitched sounds (voice, key noise,
+      // chair creaks, claps) can't masquerade as notes.
+      let harmonicity = 0;
+      let harmonicityOk = true;
+      if (currentPitchHz > CONFIG.PITCH_MIN_HZ) {
+        const fundamentalBin = Math.round(currentPitchHz / binHz);
+        harmonicity = computeHarmonicity(onsetDataArray, fundamentalBin, startBin, endBin);
+        const harmMin = practice.enabled
+          ? CONFIG.HARMONICITY_MIN_PRACTICE
+          : CONFIG.HARMONICITY_MIN;
+        harmonicityOk = harmonicity >= harmMin;
+      }
+      state.debugHarmonicity = harmonicity;
+
+      // Save current spectrum for next frame
+      state.prevSpectrum.set(onsetDataArray);
+
+      // Update flux history for adaptive threshold
+      const fHist = state.spectralFluxHistory;
+      fHist.push(flux);
+      if (fHist.length > CONFIG.SPECTRAL_FLUX_HISTORY_SIZE) fHist.shift();
+
+      // Combined onset decision
+      let isOnset = false;
+      let onsetReason = '';
+      if (fHist.length >= 5) {
+        let mean = 0;
+        for (let i = 0; i < fHist.length; i++) mean += fHist[i];
+        mean /= fHist.length;
+
+        let variance = 0;
+        for (let i = 0; i < fHist.length; i++) {
+          const d = fHist[i] - mean;
+          variance += d * d;
+        }
+        variance /= fHist.length;
+        const stddev = Math.sqrt(variance);
+
+        const adaptiveThreshold = mean + CONFIG.SPECTRAL_FLUX_ADAPTIVE_K * stddev;
+        const threshold = Math.max(CONFIG.SPECTRAL_FLUX_THRESHOLD, adaptiveThreshold);
+
+        state.debugLastThreshold = threshold;
+
+        const fluxOk = flux > threshold;
+        // v10: Bandpass Spread - Reject too low (glitch) AND too high (noise/typing)
+        const spreadOk = spread > CONFIG.ONSET_SPREAD_THRESHOLD && spread < CONFIG.ONSET_SPREAD_MAX;
+
+        const flatnessOk = flatness > CONFIG.FLATNESS_PIANO_MIN;
+        const crestOk = crest < CONFIG.CREST_VOICE_MAX;
+
+        // v9: 5-condition gate (added harmonicity)
+        const allConditionsMet = fluxOk && spreadOk && flatnessOk && crestOk && harmonicityOk;
+        // N-frame hysteresis (practice mode): require ONSET_HYSTERESIS_FRAMES consecutive
+        // frames of all-conditions-met before firing. Filters one-frame spectral spikes
+        // from key clatter, environmental clicks, etc.
+        if (allConditionsMet) {
+          state.consecutiveOnsetFrames = (state.consecutiveOnsetFrames || 0) + 1;
+        } else {
+          state.consecutiveOnsetFrames = 0;
+        }
+        const hysteresisRequirement = practice.enabled ? ONSET_HYSTERESIS_FRAMES : 1;
+        if (allConditionsMet && state.consecutiveOnsetFrames >= hysteresisRequirement) {
+          if (timeMs - state.lastOnsetTimeMs > CONFIG.ONSET_COOLDOWN_MS) {
+            state.lastOnsetTimeMs = timeMs;
+            isOnset = true;
+            onsetReason = 'PIANO';
+            state.consecutiveOnsetFrames = 0;       // reset after firing
+            state.agcVoiceRejectCount = 0;
+          }
+        } else if (fluxOk && spreadOk) {
+          // v9: track rejections for AGC voice suppression
+          if (state.debugLastRms > CONFIG.AGC_VOICE_RMS_MIN) {
+            state.agcVoiceRejectCount++;
+            if (state.agcVoiceRejectCount >= CONFIG.AGC_VOICE_REJECT_COUNT) {
+              state.agcVoiceSuppressUntilMs = timeMs + CONFIG.AGC_VOICE_SUPPRESS_MS;
+            }
+          }
+          if (!harmonicityOk) onsetReason = 'REJ:harm';
+          else if (!flatnessOk) onsetReason = 'REJ:flat';
+          else if (!crestOk) onsetReason = 'REJ:crest';
+        }
+      }
+
+      // Store debug info
+      state.debugLastFlux = flux;
+      state.debugLastSpread = spread;
+      state.debugLastFlatness = flatness;
+      state.debugLastCrest = crest;
+      state.debugOnsetReason = onsetReason;
+      state.debugLastCentroid = centroid;
+      state.debugCentroidCV = centroidCV;
+
+      const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
+      state.debugGateOpen = gateOpen;
+
+      return { isOnset, gateOpen };
+    }
+
+    // ========================================
+    // Session Confidence Layer
+    // ========================================
+    function updateSessionConfidence(timeMs, isPianoDetected) {
+      if (timeMs - state.lastSessionSampleMs < CONFIG.SESSION_SAMPLE_INTERVAL_MS) return;
+      state.lastSessionSampleMs = timeMs;
+
+      // Push to ring buffer (reuse pre-allocated slot, zero allocation)
+      // When full, the slot at head is the oldest sample and must be removed first.
+      const entry = sessionRing[state.sessionRingHead];
+      if (state.sessionRingSize === SESSION_RING_CAP && entry.isPiano) {
+        state.sessionPianoCount--;
+      }
+      entry.timeMs = timeMs;
+      entry.isPiano = isPianoDetected;
+      if (isPianoDetected) state.sessionPianoCount++;
+      if (state.sessionRingSize < SESSION_RING_CAP) {
+        state.sessionRingSize++;
+      } else {
+        state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
+      }
+      state.sessionRingHead = (state.sessionRingHead + 1) % SESSION_RING_CAP;
+
+      // Expire samples outside time window (O(1) amortized)
+      const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
+      while (state.sessionRingSize > 0 && sessionRing[state.sessionRingTail].timeMs < windowStart) {
+        if (sessionRing[state.sessionRingTail].isPiano) state.sessionPianoCount--;
+        state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
+        state.sessionRingSize--;
+      }
+
+      if (state.sessionRingSize < 3) {
+        state.sessionConfidence = 0;
+        return;
+      }
+
+      // O(1) confidence — no iteration needed
+      state.sessionConfidence = state.sessionPianoCount / state.sessionRingSize;
+
+      state.debugSessionConf = state.sessionConfidence;
+
+      const prevState = state.sessionState;
+
+      switch (state.sessionState) {
+        case 'waiting':
+          if (state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
+            state.sessionState = 'warmup';
+            state.sessionStartMs = timeMs;
+          }
+          break;
+
+        case 'warmup':
+          if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
+            state.sessionState = 'waiting';
+          } else if (timeMs - state.sessionStartMs >= CONFIG.SESSION_WARMUP_MS
+            && state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
+            state.sessionState = 'performing';
+            state.sessionPerformingStartMs = timeMs;
+            state.goalWindowStartMs = timeMs;
+          }
+          break;
+
+        case 'performing':
+          if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
+            state.sessionState = 'warmup';
+            state.sessionStartMs = timeMs;
+          }
+          break;
+      }
+
+      if (prevState !== 'performing' && state.sessionState === 'performing') {
+        state.goalWindowStartMs = timeMs;
+      }
+
+      state.debugSessionState = state.sessionState;
+
+      // Update visual indicator
+      if (state.sessionState === 'warmup') {
+        const warmupProgress = Math.min(1, (timeMs - state.sessionStartMs) / CONFIG.SESSION_WARMUP_MS);
+        const dots = Math.floor(warmupProgress * 3) + 1;
+        DOM.sessionStatus.textContent = t('listeningFmt', { p: '\u266B '.repeat(dots) });
+        DOM.sessionStatus.classList.add('visible');
+      } else if (state.sessionState === 'performing') {
+        if (state.goalWindowStartMs <= 0) state.goalWindowStartMs = timeMs;
+        const elapsedGoal = timeMs - state.goalWindowStartMs;
+        if (elapsedGoal >= CONFIG.MOTIVATION_GOAL_MS) {
+          state.goalCompletedCount++;
+          state.goalWindowStartMs = timeMs;
+          state.goalCelebrateUntilMs = timeMs + 2200;
+          triggerEffect('radiance');
+        }
+
+        if (timeMs < state.goalCelebrateUntilMs) {
+          DOM.sessionStatus.textContent = t('goalCelebrate');
+        } else {
+          const remainSec = Math.max(0, Math.ceil((CONFIG.MOTIVATION_GOAL_MS - (timeMs - state.goalWindowStartMs)) / 1000));
+          DOM.sessionStatus.textContent = t('goalCountdownFmt', { v: remainSec });
+        }
+        DOM.sessionStatus.classList.add('visible');
+      } else {
+        DOM.sessionStatus.classList.remove('visible');
+      }
+    }
+
+    // ========================================
+    // v10: Magic Quest System Logic
+    // ========================================
+    function updateQuestState(timeMs) {
+      if (timeMs - state.lastQuestCheckMs < 300) return;
+      state.lastQuestCheckMs = timeMs;
+
+      // Check ALL uncompleted quests (parallel, non-blocking)
+      let justCompleted = false;
+      for (const q of CONFIG.QUESTS) {
+        if (state.completedQuests.includes(q.id)) continue;
+        if (q.condition(state)) {
+          completeQuest(q, timeMs);
+          justCompleted = true;
+          break; // one completion per tick to show CLEARED animation
+        }
+      }
+
+      // Build dot progress display
+      let dotsHtml = '';
+      let firstUndone = null;
+      for (let i = 0; i < CONFIG.QUESTS.length; i++) {
+        const q = CONFIG.QUESTS[i];
+        const done = state.completedQuests.includes(q.id);
+        if (!done && !firstUndone) firstUndone = q;
+        const cls = done ? 'quest-dot done' :
+          (firstUndone === q && !justCompleted ? 'quest-dot current' : 'quest-dot');
+        dotsHtml += '<div class="' + cls + '" title="' + t(q.nameKey) + '"></div>';
+      }
+      DOM.questDots.innerHTML = dotsHtml;
+
+      // Show quest display
+      DOM.questDisplay.classList.add('visible');
+
+      if (!firstUndone) {
+        // All done!
+        DOM.questLabel.textContent = t('questAllClearFmt', { n: CONFIG.QUESTS.length });
+        state.activeQuestId = QUEST_ALL_DONE;
+        return;
+      }
+
+      // Update label with next quest info
+      const doneCount = state.completedQuests.length;
+      if (!justCompleted) {
+        DOM.questLabel.textContent = t('questTargetFmt', { v: t(firstUndone.descKey) });
+      }
+      state.activeQuestId = firstUndone.id;
+    }
+
+    function completeQuest(quest, timeMs) {
+      console.log('Quest Completed: ' + t(quest.nameKey));
+      state.completedQuests.push(quest.id);
+
+      // Center-screen toast animation
+      DOM.toastTitle.textContent = '\u2728 ' + t(quest.nameKey) + ' \u2728';
+      DOM.toastSub.textContent = quest.reward + ' (' + state.completedQuests.length + '/' + CONFIG.QUESTS.length + ')';
+      DOM.questToast.classList.remove('show');
+      void DOM.questToast.offsetWidth; // force reflow to restart animation
+      DOM.questToast.classList.add('show');
+
+      // Update HUD label temporarily
+      DOM.questLabel.textContent = t('questClearedFmt', { v: t(quest.nameKey) });
+
+      // Visual Reward
+      effectGoldenBurst();
+      spawnBurst(W / 2, H / 2, 20, 1.5, '#ffd700');
+
+      // Force next check delay to let user see toast (2.5s)
+      state.lastQuestCheckMs = timeMs + 2500;
+      state.activeQuestId = null;
+
+      setTimeout(() => {
+        DOM.questToast.classList.remove('show');
+      }, 2600);
+    }
+
+    // ========================================
+    // Quality Scoring — simplified for kids
+    // ========================================
+
+    function clamp01(v) {
+      return Math.max(0, Math.min(1, v));
+    }
+
+    function computeRhythmScore() {
+      const ioi = state.ioiHistory;
+      if (ioi.length < 3) return 0.5;
+      const cv = coefficientOfVariation(ioi);
+      if (cv <= CONFIG.IOI_IDEAL_CV) return 0.85 + 0.15 * (1 - cv / CONFIG.IOI_IDEAL_CV);
+      if (cv <= CONFIG.IOI_MAX_CV) {
+        const t = (cv - CONFIG.IOI_IDEAL_CV) / (CONFIG.IOI_MAX_CV - CONFIG.IOI_IDEAL_CV);
+        return 0.85 - 0.45 * t;
+      }
+      return 0.4;
+    }
+
+    function computeDynamicsScore() {
+      const amps = state.amplitudeHistory;
+      if (amps.length < 3) return 0.5;
+      const cv = coefficientOfVariation(amps);
+      if (cv >= CONFIG.DYNAMICS_IDEAL_CV_MIN && cv <= CONFIG.DYNAMICS_IDEAL_CV_MAX) {
+        return 0.8 + 0.2 * (1 - Math.abs(cv - 0.15) / 0.45);
+      } else if (cv < CONFIG.DYNAMICS_IDEAL_CV_MIN) {
+        return 0.6;
+      } else {
+        return Math.max(0.3, 0.8 - (cv - CONFIG.DYNAMICS_IDEAL_CV_MAX) * 0.5);
+      }
+    }
+
+    function computeStabilityScore() {
+      // Balance short-term pitch consistency with session-level confidence.
+      const s = state.pitchStability * 0.75 + state.sessionConfidence * 0.25;
+      return clamp01(s);
+    }
+
+    function updateGrowthTrend(timeMs) {
+      state.qualityHistory.push({ timeMs, score: state.displayedQualityScore });
+      const windowStart = timeMs - CONFIG.GROWTH_WINDOW_MS;
+      while (state.qualityHistory.length > 0 && state.qualityHistory[0].timeMs < windowStart) {
+        state.qualityHistory.shift();
+      }
+      if (state.qualityHistory.length < 2) {
+        state.growthScore = 0;
+        return;
+      }
+      const oldest = state.qualityHistory[0].score;
+      const newest = state.qualityHistory[state.qualityHistory.length - 1].score;
+      state.growthScore = newest - oldest;
+    }
+
+    function buildCoachingFeedback() {
+      const axes = [
+        { key: 'rhythm', score: state.rhythmScore },
+        { key: 'dynamics', score: state.dynamicsScore },
+        { key: 'stability', score: state.stabilityScore }
+      ];
+      axes.sort((a, b) => b.score - a.score);
+
+      let goodKey = 'strNotesClear';
+      if (state.growthScore > 0.05) {
+        goodKey = 'strGrowing';
+      } else if (axes[0].key === 'rhythm' && axes[0].score > 0.7) {
+        goodKey = 'strRhythmSteady';
+      } else if (axes[0].key === 'dynamics' && axes[0].score > 0.7) {
+        goodKey = 'strDynamicsGood';
+      } else if (axes[0].key === 'stability' && axes[0].score > 0.7) {
+        goodKey = 'strPitchStable';
+      }
+
+      let nextKey = 'nxtBreathe';
+      const weakest = axes[axes.length - 1];
+      if (weakest.key === 'rhythm') {
+        nextKey = 'nxtOneHand';
+      } else if (weakest.key === 'dynamics') {
+        nextKey = 'nxtSoftLoud';
+      } else if (weakest.key === 'stability') {
+        nextKey = 'nxtHoldNotes';
+      }
+
+      state.feedbackGood = t('strengthFmt', { v: t(goodKey) });
+      state.feedbackNext = t('nextStepFmt', { v: t(nextKey) });
+    }
+
+    function updateQualityScores(timeMs) {
+      if (timeMs - state.lastScoreUpdateMs < CONFIG.SCORE_UPDATE_INTERVAL_MS) return;
+      state.lastScoreUpdateMs = timeMs;
+
+      state.rhythmScore = computeRhythmScore();
+      state.dynamicsScore = computeDynamicsScore();
+      state.stabilityScore = computeStabilityScore();
+
+      state.qualityScore =
+        state.rhythmScore * CONFIG.SCORE_RHYTHM_WEIGHT +
+        state.dynamicsScore * CONFIG.SCORE_DYNAMICS_WEIGHT +
+        state.stabilityScore * CONFIG.SCORE_STABILITY_WEIGHT;
+
+      state.displayedQualityScore += (state.qualityScore - state.displayedQualityScore) * CONFIG.SCORE_SMOOTHING;
+      updateGrowthTrend(timeMs);
+      buildCoachingFeedback();
+
+      if ((state.sessionState === 'performing' || state.sessionState === 'warmup') && state.displayedQualityScore > 0.25) {
+        const rhythmPct = Math.round(state.rhythmScore * 100);
+        const dynamicsPct = Math.round(state.dynamicsScore * 100);
+        const stabilityPct = Math.round(state.stabilityScore * 100);
+        const growthPts = Math.round(state.growthScore * 100);
+        const growthText = growthPts >= 0 ? '+' + growthPts : '' + growthPts;
+        DOM.qualityScore.textContent =
+          'Rhythm ' + rhythmPct + '% | Dynamics ' + dynamicsPct + '% | Stability ' + stabilityPct + '%\n' +
+          'Last 30s growth: ' + growthText + 'pt\n' +
+          state.feedbackGood + ' -> ' + state.feedbackNext;
+        DOM.qualityScore.classList.add('visible');
+      } else {
+        DOM.qualityScore.classList.remove('visible');
+      }
+    }
+
+    // ========================================
+    // Software AGC — with v9 voice suppression
+    // ========================================
+    function updateAGC(timeMs, postGainRms) {
+      if (timeMs - state.agcLastUpdateMs < CONFIG.AGC_UPDATE_INTERVAL_MS) return;
+      state.agcLastUpdateMs = timeMs;
+
+      state.agcSmoothedRms += (postGainRms - state.agcSmoothedRms) * 0.15;
+
+      const preGainRms = state.agcSmoothedRms / state.agcGain;
+      if (preGainRms < CONFIG.AGC_SILENCE_FLOOR) return;
+
+      // v9: Determine effective max gain — suppress during voice detection
+      const effectiveMaxGain = (timeMs < state.agcVoiceSuppressUntilMs)
+        ? CONFIG.AGC_VOICE_SUPPRESS_MAX
+        : CONFIG.AGC_MAX_GAIN;
+
+      const ratio = CONFIG.AGC_TARGET_RMS / (state.agcSmoothedRms + 1e-10);
+      const targetGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(effectiveMaxGain, state.agcGain * ratio));
+
+      const alpha = targetGain > state.agcGain ? CONFIG.AGC_ATTACK_COEFF : CONFIG.AGC_RELEASE_COEFF;
+      state.agcGain += (targetGain - state.agcGain) * alpha;
+      state.agcGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(effectiveMaxGain, state.agcGain));
+
+      gainNode.gain.setValueAtTime(state.agcGain, audioCtx.currentTime);
+      state.debugAgcGain = state.agcGain;
+    }
+
+    // ========================================
+    // Game Logic — 4-layer architecture (v9)
+    // ========================================
+    function updateGameState(timeMs, dt, pitchResult) {
+      const { pitch, conf, rms } = pitchResult;
+
+      // Pitch median ring buffer — only collect high-confidence pitches. When mic
+      // matching needs a stable pitch (onset moment), we use the median of recent
+      // entries instead of the raw single-frame reading. Kills 1-octave YIN errors.
+      if (!state.recentPitches) state.recentPitches = [];
+      if (pitch > CONFIG.PITCH_MIN_HZ && conf > 0.5) {
+        state.recentPitches.push(pitch);
+        if (state.recentPitches.length > PITCH_MEDIAN_FRAMES) state.recentPitches.shift();
+      }
+
+      // Adaptive RMS floor — exponential moving average of background noise during
+      // confirmed quiet (RMS very low AND no recent onset). The "good note" threshold
+      // floats above this floor with a hard upper cap so a noisy room can't push the
+      // threshold past where real piano notes live.
+      if (state.adaptiveSilenceRms == null) state.adaptiveSilenceRms = 0.001;
+      const inQuietWindow = rms < 0.01
+        && (timeMs - state.lastOnsetTimeMs) > CONFIG.ONSET_GATE_DURATION_MS;
+      if (inQuietWindow) {
+        state.adaptiveSilenceRms = state.adaptiveSilenceRms * 0.97 + rms * 0.03;
+      }
+      const adaptiveGoodNoteRms = Math.max(
+        CONFIG.GOOD_NOTE_RMS,
+        Math.min(0.020, state.adaptiveSilenceRms * 2.0)
+      );
+
+      const onsetState = updateMultiFeatureOnset(timeMs, pitch);
+
+      const pitchMinHz = practice.enabled
+        ? CONFIG.PITCH_MIN_HZ_PRACTICE
+        : CONFIG.PITCH_MIN_HZ;
+      const pitchOk = pitch > pitchMinHz && pitch < CONFIG.PITCH_MAX_HZ
+        && conf > CONFIG.CONFIDENCE_THRESHOLD && rms > adaptiveGoodNoteRms;
+      const isOnsetNote = pitchOk && onsetState.isOnset;
+      const isActivePlay = pitchOk && onsetState.gateOpen;
+
+      state.debugLastRms = rms;
+      state.debugLastConf = conf;
+      state.debugLastPitch = pitch;
+      state.debugIsGoodNote = isOnsetNote;
+      state.debugIsActivePlay = isActivePlay;
+
+      updateSessionConfidence(timeMs, isActivePlay);
+
+      // v13: When MIDI is the active source, MIDI events drive the quality histories
+      // (rhythm/dynamics/stability) so the radar reflects what was actually played
+      // rather than what the mic happened to pick up. Skip the mic push to avoid
+      // double-counting and to keep silent (headphone) practice fully evaluable.
+      const midiDrivingHistories = midiInput.enabled
+        && (timeMs - (midiInput.lastEventTime || 0)) < 2000;
+
+      if (isOnsetNote && !midiDrivingHistories) {
+        const lastOnset = state.noteOnsetTimes.length > 0
+          ? state.noteOnsetTimes[state.noteOnsetTimes.length - 1] : 0;
+        if (timeMs - lastOnset > 80) {
+          state.noteOnsetTimes.push(timeMs);
+          if (state.noteOnsetTimes.length > CONFIG.IOI_HISTORY_SIZE + 1) {
+            state.noteOnsetTimes.shift();
+          }
+          if (state.noteOnsetTimes.length >= 2) {
+            const ioi = timeMs - state.noteOnsetTimes[state.noteOnsetTimes.length - 2];
+            if (ioi > 100 && ioi < 5000) {
+              state.ioiHistory.push(ioi);
+              if (state.ioiHistory.length > CONFIG.IOI_HISTORY_SIZE) {
+                state.ioiHistory.shift();
+              }
+            }
+          }
+        }
+
+        state.amplitudeHistory.push(rms);
+        if (state.amplitudeHistory.length > CONFIG.AMPLITUDE_HISTORY_SIZE) {
+          state.amplitudeHistory.shift();
+        }
+      }
+
+      updateQualityScores(timeMs);
+
+      const dtSec = dt / 1000;
+      const isPerforming = state.sessionState === 'performing';
+      const isWarmup = state.sessionState === 'warmup';
+
+      if (isOnsetNote && !midiDrivingHistories) {
+        if (state.lastPitch > 0) {
+          const semitones = Math.abs(12 * Math.log2(pitch / state.lastPitch));
+          if (semitones < CONFIG.STABILITY_SEMITONE_THRESHOLD) {
+            state.pitchStability = Math.min(1, state.pitchStability + CONFIG.STABILITY_GROWTH);
+          } else {
+            state.pitchStability *= CONFIG.STABILITY_DECAY_GOOD;
+          }
+        }
+        state.lastPitch = pitch;
+        state.lastSilenceStartMs = -1;
+
+        if (isPerforming || isWarmup) {
+          if (state.lastGoodNoteTimeMs > 0 && (timeMs - state.lastGoodNoteTimeMs) < CONFIG.COMBO_WINDOW_MS) {
+            state.combo++;
+            if (state.combo > state.bestCombo) {
+              state.bestCombo = state.combo;
+            }
+          } else {
+            state.combo = Math.max(1, Math.floor(state.combo * 0.6));
+          }
+        }
+        state.lastGoodNoteTimeMs = timeMs;
+      } else if (isActivePlay) {
+        state.lastSilenceStartMs = -1;
+        state.pitchStability = Math.max(0, Math.min(1, state.pitchStability * 0.995 + 0.001));
+      } else {
+        // v10: Time-based decay for consistency
+        // Was: state.pitchStability *= CONFIG.STABILITY_DECAY_IDLE;
+        // Now: decay based on dtSec
+        // Formula: New = Old * (Base ^ dt)
+        // If Base is 0.5 per 5 seconds -> (0.5)^(1/5) ~= 0.87 per sec
+        const decayFactor = Math.pow(0.5, dtSec / 5.0); // ~50% per 5 seconds
+        state.pitchStability = Math.max(0, state.pitchStability * decayFactor);
+
+        if (state.lastSilenceStartMs < 0) {
+          state.lastSilenceStartMs = timeMs;
+        }
+        const silenceDuration = timeMs - state.lastSilenceStartMs;
+
+        if (silenceDuration > CONFIG.SILENCE_DECAY_START_MS) {
+          // Slow decay start
+          state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_SOFT * dtSec);
+          if (silenceDuration > CONFIG.SILENCE_HARD_DECAY_MS) {
+            // Hard decay later
+            state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_HARD * dtSec);
+            state.combo = Math.max(0, state.combo - Math.ceil(CONFIG.COMBO_DECAY_RATE * dtSec * 60));
+          }
+        }
+
+        if (rms > CONFIG.NOISE_RMS_THRESHOLD && !isActivePlay) {
+          if (timeMs - state.lastNoisePenaltyMs > CONFIG.NOISE_PENALTY_COOLDOWN_MS) {
+            state.flow = Math.max(0, state.flow - CONFIG.FLOW_NOISE_PENALTY * dtSec);
+            state.combo = Math.max(0, state.combo - CONFIG.COMBO_NOISE_PENALTY);
+            state.lastNoisePenaltyMs = timeMs;
+          }
+        }
+      }
+
+      if (isActivePlay) {
+        // v10: Instant Gratification — Gain flow even in 'waiting' state
+        // v10: Always allow flow gain regardless of session state
+        {
+          const comboFactor = Math.min(state.combo / 50, 1);
+          const qualityFactor = state.qualityScore;
+          let flowGain = (CONFIG.FLOW_GAIN_BASE
+            + comboFactor * CONFIG.FLOW_GAIN_COMBO_MAX
+            + state.pitchStability * CONFIG.FLOW_GAIN_STABILITY_MAX
+            + qualityFactor * CONFIG.FLOW_GAIN_QUALITY_MAX) * dtSec;
+
+          // Boost gain in warmup/waiting to get started faster
+          if (state.sessionState !== 'performing') flowGain *= 1.5;
+
+          state.flow = Math.min(100, state.flow + flowGain);
+          if (state.flow > state.peakFlow) state.peakFlow = state.flow;
+        }
+      }
+
+
+
+      // Stage transitions — v9: enhanced with more particles
+      const prevStage = state.currentStage;
+      let newStage = 0;
+      for (let i = CONFIG.STAGES.length - 1; i >= 0; i--) {
+        if (state.flow >= CONFIG.STAGES[i].minFlow) { newStage = i; break; }
+      }
+
+      if (newStage !== prevStage) {
+        state.currentStage = newStage;
+        DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[newStage]);
+        if (newStage > 0) { DOM.stageLabel.classList.add('visible'); }
+        else { DOM.stageLabel.classList.remove('visible'); }
+
+        // v9: Enhanced stage-up celebration
+        if (newStage > prevStage && newStage > 0) {
+          for (let i = 0; i < 40; i++) {
+            spawnBurst(Math.random() * W, Math.random() * H, 3, 0.9);
+          }
+          effectStarShower(6);
+        }
+      }
+
+      // Periodic per-frame stats — only collected/forwarded when remote logging
+      // is on. Skipping the min/max scans entirely on prod hot path.
+      if (REMOTE_LOG_ENABLED) {
+        if (rms > state.debugMaxRms) state.debugMaxRms = rms;
+        if (conf > state.debugMaxConf) state.debugMaxConf = conf;
+        if (state.debugHarmonicity > state.debugMaxHarm) state.debugMaxHarm = state.debugHarmonicity;
+        if (isOnsetNote) state.debugOnsetCount++;
+        if (timeMs - state.lastDebugLogMs > 2000) {
+          state.lastDebugLogMs = timeMs;
+          remoteLog(`[Stats] Flow=${state.flow.toFixed(1)} | MaxRMS=${state.debugMaxRms.toFixed(4)}`
+            + ` | MaxConf=${state.debugMaxConf.toFixed(2)} | MaxHarm=${state.debugMaxHarm.toFixed(2)}`
+            + ` | onsets=${state.debugOnsetCount} | reason=${state.debugOnsetReason || '-'}`
+            + ` | Stab=${state.pitchStability.toFixed(2)} | Combo=${state.combo} | Stg=${state.currentStage}`);
+          state.debugMaxRms = 0; state.debugMaxConf = 0; state.debugMaxHarm = 0;
+          state.debugOnsetCount = 0;
+        }
+      }
+
+      updateHUD(timeMs);
+      return isOnsetNote;
+    }
+
+    // ========================================
+    // v9: updateHUD — encouragement instead of numbers
+    // ========================================
+    function updateHUD(timeMs) {
+      // v9: Check encouragement tiers (find highest matching tier)
+      let bestTier = -1;
+      for (let i = CONFIG.ENCOURAGEMENT_TIERS.length - 1; i >= 0; i--) {
+        if (state.combo >= CONFIG.ENCOURAGEMENT_TIERS[i].minCombo) {
+          bestTier = i;
+          break;
+        }
+      }
+
+      // Show encouragement when tier increases
+      if (bestTier > state.currentEncouragementTier && bestTier >= 0) {
+        showEncouragement(bestTier, timeMs);
+      }
+
+      // Reset tier tracking when combo drops
+      if (bestTier < state.currentEncouragementTier) {
+        state.currentEncouragementTier = bestTier;
+      }
+
+      // Hide encouragement after display time
+      if (timeMs > state.encouragementHideTimeMs) {
+        DOM.encouragement.classList.remove('visible');
+      }
+
+      // Flow gauge — quantize style writes to whole-percent buckets so the
+      // browser doesn't reparse a fresh gradient string 60×/sec on iPad.
+      const flowPct = Math.round(state.flow);
+      if (flowPct !== _lastFlowPctWritten) {
+        _lastFlowPctWritten = flowPct;
+        DOM.flowFill.style.height = flowPct + '%';
+        const hue = flowPct * 1.2 + 200;
+        DOM.flowFill.style.background = 'linear-gradient(to top,hsl(' + hue + ',70%,40%),hsl(' + (hue + 40) + ',80%,60%))';
+        DOM.flowFill.style.boxShadow = '0 0 ' + (flowPct * 0.3) + 'px hsl(' + hue + ',70%,60%)';
+      }
+    }
+    let _lastFlowPctWritten = -1;
+
+    // ========================================
+    // Debug overlay (v9)
+    // ========================================
+    function updateDebugOverlay() {
+      if (!state.debugMode) return;
+      const gateMs = Math.max(0, CONFIG.ONSET_GATE_DURATION_MS - (performance.now() - state.lastOnsetTimeMs));
+      const voiceSupp = state.agcVoiceSuppressUntilMs > performance.now() ? 'SUPP' : 'ok';
+      DOM.debugOverlay.textContent =
+        'v9 YIN+Harm+SoftAGC | FLUX: ' + state.debugLastFlux.toFixed(1) +
+        '  THR: ' + state.debugLastThreshold.toFixed(1) +
+        '  SPR: ' + (state.debugLastSpread * 100).toFixed(0) + '%' +
+        '\nFLAT: ' + state.debugLastFlatness.toFixed(3) +
+        '  CREST: ' + state.debugLastCrest.toFixed(1) +
+        '  HARM: ' + state.debugHarmonicity.toFixed(3) +
+        '  ' + state.debugOnsetReason +
+        '\nGATE: ' + (state.debugGateOpen ? 'OPEN ' + (gateMs / 1000).toFixed(1) + 's' : 'CLOSED') +
+        '  RMS: ' + state.debugLastRms.toFixed(4) +
+        '  AGC: x' + state.debugAgcGain.toFixed(1) + ' ' + voiceSupp +
+        '\nPITCH: ' + (state.debugLastPitch > 0 ? state.debugLastPitch.toFixed(1) + 'Hz' : '---') +
+        '  CONF: ' + state.debugLastConf.toFixed(2) +
+        '  NOTE: ' + (state.debugIsGoodNote ? 'YES' : 'no') +
+        '  PLAY: ' + (state.debugIsActivePlay ? 'ON' : 'off') +
+        '\nSESSION: ' + state.debugSessionState.toUpperCase() +
+        '  S.CONF: ' + (state.debugSessionConf * 100).toFixed(0) + '%' +
+        '\nQUALITY: ' + (state.qualityScore * 100).toFixed(0) + '%' +
+        '  R:' + (state.rhythmScore * 100).toFixed(0) +
+        ' D:' + (state.dynamicsScore * 100).toFixed(0) +
+        ' S:' + (state.stabilityScore * 100).toFixed(0) +
+        '\nFLOW: ' + state.flow.toFixed(1) +
+        '  COMBO: ' + state.combo +
+        '  STAGE: ' + state.currentStage;
+    }
+
+    // ========================================
+    // Energy calculation
+    // ========================================
+    function getEnergy() {
+      if (!analyser || state.micSuspended) return 0;
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      const binHz = audioCtx.sampleRate / analyser.fftSize;
+      const s = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
+      const e = Math.min(Math.floor(CONFIG.PIANO_FREQ_MAX / binHz), dataArray.length);
+      for (let i = s; i < e; i++) sum += dataArray[i];
+      return sum / ((e - s) * 255);
+    }
+
+    // ========================================
+    // Main Loop
+    // ========================================
+    function loop(timeMs) {
+      if (!state.running) return;
+      requestAnimationFrame(loop);
+
+      const dt = state.lastFrameTimeMs > 0 ? Math.min(timeMs - state.lastFrameTimeMs, 50) : 16;
+      state.lastFrameTimeMs = timeMs;
+
+      const theme = CONFIG.THEMES[state.currentTheme];
+      const energy = getEnergy();
+      state.smoothEnergy += (energy - state.smoothEnergy) * 0.15;
+
+      const [br, bg2, bb] = theme.bg;
+      const fadeRate = 0.08 + 0.06 * (1 - state.flow / 100);
+      ctx.fillStyle = 'rgba(' + br + ',' + bg2 + ',' + bb + ',' + fadeRate + ')';
+      ctx.fillRect(0, 0, W, H);
+
+      drawBgStars(timeMs);
+      drawAurora(timeMs);
+      drawGroundFlowers(timeMs);
+
+      // v10: "Wake Up" Flash rendering
+      if (state.inputFlash > 0.01) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${state.inputFlash})`;
+        ctx.fillRect(0, 0, W, H);
+        state.inputFlash *= 0.85; // Fast decay
+      }
+
+      // v9: Glow pulse effect (from encouragement)
+      const glowExtra = state.glowPulseIntensity;
+      if (glowExtra > 0.01) {
+        state.glowPulseIntensity *= 0.96; // decay
+      }
+
+      if (state.smoothEnergy > 0.04 || glowExtra > 0.02) {
+        const baseGlow = W * 0.3 * state.smoothEnergy + 100 + state.flow * 3;
+        const glowSize = baseGlow + glowExtra * W * 0.2;
+        const glowAlpha = 0.08 + state.flow * 0.002 + glowExtra * 0.15;
+        const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, glowSize);
+        grad.addColorStop(0, theme.glow + Math.min(glowAlpha, 0.4) + ')');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // v9: Shimmer effect
+      if (state.shimmerPhase >= 0) {
+        const shimmerAge = timeMs - state.shimmerStartMs;
+        if (shimmerAge < 1500) {
+          const shimmerAlpha = 0.08 * Math.sin(shimmerAge * 0.02) * (1 - shimmerAge / 1500);
+          if (shimmerAlpha > 0) {
+            ctx.fillStyle = 'rgba(255,255,255,' + shimmerAlpha + ')';
+            ctx.fillRect(0, 0, W, H);
+          }
+        } else {
+          state.shimmerPhase = -1;
+        }
+      }
+
+      let isGoodNote = false;
+      // v13: Skip the entire mic processing pipeline when the mic is suspended
+      // (MIDI is the active input). YIN, FFT consumption, AGC, onset detection
+      // and game-state updates are all mic-derived; running them on a torn-down
+      // stream wastes CPU and would also fight the MIDI-driven state.
+      if (analyser && !state.micSuspended) {
+        analyser.getFloatTimeDomainData(freqArray);
+
+        // YIN throttle: full autocorrelation every 3rd frame, RMS-only on others
+        let pitchResult;
+        if (++state.yinSkipCounter % 3 === 0) {
+          pitchResult = detectPitchYIN(freqArray, audioCtx.sampleRate);
+          state.cachedPitchResult = pitchResult;
+        } else {
+          let rms = 0;
+          const len = freqArray.length;
+          for (let i = 0; i < len; i++) rms += freqArray[i] * freqArray[i];
+          rms = Math.sqrt(rms / len);
+          pitchResult = { pitch: state.cachedPitchResult.pitch, conf: state.cachedPitchResult.conf, rms };
+        }
+
+        updateAGC(timeMs, pitchResult.rms);
+
+        // mic level meter (visible feedback that audio is being captured)
+        if (DOM.micMeter && DOM.micMeter.classList.contains('visible')) {
+          const lvl = Math.min(1, pitchResult.rms * 25);
+          DOM.micMeterFill.style.width = (lvl * 100).toFixed(1) + '%';
+        }
+
+        isGoodNote = updateGameState(timeMs, dt, pitchResult);
+        if (isGoodNote && DOM.introHint.classList.contains('visible')) {
+          hideIntroHint();
+        }
+
+        // v12: Practice mode tick (must run before particle work so flow boost applies)
+        if (practice.enabled) {
+          updatePractice(timeMs, isGoodNote, pitchResult.pitch);
+        }
+
+        // v13: When a MIDI keyboard is actively playing, MIDI events drive visuals
+        // (polyphonic, velocity-aware). Skip the mic-derived single-pitch path so we
+        // don't double-spawn or fight YIN's octave guesses.
+        const midiActiveRecently = midiInput.enabled
+          && (performance.now() - (midiInput.lastEventTime || 0)) < 2000;
+
+        if (!midiActiveRecently && isGoodNote && pitchResult.pitch > CONFIG.PITCH_MIN_HZ) {
+          const note = freqToNote(pitchResult.pitch);
+          if (note) {
+            // v10: Synesthesia Mode Color
+            let noteColor = null;
+            if (state.useSynesthesiaMode) {
+              noteColor = getNoteColor(note.name);
+            }
+
+            const noteX = ((note.noteNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
+            const noteY = H * 0.45 + (Math.random() - 0.5) * H * 0.25;
+
+            if (timeMs - state.lastNoteTimeMs > CONFIG.MIN_NOTE_INTERVAL_MS) {
+              // v10: Bass notes (< 100Hz) get extra burst weight
+              const isBass = note.freq < 100;
+              const bassBoost = isBass ? 1.5 : 1.0;
+
+              let burstSize = Math.floor((10 + state.smoothEnergy * 25 + state.flow * 0.2) * bassBoost);
+
+              // Pass noteColor to spawnBurst
+              spawnBurst(noteX, noteY, burstSize, state.smoothEnergy * (1 + state.flow * 0.02), noteColor);
+
+              // v10: Ensure minimum ripple size + Bass Boost
+              const rippleSize = Math.max(200, 150 + state.flow * 3 + state.combo * 0.5) * bassBoost;
+
+              // Use noteColor if active, else theme color
+              const rippleColor = noteColor || theme.colors[note.noteNum % theme.colors.length];
+              ripples.push(new Ripple(noteX, noteY, rippleColor, rippleSize));
+
+              state.lastNoteTimeMs = timeMs;
+
+              // v10: "Wake Up" Flash — clear confirmation at low flow
+              if (state.flow < 10) {
+                if (!state.inputFlash) state.inputFlash = 0;
+                state.inputFlash = 0.2; // 20% white flash
+              }
+            }
+            // Pass noteColor to spawnStream
+            spawnStream(noteX, H * 0.65, state.smoothEnergy, noteColor);
+
+            showNoteDisplay(note.name, note.name + note.octave, noteColor, timeMs);
+          }
+        }
+      } else if (practice.enabled) {
+        // v13: MIDI-only practice — the mic isn't running, but the falling-notes
+        // timeline (miss detection, section completion) must still tick. Pass
+        // zero-valued mic inputs; MIDI matches happen out-of-band in onMidiNoteOn.
+        updatePractice(timeMs, false, 0);
+      }
+
+      if (timeMs - state.noteShowTimeMs > CONFIG.NOTE_DISPLAY_DURATION_MS) {
+        DOM.noteDisplay.classList.remove('visible');
+      }
+
+      if (state.smoothEnergy < 0.04 && Math.random() > (1 - CONFIG.AMBIENT_PARTICLE_CHANCE - state.flow * 0.003)) {
+        const cols = theme.colors;
+        if (particles.length < CONFIG.MAX_PARTICLES) {
+          // 3D environment particles
+          // Random X (-W..2W), Random Y (below screen?), Random Z (deep)
+          const px = (Math.random() - 0.2) * W * 1.4 - (W * 0.2);
+          const py = H + 20;
+          const pz = (Math.random() - 0.5) * 600; // deep field
+
+          particles.push(new Particle(
+            px, py, pz,
+            cols[Math.floor(Math.random() * cols.length)],
+            1 + Math.random() * (1 + state.flow * 0.03),
+            (Math.random() - 0.5) * 0.3, -0.3 - Math.random() * 0.5 - state.flow * 0.005, (Math.random() - 0.5) * 0.5,
+            200 + Math.random() * 100, 'circle'
+          ));
+        }
+      }
+
+      if (analyser && state.smoothEnergy > 0.03) {
+        const binHz = audioCtx.sampleRate / analyser.fftSize;
+        const sB = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
+        const eB = Math.floor(CONFIG.PIANO_FREQ_MAX / binHz);
+        const step = Math.floor((eB - sB) / CONFIG.BAR_COUNT);
+        const barW = W / CONFIG.BAR_COUNT;
+        const barAlphaScale = 0.15 + state.flow * 0.003;
+        for (let i = 0; i < CONFIG.BAR_COUNT; i++) {
+          const idx = sB + i * step;
+          const val = dataArray[idx] / 255;
+          const barH = val * H * (0.1 + state.flow * 0.001);
+          ctx.fillStyle = theme.colors[Math.floor((i / CONFIG.BAR_COUNT) * theme.colors.length) % theme.colors.length];
+          ctx.globalAlpha = val * barAlphaScale;
+          ctx.fillRect(i * barW, H - barH, barW - 1, barH);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // v13: MIDI sustained beams sit between background and particles.
+      if (midiInput.enabled && !practice.enabled) {
+        drawMidiBeams(timeMs);
+      }
+
+      let alive = 0;
+      for (let i = 0; i < ripples.length; i++) {
+        ripples[i].update(); ripples[i].draw(ctx);
+        if (ripples[i].life > 0) ripples[alive++] = ripples[i];
+      }
+      ripples.length = alive;
+
+      alive = 0;
+      for (let i = 0; i < particles.length; i++) {
+        particles[i].update(); particles[i].draw(ctx);
+        if (particles[i].life > 0 && alive < CONFIG.MAX_PARTICLES) particles[alive++] = particles[i];
+      }
+      particles.length = alive;
+
+      // Chord-name display — the function picks a layout per mode (big-centered for free play, small-above-keyboard for practice).
+      if (midiInput.enabled) {
+        drawMidiChordDisplay(timeMs);
+      }
+
+      // Virtual keyboard at the bottom — visible whenever MIDI is in use.
+      // In practice mode it provides a key-finding reference for kids; the lane
+      // sizing reserves the bottom strip for it.
+      if (midiInput.enabled) {
+        drawMidiKeyboard();
+      }
+
+      // v12: Practice mode lane (drawn on top of background, under HUD)
+      if (practice.enabled) {
+        drawPracticeLane(timeMs);
+      }
+
+      if (!practice.enabled) updateQuestState(timeMs);
+      updatePlayTime(timeMs);
+      updateDebugOverlay();
+    }
+
+    // ========================================
+    // v11: localStorage Best Scores
+    // ========================================
+    const BEST_DEFAULT = { bestCombo: 0, peakFlow: 0, totalSessions: 0 };
+    function loadBestScores() { return loadJSON('pianoViz_best', { ...BEST_DEFAULT }); }
+    function saveBestScores(combo, flow) {
+      const best = loadBestScores();
+      best.bestCombo = Math.max(best.bestCombo, combo);
+      best.peakFlow = Math.max(best.peakFlow, Math.round(flow));
+      best.totalSessions++;
+      saveJSON('pianoViz_best', best);
+      return best;
+    }
+
+    // ========================================
+    // v11: Format Time (mm:ss)
+    // ========================================
+    function formatTime(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    // ========================================
+    // v11: Update Play Time Display
+    // ========================================
+    function updatePlayTime(timeMs) {
+      if (state.sessionStartTimeMs > 0) {
+        DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
+      }
+    }
+
+    // ========================================
+    // v11: Session Reset
+    // ========================================
+    // Re-render only the localized parts of the session summary. Pure: reads
+    // from `state._lastSummary` cache + current i18n. Used by both the initial
+    // show (with animation) and language toggle (without \u2014 we don't want a
+    // stagger replay).
+    function renderSessionSummaryText(animate) {
+      const s = state._lastSummary;
+      if (!s) return;
+      DOM.sumCombo.textContent = s.bestCombo;
+      DOM.sumStage.textContent = stageLabel(CONFIG.STAGES[s.stageIdx]) || '-';
+      DOM.sumTime.textContent = formatTime(s.elapsed);
+
+      const total = CONFIG.QUESTS.length;
+      const sortedQuests = CONFIG.QUESTS.slice().sort((a, b) => {
+        const aDone = s.completedQuests.includes(a.id) ? 0 : 1;
+        const bDone = s.completedQuests.includes(b.id) ? 0 : 1;
+        return aDone - bDone;
+      });
+      let badgeHtml = '';
+      for (let i = 0; i < sortedQuests.length; i++) {
+        const q = sortedQuests[i];
+        const done = s.completedQuests.includes(q.id);
+        const cls = done ? 'sq-badge done' : 'sq-badge undone';
+        const icon = done ? '\u2B50' : '\u2B1C';
+        badgeHtml += '<div class="' + cls + '" style="animation-delay:' + (i * 0.25) + 's">' +
+          '<span class="badge-icon">' + icon + '</span>' +
+          '<span>' + t(q.nameKey) + '</span></div>';
+      }
+      if (s.completedQuests.length === total) {
+        badgeHtml += '<div class="sq-all-clear" style="animation-delay:' + (total * 0.25) + 's">' +
+          t('sumAllClear') + '</div>';
+      } else {
+        badgeHtml += '<div style="margin-top:6px;font-size:.75rem;color:rgba(255,255,255,.4);animation-delay:' +
+          (total * 0.25) + 's">' + t('sumQuestProgressFmt', { n: s.completedQuests.length, total }) + '</div>';
+      }
+      DOM.sumQuestList.innerHTML = badgeHtml;
+
+      if (animate) {
+        requestAnimationFrame(() => {
+          const badges = DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear');
+          badges.forEach((b, i) => setTimeout(() => b.classList.add('animate-in'), i * 250));
+        });
+      } else {
+        // On lang re-render, surface badges immediately without re-staggering.
+        DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear').forEach(b => b.classList.add('animate-in'));
+      }
+
+      DOM.sumBest.textContent = t('sumBestFmt', {
+        combo: s.bestStat.bestCombo,
+        flow: s.bestStat.peakFlow,
+        n: s.bestStat.totalSessions
+      });
+    }
+
+    function showSessionSummary() {
+      const elapsed = performance.now() - state.sessionStartTimeMs;
+      const best = saveBestScores(state.bestCombo, state.peakFlow);
+      state._lastSummary = {
+        bestCombo: state.bestCombo,
+        stageIdx: state.currentStage,
+        elapsed,
+        completedQuests: state.completedQuests.slice(),
+        bestStat: best
+      };
+      renderSessionSummaryText(true);
+
+      DOM.sessionSummary.classList.add('visible');
+
+      // Draw radar chart with animated grow-in
+      drawRadarChart(
+        DOM.radarChart,
+        ['Stability', 'Rhythm', 'Dynamics'],
+        [state.stabilityScore, state.rhythmScore, state.dynamicsScore]
+      );
+    }
+
+    // Sizes a canvas to the given CSS pixels with backing store scaled by devicePixelRatio,
+    // then returns the 2D context with the DPR transform pre-applied.
+    function setupHiDPICanvas(canvas, w, h) {
+      const c = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return c;
+    }
+
+    function drawRadarChart(canvas, labels, values) {
+      const size = 200;
+      const c = setupHiDPICanvas(canvas, size, size);
+
+      const cx = size / 2;
+      const cy = size / 2;
+      const R = 70;   // max radius
+      const axes = labels.length;
+      const angleStep = (Math.PI * 2) / axes;
+      const startAngle = -Math.PI / 2; // top
+
+      function getPoint(axisIndex, value) {
+        const angle = startAngle + axisIndex * angleStep;
+        return {
+          x: cx + Math.cos(angle) * R * value,
+          y: cy + Math.sin(angle) * R * value
+        };
+      }
+
+      let progress = 0;
+      const duration = 800; // ms
+      const startTime = performance.now();
+
+      function frame(now) {
+        progress = Math.min(1, (now - startTime) / duration);
+        const ease = 1 - Math.pow(1 - progress, 3); // ease out cubic
+        c.clearRect(0, 0, size, size);
+
+        // Draw grid rings (3 levels: 33%, 66%, 100%)
+        c.strokeStyle = 'rgba(255,255,255,0.08)';
+        c.lineWidth = 1;
+        for (let level = 1; level <= 3; level++) {
+          const r = R * (level / 3);
+          c.beginPath();
+          for (let i = 0; i <= axes; i++) {
+            const p = getPoint(i % axes, level / 3);
+            if (i === 0) c.moveTo(p.x, p.y);
+            else c.lineTo(p.x, p.y);
+          }
+          c.closePath();
+          c.stroke();
+        }
+
+        // Draw axis lines
+        c.strokeStyle = 'rgba(255,255,255,0.12)';
+        for (let i = 0; i < axes; i++) {
+          const p = getPoint(i, 1);
+          c.beginPath();
+          c.moveTo(cx, cy);
+          c.lineTo(p.x, p.y);
+          c.stroke();
+        }
+
+        // Draw data polygon (animated)
+        c.beginPath();
+        for (let i = 0; i <= axes; i++) {
+          const v = values[i % axes] * ease;
+          const p = getPoint(i % axes, v);
+          if (i === 0) c.moveTo(p.x, p.y);
+          else c.lineTo(p.x, p.y);
+        }
+        c.closePath();
+        c.fillStyle = 'rgba(255, 215, 0, 0.15)';
+        c.fill();
+        c.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+        c.lineWidth = 2;
+        c.stroke();
+
+        // Draw data points
+        for (let i = 0; i < axes; i++) {
+          const v = values[i] * ease;
+          const p = getPoint(i, v);
+          c.beginPath();
+          c.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+          c.fillStyle = '#ffd700';
+          c.fill();
+        }
+
+        // Draw labels with percentage
+        c.font = '11px sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        for (let i = 0; i < axes; i++) {
+          const angle = startAngle + i * angleStep;
+          const labelR = R + 22;
+          const lx = cx + Math.cos(angle) * labelR;
+          const ly = cy + Math.sin(angle) * labelR;
+          const pct = Math.round(values[i] * 100 * ease);
+          c.fillStyle = 'rgba(255,255,255,0.7)';
+          c.fillText(labels[i], lx, ly - 7);
+          c.fillStyle = '#ffd700';
+          c.font = 'bold 12px sans-serif';
+          c.fillText(pct + '%', lx, ly + 7);
+          c.font = '11px sans-serif';
+        }
+
+        if (progress < 1) requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function resetSession() {
+      state.flow = 0;
+      state.combo = 0;
+      state.bestCombo = 0;
+      state.currentStage = 0;
+      state.pitchStability = 0;
+      state.noteOnsetTimes = [];
+      state.ioiHistory = [];
+      state.amplitudeHistory = [];
+      state.centroidHistory = [];
+      state.rhythmScore = 0;
+      state.dynamicsScore = 0;
+      state.stabilityScore = 0;
+      state.qualityScore = 0;
+      state.displayedQualityScore = 0;
+      state.growthScore = 0;
+      state.qualityHistory = [];
+      state.completedQuests = [];
+      state.activeQuestId = null;
+      state.lastQuestCheckMs = 0;
+      state.currentEncouragementTier = -1;
+      state.lastGoodNoteTimeMs = 0;
+      state.lastSilenceStartMs = -1;
+      state.lastPitch = -1;
+      state.peakFlow = 0;
+      state.sessionStartTimeMs = performance.now();
+      state.lastNoteTimeMs = 0;
+      state.lastDetectedNote = '';
+      state.sessionState = 'waiting';
+      state.sessionConfidence = 0;
+      state.sessionPianoCount = 0;
+      state.sessionRingHead = 0;
+      state.sessionRingTail = 0;
+      state.sessionRingSize = 0;
+      for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i].isPiano = false;
+      state.feedbackGood = '';
+      state.feedbackNext = '';
+      state.goalWindowStartMs = 0;
+      state.goalCelebrateUntilMs = 0;
+      state.goalCompletedCount = 0;
+      state.spectralFluxHistory = [];
+      state.prevSpectrum = null;
+      state.lastOnsetTimeMs = -9999;
+      state.smoothEnergy = 0;
+      state.inputFlash = 0;
+      state.glowPulseIntensity = 0;
+      state.shimmerPhase = -1;
+      ripples.length = 0;
+      particles.length = 0;
+      DOM.stageLabel.textContent = '';
+      DOM.stageLabel.classList.remove('visible');
+      DOM.encouragement.classList.remove('visible');
+      DOM.qualityScore.classList.remove('visible');
+      DOM.noteDisplay.classList.remove('visible');
+      DOM.questDisplay.classList.remove('visible');
+      DOM.questDots.innerHTML = '';
+      DOM.questLabel.textContent = '';
+      DOM.questToast.classList.remove('show');
+      DOM.flowFill.style.height = '0%';
+      _lastFlowPctWritten = -1;   // invalidate updateHUD cache so next tick re-paints
+      DOM.sessionStatus.classList.remove('visible');
+      DOM.sessionStatus.textContent = '';
+      DOM.playTime.textContent = '0:00';
+      // Drop any held MIDI keys / sustain so the next session starts clean.
+      midiState.activeNotes.clear();
+      midiState.sustainedNotes.clear();
+      midiState.recentOnsets.length = 0;
+      midiState.sustainOn = false;
+      midiState.lastChordName = '';
+      state.lastMidiNoteForStability = null;
+      remoteLog('[RESET] Session reset by user');
+    }
+
+    // ========================================
+    // v12: Practice Mode — Für Elise
+    // ========================================
+
+    // Note encoding: [startBeat16th, midi, dur16ths]
+    // 3/8 time, 6 sixteenths per measure. Right-hand melody only (kid-friendly).
+    // Coverage: opening A theme + B section + return.
+    // Songs are loaded lazily from public-domain MusicXML. Each song carries its own
+    // OSMD-extracted notes / sections / cursor map. currentSong points at the song
+    // the kid picked from the start screen. selectSong(id) switches and resets OSMD.
+    //
+    // sectionDefs: per-song quest layout. Each def starts at startMeasure (0-indexed
+    // source-score measure number); the section runs until the next def's
+    // startMeasure (or end-of-song). Boundaries are chosen at musical landmarks
+    // (theme returns, key changes, climaxes) so a kid never gets cut off mid-phrase.
+    function makeSong(id, titleKey, composerKey, icon, sectionDefs) {
+      return {
+        id,
+        titleKey,
+        composerKey,
+        icon,
+        mxlUrl: 'assets/' + id + '.mxl',
+        xmlUrl: 'assets/' + id + '.xml',
+        sectionDefs: sectionDefs,
+        // Populated on first load:
+        notes: null,
+        totalSec: 0,
+        sections: [],
+        playbackOrder: [],
+        measureToCursorStep: [],
+        _loaded: false,
+        _loadingPromise: null
+      };
+    }
+    const SONGS = {
+      // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
+      // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
+      fur_elise: makeSong('fur_elise', 'furElise', 'composerBeethoven', '🌸', [
+        { id: 'A1', nameKey: 'feA1', descKey: 'feA1desc', startMeasure: 0,  isBoss: false },
+        { id: 'B',  nameKey: 'feB',  descKey: 'feBdesc',  startMeasure: 23, isBoss: false },
+        { id: 'A2', nameKey: 'feA2', descKey: 'feA2desc', startMeasure: 55, isBoss: true  }
+      ]),
+      // Mozart Sonata K.331/3 "Rondo alla Turca" — 137-measure musetrainer edition.
+      // Form: A(0-8) | B(9-25) | A'(26-34) | C(35-43) | A''(44-60)
+      //        | D(61-69) | E(70-78) | F(79-95) | G(96-104) | Coda(105-136)
+      alla_turca: makeSong('alla_turca', 'turkishMarch', 'composerMozart', '🥁', [
+        { id: 'A1', nameKey: 'taA1', descKey: 'taA1desc', startMeasure: 0,  isBoss: false },
+        { id: 'B',  nameKey: 'taB',  descKey: 'taBdesc',  startMeasure: 26, isBoss: false },
+        { id: 'A2', nameKey: 'taA2', descKey: 'taA2desc', startMeasure: 70, isBoss: true  }
+      ])
+    };
+    let currentSong = SONGS.fur_elise;
+
+    // ========================================
+    // User-added songs — IndexedDB persistence
+    //   Schema: db `pianoViz_v1`, store `userSongs` keyed by id.
+    //   Record: { id, title, composer, mxlBlob, sectionDefs, addedAt, source }
+    //
+    //   Songs added by the user (drop a file, paste a jsDelivr URL, or pick from
+    //   the curated library) are persisted as Blobs in IndexedDB. On load they're
+    //   merged into SONGS, get a synthetic mxlUrl via URL.createObjectURL so the
+    //   existing OSMD load path doesn't need to know they came from local cache,
+    //   and surface alongside the hardcoded songs in the picker.
+    // ========================================
+    const USER_DB_NAME = 'pianoViz_v1';
+    const USER_DB_STORE = 'userSongs';
+    let _userDbPromise = null;
+    function openUserDb() {
+      if (_userDbPromise) return _userDbPromise;
+      _userDbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open(USER_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(USER_DB_STORE)) {
+            db.createObjectStore(USER_DB_STORE, { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      return _userDbPromise;
+    }
+    async function userDbAll() {
+      const db = await openUserDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(USER_DB_STORE, 'readonly');
+        const req = tx.objectStore(USER_DB_STORE).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    async function userDbPut(record) {
+      const db = await openUserDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(USER_DB_STORE, 'readwrite');
+        tx.objectStore(USER_DB_STORE).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    async function userDbDelete(id) {
+      const db = await openUserDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(USER_DB_STORE, 'readwrite');
+        tx.objectStore(USER_DB_STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    // Pull <work-title> / <creator type="composer"> / measure count out of a
+    // raw MusicXML string. .mxl is a zip — we use OSMD's loader for that.
+    // For metadata we just need the inner XML text, so this helper is XML-only.
+    function parseMusicXmlMetadata(xmlText) {
+      const dom = new DOMParser().parseFromString(xmlText, 'text/xml');
+      // Fail-fast on malformed XML so the user gets a real error message.
+      if (dom.querySelector('parsererror')) throw new Error('MusicXML parse error');
+      const titleEl = dom.querySelector('work > work-title') || dom.querySelector('movement-title');
+      const composerEl = dom.querySelector('identification > creator[type="composer"]')
+                     || dom.querySelector('identification > creator');
+      const parts = dom.querySelectorAll('part');
+      const measureCount = parts.length > 0 ? parts[0].querySelectorAll('measure').length : 0;
+      return {
+        title: (titleEl?.textContent || '').trim(),
+        composer: (composerEl?.textContent || '').trim(),
+        measureCount
+      };
+    }
+
+    // Auto-section heuristic. Always emits exactly 3 sections (A1/B/A2) to keep
+    // the unlock plumbing simple. Candidate boundaries are scored by musical
+    // priority; we pick the two best that land closest to even thirds.
+    //
+    // Priority (highest first):
+    //   1. <rehearsal> marks      — composer/editor's explicit roadmap
+    //   2. Double bar lines       — strongest structural hint after rehearsal marks
+    //   3. Repeat starts          — section boundary by convention
+    //   4. Key signature changes  — modulations often == new section
+    //   5. Length-based thirds    — last-resort fallback
+    //
+    // Returns metadata so the section-edit UI can show what was detected.
+    function collectSectionCandidates(xmlText) {
+      const dom = new DOMParser().parseFromString(xmlText, 'text/xml');
+      const partEls = dom.querySelectorAll('part');
+      const out = { rehearsal: [], doubleBar: [], repeatFwd: [], keyChange: [], timeChange: [], total: 0 };
+      if (partEls.length === 0) return out;
+      const measures = partEls[0].querySelectorAll('measure');
+      out.total = measures.length;
+      let prevKey = null, prevTime = null;
+      for (let i = 0; i < measures.length; i++) {
+        const m = measures[i];
+        // Rehearsal mark — gold standard.
+        if (m.querySelector('direction-type > rehearsal')) out.rehearsal.push(i);
+        // Bar lines — double = section, light-heavy = final (skip final).
+        for (const bl of m.querySelectorAll('barline')) {
+          const style = bl.querySelector('bar-style')?.textContent || '';
+          if (style === 'light-light') {
+            // Double bar at end of measure i means section starts at i+1.
+            const loc = bl.getAttribute('location') || 'right';
+            const idx = loc === 'right' ? i + 1 : i;
+            if (idx > 0 && idx < measures.length) out.doubleBar.push(idx);
+          }
+          for (const r of bl.querySelectorAll('repeat')) {
+            if (r.getAttribute('direction') === 'forward') out.repeatFwd.push(i);
+          }
+        }
+        // Key change (only count after the first measure — initial key is not a "change").
+        const keyEl = m.querySelector('attributes > key > fifths');
+        if (keyEl) {
+          const k = keyEl.textContent;
+          if (prevKey != null && k !== prevKey) out.keyChange.push(i);
+          prevKey = k;
+        }
+        // Time signature change.
+        const timeEl = m.querySelector('attributes > time');
+        if (timeEl) {
+          const sig = (timeEl.querySelector('beats')?.textContent || '') + '/' +
+                      (timeEl.querySelector('beat-type')?.textContent || '');
+          if (prevTime != null && sig !== prevTime) out.timeChange.push(i);
+          prevTime = sig;
+        }
+      }
+      return out;
+    }
+
+    function autoSectionDefs(xmlText, measureCount) {
+      const cand = collectSectionCandidates(xmlText);
+      const total = Math.max(1, measureCount || cand.total);
+      // Build a scored candidate pool. Higher score beats lower at equal distance.
+      const pool = [];
+      const push = (idx, score) => { if (idx > 0 && idx < total) pool.push({ idx, score }); };
+      cand.rehearsal.forEach(i => push(i, 100));
+      cand.doubleBar.forEach(i => push(i, 80));
+      cand.repeatFwd.forEach(i => push(i, 60));
+      cand.keyChange.forEach(i => push(i, 50));
+      cand.timeChange.forEach(i => push(i, 40));
+      // Pick best near each ideal third. Distance penalty scales with total length.
+      const idealB1 = Math.floor(total / 3);
+      const idealB2 = Math.floor(2 * total / 3);
+      const tol = Math.max(2, Math.floor(total * 0.25));
+      const pickNear = (target, exclude) => {
+        let best = null, bestScore = -Infinity;
+        for (const c of pool) {
+          if (c.idx === exclude) continue;
+          const dist = Math.abs(c.idx - target);
+          if (dist > tol) continue;
+          const score = c.score - dist * 4;   // -4 pts per measure off
+          if (score > bestScore) { bestScore = score; best = c.idx; }
+        }
+        return best;
+      };
+      let b1 = pickNear(idealB1, -1) ?? idealB1;
+      let b2 = pickNear(idealB2, b1) ?? idealB2;
+      if (b2 <= b1) b2 = Math.min(total - 1, b1 + 1);
+      return [
+        { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: 0,  isBoss: false },
+        { id: 'B',  nameKey: 'userSecB',  descKey: 'userSecBdesc',  startMeasure: b1, isBoss: false },
+        { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', startMeasure: b2, isBoss: true  }
+      ];
+    }
+
+    // Promote a stored-or-just-fetched record into the SONGS registry. Returns
+    // the song so the caller can selectSong(...) it immediately.
+    function registerUserSong(record) {
+      const url = URL.createObjectURL(record.mxlBlob);
+      const isMxl = (record.mimeType !== 'application/vnd.recordare.musicxml+xml');
+      // makeSong was designed for hardcoded assets/<id>.mxl paths; user songs
+      // live under blob: URLs, so we shape the result manually but keep the
+      // same field names so the rest of the codebase doesn't branch.
+      const song = {
+        id: record.id,
+        titleKey: '__userTitle:' + record.id,   // resolved by t() override below
+        composerKey: '__userComposer:' + record.id,
+        icon: '🎵',
+        mxlUrl: isMxl ? url : null,
+        xmlUrl: !isMxl ? url : null,
+        sectionDefs: record.sectionDefs,
+        notes: null, totalSec: 0, sections: [], playbackOrder: [],
+        measureToCursorStep: [], _loaded: false, _loadingPromise: null,
+        _isUser: true,
+        _userTitle: record.title || record.id,
+        _userComposer: record.composer || ''
+      };
+      SONGS[record.id] = song;
+      return song;
+    }
+
+    async function loadUserSongs() {
+      try {
+        const all = await userDbAll();
+        for (const rec of all) registerUserSong(rec);
+        return all.length;
+      } catch (e) {
+        console.warn('[UserSongs] load failed:', e.message);
+        return 0;
+      }
+    }
+
+    // Add a song from a Blob (file upload or fetched URL). The MIME hint helps
+    // distinguish .mxl (zip) from .musicxml/.xml (plain text). On success the
+    // song is registered AND persisted; the returned song id can be selectSong'd.
+    async function addUserSongFromBlob(blob, opts) {
+      opts = opts || {};
+      const isMxl = blob.type === 'application/vnd.recordare.musicxml+zip'
+                  || (opts.filename || '').toLowerCase().endsWith('.mxl')
+                  || blob.size > 0 && (await blob.slice(0, 2).text()) === 'PK';
+      let xmlText;
+      if (isMxl) {
+        // .mxl is a zip with a META-INF + the actual MusicXML. OSMD includes JSZip.
+        if (typeof JSZip === 'undefined' && typeof window.JSZip === 'undefined') {
+          // OSMD bundles JSZip but doesn't always expose it on window. Fall back to
+          // letting OSMD load it later; for metadata, refuse and prompt re-upload.
+          throw new Error('Cannot read .mxl metadata in this browser. Use .musicxml instead.');
+        }
+        const JSZipLib = window.JSZip || JSZip;
+        const zip = await JSZipLib.loadAsync(await blob.arrayBuffer());
+        // Find the score file: META-INF/container.xml points at it; fallback = first .xml.
+        let scorePath = null;
+        const containerFile = zip.file('META-INF/container.xml');
+        if (containerFile) {
+          const containerXml = await containerFile.async('text');
+          const m = containerXml.match(/full-path="([^"]+)"/);
+          if (m) scorePath = m[1];
+        }
+        if (!scorePath) {
+          for (const name of Object.keys(zip.files)) {
+            if (name.endsWith('.xml') && !name.startsWith('META-INF')) { scorePath = name; break; }
+          }
+        }
+        if (!scorePath) throw new Error('No score file inside .mxl archive');
+        xmlText = await zip.file(scorePath).async('text');
+      } else {
+        xmlText = await blob.text();
+      }
+      const meta = parseMusicXmlMetadata(xmlText);
+      if (meta.measureCount < 1) throw new Error('Score has no measures');
+      const id = 'usr_' + Date.now().toString(36) + '_'
+        + Math.random().toString(36).slice(2, 7);
+      const sectionDefs = autoSectionDefs(xmlText, meta.measureCount);
+      const record = {
+        id,
+        title: opts.titleOverride || meta.title || (opts.filename || 'Untitled').replace(/\.[^.]+$/, ''),
+        composer: opts.composerOverride || meta.composer || '',
+        mxlBlob: blob,
+        mimeType: isMxl ? 'application/vnd.recordare.musicxml+zip'
+                        : 'application/vnd.recordare.musicxml+xml',
+        sectionDefs,
+        addedAt: Date.now(),
+        source: opts.source || 'upload'
+      };
+      await userDbPut(record);
+      registerUserSong(record);
+      return record;
+    }
+
+    async function addUserSongFromUrl(url, opts) {
+      opts = opts || {};
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + url);
+      const blob = await res.blob();
+      const filename = opts.filename || url.split('/').pop().split('?')[0];
+      return addUserSongFromBlob(blob, { ...opts, filename, source: opts.source || 'url' });
+    }
+
+    async function removeUserSong(id) {
+      await userDbDelete(id);
+      const song = SONGS[id];
+      if (song) {
+        if (song.mxlUrl?.startsWith('blob:')) URL.revokeObjectURL(song.mxlUrl);
+        if (song.xmlUrl?.startsWith('blob:')) URL.revokeObjectURL(song.xmlUrl);
+        delete SONGS[id];
+      }
+      // Also drop any per-song progress (otherwise the localStorage row leaks forever).
+      if (practice.progress?.songs?.[id]) {
+        delete practice.progress.songs[id];
+        savePracticeProgress();
+      }
+    }
+
+    // ========================================
+    // Online library — MuseTrainer full catalog via GitHub API
+    //   Enumerates https://github.com/musetrainer/library/scores (all 90+ .mxl).
+    //   GitHub raw-list endpoint, cached in localStorage for 1 hour to respect
+    //   the 60 req/hr unauthenticated rate limit.
+    // ========================================
+    // Pinned to a specific commit SHA so an upstream library update can't push
+    // un-reviewed content into a kids app (App Store 4.7, effective 2025-11-13).
+    // Bump this SHA + LIBRARY_PINNED_SHA together when intentionally refreshing.
+    const LIBRARY_PINNED_SHA = '9128876f6164d96997c877a2be843349a32bdabb';
+    const LIBRARY_API_URL = 'https://api.github.com/repos/musetrainer/library/contents/scores?ref=' + LIBRARY_PINNED_SHA + '&per_page=200';
+    const LIBRARY_CACHE_KEY = 'pianoViz_libraryCache';
+    const LIBRARY_CACHE_TTL_MS = 60 * 60 * 1000;   // 1 hour
+
+    function libraryEntryFromGhFile(f) {
+      // f.name = "Bach_Minuet_in_G_Major_BWV_Anh._114.mxl"
+      // Show as "Bach — Minuet in G Major BWV Anh. 114" (spaces, em-dash for first underscore).
+      const stem = f.name.replace(/\.mxl$/i, '');
+      const parts = stem.split(/_-_|_/);
+      // First token is treated as composer; rest is title.
+      const composer = parts[0] || '';
+      const title = parts.slice(1).join(' ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+      const label = (composer && title) ? (composer + ' — ' + title)
+                  : (composer || title || stem);
+      return {
+        url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@' + LIBRARY_PINNED_SHA
+           + '/scores/' + encodeURIComponent(f.name),
+        label,
+        composer,
+        title,
+        icon: '🎼',
+        size: f.size || 0
+      };
+    }
+
+    async function fetchLibrary(force) {
+      if (!force) {
+        try {
+          const raw = localStorage.getItem(LIBRARY_CACHE_KEY);
+          if (raw) {
+            const cached = JSON.parse(raw);
+            if (cached.fetchedAt && (Date.now() - cached.fetchedAt) < LIBRARY_CACHE_TTL_MS) {
+              return cached.entries;
+            }
+          }
+        } catch (e) {}
+      }
+      const res = await fetch(LIBRARY_API_URL, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!res.ok) throw new Error('GitHub API ' + res.status);
+      const json = await res.json();
+      const entries = json
+        .filter(f => f.type === 'file' && /\.mxl$/i.test(f.name))
+        .map(libraryEntryFromGhFile)
+        .sort((a, b) => a.label.localeCompare(b.label));
+      try {
+        localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), entries }));
+      } catch (e) {}
+      return entries;
+    }
+
+    // Tiny seed used while the API request is in flight, and as fallback if the
+    // network is unreachable. Never replaces the live catalog once loaded.
+    const LIBRARY_SEED = [
+      { url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@9128876f6164d96997c877a2be843349a32bdabb/scores/Pachelbel_Canon_in_D.mxl',  label: 'Pachelbel — Canon in D',  icon: '🎻' },
+      { url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@9128876f6164d96997c877a2be843349a32bdabb/scores/Satie_Gymnopedie_No._1.mxl', label: 'Satie — Gymnopédie No. 1', icon: '🌿' }
+    ];
+    let ONLINE_LIBRARY = LIBRARY_SEED.slice();
+
+    // Convert per-song measure-based sectionDefs into time-anchored sections by
+    // finding the first occurrence of each boundary measure in the unfolded note
+    // timeline. This keeps sections contiguous in playback time even when the
+    // source score has repeats that revisit early measures later.
+    function buildSectionsFromDefs(notes, totalSec, defs) {
+      const startSecs = defs.map(d => {
+        const first = notes.find(n => n.measureIdx >= d.startMeasure);
+        return first ? first.timeSec : totalSec;
+      });
+      return defs.map((d, i) => ({
+        id: d.id,
+        nameKey: d.nameKey,
+        descKey: d.descKey,
+        isBoss: d.isBoss,
+        startSec: startSecs[i],
+        endSec: i + 1 < defs.length ? startSecs[i + 1] : (totalSec + 1)
+      }));
+    }
+
+    // ========================================
+    // OSMD — single source of truth.
+    //   * Renders the MusicXML score (visual).
+    //   * Walked at load to extract every played note (timing + pitch + hand).
+    //   * Cursor advances one step per onset event during practice (perfect sync).
+    // ========================================
+    let osmd = null;
+    let _osmdInitPromise = null;
+
+    async function initOsmd() {
+      if (osmd) return osmd;
+      if (_osmdInitPromise) return _osmdInitPromise;
+      if (typeof opensheetmusicdisplay === 'undefined') {
+        throw new Error('OSMD library not loaded');
+      }
+      _osmdInitPromise = (async () => {
+        const inst = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmdContainer', {
+          drawTitle: false,
+          drawSubtitle: false,
+          drawComposer: false,
+          drawCredits: false,
+          drawPartNames: false,
+          autoResize: true,
+          backend: 'svg',
+          cursorsOptions: [{ type: 0, color: '#FFD700', alpha: 0.5, follow: true }]
+        });
+        // OSMD's load() accepts both .mxl URLs (zipped) and plain MusicXML URLs.
+        // User-added songs may carry either; fall back to whichever is present.
+        await inst.load(currentSong.mxlUrl || currentSong.xmlUrl);
+
+        // Activate all Repetition objects so the iterator actually performs back-jumps.
+        // OSMD attaches each Repetition to the measures' FirstRepetitionInstructions /
+        // LastRepetitionInstructions, not necessarily to Sheet.Repetitions. Walk every
+        // measure and collect unique parentRepetition references.
+        const repSet = new Set();
+        const measures = inst.Sheet?.SourceMeasures || [];
+        for (const m of measures) {
+          for (const list of [m.FirstRepetitionInstructions, m.LastRepetitionInstructions]) {
+            if (!list) continue;
+            for (const ri of list) {
+              if (ri && ri.parentRepetition) repSet.add(ri.parentRepetition);
+            }
+          }
+        }
+        for (const r of repSet) {
+          if (typeof r.UserNumberOfRepetitions === 'number' && r.UserNumberOfRepetitions < 2) {
+            r.UserNumberOfRepetitions = Math.max(2, r.NumberOfRepetitions || 2);
+          }
+        }
+        console.log('[OSMD] measures=' + measures.length
+          + ' repetitions=' + repSet.size
+          + ' Sheet.Repetitions=' + (inst.Sheet?.Repetitions?.length || 0));
+
+        inst.render();
+        if (inst.cursor) {
+          inst.cursor.show();
+          inst.cursor.reset();
+        }
+        osmd = inst;
+        return osmd;
+      })();
+      try { return await _osmdInitPromise; }
+      finally { _osmdInitPromise = null; }
+    }
+
+    // Walk the OSMD iterator once, extracting one event per voice-entry note AND
+    // recording (cursor step → measure index) so we can later jump the cursor to a
+    // specific measure on repeat passes. Each note carries its source measureIdx.
+    function extractNotesFromOsmd() {
+      if (!osmd || !osmd.cursor) return { notes: [], stepToMeasure: [] };
+      const notes = [];
+      const stepToMeasure = [];
+      osmd.cursor.reset();
+      const it = osmd.cursor.iterator;
+      let cursorStep = 0;
+      while (!it.endReached && cursorStep < 20000) {
+        const measureIdx = it.CurrentMeasureIndex;
+        stepToMeasure.push(measureIdx);
+        const measure = osmd.Sheet?.SourceMeasures?.[measureIdx];
+        const bpm = measure?.TempoInBPM || 72;
+        const tsFrac = it.currentTimeStamp;
+        const timeSec = tsFrac.realValue * 4 * 60 / bpm;
+        const voiceEntries = it.CurrentVoiceEntries;
+        if (voiceEntries) {
+          for (const ve of voiceEntries) {
+            let hand;
+            try {
+              const idx = ve.parentSourceStaffEntry?.parentStaff?.idInMusicSheet;
+              if (typeof idx === 'number') hand = idx === 0 ? 'R' : 'L';
+            } catch (e) { /* pitch fallback below */ }
+            const noteList = ve.Notes || ve.notes || [];
+            for (const note of noteList) {
+              if (!note || (note.isRest && note.isRest()) || note.halfTone == null) continue;
+              const midi = note.halfTone + 12;
+              if (!hand) hand = midi >= 60 ? 'R' : 'L';
+              const lengthVal = note.length?.realValue ?? 0.25;
+              const durSec = Math.max(0.05, lengthVal * 4 * 60 / bpm);
+              notes.push({ hand, midi, timeSec, durSec, measureIdx });
+            }
+          }
+        }
+        it.moveToNext();
+        cursorStep++;
+      }
+      osmd.cursor.reset();
+      notes.sort((a, b) => a.timeSec - b.timeSec || a.midi - b.midi);
+      return { notes, stepToMeasure };
+    }
+
+    // Parse the raw MusicXML to derive the actual playback order.
+    // OSMD 1.8.7 doesn't surface <repeat>/<ending> markers, so we read them ourselves
+    // and build a sequence of measure indices in the order they should sound.
+    async function fetchPlaybackOrder() {
+      const res = await fetch(currentSong.xmlUrl);
+      if (!res.ok) throw new Error('XML fetch failed: ' + res.status);
+      const text = await res.text();
+      const dom = new DOMParser().parseFromString(text, 'text/xml');
+      // Use first part only; both staves of a piano grand staff usually share repeats.
+      const partEls = dom.querySelectorAll('part');
+      if (!partEls.length) return [];
+      const measureEls = partEls[0].querySelectorAll('measure');
+
+      const info = [];
+      measureEls.forEach((m) => {
+        const startsEnding = {};
+        const stopsEnding = {};
+        for (const e of m.querySelectorAll('ending')) {
+          const num = e.getAttribute('number');
+          const type = e.getAttribute('type');
+          if (type === 'start') startsEnding[num] = true;
+          if (type === 'stop' || type === 'discontinue') stopsEnding[num] = true;
+        }
+        let fwdRepeat = false, bwdRepeat = false;
+        for (const r of m.querySelectorAll('barline repeat')) {
+          const dir = r.getAttribute('direction');
+          if (dir === 'forward') fwdRepeat = true;
+          if (dir === 'backward') bwdRepeat = true;
+        }
+        info.push({ startsEnding, stopsEnding, fwdRepeat, bwdRepeat });
+      });
+
+      const order = [];
+      const repeatTaken = new Set();   // forward-repeat positions already done
+      let i = 0;
+      let repeatStartIdx = 0;
+      let safety = 0;
+      while (i < info.length && safety < info.length * 8) {
+        safety++;
+        const m = info[i];
+        // Skip 1st-ending volta on the second pass (jump forward to 2nd ending or out)
+        if (m.startsEnding['1'] && repeatTaken.has(repeatStartIdx)) {
+          let j = i + 1;
+          while (j < info.length
+            && !info[j].startsEnding['2']
+            && !info[j].startsEnding['3']) j++;
+          i = j;
+          continue;
+        }
+        if (m.fwdRepeat) repeatStartIdx = i;
+        order.push(i);
+        if (m.bwdRepeat && !repeatTaken.has(repeatStartIdx)) {
+          repeatTaken.add(repeatStartIdx);
+          i = repeatStartIdx;
+          continue;
+        }
+        i++;
+      }
+      return order;
+    }
+
+    // Re-time the per-measure notes following the playback order, returning a flat
+    // monotonic sequence ready for the lane / Tone.js / cursor sync.
+    // Each playback note is tagged with cursorJump = measureIdx whenever the playback
+    // moves non-sequentially in the written score (back-jump or forward-skip).
+    function expandNotesByPlaybackOrder(baseNotes, order, measures) {
+      const byMeasure = new Map();
+      for (const n of baseNotes) {
+        let arr = byMeasure.get(n.measureIdx);
+        if (!arr) { arr = []; byMeasure.set(n.measureIdx, arr); }
+        arr.push(n);
+      }
+      const measureStartSec = [];
+      const measureDurSec = [];
+      for (let i = 0; i < measures.length; i++) {
+        const m = measures[i];
+        const bpm = m?.TempoInBPM || 72;
+        measureStartSec[i] = (m?.AbsoluteTimestamp?.realValue || 0) * 4 * 60 / bpm;
+        measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
+      }
+      const expanded = [];
+      let cumTime = 0;
+      let prevMIdx = -1;
+      for (const mIdx of order) {
+        const measureNotes = byMeasure.get(mIdx) || [];
+        const mStart = measureStartSec[mIdx] || 0;
+        const isJump = prevMIdx >= 0 && mIdx !== prevMIdx + 1;
+        for (let j = 0; j < measureNotes.length; j++) {
+          const n = measureNotes[j];
+          expanded.push({
+            hand: n.hand,
+            midi: n.midi,
+            timeSec: cumTime + (n.timeSec - mStart),
+            durSec: n.durSec,
+            measureIdx: mIdx,
+            cursorJump: (j === 0 && isJump) ? mIdx : null
+          });
+        }
+        cumTime += measureDurSec[mIdx] || 0.5;
+        prevMIdx = mIdx;
+      }
+      expanded.sort((a, b) => a.timeSec - b.timeSec || a.midi - b.midi);
+      return expanded;
+    }
+
+    async function loadCurrentScore() {
+      // Data is loaded but the OSMD instance was nulled (right after a song switch).
+      // Re-run initOsmd only to redraw the score; note/section extraction is unnecessary.
+      if (currentSong._loaded) {
+        if (!osmd) await initOsmd();
+        return;
+      }
+      if (currentSong._loadingPromise) return currentSong._loadingPromise;
+      currentSong._loadingPromise = (async () => {
+        await initOsmd();
+
+        const { notes: baseNotes, stepToMeasure } = extractNotesFromOsmd();
+        if (baseNotes.length === 0) throw new Error('No notes extracted from MusicXML');
+
+        // Build measure → first-cursor-step lookup for cursor jump-on-pass-start.
+        const measures = osmd.Sheet?.SourceMeasures || [];
+        const measureToCursorStep = new Array(measures.length).fill(-1);
+        for (let s = 0; s < stepToMeasure.length; s++) {
+          const mi = stepToMeasure[s];
+          if (measureToCursorStep[mi] < 0) measureToCursorStep[mi] = s;
+        }
+
+        // Parse the raw XML to discover the actual playback order, then rebuild the
+        // note timeline so repeats are unfolded. User-added songs skip this step
+        // (no separate xmlUrl in the .mxl case) and play linearly — most kid-friendly
+        // pieces don't have D.C./voltas anyway, and a wrong unfold is worse than none.
+        let order;
+        if (currentSong._isUser && !currentSong.xmlUrl) {
+          order = measures.map((_, i) => i);
+        } else {
+          try {
+            order = await fetchPlaybackOrder();
+            if (!order.length) order = measures.map((_, i) => i);
+          } catch (e) {
+            console.warn('Playback order parse failed, falling back to linear', e);
+            order = measures.map((_, i) => i);
+          }
+        }
+        const expanded = expandNotesByPlaybackOrder(baseNotes, order, measures);
+
+        let totalSec = 0;
+        for (const n of expanded) {
+          const end = n.timeSec + n.durSec;
+          if (end > totalSec) totalSec = end;
+        }
+
+        currentSong.notes = expanded;
+        currentSong.totalSec = totalSec;
+        currentSong.playbackOrder = order;
+        currentSong.measureToCursorStep = measureToCursorStep;
+        currentSong.sections = buildSectionsFromDefs(expanded, totalSec, currentSong.sectionDefs);
+        // Capture the leading tempo so the count-in clicks match the song.
+        // OSMD exposes per-measure TempoInBPM; the first one with a value wins.
+        let songBpm = 0;
+        for (const m of measures) {
+          const v = m && m.TempoInBPM;
+          if (v && v > 0) { songBpm = v; break; }
+        }
+        currentSong.bpm = songBpm || 72;
+        currentSong._loaded = true;
+        console.log('[' + currentSong.id + '] base=' + baseNotes.length
+          + ' expanded=' + expanded.length
+          + ' measures=' + measures.length
+          + ' playbackOrder=' + order.length
+          + ' total=' + totalSec.toFixed(1) + 's');
+      })();
+      try { await currentSong._loadingPromise; }
+      finally { currentSong._loadingPromise = null; }
+    }
+
+    // Manual scroll to keep the OSMD cursor visible inside its container.
+    // Throttled to once per 100ms — for rapid passages (e.g. Turkish March 16th-note
+    // runs) doing scroll math + reflow per onset bogs down the main thread.
+    let _lastOsmdScrollMs = 0;
+    function osmdScrollToCursor() {
+      if (!osmd || !osmd.cursor) return;
+      const now = performance.now();
+      if (now - _lastOsmdScrollMs < 100) return;
+      _lastOsmdScrollMs = now;
+      const el = osmd.cursor.cursorElement;
+      const c = DOM.osmdContainer;
+      if (!el || !c) return;
+      const cTop = el.offsetTop;
+      const cH = el.offsetHeight || 30;
+      const viewH = c.clientHeight;
+      if (cTop < c.scrollTop || cTop + cH > c.scrollTop + viewH) {
+        c.scrollTop = Math.max(0, cTop - viewH / 3);
+      }
+    }
+
+    function osmdResetToStart() {
+      if (!osmd || !osmd.cursor) return;
+      osmd.cursor.reset();
+      DOM.osmdContainer.scrollTop = 0;
+    }
+
+    // Walk the cursor forward `n` steps. Used to position cursor at section start.
+    function osmdAdvanceSteps(n) {
+      if (!osmd || !osmd.cursor) return;
+      while (n > 0 && !osmd.cursor.iterator.endReached) {
+        osmd.cursor.next();
+        n--;
+      }
+      osmdScrollToCursor();
+    }
+
+    // Jump the OSMD cursor to the first step of a specific written-score measure.
+    // Used when the playback order takes a non-sequential jump (repeat back-jump or
+    // forward skip over a 1st-ending volta).
+    function jumpCursorToMeasure(measureIdx) {
+      if (!osmd || !osmd.cursor) return;
+      const target = currentSong.measureToCursorStep[measureIdx];
+      if (typeof target !== 'number' || target < 0) return;
+      osmd.cursor.reset();
+      for (let s = 0; s < target; s++) {
+        if (osmd.cursor.iterator.endReached) break;
+        osmd.cursor.next();
+      }
+    }
+
+    // Advance the OSMD cursor one playback step. If cursorJump is set, the next
+    // playback note belongs to a non-sequential measure (repeat back-jump or
+    // 1st-ending skip) — reposition rather than step.
+    function advanceOsmdCursor(cursorJump) {
+      if (!osmd || !osmd.cursor) return;
+      if (cursorJump != null) jumpCursorToMeasure(cursorJump);
+      else if (!osmd.cursor.iterator.endReached) osmd.cursor.next();
+    }
+
+    // ========================================
+    // Practice state + tunable constants
+    // ========================================
+    // Count-in is aligned with the lane lookahead so the first note literally
+    // enters from the top of the lane on beat 1 and reaches the hit line on "GO!".
+    // Both are recomputed per section in recomputePracticeTimings() so the count-in
+    // beats follow the actual song tempo (a 72 BPM piece counts in 833 ms/beat,
+    // not a generic 1 s/beat). Initial values cover the case where a section is
+    // started before any score has loaded — they get overwritten immediately.
+    let COUNT_IN_MS = 4000;            // pre-roll before the first note (4 beats)
+    let LANE_LOOKAHEAD_MS = 4000;      // how far ahead notes appear in the lane
+
+    // Song's quarter-note duration at the kid's chosen tempo. Falls back to a
+    // gentle 72 BPM @ 60% if the score hasn't yielded a tempo yet.
+    function practiceBeatMs() {
+      const bpm = (currentSong && currentSong.bpm) || 72;
+      const tempoPct = practice.tempoPct || 100;
+      return 60000 / bpm * (100 / tempoPct);
+    }
+    function recomputePracticeTimings() {
+      const beatMs = practiceBeatMs();
+      // 4 beats — standard musical count-in. Clamped so very fast/slow pieces
+      // still get a sane lane and pre-roll.
+      COUNT_IN_MS = Math.round(Math.max(2400, Math.min(7000, 4 * beatMs)));
+      LANE_LOOKAHEAD_MS = COUNT_IN_MS;
+    }
+    // Asymmetric hit windows: early presses are punished much harder than late
+    // ones. Pedagogical reason — kids should learn to *wait for the beat*, not
+    // anticipate it; reaction-lag is also natural and partly compensates for
+    // audio output latency. Symmetric windows let kids develop a "rush ahead"
+    // habit that's hard to unlearn.
+    const HIT_WINDOW_EARLY_MS = 120;   // before cur.timeMs (anticipation side)
+    const HIT_WINDOW_MS = 350;         // after cur.timeMs (reaction side)
+    const PERFECT_MS = 90;             // |dt| ≤ this counts as perfect (both sides)
+    const CHORD_MATE_TOLERANCE_MS = 30;
+    // Note-length tolerance: |held - written| up to max(MIN_TOL, written × FRACTION)
+    // counts. Floor protects short notes where finger release physics dominate over
+    // written length. Tuned for upper-elementary kids — release-timing variability
+    // at this age is noticeably wider than onset variability (Bonacina 2019).
+    const DURATION_MIN_TOL_MS = 120;
+    const DURATION_TOL_FRACTION = 0.4;
+    // Audio output latency compensation. Speaker buffer delay means the kid hears
+    // the metronome ~30-100ms after Tone schedules it, so a press timed to the
+    // audible beat registers as "late" without compensation. We try to read
+    // AudioContext.outputLatency at session start; this default covers the case
+    // where the browser returns 0 (Firefox / older Safari) or unreliable values.
+    const DEFAULT_AUDIO_OFFSET_MS = 40;
+    // Mic-only safety nets — empirically tuned for iPad acoustic-piano practice.
+    // ONSET_HYSTERESIS_FRAMES = 1 effectively disables the hysteresis (single-frame
+    // onsets allowed). Bumping to 2 helps reject one-frame spectral spikes but also
+    // drops short staccato notes in practice.
+    const ONSET_HYSTERESIS_FRAMES = 1;
+    const PITCH_MEDIAN_FRAMES = 5;      // ring buffer length for octave-error correction
+
+    const practice = {
+      enabled: false,
+      sectionIdx: 0,
+      tempoPct: 60,                    // 60 / 75 / 90 / 100  (slower → bigger speedFactor)
+      // 'guided' = score waits for the kid to play each note. No timeouts, no
+      //            auto-playback. Wrong notes get a gentle nudge, never penalty.
+      // 'rhythm' = traditional rhythm-game mode that follows tempo strictly.
+      mode: 'guided',
+      ghostOn: false,
+      metronomeOn: false,
+      // Single audio-clock reference — locks visuals to Tone.js scheduled events.
+      // elapsed_ms = (Tone.now() - startAudioTime) * 1000
+      startAudioTime: 0,
+      sectionNotes: [],                // [{hand, midi, timeMs, durMs, hit, missed}]
+      currentNoteIdx: 0,
+      hits: 0,
+      misses: 0,
+      timingScoreSum: 0,
+      // Note-length scoring: only filled in rhythm mode. In guided mode the cursor
+      // freezes on the current note so there's no audio clock to compare against.
+      durationScoreSum: 0,
+      durationScoredCount: 0,
+      pendingHolds: new Map(),
+      sectionCombo: 0,
+      sectionBestCombo: 0,
+      // Hand filter. 'R' = right only, 'L' = left only, null = both hands.
+      // Filtered notes are pre-flagged hit at section start so the cursor auto-skips them.
+      handFilter: null,
+      // Subtracted from practiceRealElapsedMs so a press timed to the audible
+      // beat scores PERFECT. Set in startPracticeSection from
+      // AudioContext.outputLatency, or from the user's saved override
+      // (prefs.audioOffsetMs) if they've adjusted the slider.
+      audioOffsetMs: prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
+      progress: null,
+      _completing: false,
+      _lastProgUpdate: 0
+    };
+
+    // ========================================
+    // Section banner
+    // ========================================
+    function showSectionBanner(sec) {
+      if (!DOM.sectionBanner) return;
+      DOM.sectionBanner.textContent = (sec.isBoss ? '👑 ' : '') + t(sec.nameKey);
+      DOM.sectionBanner.classList.remove('show');
+      void DOM.sectionBanner.offsetWidth;   // restart animation
+      DOM.sectionBanner.classList.add('show');
+    }
+
+    // ========================================
+    // Screen Wake Lock — keep the device awake during practice. Browsers may release
+    // the lock when the page is hidden or backgrounded, so we re-acquire on visibility
+    // change. Steam Deck / iPad Safari 16.4+ / Chrome / Edge all support this.
+    // (Note: this only prevents *screen* sleep. Full system suspend still depends on
+    //  the OS's power-management settings.)
+    // ========================================
+    let wakeLockSentinel = null;
+
+    async function requestWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      if (wakeLockSentinel) return;
+      try {
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+        wakeLockSentinel.addEventListener('release', () => {
+          wakeLockSentinel = null;
+        });
+        console.log('[WakeLock] acquired');
+      } catch (e) {
+        console.warn('[WakeLock] request failed:', e.message);
+      }
+    }
+
+    function releaseWakeLock() {
+      if (wakeLockSentinel) {
+        wakeLockSentinel.release().catch(() => {});
+        wakeLockSentinel = null;
+        console.log('[WakeLock] released');
+      }
+    }
+
+    // Single source of truth for the port-message handler. attachMidiPort and
+    // verifyMidiAlive both use this so re-binding after a suspend produces
+    // exactly the same routing.
+    function onMidiMessageHandler(e) {
+      if (e.data && e.data.length >= 2) {
+        dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
+      }
+    }
+
+    // Verify the previously-attached MIDI port is still alive after the page
+    // came back from background. iOS WMB silently kills the onmidimessage
+    // handler when the page is suspended; the port object stays around but
+    // events no longer flow. Returns true if the port is still connected and
+    // the handler has been re-bound; false if it's gone (caller should rescan).
+    async function verifyMidiAlive() {
+      if (!midiInput.enabled || !midiInput.port || !_midiAccess) return false;
+      const ports = gatherMidiInputs(_midiAccess);
+      const stillThere = ports.find(p => p === midiInput.port && p.state === 'connected');
+      if (!stillThere) {
+        try { detachMidiPort(midiInput.port); } catch (e) {}
+        return false;
+      }
+      // Re-bind unconditionally. Cheap; idempotent on a healthy port; required on a suspended one.
+      midiInput.port.onmidimessage = onMidiMessageHandler;
+      return true;
+    }
+
+    // Reconnect the audio graph after a fresh AudioContext: rebuild gain +
+    // both analysers, re-wire the mic source if it's still alive. Used by
+    // visibilitychange recovery and devicechange (AirPods plug/unplug).
+    function rebuildAudioGraph(prevMicStream) {
+      gainNode = audioCtx.createGain();
+      gainNode.gain.setValueAtTime(state.micSuspended ? 0 : 1.0, audioCtx.currentTime);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = CONFIG.FFT_SIZE;
+      analyser.smoothingTimeConstant = CONFIG.SMOOTHING;
+      gainNode.connect(analyser);
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      freqArray = new Float32Array(analyser.fftSize);
+      onsetAnalyser = audioCtx.createAnalyser();
+      onsetAnalyser.fftSize = CONFIG.ONSET_FFT_SIZE;
+      onsetAnalyser.smoothingTimeConstant = CONFIG.ONSET_SMOOTHING;
+      gainNode.connect(onsetAnalyser);
+      onsetDataArray = new Uint8Array(onsetAnalyser.frequencyBinCount);
+      if (prevMicStream && prevMicStream.active) {
+        try {
+          micSourceNode = audioCtx.createMediaStreamSource(prevMicStream);
+          micSourceNode.connect(gainNode);
+        } catch (e) { /* stream may have died; user can re-permit */ }
+      }
+      // Reset per-frame onset state — old prevSpectrum was sized to the old context.
+      state.prevSpectrum = null;
+      state.spectralFluxHistory = [];
+    }
+
+    // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone does
+    // NOT recover audio after iOS backgrounds the page — the only reliable fix
+    // is closing the context and creating a fresh one. We keep the same mic
+    // MediaStream (it survives backgrounding) and re-wire it.
+    async function recoverAudioContext() {
+      if (!audioCtx) return;
+      const prevStream = micStream;
+      try { await audioCtx.close(); } catch (e) {}
+      audioCtx = createAudioContext();
+      if (audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch (e) {}
+      }
+      rebuildAudioGraph(prevStream);
+      console.log('[AUDIO] context recreated @' + audioCtx.sampleRate + 'Hz');
+    }
+
+    // AirPods / headphone unplug switches sample rate (24/48 flip). The cleanest
+    // recovery is to recreate the context — same as visibility recovery.
+    if (navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', () => {
+        if (!state.running || !audioCtx) return;
+        // Debounce: devicechange fires multiple times for one event.
+        clearTimeout(window._audioDeviceChangeTimer);
+        window._audioDeviceChangeTimer = setTimeout(() => {
+          recoverAudioContext().catch(e => console.warn('[AUDIO] devicechange recovery:', e.message));
+        }, 250);
+      });
+    }
+
+    // Browsers drop the wake lock when the tab is hidden, suspend AudioContext,
+    // and (on iOS WMB) silently disable MIDI port handlers. On every resume we
+    // refresh all three so the kid can pick up exactly where they left off
+    // without seeing a phantom "connection error".
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (state.running) requestWakeLock();
+      if (audioCtx) {
+        // iOS suspend ≠ resumable. If state stayed 'running' through the bg
+        // round-trip we can keep going; otherwise full recreate.
+        if (audioCtx.state === 'suspended') {
+          try { await audioCtx.resume(); } catch (e) {}
+          // If still suspended after resume(), the context is dead — recreate.
+          if (audioCtx.state === 'suspended') {
+            await recoverAudioContext();
+          }
+        }
+      }
+      if (!state.running || !navigator.requestMIDIAccess) return;
+      if (midiInput.enabled) {
+        // We *think* MIDI is connected — verify the port still responds.
+        const ok = await verifyMidiAlive();
+        if (ok) return;
+      }
+      // No MIDI / dead port → rescan silently. Auto-rescan poller keeps trying
+      // if this attempt fails. The user sees nothing unless they explicitly tap 🔄.
+      rescanMidi(true).catch(() => {});
+    });
+
+    // ========================================
+    // Input layer — Web MIDI (preferred) + microphone fallback.
+    // Both sources funnel into matchNoteOnset(midi, isExact). When a MIDI keyboard is
+    // connected, mic input is suppressed automatically (single source of truth).
+    // ========================================
+    const midiInput = {
+      enabled: false,           // true while a MIDI input port is connected
+      port: null,
+      _accessRequested: false,
+      // Set when the platform is known to never expose Web MIDI (iOS Safari /
+      // any iPadOS browser). Drives a friendlier hint in the UI.
+      platformBlocked: false
+    };
+
+    // Single point of MIDI message dispatch — called from Web MIDI port handler
+    // (above) and from the BLE-MIDI parser. Updates lastEventTime so the loop's
+    // mic-vs-MIDI arbitration knows MIDI is live.
+    //
+    // Android BLE stack occasionally redelivers the same packet, causing the
+    // same note-on to arrive twice within a few ms. That makes the practice
+    // cursor advance twice for one keypress and the score get out of sync.
+    // Drop identical note-ons within 30ms — well below human-playable speed.
+    let _lastMidiNoteOnKey = -1;
+    let _lastMidiNoteOnTime = 0;
+    function dispatchMidiMessage(status, a, b) {
+      const cmd = status & 0xF0;
+      const now = performance.now();
+      if (cmd === 0x90 && b > 0) {
+        const key = (a << 8) | b;
+        if (key === _lastMidiNoteOnKey && now - _lastMidiNoteOnTime < 30) return;
+        _lastMidiNoteOnKey = key;
+        _lastMidiNoteOnTime = now;
+      }
+      midiInput.lastEventTime = now;
+      if (cmd === 0x90 && b > 0) {
+        pulseMidiBadge();
+        onMidiNoteOn(a, b);
+        if (practice.enabled) matchNoteOnset(a, true);
+      } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
+        onMidiNoteOff(a);
+      } else if (cmd === 0xB0) {
+        onMidiCC(a, b);
+      }
+    }
+
+    let _midiBadgePulseTimer = 0;
+    function pulseMidiBadge() {
+      if (!DOM.midiBadge || !DOM.midiBadge.classList.contains('visible')) return;
+      DOM.midiBadge.classList.add('pulse');
+      clearTimeout(_midiBadgePulseTimer);
+      _midiBadgePulseTimer = setTimeout(() => DOM.midiBadge.classList.remove('pulse'), 140);
+    }
+
+    function refreshMidiBadge() {
+      if (!DOM.midiBadge) return;
+      if (midiInput.enabled && midiInput.port?.name) {
+        DOM.midiBadge.textContent = '🎹 ' + midiInput.port.name;
+        DOM.midiBadge.classList.add('visible');
+      } else {
+        DOM.midiBadge.classList.remove('visible');
+        DOM.midiBadge.classList.remove('pulse');
+      }
+    }
+
+    // iOS Safari (and every other browser on iPadOS / iOS — they all use WebKit)
+    // does not implement the Web MIDI API at all. WebKit Bug 107250 is unresolved
+    // and Apple has stated it is not on the roadmap. Detect this so we can show
+    // a useful hint rather than silently falling back to mic.
+    // Cached — UA never changes within a session, no need to re-regex per call.
+    const _isAppleMobile = (() => {
+      const ua = navigator.userAgent || '';
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const isIPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      return isIOS || isIPadOS;
+    })();
+    function isAppleMobile() { return _isAppleMobile; }
+
+    function setInputIndicator() {
+      // v13: Toggle a body class so CSS can reserve bottom space for the
+      // virtual keyboard (lifts #stageLabel, #noteDisplay, #debugOverlay).
+      document.body.classList.toggle('midi-on', !!midiInput.enabled);
+      if (typeof refreshMidiBadge === 'function') refreshMidiBadge();
+      if (!DOM.ptbInput) return;
+      if (midiInput.enabled) {
+        DOM.ptbInput.textContent = '🎹 MIDI';
+        DOM.ptbInput.classList.add('midi');
+        DOM.ptbInput.title = t('tipMidiKeyboardFmt', { v: midiInput.port?.name || 'unknown' });
+      } else {
+        DOM.ptbInput.textContent = '🎙️ MIC';
+        DOM.ptbInput.classList.remove('midi');
+        DOM.ptbInput.title = midiInput.platformBlocked ? t('tipIosMidiBlocked') : t('tipMicMode');
+      }
+    }
+
+    // Linux distros (Steam Deck included) expose a "Midi Through Port-0" by default
+    // that has no physical keyboard attached. macOS has "IAC Driver" and "rtpmidi"
+    // can show up too. Auto-connecting to these makes the UI claim MIDI is active
+    // while no events ever fire — so we filter them out.
+    function isVirtualMidiPort(port) {
+      const name = (port.name || '').toLowerCase();
+      return !name
+        || name.includes('through')
+        || name.includes('loop')
+        || name.includes('iac driver')
+        || name.includes('rtpmidi');
+    }
+
+    // Returns true if the port was successfully attached, false if it was skipped
+    // (virtual/system port). Callers can use the return to decide whether to keep
+    // searching the port list.
+    function attachMidiPort(port) {
+      if (midiInput.port === port) return true;
+      if (isVirtualMidiPort(port)) {
+        console.log('[MIDI] skip virtual/system port: ' + port.name);
+        return false;
+      }
+      const wasMidiOn = midiInput.enabled;
+      if (midiInput.port) midiInput.port.onmidimessage = null;
+      midiInput.port = port;
+      midiInput.enabled = true;
+      midiInput.lastEventTime = 0;
+      // v13: MIDI is the new authoritative source — drop the mic so the
+      // privacy LED goes off and YIN/AGC/onset stop chewing CPU.
+      if (!wasMidiOn && audioCtx && !state.micSuspended) {
+        suspendMic();
+      }
+      port.onmidimessage = onMidiMessageHandler;
+      setInputIndicator();
+      if (typeof refreshIntroHint === 'function') refreshIntroHint();
+      DOM.micMeter?.classList.remove('visible');
+      stopMidiAutoRescan();
+      showHitChip('good', t('midiConnectedFmt', { v: port.name || 'MIDI' }));
+      console.log('[MIDI] connected: ' + port.name);
+      return true;
+    }
+
+    function detachMidiPort(port) {
+      if (midiInput.port !== port) return;
+      port.onmidimessage = null;
+      midiInput.port = null;
+      midiInput.enabled = false;
+      setInputIndicator();
+      console.log('[MIDI] disconnected');
+      // v13: Bring the mic back on a deliberate detach so the user can
+      // keep playing acoustically without restarting the app.
+      if (audioCtx && state.micSuspended) {
+        resumeMic();
+      }
+      // Restart silent polling so a hot-replug picks up automatically. This
+      // handles "browser sees keyboard but app dropped it" — the user doesn't
+      // need to know what happened, the next 2.5 s tick reconnects.
+      if (state.micPermissionFailed || state.micIntentionallySkipped) {
+        startMidiAutoRescan();
+      }
+    }
+
+    async function initWebMIDI() {
+      if (midiInput._accessRequested) return;
+      midiInput._accessRequested = true;
+      if (!navigator.requestMIDIAccess) {
+        if (isAppleMobile()) {
+          midiInput.platformBlocked = true;
+          console.log('[MIDI] iOS/iPadOS detected — Web MIDI is unavailable on Safari/WebKit. '
+            + 'Use a desktop browser, Steam Deck, or the "Web MIDI Browser" iOS app for BLE-MIDI.');
+        } else {
+          console.log('[MIDI] Web MIDI API not available in this browser');
+        }
+        setInputIndicator();
+        return;
+      }
+      try {
+        const access = await ensureMidiAccess();
+        const allPorts = gatherMidiInputs(access);
+        console.log('[MIDI] available input ports: ' + allPorts.length);
+        for (const p of allPorts) {
+          console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
+            + ' state=' + p.state + ' connection=' + p.connection);
+        }
+        for (const port of allPorts) {
+          if (port.state === 'connected' && attachMidiPort(port)) break;
+        }
+      } catch (e) {
+        console.warn('[MIDI] requestMIDIAccess failed:', e.message);
+      }
+    }
+
+    // MIDI rescan — two-stage connection attempt:
+    // (1) connect via the normal filter; (2) if that fails, force-connect ignoring the virtual filter.
+    // silent=true skips UI updates on failure (used by auto-retry).
+    // Cached MIDIAccess. Per spec the inputs collection updates live with
+    // onstatechange events, so we only need to request once and re-iterate
+    // for rescans. Re-requesting bypasses cached permission on some polyfills
+    // and may also fail outside the original user gesture.
+    let _midiAccess = null;
+
+    // Force=true drops the cache and re-requests. Used by the explicit user
+    // rescan path so a stale MIDIAccess (Web MIDI Browser / sleeping iPad) can
+    // recover without requiring an app restart.
+    async function ensureMidiAccess(force) {
+      if (force) _midiAccess = null;
+      if (_midiAccess) return _midiAccess;
+      // Try sysex:true first (Web MIDI Browser exposes BLE-MIDI only with
+      // sysex granted). Fall back to sysex:false on rejection. Surface both
+      // failure reasons so debugging is possible.
+      let sysexErr = null;
+      try { _midiAccess = await navigator.requestMIDIAccess({ sysex: true }); }
+      catch (e) {
+        sysexErr = e;
+        try { _midiAccess = await navigator.requestMIDIAccess({ sysex: false }); }
+        catch (e2) {
+          const reason = '[sysex:true] ' + (sysexErr.name || 'Err') + ': ' + sysexErr.message
+            + ' / [sysex:false] ' + (e2.name || 'Err') + ': ' + e2.message;
+          throw new Error(reason);
+        }
+      }
+      _midiAccess.onstatechange = (e) => {
+        if (e.port.type !== 'input') return;
+        console.log('[MIDI] state change: "' + e.port.name + '" → ' + e.port.state);
+        if (e.port.state === 'connected' && !midiInput.enabled) attachMidiPort(e.port);
+        else if (e.port.state === 'disconnected') detachMidiPort(e.port);
+      };
+      return _midiAccess;
+    }
+
+    // Defensive iteration of access.inputs: handles both Map (per spec) and
+    // plain-object polyfill shapes.
+    function gatherMidiInputs(access) {
+      const out = [];
+      const inputs = access && access.inputs;
+      if (!inputs) return out;
+      if (typeof inputs.values === 'function') {
+        for (const p of inputs.values()) out.push(p);
+      } else if (typeof inputs.forEach === 'function') {
+        inputs.forEach((p) => out.push(p));
+      } else if (typeof inputs === 'object') {
+        for (const k in inputs) {
+          const p = inputs[k];
+          if (p && (p.type === 'input' || p.type == null)) out.push(p);
+        }
+      }
+      return out;
+    }
+
+    async function rescanMidi(silent) {
+      if (!navigator.requestMIDIAccess) {
+        if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagWebMidiUnsupported')));
+        return false;
+      }
+      // A user-initiated rescan (silent=false) drops the cached MIDIAccess so
+      // a stale enumeration (e.g. WMB or post-sleep) can be refreshed.
+      if (!silent) _midiAccess = null;
+      try {
+        const access = await ensureMidiAccess();
+        const ports = gatherMidiInputs(access);
+        const portInfo = ports.map(p => (p.name || 'unnamed') + '/' + p.state).join(', ');
+        console.log('[MIDI] rescan ports: [' + portInfo + ']');
+
+        if (ports.length === 0) {
+          if (!silent) {
+            // Web MIDI Browser quirk: devices already paired at startup are often
+            // invisible — re-pairing usually surfaces them.
+            showIntroDiag(() => {
+              const hint = t(isAppleMobile() ? 'diagWmbHint' : 'diagConnectHint');
+              setIntroHintDiagnostic(t('diagNoMidiPort'), hint);
+            });
+          }
+          return false;
+        }
+        for (const port of ports) {
+          if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
+        }
+        if (!silent) {
+          showIntroDiag(() => setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect')));
+        }
+        return false;
+      } catch (e) {
+        console.warn('[MIDI] rescan failed:', e.message);
+        if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagMidiError'), e.message));
+        return false;
+      }
+    }
+
+    // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
+    // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
+    // か再スキャンの明示的な操作までは再表示しない。
+    function setIntroHintDiagnostic(line1, line2) {
+      if (!DOM.introHint) return;
+            const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
+      DOM.introHint.innerHTML = line1 + sub;
+      DOM.introHint.classList.add('visible');
+      DOM.midiRescanBtn?.classList.add('visible');
+    }
+    // Each callsite that produces a diagnostic with localized strings should
+    // wrap its call in showIntroDiag(() => setIntroHintDiagnostic(t(...), ...))
+    // so a language toggle can re-run the same closure with fresh translations.
+    function showIntroDiag(thunk) {
+      state.lastIntroDiag = thunk;
+      thunk();
+    }
+    function clearIntroDiagCache() { state.lastIntroDiag = null; }
+
+    // Polling: when MIDI is required but not connected, detect when the user
+    // has paired in the WMB UI in the background and returns to the page.
+    let _midiRescanInterval = 0;
+    function startMidiAutoRescan() {
+      if (_midiRescanInterval) return;
+      _midiRescanInterval = setInterval(() => {
+        if (midiInput.enabled || !navigator.requestMIDIAccess) {
+          stopMidiAutoRescan();
+          return;
+        }
+        rescanMidi(true).then((ok) => { if (ok) stopMidiAutoRescan(); });
+      }, 2500);
+    }
+    function stopMidiAutoRescan() {
+      if (_midiRescanInterval) { clearInterval(_midiRescanInterval); _midiRescanInterval = 0; }
+    }
+
+    // ========================================
+    // BLE-MIDI via Web Bluetooth
+    //   Android Chrome's Web MIDI exposes USB devices only — Bluetooth keyboards
+    //   never appear there. Web Bluetooth IS available on Android Chrome though,
+    //   so we connect over BLE-MIDI directly using the standard service UUID.
+    //   Same path also helps desktop Chrome users whose BLE-MIDI device isn't
+    //   surfaced via Web MIDI.
+    // ========================================
+    const BLE_MIDI_SERVICE = '03b80e5a-ede8-4b33-a751-6ce34ec4c700';
+    const BLE_MIDI_CHAR    = '7772e5db-3868-4112-a1a9-f2669d106bf3';
+
+    const bleMidi = {
+      device: null,
+      characteristic: null,
+      connected: false
+    };
+
+    // Parse BLE-MIDI 1.0 packet. The packet starts with a header byte (high bit set,
+    // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
+    // use we ignore timestamps and extract MIDI messages of types we care about.
+    function parseBleMidiPacket(buf) {
+      const data = new Uint8Array(buf);
+      if (data.length < 3) return;
+      let runningStatus = 0;
+      // Skip header byte at index 0; first timestamp at index 1.
+      for (let i = 1; i < data.length; ) {
+        // Each MIDI event in a BLE-MIDI packet is preceded by a timestamp byte
+        // (high bit set). Running-status events may follow without a new timestamp.
+        if (data[i] & 0x80) {
+          // Could be timestamp or status. Per spec, in a multi-event packet a
+          // timestamp byte (followed by status) precedes each event. Skip it.
+          i++;
+          if (i >= data.length) break;
+          // Now data[i] should be a status or running data
+          if (data[i] & 0x80) {
+            runningStatus = data[i];
+            i++;
+          }
+        }
+        if (runningStatus === 0) { i++; continue; }
+        const cmd = runningStatus & 0xF0;
+        // 2-data-byte messages
+        if (cmd === 0x80 || cmd === 0x90 || cmd === 0xB0 || cmd === 0xA0 || cmd === 0xE0) {
+          if (i + 1 >= data.length) break;
+          const a = data[i] & 0x7F;
+          const b = data[i + 1] & 0x7F;
+          dispatchMidiMessage(runningStatus, a, b);
+          i += 2;
+        } else if (cmd === 0xC0 || cmd === 0xD0) {
+          if (i >= data.length) break;
+          i++;
+        } else if (runningStatus === 0xF0) {
+          while (i < data.length && data[i] !== 0xF7) i++;
+          if (i < data.length) i++;
+          runningStatus = 0;
+        } else {
+          i++;
+        }
+      }
+    }
+
+    async function connectBleMidi() {
+      if (!navigator.bluetooth) {
+        alert(t('alertWebBluetoothUnsupported'));
+        return;
+      }
+      if (bleMidi.connected) return;
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [BLE_MIDI_SERVICE] }],
+          optionalServices: [BLE_MIDI_SERVICE]
+        });
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
+        const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
+        await ch.startNotifications();
+        ch.addEventListener('characteristicvaluechanged', (e) => parseBleMidiPacket(e.target.value.buffer));
+
+        bleMidi.device = device;
+        bleMidi.characteristic = ch;
+        bleMidi.connected = true;
+
+        midiInput.enabled = true;
+        midiInput.port = { name: device.name || 'BLE-MIDI' };
+        midiInput.lastEventTime = performance.now();
+        if (audioCtx && !state.micSuspended) suspendMic();
+        setInputIndicator();
+        if (typeof refreshIntroHint === 'function') refreshIntroHint();
+        DOM.micMeter?.classList.remove('visible');
+        showHitChip('good', t('midiConnectedFmt', { v: device.name || 'BLE-MIDI' }));
+        console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
+
+        device.addEventListener('gattserverdisconnected', () => {
+          bleMidi.connected = false;
+          bleMidi.characteristic = null;
+          midiInput.enabled = false;
+          midiInput.port = null;
+          setInputIndicator();
+          if (audioCtx && state.micSuspended) resumeMic();
+          if (typeof refreshBleMidiButton === 'function') refreshBleMidiButton();
+          console.log('[BLE-MIDI] disconnected');
+        });
+      } catch (e) {
+        console.warn('[BLE-MIDI] connect failed:', e.message);
+        if (e.name !== 'NotFoundError') {
+          alert(t('alertBleConnectFailedFmt', { v: e.message }));
+        }
+      }
+    }
+
+    // ========================================
+    // v13: MIDI Free-Play
+    //   - per-note polyphonic visuals (mic could only do monophonic)
+    //   - velocity → particle/ripple energy
+    //   - sustain pedal (CC 64) keeps notes lit until released
+    //   - simple chord recognition for triads/sevenths
+    //   - virtual on-screen 88-key keyboard with live key highlights
+    //   - sustained vertical light beams while keys are held
+    //   - left/right hand zones split at C4 (midi 60)
+    // ========================================
+    const midiState = {
+      activeNotes: new Map(),     // midiNum -> { velocity, onTimeMs, synColor }
+      sustainOn: false,
+      sustainedNotes: new Set(),  // released keys held by pedal
+      recentOnsets: [],           // {midi, timeMs} within 80ms — chord candidate
+      lastChordName: '',
+      lastChordTimeMs: 0,
+    };
+
+    // Triad/seventh dictionary keyed by sorted pitch-class intervals from the bass note.
+    // Root-position only. Inversions are out of scope — keeps detection cheap & honest.
+    const CHORD_DICT = {
+      '0,4,7': '',     '0,3,7': 'm',
+      '0,4,8': 'aug',  '0,3,6': 'dim',
+      '0,4,7,10': '7', '0,4,7,11': 'maj7',
+      '0,3,7,10': 'm7','0,3,6,9': 'dim7',
+      '0,5,7': 'sus4', '0,2,7': 'sus2'
+    };
+
+    // Pitch-class buckets reused across calls — chord detection runs on every
+    // MIDI noteOn, and a 16th-note run can fire ~12×/sec. Avoiding the per-call
+    // Set/sort/spread allocations keeps the GC quiet during dense passages.
+    const _chordPCBuckets = new Uint8Array(12);
+    function detectChord(midis) {
+      if (midis.length < 3) return null;
+      let root = 128;
+      for (let i = 0; i < midis.length; i++) {
+        if (midis[i] < root) root = midis[i];
+      }
+      _chordPCBuckets.fill(0);
+      for (let i = 0; i < midis.length; i++) {
+        _chordPCBuckets[((midis[i] - root) % 12 + 12) % 12] = 1;
+      }
+      let sig = '';
+      for (let pc = 0; pc < 12; pc++) {
+        if (_chordPCBuckets[pc]) sig += (sig ? ',' : '') + pc;
+      }
+      const quality = CHORD_DICT[sig];
+      if (quality === undefined) return null;
+      return CONFIG.NOTE_NAMES[root % 12] + quality;
+    }
+
+    function midiToScreenX(midiNum) {
+      return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
+    }
+
+    function noteThemeColor(midiNum) {
+      const cols = CONFIG.THEMES[state.currentTheme].colors;
+      return cols[midiNum % cols.length];
+    }
+
+    function synColorFor(midiNum) {
+      if (!state.useSynesthesiaMode) return null;
+      return getNoteColor(CONFIG.NOTE_NAMES[midiNum % 12]);
+    }
+
+    function showNoteDisplay(displayText, changeKey, color, timeMs) {
+      // In practice mode the falling lane already shows the just-played note,
+      // so showing noteDisplay where it overlaps the score is visual noise.
+      if (practice.enabled) return;
+      state.noteShowTimeMs = timeMs;
+      if (state.lastDetectedNote === changeKey) return;
+      state.lastDetectedNote = changeKey;
+      DOM.noteDisplay.textContent = displayText;
+      DOM.noteDisplay.style.color = color || '';
+      DOM.noteDisplay.style.textShadow = color ? ('0 0 20px ' + color) : '';
+      DOM.noteDisplay.classList.add('visible');
+    }
+
+    function spawnMidiNoteVisuals(midiNum, velocity, synColor) {
+      hideIntroHint();
+      const v = Math.max(0.15, velocity / 127);
+      const color = synColor || noteThemeColor(midiNum);
+
+      const isLow = midiNum < 60;
+      const noteX = midiToScreenX(midiNum);
+      const baseY = isLow ? H * 0.65 : H * 0.35;
+      const noteY = baseY + (Math.random() - 0.5) * H * 0.08;
+
+      const burstCount = Math.floor(8 + v * 32 + state.flow * 0.15);
+      spawnBurst(noteX, noteY, burstCount, v * (1.1 + state.flow * 0.012), color);
+      ripples.push(new Ripple(noteX, noteY, color, 100 + v * 280 + state.flow * 1.2));
+      spawnStream(noteX, isLow ? H * 0.78 : H * 0.22, v, color);
+
+      // Drive flow/combo from MIDI directly so silent (headphone) practice still scores.
+      state.flow = Math.min(100, state.flow + 1.0 + v * 1.8);
+      state.combo += 1;
+      if (state.combo > state.bestCombo) state.bestCombo = state.combo;
+      const now = performance.now();
+      state.lastGoodNoteTimeMs = now;
+      state.lastNoteTimeMs = now;
+
+      const noteName = CONFIG.NOTE_NAMES[midiNum % 12];
+      showNoteDisplay(noteName, noteName + (Math.floor(midiNum / 12) - 1), synColor, now);
+      if (state.flow < 10) state.inputFlash = 0.2;
+    }
+
+    function onMidiNoteOn(midiNum, velocity) {
+      if (!state.running) return;
+      const now = performance.now();
+      const synColor = synColorFor(midiNum);
+      midiState.activeNotes.set(midiNum, { velocity, onTimeMs: now, synColor });
+      midiState.sustainedNotes.delete(midiNum);
+
+      if (!practice.enabled) {
+        if (state.micSuspended) {
+          state.sessionState = 'performing';
+          state.sessionConfidence = Math.min(1, state.sessionConfidence + 0.15);
+        }
+        spawnMidiNoteVisuals(midiNum, velocity, synColor);
+
+        // Feed MIDI into quality histories so radar/quest reflect the real
+        // performance — mic may be silent (headphones) or noisy.
+        const onsets = state.noteOnsetTimes;
+        const lastOnset = onsets.length > 0 ? onsets[onsets.length - 1] : 0;
+        if (now - lastOnset > 30) {
+          onsets.push(now);
+          if (onsets.length > CONFIG.IOI_HISTORY_SIZE + 1) onsets.shift();
+          if (onsets.length >= 2) {
+            const ioi = now - onsets[onsets.length - 2];
+            if (ioi > 100 && ioi < 5000) {
+              state.ioiHistory.push(ioi);
+              if (state.ioiHistory.length > CONFIG.IOI_HISTORY_SIZE) state.ioiHistory.shift();
+            }
+          }
+        }
+        // CV is scale-invariant, so velocity (0..127) works directly here.
+        state.amplitudeHistory.push(velocity / 127);
+        if (state.amplitudeHistory.length > CONFIG.AMPLITUDE_HISTORY_SIZE) state.amplitudeHistory.shift();
+
+        if (state.lastMidiNoteForStability != null) {
+          const semis = Math.abs(midiNum - state.lastMidiNoteForStability);
+          if (semis < CONFIG.STABILITY_SEMITONE_THRESHOLD) {
+            state.pitchStability = Math.min(1, state.pitchStability + CONFIG.STABILITY_GROWTH);
+          } else {
+            state.pitchStability *= CONFIG.STABILITY_DECAY_GOOD;
+          }
+        }
+        state.lastMidiNoteForStability = midiNum;
+        // Seed lastPitch so legacy mic logic stays self-consistent when the user
+        // later switches sources mid-session.
+        state.lastPitch = 440 * Math.pow(2, (midiNum - 69) / 12);
+        state.lastSilenceStartMs = -1;
+      }
+
+      // In-place trim of the chord-window deque to avoid per-event allocation.
+      const recents = midiState.recentOnsets;
+      while (recents.length && now - recents[0].timeMs >= 80) recents.shift();
+      recents.push({ midi: midiNum, timeMs: now });
+      if (recents.length >= 3) {
+        const chord = detectChord(recents.map(o => o.midi));
+        if (chord && (chord !== midiState.lastChordName || now - midiState.lastChordTimeMs > 600)) {
+          midiState.lastChordName = chord;
+          midiState.lastChordTimeMs = now;
+          // Free-play also runs the glow effect; practice just shows the name quietly.
+          if (!practice.enabled) effectGlowPulse();
+        }
+      }
+    }
+
+    function onMidiNoteOff(midiNum) {
+      if (midiState.sustainOn) {
+        midiState.sustainedNotes.add(midiNum);
+      } else {
+        midiState.activeNotes.delete(midiNum);
+      }
+      // Duration scoring is anchored to physical key release (independent of
+      // the sustain pedal), so the kid can't mask short presses with sustain.
+      if (practice.enabled) finalizeNoteHold(midiNum);
+    }
+
+    function onMidiCC(cc, value) {
+      if (cc !== 64) return;
+      const wasOn = midiState.sustainOn;
+      midiState.sustainOn = value >= 64;
+      if (wasOn && !midiState.sustainOn) {
+        // Pedal released: drop sustained keys with a soft fade ripple.
+        midiState.sustainedNotes.forEach(midiNum => {
+          const x = midiToScreenX(midiNum);
+          const y = midiNum < 60 ? H * 0.7 : H * 0.3;
+          ripples.push(new Ripple(x, y, noteThemeColor(midiNum), 60));
+          midiState.activeNotes.delete(midiNum);
+        });
+        midiState.sustainedNotes.clear();
+      }
+    }
+
+    // KB_BLACK_LEFT_WHITE_IDX[m] tells the keyboard renderer where to overlay each
+    // black key (between two whites). Built once at module load.
+    const KB_WHITE = [];
+    const KB_BLACK = [];
+    const KB_BLACK_LEFT_WHITE_IDX = {};
+    (function () {
+      for (let m = 21; m <= 108; m++) {
+        const pc = m % 12;
+        if (pc === 1 || pc === 3 || pc === 6 || pc === 8 || pc === 10) KB_BLACK.push(m);
+        else KB_WHITE.push(m);
+      }
+      for (const bm of KB_BLACK) {
+        const wi = KB_WHITE.indexOf(bm - 1);
+        if (wi >= 0) KB_BLACK_LEFT_WHITE_IDX[bm] = wi;
+      }
+    })();
+
+    function drawMidiKeyboard() {
+      const kbH = kbHeight;
+      const kbY = H - kbH - kbSafeBottom;
+      const kbX = 8;
+      const kbW = W - 16;
+      const wKeyW = kbW / KB_WHITE.length;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(20, 20, 35, 0.55)';
+      ctx.fillRect(kbX, kbY, kbW, kbH);
+
+      const paintKey = (m, x, w, h, restingFill) => {
+        const note = midiState.activeNotes.get(m);
+        const lit = !!note;
+        const sustained = midiState.sustainedNotes.has(m);
+        if (lit || sustained) {
+          ctx.fillStyle = (note && note.synColor) || noteThemeColor(m);
+        } else {
+          ctx.fillStyle = restingFill;
+        }
+        ctx.fillRect(x, kbY, w, h);
+        if (lit) {
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        } else if (sustained) {
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        } else {
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+        }
+        ctx.strokeRect(x, kbY, w, h);
+      };
+
+      for (let i = 0; i < KB_WHITE.length; i++) {
+        paintKey(KB_WHITE[i], kbX + i * wKeyW + 0.5, wKeyW - 1, kbH, 'rgba(245, 245, 250, 0.85)');
+      }
+      const bKeyW = wKeyW * 0.65;
+      const bKeyH = kbH * 0.6;
+      for (const m of KB_BLACK) {
+        const wi = KB_BLACK_LEFT_WHITE_IDX[m];
+        const x = kbX + (wi + 1) * wKeyW - bKeyW / 2;
+        paintKey(m, x, bKeyW, bKeyH, 'rgba(15, 15, 25, 0.95)');
+      }
+
+      if (midiState.sustainOn) {
+        ctx.fillStyle = 'rgba(255, 200, 100, 0.85)';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(t('sustainLabel'), kbX + 6, kbY - 5);
+      }
+      ctx.restore();
+    }
+
+    function drawMidiBeams(timeMs) {
+      if (midiState.activeNotes.size === 0 && midiState.sustainedNotes.size === 0) return;
+      const kbTop = H - kbHeight - kbSafeBottom;
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+
+      const paintBeam = (x, color, beamW, alpha, midStop) => {
+        const grad = ctx.createLinearGradient(x, kbTop, x, 0);
+        grad.addColorStop(0, color);
+        if (midStop != null) grad.addColorStop(midStop, color);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = alpha;
+        ctx.fillRect(x - beamW / 2, 0, beamW, kbTop);
+      };
+
+      midiState.activeNotes.forEach((note, midiNum) => {
+        const v = note.velocity / 127;
+        const pulse = 0.5 + 0.5 * Math.sin((timeMs - note.onTimeMs) * 0.005);
+        const beamW = (4 + v * 14) * (0.85 + pulse * 0.3);
+        const color = note.synColor || noteThemeColor(midiNum);
+        paintBeam(midiToScreenX(midiNum), color, beamW, 0.18 + v * 0.32, 0.35);
+      });
+      midiState.sustainedNotes.forEach(midiNum => {
+        if (midiState.activeNotes.has(midiNum)) return;
+        paintBeam(midiToScreenX(midiNum), noteThemeColor(midiNum), 8, 0.12, null);
+      });
+      ctx.restore();
+    }
+
+    // Chord-name display. Free play celebrates with a big centered label;
+    // practice puts it small and quiet just above the keyboard so it doesn't fight the lane/score.
+    function drawMidiChordDisplay(timeMs) {
+      if (!midiState.lastChordName) return;
+      const age = timeMs - midiState.lastChordTimeMs;
+      if (age > 1800) return;
+      const t = age / 1800;
+      const alpha = (t < 0.12) ? (t / 0.12) : Math.max(0, 1 - (t - 0.12) / 0.88);
+      ctx.save();
+      if (practice.enabled) {
+        // Quiet variant: just above the keyboard, small, fade-only.
+        const yPos = H - kbHeight - kbSafeBottom - 22;
+        ctx.translate(W / 2, yPos);
+        ctx.fillStyle = 'rgba(255, 220, 140, ' + (alpha * 0.75).toFixed(3) + ')';
+        ctx.font = '500 ' + Math.round(Math.min(28, W * 0.022)) + 'px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(255, 200, 80, 0.5)';
+        ctx.shadowBlur = 10;
+        ctx.fillText(midiState.lastChordName, 0, 0);
+        ctx.restore();
+        return;
+      }
+      const scale = 0.9 + 0.18 * Math.sin(Math.min(t, 1) * Math.PI);
+      ctx.translate(W / 2, H * 0.42);
+      ctx.scale(scale, scale);
+      ctx.fillStyle = 'rgba(255, 230, 150, ' + alpha + ')';
+      ctx.font = 'bold ' + Math.round(Math.min(72, W * 0.06)) + 'px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(255, 200, 80, 0.8)';
+      ctx.shadowBlur = 24;
+      ctx.fillText(midiState.lastChordName, 0, 0);
+      ctx.restore();
+    }
+
+    // Median of the recent high-confidence pitches. Used to neutralize YIN's
+    // single-frame octave errors at the moment of onset.
+    function medianRecentPitch() {
+      const arr = state.recentPitches;
+      if (!arr || arr.length === 0) return 0;
+      const sorted = arr.slice().sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    }
+
+    // ========================================
+    // Shared match logic — funnel point for both mic and MIDI events.
+    // STRICT: only the currentNoteIdx (the very next expected note) is considered.
+    // We never skip ahead in the score, so playing a wrong note → MISS rather than
+    // accidentally crediting a same-pitch-class note further along the timeline.
+    // ========================================
+    function matchNoteOnset(detectedMidi, isExact) {
+      if (!practice.enabled) return false;
+      // Listen mode: the song plays itself, the kid is just watching/listening.
+      // Don't judge, score, or chip on input — let any incidental key-presses
+      // create free-play visuals (handled outside this function) but ignore here.
+      if (practice.mode === 'listen') return false;
+      const elapsed = practiceElapsedMs();
+      const notes = practice.sectionNotes;
+      // Eagerly skip past any already-resolved notes. The per-frame skip-past
+      // loop normally advances currentNoteIdx, but a chord played within a
+      // single frame would otherwise leave subsequent presses pointing at the
+      // already-hit cur and drop them silently.
+      let idx = practice.currentNoteIdx;
+      while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
+      practice.currentNoteIdx = idx;
+      if (idx >= notes.length) return false;
+      const cur = notes[idx];
+      if (!cur) return false;
+
+      const dtSigned = elapsed - cur.timeMs;   // +late, -early
+      const inWindow = practice.mode === 'guided'
+        ? true
+        : (dtSigned >= -HIT_WINDOW_EARLY_MS && dtSigned <= HIT_WINDOW_MS);
+      const dtCur = Math.abs(dtSigned);
+
+      // Find the played note inside the current chord cluster (cur and any
+      // simultaneous notes within ±CHORD_MATE_TOLERANCE_MS). Order within a chord
+      // is free — but each note must be physically pressed (no auto-credit).
+      let matched = null;
+      if (inWindow) {
+        if (cur.midi === detectedMidi) {
+          matched = cur;
+        } else {
+          for (let i = idx + 1; i < notes.length; i++) {
+            const m = notes[i];
+            const diff = m.timeMs - cur.timeMs;
+            if (diff > CHORD_MATE_TOLERANCE_MS) break;
+            if (m.hit || m.missed) continue;
+            if (m.midi === detectedMidi) { matched = m; break; }
+          }
+        }
+      }
+
+      remoteLog('[Match] in=' + detectedMidi
+        + (isExact ? ' (midi)' : ' (mic)')
+        + ' expected=' + cur.midi + '@' + Math.round(cur.timeMs - elapsed) + 'ms'
+        + ' mode=' + practice.mode
+        + ' result=' + (matched ? (matched === cur ? 'HIT' : 'HIT(chord-mate)') : 'wrong-note'));
+
+      if (!matched) {
+        if (practice.mode === 'guided') {
+          showHitChip('miss', t('youPlayedFmt', { v: midiToName(detectedMidi) }));
+        }
+        return false;
+      }
+
+      const dtSignedMatched = elapsed - matched.timeMs;
+      const dt = Math.abs(dtSignedMatched);
+      matched.hit = true;
+      matched.holdStartMs = performance.now();
+      practice.pendingHolds.set(detectedMidi, matched);
+      practice.hits++;
+      practice.sectionCombo++;
+      if (practice.sectionCombo > practice.sectionBestCombo) {
+        practice.sectionBestCombo = practice.sectionCombo;
+      }
+      // Guided mode: every onset is "perfect" (timing not graded). Rhythm mode:
+      // score linearly, but use the asymmetric window so an early press is judged
+      // against the smaller early window (steeper penalty).
+      const window = dtSignedMatched < 0 ? HIT_WINDOW_EARLY_MS : HIT_WINDOW_MS;
+      const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
+      practice.timingScoreSum += ts;
+      const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
+      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? t('perfect') : t('nice'));
+      state.flow = Math.min(100, state.flow + 6 + ts * 4);
+      state.combo++;
+      if (state.combo > state.bestCombo) state.bestCombo = state.combo;
+      spawnBurst(W * 0.5, H * 0.55, 8, 0.7 + ts * 0.5);
+      // OSMD cursor advancement is driven by the per-frame "skip past resolved
+      // notes" loop in updatePracticeFrame.
+      return true;
+    }
+
+    // Note-length scoring (rhythm mode only): compare physical hold time to the
+    // written length. score = 1 at exact, 0 at full tolerance off.
+    function finalizeNoteHold(detectedMidi) {
+      const matched = practice.pendingHolds.get(detectedMidi);
+      if (!matched) return;
+      practice.pendingHolds.delete(detectedMidi);
+      if (practice.mode !== 'rhythm') return;
+      if (!matched.holdStartMs || !matched.durMs) return;
+      const heldMs = performance.now() - matched.holdStartMs;
+      const expected = matched.durMs;
+      const tol = Math.max(DURATION_MIN_TOL_MS, expected * DURATION_TOL_FRACTION);
+      const score = Math.max(0, 1 - Math.abs(heldMs - expected) / tol);
+      practice.durationScoreSum += score;
+      practice.durationScoredCount++;
+      if (score < 0.4) {
+        showHitChip('miss', heldMs < expected ? t('tooShort') : t('tooLong'));
+      }
+    }
+
+    // Single source of truth for "how far into the practice are we".
+    // In rhythm mode this is Tone's audio clock so it stays sample-accurate with
+    // scheduled events. In guided mode we freeze elapsed at the current note's time
+    // so the falling lane shows the next-up note parked at the hit line, with the
+    // upcoming queue displayed above it. The lane only moves when the kid plays
+    // correctly and currentNoteIdx advances.
+    function practiceRealElapsedMs() {
+      const raw = (typeof Tone !== 'undefined')
+        ? (Tone.now() - practice.startAudioTime) * 1000
+        : performance.now() - practice.startAudioTime * 1000;
+      // Subtract the audio output latency. Applied to both judging (so an
+      // on-the-beat press scores PERFECT) and lane visuals (so the note crosses
+      // the hit line at the same wall-clock instant the kid hears the beep).
+      return raw - (practice.audioOffsetMs || 0);
+    }
+    function practiceElapsedMs() {
+      const realElapsed = practiceRealElapsedMs();
+      if (practice.mode === 'guided') {
+        // Real time during count-in so the 4-3-2-1 actually animates and notes
+        // descend visibly from the top of the lane to the hit line. After
+        // count-in we freeze at the current note's time so it parks at the hit
+        // line waiting for the kid to play.
+        if (realElapsed < COUNT_IN_MS) return realElapsed;
+        const cur = practice.sectionNotes[practice.currentNoteIdx];
+        return cur ? cur.timeMs : COUNT_IN_MS;
+      }
+      return realElapsed;
+    }
+
+    // ========================================
+    // Persistence: streak + best stars + tempo unlock
+    // ========================================
+    function defaultSongProgress() {
+      return {
+        sections: { A1: { stars: 0, bestPct: 0 }, B: { stars: 0, bestPct: 0 }, A2: { stars: 0, bestPct: 0 } },
+        unlockedTempos: { 60: true, 75: false, 90: false, 100: false },
+        unlockedSections: { A1: true, B: false, A2: false },
+        history: {}
+      };
+    }
+    function loadPracticeProgress() {
+      const def = { streakDays: [], streakCount: 0, songs: {} };
+      const p = loadJSON('pianoViz_practice_v1', null);
+      if (!p) return def;
+      // Migrate legacy schema (top-level sections/unlocked*) into songs.fur_elise.
+      if (p.sections && !p.songs) {
+        p.songs = {
+          fur_elise: {
+            sections: p.sections,
+            unlockedTempos: p.unlockedTempos || { 60: true, 75: false, 90: false, 100: false },
+            unlockedSections: p.unlockedSections || { A1: true, B: false, A2: false }
+          }
+        };
+        delete p.sections;
+        delete p.unlockedTempos;
+        delete p.unlockedSections;
+      }
+      return Object.assign(def, p);
+    }
+    function savePracticeProgress() { saveJSON('pianoViz_practice_v1', practice.progress); }
+    // Always returns the per-song state, lazily creating it on first access.
+    function songProg() {
+      if (!practice.progress.songs) practice.progress.songs = {};
+      const id = currentSong.id;
+      if (!practice.progress.songs[id]) {
+        practice.progress.songs[id] = defaultSongProgress();
+      }
+      const s = practice.progress.songs[id];
+      // Migrate any missing keys (defensive)
+      const def = defaultSongProgress();
+      s.sections = Object.assign({}, def.sections, s.sections);
+      s.unlockedTempos = Object.assign({}, def.unlockedTempos, s.unlockedTempos);
+      s.unlockedSections = Object.assign({}, def.unlockedSections, s.unlockedSections);
+      if (!s.history) s.history = {};   // Migration from older save format.
+      return s;
+    }
+    function dateKey(d) {
+      return d.getFullYear() + '-'
+        + String(d.getMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getDate()).padStart(2, '0');
+    }
+    function todayKey() { return dateKey(new Date()); }
+    function recordPracticeDay() {
+      const key = todayKey();
+      const days = practice.progress.streakDays;
+      if (days[days.length - 1] === key) return;
+      days.push(key);
+      let streak = 1;
+      for (let i = days.length - 2; i >= 0; i--) {
+        const cur = new Date(days[i + 1] + 'T00:00:00');
+        const prev = new Date(days[i] + 'T00:00:00');
+        const diff = Math.round((cur - prev) / 86400000);
+        if (diff === 1) streak++; else break;
+      }
+      practice.progress.streakCount = streak;
+      if (days.length > 60) days.splice(0, days.length - 60);
+      savePracticeProgress();
+    }
+
+    // ========================================
+    // Tone.js helpers
+    // ========================================
+    let tonePiano = null;
+    let toneMetronome = null;
+    function ensureToneInstruments() {
+      if (tonePiano || typeof Tone === 'undefined') return;
+      tonePiano = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.005, decay: 0.18, sustain: 0.25, release: 0.6 }
+      }).toDestination();
+      tonePiano.volume.value = -14;
+      toneMetronome = new Tone.MembraneSynth({
+        pitchDecay: 0.008, octaves: 4,
+        envelope: { attack: 0.001, decay: 0.1, sustain: 0 }
+      }).toDestination();
+      toneMetronome.volume.value = -10;
+    }
+
+    // Audible count-in: one tick per displayed number ("4, 3, 2, 1") then a
+    // brighter "GO!" downbeat exactly when the first note lands at the hit line.
+    // Beat spacing follows the song's quarter-note duration so the count-in
+    // *feels* like the piece — a 60 BPM lullaby gets slow ticks, a brisk étude
+    // gets quick ones, and the kid arrives on tempo.
+    function scheduleCountInBeeps(startAudioTime) {
+      if (typeof Tone === 'undefined' || !toneMetronome) return;
+      const beats = 4;
+      const beatSec = (COUNT_IN_MS / beats) / 1000;
+      try {
+        for (let i = 0; i < beats; i++) {
+          toneMetronome.triggerAttackRelease(660, 0.05, startAudioTime + i * beatSec);
+        }
+        toneMetronome.triggerAttackRelease(990, 0.08, startAudioTime + COUNT_IN_MS / 1000);
+      } catch (e) {}
+    }
+
+    function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
+    function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+    // Japanese-mode note names. Kids in JP music ed read ド/レ/ミ on the staff,
+    // so when prefs.lang === 'jp' we surface those instead of C/D/E. Octave
+    // numbers stay as digits — a Japanese kid's textbook also uses C4-style
+    // octave numerals when needed.
+    const NOTE_NAMES_JP = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
+    // Hot-path cache — refreshed on langchange so the per-frame lane draw
+    // doesn't re-evaluate the prefs.lang ternary 25× per frame.
+    let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+    function midiToPitchName(midi) { return activeNoteNames[notePitchClass(midi)]; }
+    function midiToName(midi) { return midiToPitchName(midi) + (Math.floor(midi / 12) - 1); }
+
+    // ========================================
+    // Section build + start
+    // ========================================
+    function buildSectionNotes(sectionIdx) {
+      const sec = currentSong.sections[sectionIdx];
+      const speedFactor = 100 / practice.tempoPct;
+      const out = [];
+      const handFilter = practice.handFilter;   // 'R' / 'L' / null
+      for (const n of currentSong.notes) {
+        if (n.timeSec >= sec.startSec && n.timeSec < sec.endSec) {
+          const relSec = n.timeSec - sec.startSec;
+          // One-hand mode: notes from the other hand are marked _filtered=true and pre-hit so
+          // the currentNoteIdx skip-past loop advances over them (the cursor moves too).
+          // Lane drawing and stats exclude _filtered notes.
+          const filtered = !!handFilter && n.hand !== handFilter;
+          out.push({
+            hand: n.hand,
+            midi: n.midi,
+            timeMs: relSec * 1000 * speedFactor + COUNT_IN_MS,
+            durMs: n.durSec * 1000 * speedFactor,
+            measureIdx: n.measureIdx,
+            cursorJump: n.cursorJump,
+            hit: filtered,
+            missed: false,
+            _filtered: filtered
+          });
+        }
+      }
+      out.sort((a, b) => a.timeMs - b.timeMs);
+      return out;
+    }
+
+    // (osmdStepsBeforeTime removed — superseded by jumpCursorToMeasure, which uses the
+    //  measureToCursorStep map and works correctly through repeat passes.)
+
+    // Per-hand MIDI range used by the lane drawer to map pitch → x-position.
+    // Computed once per section so the hot path doesn't re-scan every frame.
+    function computeHandRanges(sectionNotes) {
+      let lhMin = 200, lhMax = 0, rhMin = 200, rhMax = 0;
+      let lhCount = 0, rhCount = 0;
+      for (const n of sectionNotes) {
+        if (n.hand === 'L') {
+          if (n.midi < lhMin) lhMin = n.midi;
+          if (n.midi > lhMax) lhMax = n.midi;
+          lhCount++;
+        } else {
+          if (n.midi < rhMin) rhMin = n.midi;
+          if (n.midi > rhMax) rhMax = n.midi;
+          rhCount++;
+        }
+      }
+      if (rhCount === 0) { rhMin = 60; rhMax = 72; }
+      if (lhCount === 0) { lhMin = 48; lhMax = 60; }
+      if (rhMax <= rhMin) rhMax = rhMin + 1;
+      if (lhMax <= lhMin) lhMax = lhMin + 1;
+      return { lhMin, lhMax, rhMin, rhMax };
+    }
+
+    async function startPracticeSection(sectionIdx) {
+      hideIntroHint();
+      if (!currentSong._loaded) {
+        try { await loadCurrentScore(); }
+        catch (e) { alert(t('alertScoreLoadFailedFmt', { v: e.message })); return; }
+      }
+
+      // Lock in the count-in / lookahead lengths for this section before notes
+      // are built — buildSectionNotes() bakes COUNT_IN_MS into each note's timeMs.
+      recomputePracticeTimings();
+
+      const sec = currentSong.sections[sectionIdx];
+
+      // Reset all per-section state
+      practice.enabled = true;
+      practice.sectionIdx = sectionIdx;
+      practice.sectionNotes = buildSectionNotes(sectionIdx);
+      practice.handRanges = computeHandRanges(practice.sectionNotes);
+      practice.laneDrawFromIdx = 0;        // amortized cursor for lane culling
+      practice.currentNoteIdx = 0;
+      practice.hits = practice.misses = practice.timingScoreSum = 0;
+      practice.durationScoreSum = 0;
+      practice.durationScoredCount = 0;
+      practice.pendingHolds = new Map();
+      practice.sectionCombo = practice.sectionBestCombo = 0;
+      practice._completing = false;
+      practice._lastProgUpdate = 0;
+
+      state.flow = 30;
+      state.combo = 0;
+      state.bestCombo = 0;
+
+      // HUD
+      DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      DOM.ptbTempo.textContent = '🥁 ' + practice.tempoPct + '%';
+      // Exclude _filtered notes from the progress count (they are auto-skipped).
+      practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
+      DOM.ptbProgress.textContent = '0 / ' + practice._sectionTargetCount;
+      DOM.practiceHud.classList.add('visible');
+      DOM.osmdContainer.classList.add('visible');
+      setInputIndicator();
+      requestWakeLock();
+
+      // Section banner — flies in to celebrate the start
+      showSectionBanner(sec);
+
+      // Position OSMD cursor at the first note's source measure. Hide during count-in;
+      // it appears at the first onset so visual + audio start together.
+      const firstNote = practice.sectionNotes[0];
+      if (firstNote && typeof firstNote.measureIdx === 'number') {
+        jumpCursorToMeasure(firstNote.measureIdx);
+      } else {
+        osmdResetToStart();
+      }
+      if (osmd && osmd.cursor) osmd.cursor.hide();
+
+      // Audio setup — guided mode skips ALL transport scheduling because the score
+      // doesn't auto-advance. Ghost / metronome / cursor-sync events are only used in
+      // rhythm mode where the timeline plays itself.
+      const audioStartLead = 0.05;
+      try {
+        if (typeof Tone === 'undefined') throw new Error('Tone.js not loaded');
+        await Tone.start();
+        ensureToneInstruments();
+        Tone.Transport.cancel();
+        Tone.Transport.stop();
+        Tone.Transport.position = 0;
+
+        if (practice.mode === 'guided') {
+          // Guided: cursor visible immediately, lane shows current note at hit line.
+          if (osmd && osmd.cursor) osmd.cursor.show();
+          practice.startAudioTime = Tone.now();
+          scheduleCountInBeeps(practice.startAudioTime);
+        } else {
+          // Rhythm / Listen — full timeline scheduling. Listen forces ghost on
+          // so the kid hears the song; rhythm respects the user's ghost toggle.
+          const ghostActive = practice.mode === 'listen' || practice.ghostOn;
+          if (ghostActive && tonePiano) {
+            for (const n of practice.sectionNotes) {
+              const dur = Math.max(0.1, n.durMs / 1000 * 0.85);
+              Tone.Transport.schedule((time) => {
+                tonePiano.triggerAttackRelease(midiToFreq(n.midi), dur, time);
+              }, n.timeMs / 1000);
+            }
+          }
+          if (practice.metronomeOn && toneMetronome && practice.sectionNotes.length > 0) {
+            const last = practice.sectionNotes[practice.sectionNotes.length - 1];
+            const totalMs = last.timeMs + last.durMs + 1000;
+            const beatMs = practiceBeatMs();
+            for (let t = COUNT_IN_MS, beat = 0; t < totalMs; t += beatMs, beat++) {
+              const freq = (beat % 3 === 0) ? 880 : 660;
+              Tone.Transport.schedule((time) => {
+                toneMetronome.triggerAttackRelease(freq, 0.04, time);
+              }, t / 1000);
+            }
+          }
+          let onsetIndex = 0;
+          let lastT = -Infinity;
+          for (const n of practice.sectionNotes) {
+            const t = n.timeMs / 1000;
+            if (t - lastT > 0.005) {
+              const isFirst = onsetIndex === 0;
+              const jumpTo = n.cursorJump;
+              Tone.Transport.schedule((time) => {
+                Tone.Draw.schedule(() => {
+                  if (!osmd || !osmd.cursor) return;
+                  if (isFirst) osmd.cursor.show();
+                  else advanceOsmdCursor(jumpTo);
+                  osmdScrollToCursor();
+                }, time);
+              }, t);
+              onsetIndex++;
+              lastT = t;
+            }
+          }
+          practice.startAudioTime = Tone.now() + audioStartLead;
+          scheduleCountInBeeps(practice.startAudioTime);
+          Tone.Transport.start('+' + audioStartLead);
+        }
+        // Diagnostic: log device audio output latency. AudioContext.outputLatency
+        // is the speaker-side buffer delay; baseLatency is the processing block.
+        // The total is roughly how late audio reaches the kid's ears vs Tone.now().
+        try {
+          const ctx = Tone.context.rawContext || Tone.context;
+          const out = (ctx.outputLatency || 0) * 1000;
+          const base = (ctx.baseLatency || 0) * 1000;
+          // User override (slider in ⚙ settings) wins over auto-detection.
+          // Otherwise prefer the browser's reported figure when populated
+          // (Chrome/Edge desktop reliably do; Firefox often returns 0, older
+          // Safari undefined), else fall back to DEFAULT_AUDIO_OFFSET_MS.
+          if (prefs.audioOffsetMs != null) {
+            practice.audioOffsetMs = prefs.audioOffsetMs;
+          } else {
+            const reported = out + base;
+            practice.audioOffsetMs = reported > 5
+              ? Math.min(reported, 200)   // clamp absurd values (e.g. AirPods 250ms)
+              : DEFAULT_AUDIO_OFFSET_MS;
+          }
+          remoteLog('[Practice] mode=' + practice.mode
+            + ' tempoPct=' + practice.tempoPct
+            + ' audioOutputLatency=' + out.toFixed(1) + 'ms'
+            + ' audioBaseLatency=' + base.toFixed(1) + 'ms'
+            + ' lookAhead=' + (Tone.context.lookAhead * 1000).toFixed(1) + 'ms'
+            + ' compensation=' + practice.audioOffsetMs.toFixed(1) + 'ms'
+            + (prefs.audioOffsetMs != null ? ' (user)' : ' (auto)'));
+        } catch (e) {
+          practice.audioOffsetMs = prefs.audioOffsetMs != null
+            ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS;
+        }
+      } catch (e) {
+        console.error('Tone start failed', e);
+        practice.startAudioTime = (performance.now() / 1000) + audioStartLead;
+      }
+    }
+
+    function stopPracticeAudio() {
+      try {
+        if (typeof Tone !== 'undefined') {
+          Tone.Transport.stop();
+          Tone.Transport.cancel();
+        }
+      } catch (e) {}
+    }
+
+    // ========================================
+    // Per-frame practice tick
+    // ========================================
+    function updatePractice(timeMs, isOnsetNote, pitchHz) {
+      if (!practice.enabled) return;
+      const elapsed = practiceElapsedMs();
+      const notes = practice.sectionNotes;
+      const len = notes.length;
+
+      // 1. Mark missed notes (hit window expired) — RHYTHM MODE ONLY.
+      //    Guided waits for the kid; Listen plays itself, so neither auto-misses.
+      if (practice.mode === 'rhythm') {
+        for (let i = practice.currentNoteIdx; i < len; i++) {
+          const n = notes[i];
+          if (n.hit || n.missed) continue;
+          if (elapsed > n.timeMs + HIT_WINDOW_MS) {
+            n.missed = true;
+            practice.misses++;
+            practice.sectionCombo = 0;
+            showHitChip('miss', t('missChip'));
+          }
+          if (n.timeMs - elapsed > HIT_WINDOW_MS) break;
+        }
+      } else if (practice.mode === 'listen') {
+        // Listen mode auto-advances the cursor as the song plays so the lane
+        // and OSMD stay in sync with the audio. We mark notes as `hit` (not
+        // missed) so the per-frame skip-past loop walks the cursor forward
+        // without the rhythm-mode penalty path.
+        for (let i = practice.currentNoteIdx; i < len; i++) {
+          const n = notes[i];
+          if (n.hit || n.missed) continue;
+          if (elapsed >= n.timeMs) n.hit = true;
+          else break;
+        }
+      }
+
+      // 2. Match an incoming mic onset. While a MIDI keyboard is connected, mic is
+      //    fully suppressed for *scoring* — sustained piano sound, ambient noise,
+      //    or the kid's voice between MIDI presses can otherwise credit a wrong
+      //    note (especially under the chord-forgiveness forward-search).
+      //    Visualizer effects keep their own recency window (see drawMidiBeams path).
+      if (!midiInput.enabled && isOnsetNote && pitchHz > 0) {
+        const stablePitch = medianRecentPitch() || pitchHz;
+        const detectedMidi = Math.round(12 * Math.log2(stablePitch / 440) + 69);
+        matchNoteOnset(detectedMidi, false);
+      }
+
+      // 3. Skip past resolved notes. Guided mode: this is the single driver of OSMD
+      //    cursor advancement.
+      //
+      //    Critical: a chord (multiple notes sharing the same timeMs) corresponds
+      //    to ONE cursor step in OSMD. Calling cursor.next() per note would advance
+      //    the cursor by N steps for an N-note chord, racing the score ahead of
+      //    where the kid actually is. We only advance the cursor when crossing
+      //    into a *new* beat (different timeMs) or when an explicit cursorJump
+      //    is set (repeats). Chord-mates within the same timeMs share the step.
+      const idxBefore = practice.currentNoteIdx;
+      const driveCursor = practice.mode === 'guided';
+      while (practice.currentNoteIdx < len &&
+        (notes[practice.currentNoteIdx].hit || notes[practice.currentNoteIdx].missed)) {
+        const skipped = notes[practice.currentNoteIdx];
+        practice.currentNoteIdx++;
+        if (driveCursor) {
+          const next = notes[practice.currentNoteIdx];
+          const sameBeat = next && skipped.cursorJump == null
+            && Math.abs(next.timeMs - skipped.timeMs) < 5;
+          if (!sameBeat) advanceOsmdCursor(skipped.cursorJump);
+        }
+      }
+      if (driveCursor && practice.currentNoteIdx !== idxBefore) {
+        osmdScrollToCursor();
+      }
+
+      // 4. (OSMD cursor advance is driven by per-onset Tone.Draw events scheduled in
+      //     startPracticeSection — keeps cursor locked to played audio, no drift.)
+
+      // 5. Progress UI (rate-limited) — exclude the other hand in one-hand mode
+      if (timeMs - practice._lastProgUpdate > 100) {
+        practice._lastProgUpdate = timeMs;
+        const target = practice._sectionTargetCount || len;
+        DOM.ptbProgress.textContent = (practice.hits + practice.misses) + ' / ' + target;
+      }
+
+      // 6. Section complete?
+      let isComplete = practice.currentNoteIdx >= len;
+      if (!isComplete && practice.mode !== 'guided') {
+        const last = notes[len - 1];
+        isComplete = !!(last && elapsed > last.timeMs + last.durMs + HIT_WINDOW_MS + 400);
+      }
+      if (!practice._completing && isComplete) {
+        practice._completing = true;
+        setTimeout(() => completePracticeSection(), 600);
+      }
+    }
+
+    // ========================================
+    // Draw falling notes lane
+    //   Lane is split into LH (left half) and RH (right half). Notes fall from the top
+    //   toward the hit line. Time-to-pixel scale = (laneHeight - 40) / LANE_LOOKAHEAD_MS.
+    // ========================================
+    function drawPracticeLane(timeMs) {
+      if (!practice.enabled) return;
+      const elapsed = practiceElapsedMs();
+      const notes = practice.sectionNotes;
+
+      // Dynamic lane sizing — start below the visible OSMD score (so falling
+      // notes aren't hidden behind it) and stretch to just above the virtual
+      // keyboard at the bottom (so the unused dark space is filled).
+      const osmdVisible = DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible');
+      const laneTop = osmdVisible ? 332 : 50;   // OSMD top:60 + h:260 + margin:12
+      const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
+      const laneHeight = Math.max(280, H - laneTop - kbReserve);
+      // Lift the hit line a bit higher than the lane bottom so it sits in the
+      // kid's natural focus zone (was -30 = almost flush with the keyboard).
+      const hitLineY = laneTop + laneHeight - 60;
+      const pxPerMs = (laneHeight - 40) / LANE_LOOKAHEAD_MS;
+      const padX = 24;
+      const usableW = W - padX * 2;
+      const halfW = usableW / 2;
+      const midX = padX + halfW;
+
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+
+      // Backgrounds — distinct tints for the two hands
+      ctx.fillStyle = 'rgba(40, 60, 110, 0.55)';
+      ctx.fillRect(padX, laneTop, halfW, laneHeight);
+      ctx.fillStyle = 'rgba(110, 50, 90, 0.55)';
+      ctx.fillRect(midX, laneTop, halfW, laneHeight);
+      ctx.strokeStyle = 'rgba(255, 220, 230, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(padX, laneTop, usableW, laneHeight);
+
+      // Hand labels
+      ctx.fillStyle = 'rgba(180, 200, 255, 0.7)';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(laneLabelL, padX + halfW / 2, laneTop + 14);
+      ctx.fillStyle = 'rgba(255, 200, 220, 0.7)';
+      ctx.fillText(laneLabelR, midX + halfW / 2, laneTop + 14);
+
+      // Center divider
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(midX, laneTop);
+      ctx.lineTo(midX, hitLineY + 50);
+      ctx.stroke();
+
+      // Hit window band — asymmetric: above-line (early) is small, below-line
+      // (late) is the full HIT_WINDOW_MS. Visual matches the judgment so kids
+      // can read "if my note is in the band when I press, that counts."
+      const earlyPx = HIT_WINDOW_EARLY_MS * pxPerMs;
+      const latePx = HIT_WINDOW_MS * pxPerMs;
+      const perfectPx = PERFECT_MS * pxPerMs;
+      ctx.fillStyle = 'rgba(255, 200, 230, 0.20)';
+      ctx.fillRect(padX, hitLineY - earlyPx, usableW, earlyPx + latePx);
+      // Inner Perfect zone — brighter strip ±PERFECT_MS so kids see the sweet spot.
+      ctx.fillStyle = 'rgba(170, 255, 200, 0.30)';
+      ctx.fillRect(padX, hitLineY - perfectPx, usableW, perfectPx * 2);
+      // Hit line — thicker and with a soft glow so it reads from the score area.
+      ctx.save();
+      ctx.shadowColor = 'rgba(255, 220, 230, 0.8)';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(255, 240, 245, 0.95)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(padX, hitLineY);
+      ctx.lineTo(W - padX, hitLineY);
+      ctx.stroke();
+      ctx.restore();
+      // Keep the legacy `winPx` symbol in scope for the ▼ indicator below; it
+      // points at the top of the early-zone (the moment a note becomes hittable).
+      const winPx = earlyPx;
+
+      const { lhMin, lhMax, rhMin, rhMax } = practice.handRanges;
+      const noteX = (n) => {
+        if (n.hand === 'L') {
+          const r = (n.midi - lhMin) / (lhMax - lhMin);
+          return padX + r * (halfW - 20) + 10;
+        }
+        const r = (n.midi - rhMin) / (rhMax - rhMin);
+        return midX + r * (halfW - 20) + 10;
+      };
+
+      // Notes are sorted by timeMs. Visible time window spans from the moment a note
+      // would slide off the bottom of the lane to the moment it would appear at the top.
+      // laneDrawFromIdx is an amortized cursor: we never re-scan notes that have passed.
+      const visibleMinTimeMs = elapsed - 80 / pxPerMs;             // ones earlier are below
+      const visibleMaxTimeMs = elapsed + laneHeight / pxPerMs;     // ones later not yet here
+      while (practice.laneDrawFromIdx < notes.length
+        && notes[practice.laneDrawFromIdx].timeMs < visibleMinTimeMs) {
+        practice.laneDrawFromIdx++;
+      }
+      // Cap the number of notes drawn per frame. Dense passages (Mozart Turkish March
+      // 16th-note runs) can put 60+ notes in the visible window; capping at 25 keeps
+      // the canvas fast on Steam Deck / iPad without losing the read-ahead preview.
+      let drawnCount = 0;
+      for (let i = practice.laneDrawFromIdx; i < notes.length; i++) {
+        if (drawnCount >= 25) break;
+        const n = notes[i];
+        if (n.timeMs > visibleMaxTimeMs) break;
+        if (n._filtered) continue;   // One-hand practice: do not draw the other hand.
+        drawnCount++;
+        const dy = (n.timeMs - elapsed) * pxPerMs;
+        const y = hitLineY - dy;
+        const x = noteX(n);
+        const noteH = Math.max(14, n.durMs * pxPerMs * 0.9);
+        const noteW = Math.min(70, halfW / 6);
+
+        let fill;
+        if (n.hit) fill = 'rgba(120, 255, 160, 0.9)';
+        else if (n.missed) fill = 'rgba(255, 90, 120, 0.5)';
+        else fill = CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[n.midi % 12]] || '#fff';
+
+        ctx.fillStyle = fill;
+        ctx.shadowBlur = n.hit ? 18 : 8;
+        ctx.shadowColor = fill;
+        roundRect(ctx, x - noteW / 2, y - noteH, noteW, noteH, 6);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = n.hand === 'L' ? 'rgba(180, 220, 255, 0.95)' : 'rgba(255, 200, 220, 0.95)';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(n.hand, x, y - noteH - 4);
+
+        if (!n.hit && !n.missed && noteH > 18) {
+          ctx.fillStyle = 'rgba(0,0,0,0.9)';
+          ctx.font = 'bold 12px sans-serif';
+          ctx.fillText(midiToPitchName(n.midi), x, y - noteH / 2 + 4);
+        }
+      }
+
+      // Current expected note indicator at the hit line
+      const cur = notes[practice.currentNoteIdx];
+      if (cur && !cur.hit && !cur.missed) {
+        const x = noteX(cur);
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('▼', x, hitLineY - winPx - 4);
+        ctx.font = 'bold 18px sans-serif';
+        ctx.fillStyle = cur.hand === 'L' ? 'rgba(180,220,255,1)' : 'rgba(255,200,220,1)';
+        ctx.fillText(cur.hand + ' · ' + midiToPitchName(cur.midi), x, hitLineY + 32);
+      }
+
+      // Boss flair
+      if (currentSong.sections[practice.sectionIdx].isBoss) {
+        ctx.fillStyle = 'rgba(255, 100, 150, ' + (0.05 + 0.05 * Math.sin(timeMs * 0.005)) + ')';
+        ctx.fillRect(padX, laneTop, usableW, laneHeight);
+      }
+
+      // Count-in countdown — one number per song-beat, synced with the audible
+      // ticks scheduled in scheduleCountInBeeps. Always 4 beats ("4 → 3 → 2 → 1
+      // → GO!") with the last bright tone landing exactly when the first note
+      // hits the line. Driven by real wall-clock time (not the parked-lane
+      // clock) so guided mode animates and the GO! fade-out can complete before
+      // the kid plays anything.
+      const ctElapsed = practiceRealElapsedMs();
+      if (ctElapsed < COUNT_IN_MS + 400) {
+        const totalBeats = 4;
+        const beatMs = COUNT_IN_MS / totalBeats;
+        const beatIdx = Math.min(totalBeats - 1, Math.max(0, Math.floor(ctElapsed / beatMs)));
+        const remaining = totalBeats - beatIdx;    // 4 → 3 → 2 → 1
+        const slotMs = ctElapsed - beatIdx * beatMs;
+        const slotProgress = 1 - Math.min(1, slotMs / beatMs);
+        const text = ctElapsed >= COUNT_IN_MS ? t('countInGo') : String(remaining);
+        const isGo = ctElapsed >= COUNT_IN_MS;
+        // pop-in scale
+        const pop = isGo
+          ? Math.max(0, 1 + 0.4 * Math.sin(((ctElapsed - COUNT_IN_MS) / 400) * Math.PI))
+          : 0.7 + 0.6 * slotProgress;
+        const alpha = isGo ? Math.max(0, 1 - (ctElapsed - COUNT_IN_MS) / 400) : 0.95;
+
+        ctx.save();
+        ctx.translate(W / 2, hitLineY - 60);
+        ctx.scale(pop, pop);
+        ctx.textAlign = 'center';
+        ctx.font = 'bold ' + (isGo ? '72' : '120') + 'px sans-serif';
+        // Glow
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = isGo ? 'rgba(255, 220, 130, .9)' : 'rgba(255, 180, 220, .9)';
+        ctx.fillStyle = isGo ? 'rgba(255, 230, 130, ' + alpha + ')'
+                             : 'rgba(255, 230, 240, ' + alpha + ')';
+        ctx.fillText(text, 0, 0);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+
+    function roundRect(c, x, y, w, h, r) {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
+    }
+
+    // ========================================
+    // Hit feedback chip (DOM)
+    // ========================================
+    // Throttled to ~100ms minimum spacing — prevents DOM/animation thrashing during
+    // rapid passages (12+ notes/sec). Hits keep registering; only the visual chip is
+    // skipped when the previous one is still settling in.
+    let _lastChipMs = 0;
+    function showHitChip(kind, text) {
+      const now = performance.now();
+      if (now - _lastChipMs < 100) return;
+      _lastChipMs = now;
+      const chip = document.createElement('div');
+      chip.className = 'hit-chip ' + kind;
+      chip.textContent = text;
+      chip.style.left = '50%';
+      chip.style.top = (H * 0.55 - 30) + 'px';
+      document.body.appendChild(chip);
+      setTimeout(() => chip.remove(), 1100);
+    }
+
+    // ========================================
+    // Section complete → result screen
+    // ========================================
+    const SECTION_IDS = ['A1', 'B', 'A2'];
+
+    const RESULT_TIERS = [
+      { titleKey: 'tier0Title', msgKey: 'tier0Msg' },
+      { titleKey: 'tier1Title', msgKey: 'tier1Msg' },
+      { titleKey: 'tier2Title', msgKey: 'tier2Msg' },
+      { titleKey: 'tier3Title', msgKey: 'tier3Msg' }
+    ];
+
+    // durPct is null in guided mode (no audio clock to score length against), in
+    // which case the dur threshold is skipped.
+    const STAR_TIERS = [
+      { stars: 3, acc: 90, timing: 70, dur: 70 },
+      { stars: 2, acc: 75, timing: 0,  dur: 50 },
+      { stars: 1, acc: 50, timing: 0,  dur: 0  }
+    ];
+    function computeStars(accPct, timingPct, durPct) {
+      const tier = STAR_TIERS.find(t =>
+        accPct >= t.acc &&
+        timingPct >= t.timing &&
+        (durPct == null || durPct >= t.dur));
+      return tier ? tier.stars : 0;
+    }
+
+    // Apply localized text + visibility based on a cached result context. Called
+    // from completePracticeSection AND from the langchange listener so the card
+    // can re-render in the new language without re-computing scores/unlocks.
+    function renderResultCard() {
+      const r = practice._lastResult;
+      if (!r) return;
+      const sec = currentSong?.sections?.find(s => s.id === r.secId);
+      if (!sec) return;
+
+      if (r.mode === 'listen') {
+        DOM.resTitle.textContent = t('listenedTitle');
+        DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+        DOM.resStars.style.display = 'none';
+        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = 'none'; });
+        DOM.resMsg.textContent = t('listenedMsg');
+        DOM.resUnlock.textContent = '';
+        if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
+        DOM.resNext.style.display = 'none';
+        if (DOM.resTryPlay) DOM.resTryPlay.style.display = '';
+        return;
+      }
+
+      // Rhythm/guided result.
+      DOM.resStars.style.display = '';
+      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
+      if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
+      const tier = RESULT_TIERS[Math.max(0, Math.min(3, r.stars))];
+      DOM.resTitle.textContent = t(tier.titleKey);
+      DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      DOM.resMsg.textContent = t(tier.msgKey);
+      let unlockedMsg = '';
+      if (r.unlockedTempo)   unlockedMsg += t('tempoUnlockedFmt', { v: r.unlockedTempo });
+      if (r.unlockedSecKey)  unlockedMsg += t('sectionUnlockedFmt', { v: t(r.unlockedSecKey) });
+      if (r.streakDays)      unlockedMsg += t('streakDaysFmt', { v: r.streakDays });
+      DOM.resUnlock.textContent = unlockedMsg.trim();
+    }
+
+    function completePracticeSection() {
+      practice.enabled = false;
+      stopPracticeAudio();
+      releaseWakeLock();
+      practice.pendingHolds.clear();
+
+      const sec = currentSong.sections[practice.sectionIdx];
+
+      // Listen mode: no scoring, no progress mutation, no unlocks. Hide all
+      // score rows/stars and offer a "Try playing" button that switches the
+      // kid into Guided on the same section — natural pedagogical flow.
+      if (practice.mode === 'listen') {
+        practice._lastResult = { mode: 'listen', secId: sec.id };
+        renderResultCard();
+        DOM.sectionResult.classList.add('visible');
+        practice._completing = false;
+        return;
+      }
+      const total = practice._sectionTargetCount || 0;
+      const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
+      const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
+      const durPct = practice.durationScoredCount > 0
+        ? Math.round((practice.durationScoreSum / practice.durationScoredCount) * 100)
+        : null;
+      const stars = computeStars(accPct, timingPct, durPct);
+
+      // Save to progress (per-song)
+      const sp = songProg();
+      const prog = sp.sections[sec.id] || { stars: 0, bestPct: 0 };
+      if (stars > prog.stars) prog.stars = stars;
+      if (accPct > prog.bestPct) prog.bestPct = accPct;
+      sp.sections[sec.id] = prog;
+
+      recordPracticeDay();
+
+      // Compute unlocks (and persist them) — store the *facts* (which tempo /
+      // which section / streak count) so renderResultCard can re-build the
+      // localized message on language change.
+      let unlockedTempo = null;
+      let unlockedSecKey = null;
+      let streakDays = null;
+      if (stars >= 2) {
+        const tempos = [60, 75, 90, 100];
+        const idx = tempos.indexOf(practice.tempoPct);
+        if (idx >= 0 && idx < tempos.length - 1) {
+          const next = tempos[idx + 1];
+          if (!sp.unlockedTempos[next]) {
+            sp.unlockedTempos[next] = true;
+            unlockedTempo = next;
+          }
+        }
+      }
+      if (stars >= 1) {
+        const sIdx = SECTION_IDS.indexOf(sec.id);
+        if (sIdx >= 0 && sIdx < SECTION_IDS.length - 1) {
+          const next = SECTION_IDS[sIdx + 1];
+          if (!sp.unlockedSections[next]) {
+            sp.unlockedSections[next] = true;
+            unlockedSecKey = currentSong.sections.find(s => s.id === next).nameKey;
+          }
+        }
+      }
+      // Theme unlock at streak milestone
+      if (practice.progress.streakCount === 3 || practice.progress.streakCount === 7) {
+        streakDays = practice.progress.streakCount;
+      }
+
+      if (!sp.history[sec.id]) sp.history[sec.id] = [];
+      sp.history[sec.id].push({ d: Date.now(), a: accPct, t: timingPct, s: stars });
+      if (sp.history[sec.id].length > 8) sp.history[sec.id].shift();
+      const sectionHistory = sp.history[sec.id];
+
+      savePracticeProgress();
+
+      // Snapshot context for renderResultCard (handles localized strings) +
+      // re-render on language change. Numeric / visibility state below isn't
+      // language-dependent so it stays imperative.
+      practice._lastResult = {
+        mode: practice.mode, secId: sec.id, stars,
+        unlockedTempo, unlockedSecKey, streakDays
+      };
+      renderResultCard();
+      DOM.resStars.innerHTML = '';
+      for (let i = 0; i < 3; i++) {
+        const span = document.createElement('span');
+        span.textContent = '★';
+        if (i >= stars) span.className = 'empty';
+        DOM.resStars.appendChild(span);
+      }
+      DOM.resAcc.textContent = accPct + '%';
+      DOM.resTiming.textContent = timingPct + '%';
+      if (durPct == null) {
+        if (DOM.resDurationRow) DOM.resDurationRow.style.display = 'none';
+      } else {
+        if (DOM.resDurationRow) DOM.resDurationRow.style.display = '';
+        DOM.resDuration.textContent = durPct + '%';
+      }
+      DOM.resCombo.textContent = practice.sectionBestCombo;
+
+      const nextIdx = SECTION_IDS.indexOf(sec.id) + 1;
+      const hasNext = nextIdx > 0 && nextIdx < SECTION_IDS.length
+        && songProg().unlockedSections[SECTION_IDS[nextIdx]];
+      DOM.resNext.style.display = hasNext ? '' : 'none';
+
+      // Big celebration
+      if (stars >= 3) {
+        effectGoldenBurst();
+        effectStarShower(8);
+      } else if (stars >= 2) {
+        effectFlowerBurst();
+        effectStarShower(5);
+      } else if (stars >= 1) {
+        effectStarShower(3);
+      }
+
+      if (sectionHistory.length >= 2) {
+        DOM.resHistoryWrap.classList.remove('hidden');
+        drawHistoryChart(DOM.resHistoryChart, sectionHistory);
+      } else {
+        DOM.resHistoryWrap.classList.add('hidden');
+      }
+
+      DOM.sectionResult.classList.add('visible');
+      practice._completing = false;
+    }
+
+    // Growth chart — line graph of accuracy over the last 8 attempts.
+    function drawHistoryChart(canvas, history) {
+      const w = 280, h = 80;
+      const c = setupHiDPICanvas(canvas, w, h);
+      c.clearRect(0, 0, w, h);
+      if (!history || history.length < 2) return;
+
+      const padX = 22, padTop = 12, padBottom = 18;
+      const innerW = w - padX * 2;
+      const innerH = h - padTop - padBottom;
+      const n = history.length;
+
+      // Grid (0/50/100%)
+      c.strokeStyle = 'rgba(255,255,255,0.08)';
+      c.lineWidth = 1;
+      for (let lvl = 0; lvl <= 2; lvl++) {
+        const y = padTop + (lvl / 2) * innerH;
+        c.beginPath(); c.moveTo(padX, y); c.lineTo(padX + innerW, y); c.stroke();
+      }
+
+      c.fillStyle = 'rgba(255,255,255,0.35)';
+      c.font = '9px sans-serif';
+      c.textAlign = 'right';
+      c.textBaseline = 'middle';
+      c.fillText('100%', padX - 4, padTop);
+      c.fillText('50',   padX - 4, padTop + innerH / 2);
+      c.fillText('0',    padX - 4, padTop + innerH);
+
+      const xAt = (i) => n === 1 ? padX + innerW / 2 : padX + (i / (n - 1)) * innerW;
+      const yAt = (v) => padTop + innerH * (1 - clamp01(v / 100));
+
+      c.strokeStyle = 'rgba(255, 215, 0, 0.85)';
+      c.lineWidth = 2;
+      c.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = xAt(i), y = yAt(history[i].a);
+        if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+      }
+      c.stroke();
+
+      for (let i = 0; i < n; i++) {
+        const x = xAt(i), y = yAt(history[i].a);
+        c.beginPath();
+        c.arc(x, y, 3.2, 0, Math.PI * 2);
+        c.fillStyle = '#ffd700';
+        c.fill();
+        if (history[i].s >= 3) {
+          c.strokeStyle = 'rgba(255, 220, 80, 0.9)';
+          c.lineWidth = 1.5;
+          c.beginPath();
+          c.arc(x, y, 6, 0, Math.PI * 2);
+          c.stroke();
+        }
+      }
+
+      const last = history[n - 1];
+      const prev = history[n - 2];
+      const lastX = xAt(n - 1), lastY = yAt(last.a);
+      c.fillStyle = 'rgba(255,255,255,0.85)';
+      c.font = 'bold 11px sans-serif';
+      c.textAlign = 'right';
+      c.textBaseline = 'alphabetic';
+      const labelOffsetY = (lastY < padTop + 16) ? 14 : -6;
+      c.fillText(last.a + '%', lastX - 5, lastY + labelOffsetY);
+
+      const delta = last.a - prev.a;
+      let txt, col;
+      if (delta >= 3)       { txt = '↑ +' + delta + '%';            col = '#7eff8a'; }
+      else if (delta <= -3) { txt = '↓ ' + delta + '%';             col = '#ff8a9a'; }
+      else                  { txt = t('trendSimilar');         col = 'rgba(255,255,255,0.55)'; }
+      c.textAlign = 'left';
+      c.fillStyle = col;
+      c.font = 'bold 11px sans-serif';
+      c.fillText(txt, padX, h - 4);
+
+      c.textAlign = 'right';
+      c.fillStyle = 'rgba(255,255,255,0.45)';
+      c.font = '10px sans-serif';
+      c.fillText(t('growthChartFmt', { v: n }), padX + innerW, h - 4);
+    }
+
+    // ========================================
+    // Song panel UI building
+    // ========================================
+    function renderSongPanel() {
+      const top = practice.progress;            // shared (streak)
+      const sp  = songProg();                   // per-song (sections, tempos, unlocks)
+      DOM.streakCount.textContent = top.streakCount || 0;
+      DOM.streakCal.innerHTML = '';
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(dateKey(d));
+      }
+      for (const k of days) {
+        const cell = document.createElement('div');
+        cell.className = 'streak-day' + (top.streakDays.includes(k) ? ' done' : '');
+        cell.title = k;
+        DOM.streakCal.appendChild(cell);
+      }
+
+      DOM.tempoRow.innerHTML = '';
+      const tempos = [60, 75, 90, 100];
+      for (const t of tempos) {
+        const btn = document.createElement('button');
+        btn.className = 'tempo-btn' + (t === practice.tempoPct ? ' active' : '') + (sp.unlockedTempos[t] ? '' : ' locked');
+        btn.textContent = t + '%' + (sp.unlockedTempos[t] ? '' : ' 🔒');
+        btn.onclick = () => {
+          if (!sp.unlockedTempos[t]) return;
+          practice.tempoPct = t;
+          renderSongPanel();
+        };
+        DOM.tempoRow.appendChild(btn);
+      }
+
+      DOM.sectionList.innerHTML = '';
+      if (!currentSong._loaded || currentSong.sections.length === 0) {
+        const loading = document.createElement('div');
+        loading.className = 'section-row';
+        loading.style.opacity = '0.6';
+        loading.innerHTML = '<div class="section-icon">⏳</div><div>' + t('loadingScore') + '</div><div></div>';
+        DOM.sectionList.appendChild(loading);
+        return;
+      }
+      currentSong.sections.forEach((sec, i) => {
+        const unlocked = sp.unlockedSections[sec.id];
+        const row = document.createElement('div');
+        row.className = 'section-row' + (sec.isBoss ? ' boss' : '') + (unlocked ? '' : ' locked');
+        const stars = sp.sections[sec.id]?.stars || 0;
+        row.innerHTML = `
+          <div class="section-icon">${sec.isBoss ? '👑' : (unlocked ? '🎵' : '🔒')}</div>
+          <div>
+            <div style="font-weight:500;">${t(sec.nameKey)}</div>
+            <div style="font-size:.75rem; color:rgba(255,255,255,.45);">${t(sec.descKey)}</div>
+          </div>
+          <div class="section-stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
+        `;
+        if (unlocked) {
+          row.style.cursor = 'pointer';
+          row.onclick = () => {
+            practice.sectionIdx = i;
+            // visually highlight selected
+            Array.from(DOM.sectionList.children).forEach(c => c.style.outline = '');
+            row.style.outline = '2px solid rgba(255,200,230,.6)';
+          };
+        }
+        DOM.sectionList.appendChild(row);
+        if (i === practice.sectionIdx && unlocked) row.style.outline = '2px solid rgba(255,200,230,.6)';
+      });
+
+      // Highlight current mode in the 3-way picker (Listen / Guided / Rhythm).
+      // Ghost / metronome only make sense in rhythm mode — Listen plays the song
+      // through automatically and Guided waits for input note-by-note.
+      document.querySelectorAll('#modeRow .hand-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-mode') === practice.mode);
+      });
+      // Hand picker — also re-paints active state since renderSongPanel rebuilds.
+      document.querySelectorAll('#handRow .hand-btn').forEach(b => {
+        const h = b.getAttribute('data-hand');
+        const active = (h === 'L' || h === 'R') ? practice.handFilter === h : !practice.handFilter;
+        b.classList.toggle('active', active);
+      });
+      DOM.ghostToggle.classList.toggle('on', practice.ghostOn);
+      DOM.metronomeToggle.classList.toggle('on', practice.metronomeOn);
+      const showRhythmOpts = practice.mode === 'rhythm';
+      if (DOM.ghostRow) DOM.ghostRow.style.display = showRhythmOpts ? '' : 'none';
+      if (DOM.metronomeRow) DOM.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
+      // Start button copy: Listen mode reads as "Start listening" instead of "Start practice".
+      const startBtn = DOM.songStart;
+      if (startBtn) startBtn.textContent = t(practice.mode === 'listen' ? 'startListening' : 'startPractice');
+    }
+
+    document.querySelectorAll('#handRow .hand-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const h = btn.getAttribute('data-hand');
+        practice.handFilter = (h === 'L' || h === 'R') ? h : null;
+        document.querySelectorAll('#handRow .hand-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    document.querySelectorAll('#modeRow .hand-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const m = btn.getAttribute('data-mode');
+        if (m === 'listen' || m === 'guided' || m === 'rhythm') practice.mode = m;
+        renderSongPanel();
+      });
+    });
+
+    DOM.ghostToggle?.addEventListener('click', () => { practice.ghostOn = !practice.ghostOn; renderSongPanel(); });
+    DOM.metronomeToggle?.addEventListener('click', () => { practice.metronomeOn = !practice.metronomeOn; renderSongPanel(); });
+
+    // v13: Central invariant — whenever audio is alive and we are NOT on the title
+    // screen, the global UI (theme bar with the home button + flow gauge HUD) must
+    // be visible. Without this helper, paths like (returnToTitle → song panel →
+    // back) leave the user on a bare canvas with no controls. Call this anywhere
+    // we transition from title or a panel back into an in-session view.
+    // True when we have no input alive AND don't expect to recover one without
+    // user help. iOS-WMB intentionally skips the mic but is still happy to wait
+    // for a MIDI keyboard — that is NOT the "no input" state we want to nag about.
+    function noInputAvailable() {
+      return state.micPermissionFailed && !midiInput.enabled;
+    }
+
+    // The intro hint only appears when there's a real input problem the kid
+    // needs to act on. When mic + MIDI are healthy (or about to be — auto-poll
+    // will pick up a hot-plugged keyboard), nothing is shown — the canvas
+    // lights up the moment they play, which is the only feedback they need.
+    function refreshIntroHint() {
+      if (!DOM.introHint) return;
+      const show = noInputAvailable();
+      DOM.introHint.classList.toggle('visible', show);
+      if (show) DOM.introHint.innerHTML = t('introNeedMidi');
+      DOM.midiRescanBtn?.classList.toggle('visible', show);
+    }
+
+    function showRunningUI() {
+      DOM.startScreen.style.display = 'none';
+      document.body.classList.remove('title-screen');
+      DOM.themeBar.classList.add('visible');
+      DOM.hud.style.display = 'block';
+      // Hold the screen awake whenever audio is alive — was practice-only
+      // before, but iOS will suspend the page (and silently break the MIDI
+      // port handler in WMB) the moment the screen sleeps. Free Play sessions
+      // should stay live for the same reason.
+      requestWakeLock();
+      if (!practice.enabled) refreshIntroHint();
+      if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
+      else DOM.micMeter.classList.remove('visible');
+      // Background-rescan only for actual mic failures — iOS-WMB sessions
+      // (`micIntentionallySkipped`) start the silent poller too so a later MIDI
+      // hot-plug picks up. NEVER fire a non-silent rescan here: it surfaces a
+      // "🎹 No MIDI port found" diagnostic the kid did not ask for.
+      const wantBgRescan = !midiInput.enabled
+        && (state.micPermissionFailed || state.micIntentionallySkipped);
+      if (wantBgRescan) {
+        startMidiAutoRescan();
+        rescanMidi(true).catch(() => {});   // SILENT — no diagnostic on entry
+      }
+    }
+
+    function hideIntroHint() {
+      if (DOM.introHint) DOM.introHint.classList.remove('visible');
+      clearIntroDiagCache();
+      DOM.midiRescanBtn?.classList.remove('visible');
+    }
+
+    function alertAudioInitError(e) {
+      alert(t('audioInitFailedFmt', { v: (e && e.message) || e }));
+    }
+
+    DOM.midiRescanBtn?.addEventListener('click', () => {
+      // 明示的な再スキャン要求 = dismiss を解除してエンゲージし直す
+      rescanMidi();
+    });
+
+
+    DOM.songBack.addEventListener('click', () => {
+      DOM.songPanel.classList.remove('visible');
+      if (state.running) {
+        showRunningUI();
+      } else {
+        DOM.startScreen.style.display = 'flex';
+      }
+    });
+
+    DOM.songStart.addEventListener('click', async () => {
+      if (state.starting) return;
+      DOM.songPanel.classList.remove('visible');
+      try {
+        if (!state.running) {
+          state.starting = true;
+          await initAudio();
+          showRunningUI();
+          initBgStars();
+          state.running = true;
+          state.lastFrameTimeMs = 0;
+          state.sessionStartTimeMs = performance.now();
+          requestAnimationFrame(loop);
+        } else {
+          // Re-entry while audio is already alive — make sure HUD/theme bar are
+          // shown again in case we got here via returnToTitle.
+          showRunningUI();
+        }
+        await startPracticeSection(practice.sectionIdx);
+      } catch (e) {
+        alertAudioInitError(e);
+      } finally {
+        state.starting = false;
+      }
+    });
+
+    function selectSong(songId) {
+      const song = SONGS[songId];
+      if (!song) return;
+      // Switching songs: drop the OSMD instance + manually clear the container.
+      // osmd.clear() didn't remove the previous song's SVG in our setup, so the
+      // new render was hidden underneath the stale children.
+      if (currentSong !== song) {
+        currentSong = song;
+        if (osmd) {
+          try { osmd.clear(); } catch (e) {}
+          osmd = null;
+        }
+        DOM.osmdContainer.innerHTML = '';
+      }
+      DOM.songTitle.textContent = t(song.titleKey);
+      DOM.songComposer.textContent = t(song.composerKey);
+      practice.progress = practice.progress || loadPracticeProgress();
+      practice.mode = 'guided';
+      DOM.startScreen.style.display = 'none';
+      DOM.songPanel.classList.add('visible');
+      // Keep the invariant: if audio is already alive, the theme bar should be
+      // restored beneath the song panel so a subsequent "Back" lands the user
+      // on a visualizer with full controls (not a bare canvas).
+      if (state.running) showRunningUI();
+      renderSongPanel();
+      initWebMIDI();
+      loadCurrentScore().then(() => {
+        if (DOM.songPanel.classList.contains('visible')) renderSongPanel();
+      }).catch(e => console.error('preload', e));
+    }
+
+    document.querySelectorAll('.practice-song-btn').forEach((btn) => {
+      btn.addEventListener('click', () => selectSong(btn.getAttribute('data-song')));
+    });
+
+    // ========================================
+    // Add-song modal — file / URL / curated library
+    // ========================================
+    const DOM_ADDSONG = {
+      modal: document.getElementById('addSongModal'),
+      btn: document.getElementById('addSongBtn'),
+      closeBtn: document.getElementById('addSongCloseBtn'),
+      tabs: document.querySelectorAll('.add-song-tab'),
+      bodies: document.querySelectorAll('.add-song-tab-body'),
+      libraryList: document.getElementById('addSongLibraryList'),
+      fileInput: document.getElementById('addSongFileInput'),
+      pdCheckbox: document.getElementById('addSongPdCheckbox'),
+      urlInput: document.getElementById('addSongUrlInput'),
+      fetchBtn: document.getElementById('addSongFetchBtn'),
+      status: document.getElementById('addSongStatus'),
+      myList: document.getElementById('addSongMyList'),
+      userSongList: document.getElementById('userSongList')
+    };
+
+    function setAddSongStatus(msg, isError) {
+      DOM_ADDSONG.status.textContent = msg || '';
+      DOM_ADDSONG.status.classList.toggle('error', !!isError);
+    }
+    function openAddSongModal() {
+      DOM_ADDSONG.modal.classList.add('visible');
+      renderAddSongLibrary();
+      renderAddSongMyList();
+      setAddSongStatus('');
+      // Kick off a (possibly cached) API fetch in the background so the full
+      // catalog replaces the seed list once available.
+      ensureLibraryLoaded();
+    }
+    function closeAddSongModal() {
+      DOM_ADDSONG.modal.classList.remove('visible');
+    }
+
+    let _libraryLoadPromise = null;
+    function ensureLibraryLoaded(force) {
+      if (_libraryLoadPromise && !force) return _libraryLoadPromise;
+      const statusEl = document.getElementById('addSongLibraryStatus');
+      if (statusEl) statusEl.textContent = t('addSongLibraryLoading');
+      _libraryLoadPromise = fetchLibrary(force)
+        .then(entries => {
+          if (entries.length > 0) {
+            ONLINE_LIBRARY = entries;
+            renderAddSongLibrary();
+            if (statusEl) statusEl.textContent = t('addSongLibraryCount', { n: entries.length });
+          }
+          return entries;
+        })
+        .catch(err => {
+          console.warn('[Library] fetch failed:', err.message);
+          if (statusEl) statusEl.textContent = t('addSongLibraryOffline');
+          return [];
+        })
+        .finally(() => { _libraryLoadPromise = null; });
+      return _libraryLoadPromise;
+    }
+
+    function renderAddSongLibrary() {
+      DOM_ADDSONG.libraryList.innerHTML = '';
+      const search = (document.getElementById('addSongLibrarySearch')?.value || '').toLowerCase();
+      const filtered = search
+        ? ONLINE_LIBRARY.filter(it => (it.label || '').toLowerCase().includes(search))
+        : ONLINE_LIBRARY;
+      for (const item of filtered) {
+        const row = document.createElement('div');
+        row.className = 'lib-row';
+        row.innerHTML = `<span class="lib-icon">${item.icon || '🎼'}</span><span class="lib-label"></span>`;
+        row.querySelector('.lib-label').textContent = item.label;
+        row.addEventListener('click', async () => {
+          if (row.classList.contains('busy')) return;
+          row.classList.add('busy');
+          setAddSongStatus(t('addSongFetch') + '…');
+          try {
+            const rec = await addUserSongFromUrl(item.url, { source: 'library', titleOverride: item.label });
+            setAddSongStatus(t('addSongAdded'));
+            renderAddSongMyList();
+            renderUserSongButtons();
+            setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
+          } catch (e) {
+            setAddSongStatus(t('addSongFailed', { v: e.message }), true);
+          } finally {
+            row.classList.remove('busy');
+          }
+        });
+        DOM_ADDSONG.libraryList.appendChild(row);
+      }
+      if (filtered.length === 0) {
+        DOM_ADDSONG.libraryList.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.4);padding:8px">—</div>';
+      }
+    }
+
+    function renderAddSongMyList() {
+      DOM_ADDSONG.myList.innerHTML = '';
+      const userSongs = Object.values(SONGS).filter(s => s._isUser);
+      if (userSongs.length === 0) {
+        DOM_ADDSONG.myList.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.4);padding:6px 0">—</div>';
+        return;
+      }
+      for (const song of userSongs) {
+        const row = document.createElement('div');
+        row.className = 'my-row';
+        const subParts = [];
+        if (song._userComposer) subParts.push(song._userComposer);
+        const sub = subParts.join(' · ');
+        row.innerHTML = `<span class="my-icon">${song.icon || '🎵'}</span>
+          <span class="my-label"></span>
+          <button class="my-remove my-edit"></button>
+          <button class="my-remove"></button>`;
+        const labelEl = row.querySelector('.my-label');
+        labelEl.textContent = song._userTitle || song.id;
+        if (sub) {
+          const sb = document.createElement('span');
+          sb.className = 'my-sub';
+          sb.textContent = sub;
+          labelEl.appendChild(sb);
+        }
+        const btns = row.querySelectorAll('button');
+        btns[0].textContent = t('addSongEditSections');
+        btns[1].textContent = t('addSongRemove');
+        btns[0].addEventListener('click', (e) => {
+          e.stopPropagation();
+          openSectionEditor(song.id);
+        });
+        btns[1].addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm(t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
+          await removeUserSong(song.id);
+          renderAddSongMyList();
+          renderUserSongButtons();
+        });
+        DOM_ADDSONG.myList.appendChild(row);
+      }
+    }
+
+    // ========================================
+    // Section editor — manual override of auto-detected boundaries
+    //   Loads the song record from IndexedDB, presents 3 editable startMeasure
+    //   inputs (1-based), validates monotonic & in-range, persists back.
+    //   Section names are auto (Part 1/2/3) — naming UI is YAGNI for now.
+    // ========================================
+    let _sectionEditingId = null;
+    async function openSectionEditor(songId) {
+      const db = await openUserDb();
+      const rec = await new Promise((res, rej) => {
+        const tx = db.transaction(USER_DB_STORE, 'readonly');
+        const r = tx.objectStore(USER_DB_STORE).get(songId);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+      if (!rec) return;
+      _sectionEditingId = songId;
+      // Need measure count — extract from the cached blob the same way addUserSong did.
+      const isMxl = rec.mimeType !== 'application/vnd.recordare.musicxml+xml';
+      let xmlText;
+      try {
+        if (isMxl) {
+          const JSZipLib = window.JSZip;
+          const zip = await JSZipLib.loadAsync(await rec.mxlBlob.arrayBuffer());
+          const containerXml = await zip.file('META-INF/container.xml')?.async('text');
+          let scorePath = containerXml?.match(/full-path="([^"]+)"/)?.[1];
+          if (!scorePath) {
+            for (const name of Object.keys(zip.files)) {
+              if (name.endsWith('.xml') && !name.startsWith('META-INF')) { scorePath = name; break; }
+            }
+          }
+          xmlText = await zip.file(scorePath).async('text');
+        } else {
+          xmlText = await rec.mxlBlob.text();
+        }
+      } catch (e) {
+        alert('Failed to read score: ' + e.message);
+        return;
+      }
+      const meta = parseMusicXmlMetadata(xmlText);
+      const total = meta.measureCount;
+      DOM_SECEDIT.help.textContent = t('sectionEditHelp', { v: total });
+      DOM_SECEDIT.rows.innerHTML = '';
+      const labels = ['userSecA1', 'userSecB', 'userSecA2'];
+      for (let i = 0; i < 3; i++) {
+        const def = rec.sectionDefs[i] || { startMeasure: Math.floor(i * total / 3) };
+        const row = document.createElement('div');
+        row.className = 'sec-edit-row';
+        row.innerHTML = `<label></label><input type="number" min="1" step="1">`;
+        row.querySelector('label').textContent = t(labels[i]);
+        const input = row.querySelector('input');
+        input.value = (def.startMeasure || 0) + 1;   // 1-based for users
+        input.max = total;
+        if (i === 0) { input.disabled = true; input.value = 1; }   // first section always starts at measure 1
+        DOM_SECEDIT.rows.appendChild(row);
+      }
+      DOM_SECEDIT.error.textContent = '';
+      DOM_SECEDIT._totalMeasures = total;
+      DOM_SECEDIT._record = rec;
+      DOM_SECEDIT.modal.classList.add('visible');
+    }
+    function closeSectionEditor() {
+      DOM_SECEDIT.modal.classList.remove('visible');
+      _sectionEditingId = null;
+    }
+
+    async function saveSectionEditor() {
+      const inputs = DOM_SECEDIT.rows.querySelectorAll('input[type=number]');
+      const total = DOM_SECEDIT._totalMeasures;
+      const vals = Array.from(inputs).map(i => parseInt(i.value, 10) - 1);   // back to 0-based
+      if (vals.some(v => Number.isNaN(v) || v < 0 || v >= total)
+          || vals[0] !== 0
+          || vals[1] <= vals[0] || vals[2] <= vals[1]) {
+        DOM_SECEDIT.error.textContent = t('sectionEditError');
+        return;
+      }
+      const rec = DOM_SECEDIT._record;
+      rec.sectionDefs = [
+        { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: vals[0], isBoss: false },
+        { id: 'B',  nameKey: 'userSecB',  descKey: 'userSecBdesc',  startMeasure: vals[1], isBoss: false },
+        { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', startMeasure: vals[2], isBoss: true  }
+      ];
+      await userDbPut(rec);
+      // Update in-memory song so an immediately-following selectSong picks up the
+      // new boundaries without a page reload. Force a re-extract on next load.
+      const song = SONGS[rec.id];
+      if (song) {
+        song.sectionDefs = rec.sectionDefs;
+        song._loaded = false;
+        song.sections = [];
+      }
+      closeSectionEditor();
+    }
+
+    // Inject user-song buttons into the start screen, between the hardcoded songs
+    // and the "+ Add" button. Re-rendered after every add/remove.
+    function renderUserSongButtons() {
+      DOM_ADDSONG.userSongList.innerHTML = '';
+      const userSongs = Object.values(SONGS).filter(s => s._isUser);
+      for (const song of userSongs) {
+        const btn = document.createElement('button');
+        btn.className = 'mode-btn primary practice-song-btn';
+        btn.setAttribute('data-song', song.id);
+        btn.style.position = 'relative';
+        const labelText = (song.icon || '🎵') + ' ' + (song._userTitle || song.id);
+        btn.innerHTML = `<span class="mode-btn-label"></span>
+          <span class="mode-btn-loading" data-i18n="starting">Starting...</span>`;
+        btn.querySelector('.mode-btn-label').textContent = labelText;
+        btn.addEventListener('click', () => selectSong(song.id));
+        DOM_ADDSONG.userSongList.appendChild(btn);
+      }
+    }
+
+    DOM_ADDSONG.btn?.addEventListener('click', openAddSongModal);
+    DOM_ADDSONG.closeBtn?.addEventListener('click', closeAddSongModal);
+    DOM_ADDSONG.modal?.addEventListener('click', (e) => {
+      if (e.target === DOM_ADDSONG.modal) closeAddSongModal();
+    });
+
+    DOM_ADDSONG.tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const which = tab.getAttribute('data-tab');
+        DOM_ADDSONG.tabs.forEach(t => t.classList.toggle('active', t === tab));
+        DOM_ADDSONG.bodies.forEach(b => {
+          b.hidden = b.getAttribute('data-tab-body') !== which;
+        });
+        setAddSongStatus('');
+      });
+    });
+
+    // Library search — debounce-free is fine, list is in-memory and small (~91 items).
+    document.getElementById('addSongLibrarySearch')?.addEventListener('input', () => {
+      renderAddSongLibrary();
+    });
+
+    DOM_ADDSONG.fileInput?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!DOM_ADDSONG.pdCheckbox.checked) {
+        setAddSongStatus(t('addSongPdAttest'), true);
+        return;
+      }
+      setAddSongStatus(t('addSongFetch') + '…');
+      try {
+        const rec = await addUserSongFromBlob(file, { filename: file.name, source: 'upload' });
+        setAddSongStatus(t('addSongAdded'));
+        renderAddSongMyList();
+        renderUserSongButtons();
+        setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
+      } catch (err) {
+        setAddSongStatus(t('addSongFailed', { v: err.message }), true);
+      } finally {
+        DOM_ADDSONG.fileInput.value = '';   // allow re-picking same filename
+      }
+    });
+
+    DOM_ADDSONG.fetchBtn?.addEventListener('click', async () => {
+      const url = (DOM_ADDSONG.urlInput.value || '').trim();
+      if (!url) return;
+      setAddSongStatus(t('addSongFetch') + '…');
+      DOM_ADDSONG.fetchBtn.disabled = true;
+      try {
+        const rec = await addUserSongFromUrl(url, { source: 'url' });
+        setAddSongStatus(t('addSongAdded'));
+        DOM_ADDSONG.urlInput.value = '';
+        renderAddSongMyList();
+        renderUserSongButtons();
+        setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
+      } catch (err) {
+        setAddSongStatus(t('addSongFailed', { v: err.message }), true);
+      } finally {
+        DOM_ADDSONG.fetchBtn.disabled = false;
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (DOM_SECEDIT?.modal.classList.contains('visible')) closeSectionEditor();
+        else if (DOM_ADDSONG.modal.classList.contains('visible')) closeAddSongModal();
+      }
+    });
+
+    // Section-editor modal wiring
+    const DOM_SECEDIT = {
+      modal: document.getElementById('sectionEditModal'),
+      help: document.getElementById('sectionEditHelp'),
+      rows: document.getElementById('sectionEditRows'),
+      error: document.getElementById('sectionEditError'),
+      cancelBtn: document.getElementById('sectionEditCancelBtn'),
+      saveBtn: document.getElementById('sectionEditSaveBtn'),
+      closeBtn: document.getElementById('sectionEditCloseBtn'),
+      _totalMeasures: 0,
+      _record: null
+    };
+    DOM_SECEDIT.cancelBtn?.addEventListener('click', closeSectionEditor);
+    DOM_SECEDIT.closeBtn?.addEventListener('click', closeSectionEditor);
+    DOM_SECEDIT.saveBtn?.addEventListener('click', saveSectionEditor);
+    DOM_SECEDIT.modal?.addEventListener('click', (e) => {
+      if (e.target === DOM_SECEDIT.modal) closeSectionEditor();
+    });
+
+    // ========================================
+    // Export / import — back up entire user library to one JSON file
+    //   Blobs are base64-encoded (FileReader.readAsDataURL → strip prefix).
+    //   Designed for "rebuild on a new iPad after a reset" — file size ≈
+    //   sum of .mxl sizes × 1.33 (base64 overhead). 50 songs ≈ ~3 MB.
+    // ========================================
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(blob);
+      });
+    }
+    async function dataUrlToBlob(dataUrl) {
+      const res = await fetch(dataUrl);
+      return res.blob();
+    }
+
+    async function exportUserLibrary() {
+      const all = await userDbAll();
+      if (all.length === 0) {
+        setAddSongStatus(t('myLibrary') + ' — 0', true);
+        return;
+      }
+      const out = { version: 1, exportedAt: new Date().toISOString(), songs: [] };
+      for (const rec of all) {
+        out.songs.push({
+          id: rec.id,
+          title: rec.title,
+          composer: rec.composer,
+          mimeType: rec.mimeType,
+          sectionDefs: rec.sectionDefs,
+          addedAt: rec.addedAt,
+          source: rec.source,
+          mxlDataUrl: await blobToDataUrl(rec.mxlBlob)
+        });
+      }
+      const json = JSON.stringify(out);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'piano-visualizer-library-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
+    async function importUserLibrary(file) {
+      const text = await file.text();
+      let parsed;
+      try { parsed = JSON.parse(text); }
+      catch (e) { throw new Error('Invalid JSON: ' + e.message); }
+      if (!parsed.songs || !Array.isArray(parsed.songs)) throw new Error('Missing songs[]');
+      let added = 0;
+      for (const s of parsed.songs) {
+        if (!s.mxlDataUrl) continue;
+        // Don't clobber if id already exists — assign a fresh id so re-importing
+        // is idempotent and never destroys a song the user might have edited.
+        let id = s.id;
+        if (SONGS[id]) {
+          id = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+        }
+        const blob = await dataUrlToBlob(s.mxlDataUrl);
+        const rec = {
+          id,
+          title: s.title || 'Imported',
+          composer: s.composer || '',
+          mxlBlob: blob,
+          mimeType: s.mimeType || 'application/vnd.recordare.musicxml+zip',
+          sectionDefs: s.sectionDefs || autoSectionDefs(await blob.text(), 1),
+          addedAt: s.addedAt || Date.now(),
+          source: 'import'
+        };
+        await userDbPut(rec);
+        registerUserSong(rec);
+        added++;
+      }
+      return added;
+    }
+
+    document.getElementById('addSongExportBtn')?.addEventListener('click', () => {
+      exportUserLibrary().catch(e => setAddSongStatus(t('addSongFailed', { v: e.message }), true));
+    });
+    document.getElementById('addSongImportBtn')?.addEventListener('click', () => {
+      document.getElementById('addSongImportInput').click();
+    });
+    document.getElementById('addSongImportInput')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const n = await importUserLibrary(file);
+        setAddSongStatus(t('addSongImportDone', { n }));
+        renderAddSongMyList();
+        renderUserSongButtons();
+      } catch (err) {
+        setAddSongStatus(t('addSongFailed', { v: err.message }), true);
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    // Hydrate user-added songs at startup so they appear in the picker without
+    // requiring the kid to open the add-song modal first.
+    loadUserSongs().then((n) => {
+      if (n > 0) {
+        renderUserSongButtons();
+        console.log('[UserSongs] loaded ' + n + ' from IndexedDB');
+      }
+    });
+
+    // Request persistent storage so iOS Safari ITP / Chrome eviction policies
+    // are less likely to wipe IndexedDB during a long pause between practice
+    // sessions. Safari currently returns false, but it doesn't hurt to ask;
+    // Chrome / Edge / Android Chrome honor it for "installed" PWAs.
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().then(granted => {
+        if (granted) console.log('[Storage] persistent storage granted');
+      }).catch(() => {});
+    }
+
+    function refreshBleMidiButton() {
+      if (!DOM.bleMidiBtn) return;
+      const show = !!navigator.bluetooth && !bleMidi.connected;
+      DOM.bleMidiBtn.classList.toggle('visible', show);
+    }
+    DOM.bleMidiBtn?.addEventListener('click', () => { connectBleMidi().finally(refreshBleMidiButton); });
+    refreshBleMidiButton();
+
+    DOM.ptbQuit.addEventListener('click', () => {
+      if (!practice.enabled && !practice._completing) return;
+      practice.enabled = false;
+      stopPracticeAudio();
+      releaseWakeLock();
+      // Clear any keys still held when bailing out of practice mode.
+      midiState.activeNotes.clear();
+      midiState.sustainedNotes.clear();
+      practice.pendingHolds.clear();
+      DOM.practiceHud.classList.remove('visible');
+      DOM.osmdContainer.classList.remove('visible');
+      DOM.songPanel.classList.add('visible');
+      renderSongPanel();
+    });
+
+    DOM.ptbToggleOsmd.addEventListener('click', () => {
+      DOM.osmdContainer.classList.toggle('visible');
+    });
+
+    DOM.resQuit.addEventListener('click', () => {
+      DOM.sectionResult.classList.remove('visible');
+      DOM.practiceHud.classList.remove('visible');
+      DOM.songPanel.classList.add('visible');
+      renderSongPanel();
+    });
+    DOM.resRetry.addEventListener('click', async () => {
+      DOM.sectionResult.classList.remove('visible');
+      await startPracticeSection(practice.sectionIdx);
+    });
+    // Listen-mode → "Try playing" shortcut: same section, but switch to Guided.
+    document.getElementById('resTryPlay')?.addEventListener('click', async () => {
+      DOM.sectionResult.classList.remove('visible');
+      practice.mode = 'guided';
+      await startPracticeSection(practice.sectionIdx);
+    });
+    DOM.resNext.addEventListener('click', async () => {
+      const nextIdx = Math.min(practice.sectionIdx + 1, currentSong.sections.length - 1);
+      const nextId = currentSong.sections[nextIdx].id;
+      if (!songProg().unlockedSections[nextId]) return;
+      practice.sectionIdx = nextIdx;
+      DOM.sectionResult.classList.remove('visible');
+      await startPracticeSection(nextIdx);
+    });
+
+    // Initialize progress on load (so panel works without audio start)
+    practice.progress = loadPracticeProgress();
+
+    // ========================================
+    // Start
+    // ========================================
+    // Toggle the loading state on a start-screen mode button. The button's
+    // i18n markup stays intact so language re-renders keep working and a return
+    // to the title screen always finds the button in its resting state.
+    function setStartButtonLoading(btn, loading) {
+      if (!btn) return;
+      btn.classList.toggle('is-loading', !!loading);
+      btn.disabled = !!loading;
+    }
+
+    DOM.startBtn.addEventListener('click', async () => {
+      // Re-entry from title screen while audio is still alive — just resume.
+      if (state.running) {
+        showRunningUI();
+        state.sessionStartTimeMs = performance.now();
+        return;
+      }
+      if (state.starting) return;
+      state.starting = true;
+      setStartButtonLoading(DOM.startBtn, true);
+      try {
+        await initAudio();
+        showRunningUI();
+        initBgStars();
+        state.running = true;
+        state.lastFrameTimeMs = 0;
+        state.sessionStartTimeMs = performance.now();
+        requestAnimationFrame(loop);
+      } catch (e) {
+        alertAudioInitError(e);
+      } finally {
+        // Unconditional reset — even on success, so a later returnToTitle
+        // shows the button in its resting state instead of a frozen "Starting...".
+        setStartButtonLoading(DOM.startBtn, false);
+        state.starting = false;
+      }
+    });
+
+    // v11: Reset button listener
+    DOM.resetBtn?.addEventListener('click', () => {
+      if (!state.running) return;
+      showSessionSummary();
+    });
+
+    // v11: Summary close button listener
+    DOM.sumClose.addEventListener('click', () => {
+      DOM.sessionSummary.classList.remove('visible');
+      resetSession();
+    });
+
+    // v13: Back-to-title flow.
+    // Audio stays alive (re-init is slow on Safari). Pressing "Free Play" again
+    // from the title just unhides the visualizer.
+    function returnToTitle() {
+      if (practice.enabled || practice._completing) {
+        practice.enabled = false;
+        practice._completing = false;
+        try { stopPracticeAudio(); } catch (e) {}
+        try { releaseWakeLock(); } catch (e) {}
+      }
+      DOM.songPanel.classList.remove('visible');
+      DOM.sessionSummary.classList.remove('visible');
+      DOM.sectionResult.classList.remove('visible');
+      DOM.practiceHud.classList.remove('visible');
+      DOM.osmdContainer.classList.remove('visible');
+      DOM.themeBar.classList.remove('visible');
+      DOM.hud.style.display = 'none';
+      hideIntroHint();
+      DOM.micMeter.classList.remove('visible');
+      stopMidiAutoRescan();
+      // タイトルに戻ったら dismiss 状態もリセット (次回起動で再度ガイド表示)
+      if (state.running) resetSession();
+      DOM.startScreen.style.display = 'flex';
+      document.body.classList.add('title-screen');
+      refreshBleMidiButton();
+    }
+
+    DOM.homeBtn.addEventListener('click', returnToTitle);
+    DOM.sumHome.addEventListener('click', returnToTitle);
+    DOM.resHome.addEventListener('click', returnToTitle);
