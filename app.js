@@ -3337,11 +3337,15 @@
         }
 
         // Parse the raw XML to discover the actual playback order, then rebuild the
-        // note timeline so repeats are unfolded. User-added songs skip this step
-        // (no separate xmlUrl in the .mxl case) and play linearly — most kid-friendly
-        // pieces don't have D.C./voltas anyway, and a wrong unfold is worse than none.
+        // note timeline so repeats are unfolded. User-added songs ALWAYS play
+        // linearly — most kid-friendly pieces don't have D.C./voltas anyway,
+        // a wrong unfold is worse than none, AND user songs now carry an
+        // xmlUrl pointing at a blob: URL whose fetch can hang on Android
+        // Chrome. The previous gate (`!currentSong.xmlUrl`) was rendered
+        // useless by the PR #19 unzip-on-register change which sets xmlUrl
+        // for every user song.
         let order;
-        if (currentSong._isUser && !currentSong.xmlUrl) {
+        if (currentSong._isUser) {
           order = measures.map((_, i) => i);
         } else {
           try {

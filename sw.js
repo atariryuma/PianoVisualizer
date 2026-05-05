@@ -8,8 +8,13 @@
 // the stale piano-visualizer.html monolith.
 // 2026-05-05 (Phase 0b.3): bumped to v3 after wiring @piano/core's IIFE
 // bundle into index.html. v2 clients had no core-bundle.js so they'd 404.
+// 2026-05-05: bumped to v4 + core-bundle moved to network-first. Several
+// post-v3 deploys updated dist-legacy/core-bundle.js but the cache-first
+// branch in fetch() kept serving stale bytes, leaving Android users on a
+// pre-fix build that broke user-added song loading. v4 forces a one-time
+// re-cache on activate; ongoing updates ship via the network-first path.
 
-const CACHE = 'piano-viz-v3';
+const CACHE = 'piano-viz-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -67,6 +72,10 @@ self.addEventListener('fetch', (e) => {
   // HTML shell + CSS + JS — network-first so updates ship immediately when reachable.
   // CSS/JS join the shell here because they're effectively part of the same release
   // unit; cache-first would strand kids on a stale UI after we deploy a fix.
+  // dist-legacy/core-bundle.js is part of the release surface too — the legacy
+  // app.js is hard-coupled to its symbol shape, so a stale bundle paired with
+  // a fresh app.js produces silent runtime errors (e.g. "PianoCore.X is not a
+  // function"). Treat it as shell for the same reason CSS/JS are.
   const isShell =
     url.origin === self.location.origin &&
     (url.pathname === '/' ||
@@ -74,6 +83,7 @@ self.addEventListener('fetch', (e) => {
       url.pathname.endsWith('/piano-visualizer.html') ||
       url.pathname.endsWith('/app.css') ||
       url.pathname.endsWith('/app.js') ||
+      url.pathname.endsWith('/dist-legacy/core-bundle.js') ||
       url.pathname.endsWith('/manifest.json') ||
       req.mode === 'navigate');
 
