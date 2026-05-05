@@ -6,8 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (after 9-module extraction sweep, including the
-gnarly onset gate).
+Last refreshed: **2026-05-05** (after 10-module extraction sweep, including the
+IndexedDB user-songs layer).
 
 ---
 
@@ -24,8 +24,9 @@ gnarly onset gate).
 | 7   | `audio/onset.ts`           | 11    | `packages/core/src/audio/onset.ts`           |
 | 8   | `library/musicxml-meta.ts` | 4     | `packages/core/src/library/musicxml-meta.ts` |
 | 9   | `library/auto-section.ts`  | 11    | `packages/core/src/library/auto-section.ts`  |
+| 10  | `library/user-songs.ts`    | 15    | `packages/core/src/library/user-songs.ts`    |
 
-**Status: 102/102 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 117/117 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
