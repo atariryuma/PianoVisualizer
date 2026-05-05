@@ -89,6 +89,10 @@ export type { SpectrumDrawOptions } from './render/spectrum';
 export { drawCenterGlow } from './render/center-glow';
 export type { CenterGlowOptions } from './render/center-glow';
 
+// === Render: stage tier table + lookup ===
+export { STAGES, stageForFlow, stageLabel, classifyStageTransition } from './render/stage';
+export type { Stage, StageTransition } from './render/stage';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

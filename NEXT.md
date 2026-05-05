@@ -6,10 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (25 modules extracted; engine, 3D particles,
-encouragement effects, 88-key keyboard, practice lane, background composites,
-theme tables, frequency spectrum, and center-glow now in core. Remaining render
-is the stage banner; then state machines (flow / encouragement / quests).)
+Last refreshed: **2026-05-05** (26 modules extracted; the entire render layer is
+now in core (engine, 3D particles, encouragement effects, 88-key keyboard,
+practice lane, background, theme, spectrum, center-glow, stage tiers). Remaining
+work is state machines (flow / encouragement / quests) and a few audio helpers.)
 
 ---
 
@@ -42,30 +42,16 @@ is the stage banner; then state machines (flow / encouragement / quests).)
 | 23  | `render/theme.ts`             | 17    | `packages/core/src/render/theme.ts`             |
 | 24  | `render/spectrum.ts`          | 12    | `packages/core/src/render/spectrum.ts`          |
 | 25  | `render/center-glow.ts`       | 9     | `packages/core/src/render/center-glow.ts`       |
+| 26  | `render/stage.ts`             | 19    | `packages/core/src/render/stage.ts`             |
 
-**Status: 413/413 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 432/432 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/stage.ts`
-
-**What**: Move stage tier banner + transitions (Awakening → Blooming → Aurora →
-Cosmos → Radiance → Legend). Animates a top-of-screen banner when the flow tier
-changes.
-
-**Acceptance**:
-
-- [ ] `STAGES` exported as a readonly tuple of `{ id, nameKey, threshold }`
-- [ ] `stageForFlow(flow)` returns the active stage (pure)
-- [ ] `drawStageBanner(ctx, opts)` paints the transition flash + label
-- [ ] Tests: tier mapping, threshold edges, banner visibility window
-
-**Est**: 140 + 70 tests.
-
-## 2. Extract `state/flow-meter.ts`
+## 1. Extract `state/flow-meter.ts`
 
 **What**: Move the flow + combo state machine — onset adds, silence decay, combo
 window expiry, best-combo tracking. Currently scattered across the loop's "good
@@ -80,7 +66,7 @@ note" branch in app.js.
 
 **Est**: 220 + 130 tests.
 
-## 3. Extract `state/encouragement.ts`
+## 2. Extract `state/encouragement.ts`
 
 **What**: Move the tier escalator that picks the right Nice/Great/Awesome
 message at each combo milestone, and dispatches the matching effect.
@@ -96,14 +82,31 @@ message at each combo milestone, and dispatches the matching effect.
 
 **Est**: 160 + 90 tests.
 
+## 3. Extract `state/quest-tracker.ts`
+
+**What**: Move the v10 magic-quests engine — given current QUESTS table +
+runtime state slice, returns active quest + completion progress + reward events
+on transition.
+
+**Acceptance**:
+
+- [ ] `(state, questsState) → { questsState, completedThisTick: QuestId[] }`
+      reducer
+- [ ] No DOM, no toast emission (caller handles UI)
+- [ ] QUESTS table injected (already in core/config.ts)
+- [ ] Tests: condition evaluation, monotonic completion, no double-completion,
+      multi-quest completion in single tick
+
+**Est**: 180 + 100 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `state/quest-tracker.ts` — quest progress + completion accounting
 - `audio/chord-window.ts` — chord aggregation + progression detection
 - `state/quality-history.ts` — IOI / dynamics ring buffer feeding quality.ts
 - `render/midi-beams.ts` — sustained-note beam overlay
+- `state/streak.ts` — daily-streak persistence + calendar formatting
 
 ---
 
