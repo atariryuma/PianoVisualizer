@@ -59,8 +59,14 @@ export {
 export type { EffectDeps, EffectGameState, EffectName } from './render/effects';
 
 // === Render: virtual MIDI keyboard (88-key) ===
-export { KB_WHITE, KB_BLACK, KB_BLACK_LEFT_WHITE_IDX, drawMidiKeyboard } from './render/keyboard';
-export type { KeyboardMidiView, KeyboardDrawOptions } from './render/keyboard';
+export {
+  KB_WHITE,
+  KB_BLACK,
+  KB_BLACK_LEFT_WHITE_IDX,
+  drawMidiKeyboard,
+  keyboardKeyCenterX,
+} from './render/keyboard';
+export type { KeyboardMidiView, KeyboardDrawOptions, KeyboardHintNote } from './render/keyboard';
 
 // === Render: practice lane (falling notes + hit window + count-in) ===
 export { drawPracticeLane } from './render/lane';

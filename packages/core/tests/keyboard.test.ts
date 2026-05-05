@@ -4,8 +4,10 @@ import {
   KB_BLACK,
   KB_BLACK_LEFT_WHITE_IDX,
   drawMidiKeyboard,
+  keyboardKeyCenterX,
   type KeyboardMidiView,
   type KeyboardDrawOptions,
+  type KeyboardHintNote,
 } from '../src/render/keyboard';
 import { makeCanvasStub } from './_fixtures/canvas-stub';
 
@@ -158,5 +160,204 @@ describe('drawMidiKeyboard', () => {
     const bgFill = stub.calls.find((c) => c.method === 'fillRect')!;
     const [_x, y] = bgFill.args as [number, number, number, number];
     expect(y).toBe(600 - 50 - 4);
+  });
+
+  it('null hintNotes leaves the existing draw counts unchanged', () => {
+    opts.hintNotes = null;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(stub.countCalls('fillRect')).toBe(89);
+    expect(stub.countCalls('strokeRect')).toBe(88);
+    expect(stub.countCalls('fill')).toBe(0);
+    expect(stub.countCalls('beginPath')).toBe(0);
+  });
+});
+
+describe('drawMidiKeyboard with hint notes', () => {
+  let midi: KeyboardMidiView;
+  let opts: KeyboardDrawOptions;
+
+  beforeEach(() => {
+    midi = { activeNotes: new Map(), sustainedNotes: new Set(), sustainOn: false };
+    opts = {
+      screenW: 800,
+      screenH: 600,
+      kbHeight: 50,
+      kbSafeBottom: 4,
+      noteThemeColor: () => '#deadbeef',
+      sustainLabel: 'SUSTAIN',
+    };
+  });
+
+  const fillStylesOf = (stub: ReturnType<typeof makeCanvasStub>) =>
+    stub.calls.filter((c) => c.method === 'set fillStyle').map((c) => c.args[0] as string);
+
+  const strokeStylesOf = (stub: ReturnType<typeof makeCanvasStub>) =>
+    stub.calls.filter((c) => c.method === 'set strokeStyle').map((c) => c.args[0] as string);
+
+  it('LH primary hint paints a blue tint overlay on the key', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'L', primary: true }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    const fills = fillStylesOf(stub);
+    expect(fills.some((s) => s.includes('120, 180, 255'))).toBe(true);
+    expect(fills.some((s) => s.includes('255, 150, 200'))).toBe(false);
+  });
+
+  it('RH primary hint paints a pink tint overlay', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[64, { hand: 'R', primary: true }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    const fills = fillStylesOf(stub);
+    expect(fills.some((s) => s.includes('255, 150, 200'))).toBe(true);
+    expect(fills.some((s) => s.includes('120, 180, 255'))).toBe(false);
+  });
+
+  it('primary hint draws a ▼ marker (one fill / one closed path)', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'L', primary: true }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(stub.countCalls('beginPath')).toBe(1);
+    expect(stub.countCalls('moveTo')).toBe(1);
+    expect(stub.countCalls('lineTo')).toBe(2);
+    expect(stub.countCalls('closePath')).toBe(1);
+    expect(stub.countCalls('fill')).toBe(1);
+  });
+
+  it('primary hint also strokes a thicker hint outline (lineWidth 2.5)', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'L', primary: true }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    const lineWidths = stub.calls
+      .filter((c) => c.method === 'set lineWidth')
+      .map((c) => c.args[0] as number);
+    expect(lineWidths).toContain(2.5);
+  });
+
+  it('chord-mate hint paints a tint overlay but no ▼ marker', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[64, { hand: 'L', primary: false }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    // 1 bg + 52 white + 36 black + 1 hint overlay = 90 fillRect calls
+    expect(stub.countCalls('fillRect')).toBe(90);
+    expect(stub.countCalls('fill')).toBe(0);
+    expect(stub.countCalls('beginPath')).toBe(0);
+  });
+
+  it('active key with a hint: hint is suppressed (real press wins)', () => {
+    midi.activeNotes.set(60, { synColor: null });
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'L', primary: true }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(fillStylesOf(stub).some((s) => s.includes('120, 180, 255'))).toBe(false);
+    expect(stub.countCalls('fill')).toBe(0);
+  });
+
+  it('sustained key with a hint: hint is suppressed', () => {
+    midi.sustainedNotes.add(60);
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'R', primary: true }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(fillStylesOf(stub).some((s) => s.includes('255, 150, 200'))).toBe(false);
+    expect(stub.countCalls('fill')).toBe(0);
+  });
+
+  it('breathing alpha changes with nowMs', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'L', primary: true }]]);
+
+    // sin(0) = 0  → breathe=0.5  → primary alpha = 0.4 + 0.3*0.5 = 0.55
+    opts.nowMs = 0;
+    const stub1 = makeCanvasStub();
+    drawMidiKeyboard(stub1.ctx, midi, opts);
+    const tint1 = fillStylesOf(stub1).find((s) => s.includes('120, 180, 255'));
+
+    // Quarter cycle of 1.4 Hz ≈ 178.57 ms → sin(π/2) = 1 → breathe=1 → alpha = 0.7
+    opts.nowMs = 1000 / (1.4 * 4);
+    const stub2 = makeCanvasStub();
+    drawMidiKeyboard(stub2.ctx, midi, opts);
+    const tint2 = fillStylesOf(stub2).find((s) => s.includes('120, 180, 255'));
+
+    expect(tint1).toBeDefined();
+    expect(tint2).toBeDefined();
+    expect(tint1).not.toEqual(tint2);
+  });
+
+  it('multiple hints share a single breathing phase (one cohesive pulse)', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([
+      [60, { hand: 'L', primary: true }],
+      [64, { hand: 'L', primary: false }],
+      [67, { hand: 'L', primary: false }],
+    ]);
+    opts.nowMs = 100;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    // Two chord mates at the same nowMs and same hand should produce the
+    // exact same rgba string — phase is shared.
+    const mateFills = fillStylesOf(stub).filter(
+      (s) => s.includes('120, 180, 255') && !s.includes('0.95') // exclude stroke style
+    );
+    // Find the two mate-tint fills (alpha ~0.22..0.34, distinct from primary 0.4..0.7)
+    const mateAlphas = mateFills.filter((s) => /0\.[23]\d{2}\)$/.test(s));
+    expect(mateAlphas.length).toBeGreaterThanOrEqual(2);
+    // All mate-alphas should be identical strings.
+    const unique = new Set(mateAlphas);
+    expect(unique.size).toBe(1);
+  });
+
+  it('idle hint outline differs from default outline', () => {
+    opts.hintNotes = new Map<number, KeyboardHintNote>([[60, { hand: 'L', primary: false }]]);
+    opts.nowMs = 0;
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    const strokes = strokeStylesOf(stub);
+    expect(strokes.some((s) => s.includes('120, 180, 255'))).toBe(true);
+  });
+});
+
+describe('keyboardKeyCenterX', () => {
+  // Layout reference: kbX = 8, kbW = screenW - 16, wKeyW = kbW / 52.
+  it('returns center for white keys (middle C = 60)', () => {
+    const screenW = 800;
+    const kbX = 8;
+    const wKeyW = (screenW - 16) / 52;
+    // C4 is the 24th white key (0-indexed: 23) — A0,B0,C1..B1,C2..B2,C3..B3,C4.
+    const expected = kbX + (23 + 0.5) * wKeyW;
+    expect(keyboardKeyCenterX(60, screenW)).toBeCloseTo(expected, 6);
+  });
+
+  it('returns center for black keys (C#4 = 61, between C4 and D4)', () => {
+    const screenW = 800;
+    const kbX = 8;
+    const wKeyW = (screenW - 16) / 52;
+    const expected = kbX + (23 + 1) * wKeyW;
+    expect(keyboardKeyCenterX(61, screenW)).toBeCloseTo(expected, 6);
+  });
+
+  it('returns NaN for midi outside the 88-key range', () => {
+    expect(Number.isNaN(keyboardKeyCenterX(20, 800))).toBe(true);
+    expect(Number.isNaN(keyboardKeyCenterX(109, 800))).toBe(true);
+  });
+
+  it('matches the actual draw position of A0 (lowest key)', () => {
+    // A0 = midi 21 = white index 0. center = kbX + 0.5 * wKeyW.
+    const screenW = 800;
+    const kbX = 8;
+    const wKeyW = (screenW - 16) / 52;
+    expect(keyboardKeyCenterX(21, screenW)).toBeCloseTo(kbX + 0.5 * wKeyW, 6);
+  });
+
+  it('matches the actual draw position of C8 (highest key)', () => {
+    // C8 = midi 108 = white index 51. center = kbX + 51.5 * wKeyW.
+    const screenW = 800;
+    const kbX = 8;
+    const wKeyW = (screenW - 16) / 52;
+    expect(keyboardKeyCenterX(108, screenW)).toBeCloseTo(kbX + 51.5 * wKeyW, 6);
   });
 });

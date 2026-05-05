@@ -111,6 +111,7 @@ var PianoCore = (() => {
     initPracticeState: () => initPracticeState,
     initQuestTrackerState: () => initQuestTrackerState,
     initSessionConfidenceState: () => initSessionConfidenceState,
+    keyboardKeyCenterX: () => keyboardKeyCenterX,
     makeUserSong: () => makeUserSong,
     matchNoteOnset: () => matchNoteOnset,
     noteNamesFor: () => noteNamesFor,
@@ -617,12 +618,39 @@ var PianoCore = (() => {
     }
     return out;
   })();
+  var WHITE_KEY_IDX = (() => {
+    const m = /* @__PURE__ */ new Map();
+    for (let i = 0; i < KB_WHITE.length; i++) m.set(KB_WHITE[i], i);
+    return m;
+  })();
+  var KB_PADDING = 8;
+  var HINT_TINT_LH = "120, 180, 255";
+  var HINT_TINT_RH = "255, 150, 200";
+  var HINT_STROKE_LH_PRIMARY = `rgba(${HINT_TINT_LH}, 0.95)`;
+  var HINT_STROKE_LH_MATE = `rgba(${HINT_TINT_LH}, 0.55)`;
+  var HINT_STROKE_RH_PRIMARY = `rgba(${HINT_TINT_RH}, 0.95)`;
+  var HINT_STROKE_RH_MATE = `rgba(${HINT_TINT_RH}, 0.55)`;
+  var HINT_BREATHING_HZ = 1.4;
+  function keyboardKeyCenterX(midi, screenW) {
+    const kbW = screenW - KB_PADDING * 2;
+    const wKeyW = kbW / KB_WHITE.length;
+    const wi = WHITE_KEY_IDX.get(midi);
+    if (wi !== void 0) return KB_PADDING + (wi + 0.5) * wKeyW;
+    const lwi = KB_BLACK_LEFT_WHITE_IDX[midi];
+    if (lwi !== void 0) return KB_PADDING + (lwi + 1) * wKeyW;
+    return NaN;
+  }
+  function hintTintFor(hand) {
+    return hand === "L" ? HINT_TINT_LH : HINT_TINT_RH;
+  }
   function drawMidiKeyboard(ctx, midi, opts) {
     const kbH = opts.kbHeight;
     const kbY = opts.screenH - kbH - opts.kbSafeBottom;
-    const kbX = 8;
-    const kbW = opts.screenW - 16;
+    const kbX = KB_PADDING;
+    const kbW = opts.screenW - KB_PADDING * 2;
     const wKeyW = kbW / KB_WHITE.length;
+    const hints = opts.hintNotes && opts.hintNotes.size > 0 ? opts.hintNotes : null;
+    const breathe = hints ? 0.5 + 0.5 * Math.sin((opts.nowMs ?? 0) / 1e3 * Math.PI * 2 * HINT_BREATHING_HZ) : 0;
     ctx.save();
     ctx.fillStyle = "rgba(20, 20, 35, 0.55)";
     ctx.fillRect(kbX, kbY, kbW, kbH);
@@ -630,18 +658,33 @@ var PianoCore = (() => {
       const note = midi.activeNotes.get(m);
       const lit = !!note;
       const sustained = midi.sustainedNotes.has(m);
+      const hint = lit || sustained ? null : hints?.get(m) ?? null;
       if (lit || sustained) {
         ctx.fillStyle = note && note.synColor || opts.noteThemeColor(m);
       } else {
         ctx.fillStyle = restingFill;
       }
       ctx.fillRect(x, kbY, w, h);
+      if (hint) {
+        const tint = hintTintFor(hint.hand);
+        const baseA = hint.primary ? 0.4 : 0.22;
+        const swingA = hint.primary ? 0.3 : 0.12;
+        const a = baseA + swingA * breathe;
+        ctx.fillStyle = `rgba(${tint}, ${a.toFixed(3)})`;
+        ctx.fillRect(x, kbY, w, h);
+      }
       if (lit) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
       } else if (sustained) {
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      } else if (hint && hint.primary) {
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = hint.hand === "L" ? HINT_STROKE_LH_PRIMARY : HINT_STROKE_RH_PRIMARY;
+      } else if (hint) {
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = hint.hand === "L" ? HINT_STROKE_LH_MATE : HINT_STROKE_RH_MATE;
       } else {
         ctx.lineWidth = 1;
         ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
@@ -657,6 +700,25 @@ var PianoCore = (() => {
       const wi = KB_BLACK_LEFT_WHITE_IDX[m];
       const x = kbX + (wi + 1) * wKeyW - bKeyW / 2;
       paintKey(m, x, bKeyW, bKeyH, "rgba(15, 15, 25, 0.95)");
+    }
+    if (hints) {
+      const sz = Math.max(4, Math.min(7, wKeyW * 0.45));
+      const tipY = kbY - 3;
+      const baseY = tipY - sz * 1.2;
+      const a = (0.7 + 0.25 * breathe).toFixed(3);
+      for (const [m, hint] of hints) {
+        if (!hint.primary) continue;
+        if (midi.activeNotes.has(m) || midi.sustainedNotes.has(m)) continue;
+        const wi = WHITE_KEY_IDX.get(m);
+        const cx = wi !== void 0 ? kbX + (wi + 0.5) * wKeyW : kbX + (KB_BLACK_LEFT_WHITE_IDX[m] + 1) * wKeyW;
+        ctx.fillStyle = `rgba(${hintTintFor(hint.hand)}, ${a})`;
+        ctx.beginPath();
+        ctx.moveTo(cx - sz, baseY);
+        ctx.lineTo(cx + sz, baseY);
+        ctx.lineTo(cx, tipY);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
     if (midi.sustainOn) {
       ctx.fillStyle = "rgba(255, 200, 100, 0.85)";
