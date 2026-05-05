@@ -1226,19 +1226,11 @@
     let laneLabelL = t('laneLeft');
     let laneLabelR = t('laneRight');
 
-    // ========================================
-    // 3D Projection Helpers
-    // ========================================
-    const FOCAL_LENGTH = 800;
-    const NEAR_CLIPPING = -100;
-
-    function project3D(x, y, z, size) {
-      if (z < NEAR_CLIPPING) return null; // Behind camera
-      const scale = FOCAL_LENGTH / (FOCAL_LENGTH + z);
-      const px = W / 2 + x * scale;
-      const py = H / 2 + y * scale;
-      return { x: px, y: py, scale: scale, size: size * scale, visible: true };
-    }
+    // 3D projection — Phase 0b.3: delegated to @piano/core.
+    // Adapter passes the closure W/H so call sites stay positional.
+    const FOCAL_LENGTH = PianoCore.FOCAL_LENGTH;
+    const NEAR_CLIPPING = PianoCore.NEAR_CLIPPING;
+    const project3D = (x, y, z, size) => PianoCore.project3D(x, y, z, size, { screenW: W, screenH: H });
 
     // ========================================
     // Particle System (3D)
@@ -1313,32 +1305,9 @@
       }
     }
 
-    function drawStar(c, cx, cy, sp, oR, iR, col, useShadow) {
-      c.beginPath();
-      for (let i = 0; i < sp * 2; i++) {
-        const r = i % 2 === 0 ? oR : iR;
-        const a = (Math.PI * i) / sp - Math.PI / 2;
-        if (i === 0) c.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
-        else c.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
-      }
-      c.closePath(); c.fillStyle = col;
-      if (useShadow) { c.shadowColor = col; c.shadowBlur = oR * 1.5; }
-      c.fill();
-    }
-
-    function drawFlower(c, cx, cy, s, col, a, useShadow) {
-      c.fillStyle = col;
-      if (useShadow) { c.shadowColor = col; c.shadowBlur = s; }
-      for (let i = 0; i < 5; i++) {
-        const angle = (Math.PI * 2 * i) / 5;
-        c.beginPath();
-        c.ellipse(cx + Math.cos(angle) * s * 0.5, cy + Math.sin(angle) * s * 0.5, s * 0.5, s * 0.25, angle, 0, Math.PI * 2);
-        c.fill();
-      }
-      c.shadowBlur = 0;
-      c.beginPath(); c.arc(cx, cy, s * 0.25, 0, Math.PI * 2);
-      c.fillStyle = 'rgba(255,255,200,' + a + ')'; c.fill();
-    }
+    // drawStar / drawFlower — Phase 0b.3: drop-in from @piano/core.
+    const drawStar = PianoCore.drawStar;
+    const drawFlower = PianoCore.drawFlower;
 
     // Device performance tier — Phase 0b.3: delegated to @piano/core.
     // detectPerfTier() applies the same Apple-Silicon/iPad/cores/mem heuristic
@@ -1357,12 +1326,8 @@
     // Sentinel for state.activeQuestId when every quest in CONFIG.QUESTS is cleared.
     const QUEST_ALL_DONE = 'ALL_DONE';
 
-    function getNoteColor(noteName) {
-      if (!noteName) return null;
-      // Remove octave if present (C4 -> C)
-      const name = noteName.replace(/[0-9]/g, '');
-      return CONFIG.NOTE_COLORS[name] || null;
-    }
+    // getNoteColor — Phase 0b.3: adapter passes legacy CONFIG.NOTE_COLORS.
+    const getNoteColor = (noteName) => PianoCore.getNoteColor(noteName, CONFIG.NOTE_COLORS);
 
     function spawnBurst(screenX, screenY, count, energy, overrideColor) {
       // Convert screen coords to logical 3D coords (assuming z=0 plane)
