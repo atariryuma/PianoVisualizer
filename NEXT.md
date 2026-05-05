@@ -6,10 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (23 modules extracted; engine + 3D particles +
-encouragement effects + 88-key keyboard + practice lane + background composites
-
-- theme tables now in core. Remaining render is spectrum bars + center-glow.)
+Last refreshed: **2026-05-05** (23 modules extracted; engine, 3D particles,
+encouragement effects, 88-key keyboard, practice lane, background composites,
+and theme tables now in core. Remaining render is spectrum bars and
+center-glow.)
 
 ---
 
