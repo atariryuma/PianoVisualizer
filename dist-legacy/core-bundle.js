@@ -42,10 +42,12 @@ var PianoCore = (() => {
     PERF_PROFILES: () => PERF_PROFILES,
     Particle: () => Particle,
     QUESTS: () => QUESTS,
+    RESULT_TIER_KEYS: () => RESULT_TIER_KEYS,
     Ripple: () => Ripple,
     SESSION_RING_CAP: () => SESSION_RING_CAP,
     STAGES: () => STAGES,
     STAR_TIERS: () => STAR_TIERS,
+    TEMPO_TIERS: () => TEMPO_TIERS,
     THEMES: () => THEMES,
     T_STRINGS: () => T_STRINGS,
     USER_DB_NAME: () => USER_DB_NAME,
@@ -74,6 +76,7 @@ var PianoCore = (() => {
     computeSpectralFlatness: () => computeSpectralFlatness,
     computeStabilityScore: () => computeStabilityScore,
     computeStars: () => computeStars,
+    computeUnlocks: () => computeUnlocks,
     createAudioContext: () => createAudioContext,
     createT: () => createT,
     deriveSessionUIHint: () => deriveSessionUIHint,
@@ -129,6 +132,7 @@ var PianoCore = (() => {
     resetPracticeState: () => resetPracticeState,
     resetQuestTrackerState: () => resetQuestTrackerState,
     resetSessionConfidence: () => resetSessionConfidence,
+    resolveResultTier: () => resolveResultTier,
     smoothQualityScore: () => smoothQualityScore,
     spawnBurst: () => spawnBurst,
     spawnStream: () => spawnStream,
@@ -2398,6 +2402,45 @@ var PianoCore = (() => {
       (t) => accPct >= t.acc && timingPct >= t.timing && (durPct == null || durPct >= t.dur)
     );
     return tier ? tier.stars : 0;
+  }
+  var RESULT_TIER_KEYS = [
+    { titleKey: "tier0Title", msgKey: "tier0Msg" },
+    { titleKey: "tier1Title", msgKey: "tier1Msg" },
+    { titleKey: "tier2Title", msgKey: "tier2Msg" },
+    { titleKey: "tier3Title", msgKey: "tier3Msg" }
+  ];
+  function resolveResultTier(stars) {
+    const idx = Math.max(0, Math.min(RESULT_TIER_KEYS.length - 1, stars | 0));
+    return RESULT_TIER_KEYS[idx];
+  }
+  var TEMPO_TIERS = [60, 75, 90, 100];
+  var DEFAULT_STREAK_MILESTONES = [3, 7];
+  function computeUnlocks(input) {
+    let unlockedTempo = null;
+    let unlockedSecKey = null;
+    let streakDays = null;
+    if (input.stars >= 2) {
+      const idx = TEMPO_TIERS.indexOf(input.tempoPct);
+      if (idx >= 0 && idx < TEMPO_TIERS.length - 1) {
+        const next = TEMPO_TIERS[idx + 1];
+        if (!input.unlockedTempos[next]) unlockedTempo = next;
+      }
+    }
+    if (input.stars >= 1) {
+      const sIdx = input.sectionIds.indexOf(input.sectionId);
+      if (sIdx >= 0 && sIdx < input.sectionIds.length - 1) {
+        const next = input.sectionIds[sIdx + 1];
+        if (!input.unlockedSections[next]) {
+          const nameKey = input.sectionNameKeys[next];
+          if (nameKey) unlockedSecKey = nameKey;
+        }
+      }
+    }
+    const milestones = input.streakMilestones ?? DEFAULT_STREAK_MILESTONES;
+    if (milestones.indexOf(input.streakCount) !== -1) {
+      streakDays = input.streakCount;
+    }
+    return { unlockedTempo, unlockedSecKey, streakDays };
   }
   function practiceElapsedMs(s, realElapsed, countInMs) {
     if (s.mode === "guided") {
