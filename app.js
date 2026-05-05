@@ -1739,87 +1739,48 @@
     // Quality Scoring — simplified for kids
     // ========================================
 
-    function clamp01(v) {
-      return Math.max(0, Math.min(1, v));
-    }
-
-    function computeRhythmScore() {
-      const ioi = state.ioiHistory;
-      if (ioi.length < 3) return 0.5;
-      const cv = coefficientOfVariation(ioi);
-      if (cv <= CONFIG.IOI_IDEAL_CV) return 0.85 + 0.15 * (1 - cv / CONFIG.IOI_IDEAL_CV);
-      if (cv <= CONFIG.IOI_MAX_CV) {
-        const t = (cv - CONFIG.IOI_IDEAL_CV) / (CONFIG.IOI_MAX_CV - CONFIG.IOI_IDEAL_CV);
-        return 0.85 - 0.45 * t;
-      }
-      return 0.4;
-    }
-
-    function computeDynamicsScore() {
-      const amps = state.amplitudeHistory;
-      if (amps.length < 3) return 0.5;
-      const cv = coefficientOfVariation(amps);
-      if (cv >= CONFIG.DYNAMICS_IDEAL_CV_MIN && cv <= CONFIG.DYNAMICS_IDEAL_CV_MAX) {
-        return 0.8 + 0.2 * (1 - Math.abs(cv - 0.15) / 0.45);
-      } else if (cv < CONFIG.DYNAMICS_IDEAL_CV_MIN) {
-        return 0.6;
-      } else {
-        return Math.max(0.3, 0.8 - (cv - CONFIG.DYNAMICS_IDEAL_CV_MAX) * 0.5);
-      }
-    }
-
-    function computeStabilityScore() {
-      // Balance short-term pitch consistency with session-level confidence.
-      const s = state.pitchStability * 0.75 + state.sessionConfidence * 0.25;
-      return clamp01(s);
-    }
+    // Quality scoring + coaching — Phase 0b.3: delegated to @piano/core.
+    // Adapters bind legacy state.* / CONFIG.* to core's pure scoring API.
+    const clamp01 = PianoCore.clamp01;
+    const _qualityOpts = () => ({
+      ioiIdealCV: CONFIG.IOI_IDEAL_CV,
+      ioiMaxCV: CONFIG.IOI_MAX_CV,
+      dynamicsIdealCVMin: CONFIG.DYNAMICS_IDEAL_CV_MIN,
+      dynamicsIdealCVMax: CONFIG.DYNAMICS_IDEAL_CV_MAX,
+      weights: {
+        rhythm: CONFIG.SCORE_RHYTHM_WEIGHT,
+        dynamics: CONFIG.SCORE_DYNAMICS_WEIGHT,
+        stability: CONFIG.SCORE_STABILITY_WEIGHT,
+      },
+      smoothing: CONFIG.SCORE_SMOOTHING,
+      growthWindowMs: CONFIG.GROWTH_WINDOW_MS,
+    });
+    const computeRhythmScore = () => PianoCore.computeRhythmScore(state.ioiHistory, _qualityOpts());
+    const computeDynamicsScore = () =>
+      PianoCore.computeDynamicsScore(state.amplitudeHistory, _qualityOpts());
+    const computeStabilityScore = () =>
+      PianoCore.computeStabilityScore(state.pitchStability, state.sessionConfidence);
 
     function updateGrowthTrend(timeMs) {
-      state.qualityHistory.push({ timeMs, score: state.displayedQualityScore });
-      const windowStart = timeMs - CONFIG.GROWTH_WINDOW_MS;
-      while (state.qualityHistory.length > 0 && state.qualityHistory[0].timeMs < windowStart) {
-        state.qualityHistory.shift();
-      }
-      if (state.qualityHistory.length < 2) {
-        state.growthScore = 0;
-        return;
-      }
-      const oldest = state.qualityHistory[0].score;
-      const newest = state.qualityHistory[state.qualityHistory.length - 1].score;
-      state.growthScore = newest - oldest;
+      const result = PianoCore.updateGrowthTrend(
+        state.qualityHistory,
+        timeMs,
+        state.displayedQualityScore,
+        _qualityOpts()
+      );
+      state.qualityHistory = result.history;
+      state.growthScore = result.growthScore;
     }
 
     function buildCoachingFeedback() {
-      const axes = [
-        { key: 'rhythm', score: state.rhythmScore },
-        { key: 'dynamics', score: state.dynamicsScore },
-        { key: 'stability', score: state.stabilityScore }
-      ];
-      axes.sort((a, b) => b.score - a.score);
-
-      let goodKey = 'strNotesClear';
-      if (state.growthScore > 0.05) {
-        goodKey = 'strGrowing';
-      } else if (axes[0].key === 'rhythm' && axes[0].score > 0.7) {
-        goodKey = 'strRhythmSteady';
-      } else if (axes[0].key === 'dynamics' && axes[0].score > 0.7) {
-        goodKey = 'strDynamicsGood';
-      } else if (axes[0].key === 'stability' && axes[0].score > 0.7) {
-        goodKey = 'strPitchStable';
-      }
-
-      let nextKey = 'nxtBreathe';
-      const weakest = axes[axes.length - 1];
-      if (weakest.key === 'rhythm') {
-        nextKey = 'nxtOneHand';
-      } else if (weakest.key === 'dynamics') {
-        nextKey = 'nxtSoftLoud';
-      } else if (weakest.key === 'stability') {
-        nextKey = 'nxtHoldNotes';
-      }
-
-      state.feedbackGood = t('strengthFmt', { v: t(goodKey) });
-      state.feedbackNext = t('nextStepFmt', { v: t(nextKey) });
+      const fb = PianoCore.buildCoachingFeedback({
+        rhythm: state.rhythmScore,
+        dynamics: state.dynamicsScore,
+        stability: state.stabilityScore,
+        growthScore: state.growthScore,
+      });
+      state.feedbackGood = t('strengthFmt', { v: t(fb.strengthKey) });
+      state.feedbackNext = t('nextStepFmt', { v: t(fb.nextKey) });
     }
 
     function updateQualityScores(timeMs) {
