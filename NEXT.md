@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (27 modules extracted; render layer fully in
-core, plus the flow + combo state machine. Remaining work is the encouragement
-escalator, the quest tracker, and a few audio helpers.)
+Last refreshed: **2026-05-05** (28 modules extracted; render layer fully in
+core, plus flow-meter and the encouragement tier escalator. Remaining work is
+the quest tracker, IOI/dynamics history, and a few audio helpers.)
 
 ---
 
@@ -43,31 +43,16 @@ escalator, the quest tracker, and a few audio helpers.)
 | 25  | `render/center-glow.ts`       | 9     | `packages/core/src/render/center-glow.ts`       |
 | 26  | `render/stage.ts`             | 19    | `packages/core/src/render/stage.ts`             |
 | 27  | `state/flow-meter.ts`         | 27    | `packages/core/src/state/flow-meter.ts`         |
+| 28  | `state/encouragement.ts`      | 22    | `packages/core/src/state/encouragement.ts`      |
 
-**Status: 459/459 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 481/481 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/encouragement.ts`
-
-**What**: Move the tier escalator that picks the right Nice/Great/Awesome
-message at each combo milestone, and dispatches the matching effect.
-
-**Acceptance**:
-
-- [ ] `pickTier(combo, opts)` returns the active tier or null
-- [ ] `applyEncouragement(state, combo, opts)` returns
-      `{ state, events: ['effect:starShower'], tier: 'great' }`
-- [ ] Tier table + thresholds injected via opts (no CONFIG dep)
-- [ ] Tests: threshold transitions, no-tier below first threshold, effect-name
-      mapping, debounce within same tier
-
-**Est**: 160 + 90 tests.
-
-## 2. Extract `state/quest-tracker.ts`
+## 1. Extract `state/quest-tracker.ts`
 
 **What**: Move the v10 magic-quests engine — given current QUESTS table +
 runtime state slice, returns active quest + completion progress + reward events
@@ -84,7 +69,7 @@ on transition.
 
 **Est**: 180 + 100 tests.
 
-## 3. Extract `state/quality-history.ts`
+## 2. Extract `state/quality-history.ts`
 
 **What**: Move the IOI + dynamics ring buffer that feeds `state/quality.ts`.
 Currently lives as `noteOnsetTimes` + `noteVelocities` arrays directly in
@@ -99,6 +84,20 @@ app.js.
 
 **Est**: 130 + 80 tests.
 
+## 3. Extract `state/pitch-stability.ts`
+
+**What**: Move the per-onset semitone-deviation tracker. Currently mixed in with
+the onset branch in app.js — when a clean onset arrives, compares its detected
+pitch to the previous and grows or decays a 0..1 stability score.
+
+**Acceptance**:
+
+- [ ] `applyOnsetPitch(state, pitchHz, dtSec, opts)` reducer
+- [ ] `decayStability(state, dtSec, opts)` for active-but-not-onset frames
+- [ ] Tests: same-pitch growth, semitone-jump decay, idle decay rate
+
+**Est**: 100 + 50 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
@@ -106,7 +105,7 @@ app.js.
 - `audio/chord-window.ts` — chord aggregation + progression detection
 - `render/midi-beams.ts` — sustained-note beam overlay
 - `state/streak.ts` — daily-streak persistence + calendar formatting
-- `state/pitch-stability.ts` — semitone-deviation tracker
+- `state/quest-cooldown.ts` — toast spacing + completion notification queue
 
 ---
 

@@ -97,6 +97,22 @@ export type { Stage, StageTransition } from './render/stage';
 export { initFlowState, resetFlowState, applyFlowEvent } from './state/flow-meter';
 export type { FlowState, FlowMeterOptions, FlowEvent } from './state/flow-meter';
 
+// === State: encouragement tier escalator ===
+export {
+  DEFAULT_ENCOURAGEMENT_TIERS,
+  initEncouragementState,
+  resetEncouragementState,
+  pickTier,
+  applyEncouragementEvent,
+} from './state/encouragement';
+export type {
+  EncouragementTier,
+  EncouragementState,
+  EncouragementOptions,
+  EncouragementEvent,
+  EncouragementOutput,
+} from './state/encouragement';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
