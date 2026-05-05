@@ -1340,36 +1340,11 @@
       c.fillStyle = 'rgba(255,255,200,' + a + ')'; c.fill();
     }
 
-    // ========================================
-    // Device performance tier — auto-detected at startup
-    //   Apple Forum #768404: iPad 10 Canvas 2D = ~half iPad Air 4. shadowBlur
-    //   forces software rendering on Safari (web.dev/canvas-performance).
-    //   Tier maps:
-    //     low  → ~400 particles, no shadowBlur
-    //     mid  → ~600 particles, shadowBlur on
-    //     high → ~1200 particles, shadowBlur on (M-series iPads / desktop)
-    //   Detection signals: deviceMemory, hardwareConcurrency, UA hints.
-    //   Manual override via localStorage.pianoViz_perfTier = 'low'|'mid'|'high'.
-    // ========================================
-    const PERF_TIER = (() => {
-      try {
-        const override = localStorage.getItem('pianoViz_perfTier');
-        if (override === 'low' || override === 'mid' || override === 'high') return override;
-      } catch (e) {}
-      const mem = navigator.deviceMemory || 4;
-      const cores = navigator.hardwareConcurrency || 4;
-      const ua = navigator.userAgent || '';
-      const isAppleSilicon = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;   // iPad masquerading as Mac
-      const isOlderIPad = /iPad/.test(ua) && !/iPad.*Pro/.test(ua) && cores <= 4;
-      if (isAppleSilicon || cores >= 8 || mem >= 8) return 'high';
-      if (isOlderIPad || mem <= 2 || cores <= 2) return 'low';
-      return 'mid';
-    })();
-    const PERF_PROFILE = {
-      low:  { maxParticles3D: 400,  shadowBlur: false, ambientChance: 0.015, bgStarCount: 50 },
-      mid:  { maxParticles3D: 600,  shadowBlur: true,  ambientChance: 0.030, bgStarCount: 80 },
-      high: { maxParticles3D: 1200, shadowBlur: true,  ambientChance: 0.045, bgStarCount: 120 }
-    }[PERF_TIER];
+    // Device performance tier — Phase 0b.3: delegated to @piano/core.
+    // detectPerfTier() applies the same Apple-Silicon/iPad/cores/mem heuristic
+    // and respects localStorage.pianoViz_perfTier override.
+    const PERF_TIER = PianoCore.detectPerfTier();
+    const PERF_PROFILE = PianoCore.PERF_PROFILES[PERF_TIER];
     console.log('[PERF] tier=' + PERF_TIER + ' particles=' + PERF_PROFILE.maxParticles3D
       + ' shadowBlur=' + PERF_PROFILE.shadowBlur);
 
