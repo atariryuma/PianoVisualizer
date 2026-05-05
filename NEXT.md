@@ -6,8 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (14 modules extracted; engine layer is
-content-complete except for render/, practice/, MIDI state).
+Last refreshed: **2026-05-05** (15 modules extracted; engine layer is now
+content-complete except for render/ and practice-state).
 
 ---
 
@@ -29,34 +29,16 @@ content-complete except for render/, practice/, MIDI state).
 | 12  | `state/quality.ts`            | 27    | `packages/core/src/state/quality.ts`            |
 | 13  | `i18n/`                       | 23    | `packages/core/src/i18n/index.ts` + strings.ts  |
 | 14  | `config.ts`                   | 17    | `packages/core/src/config.ts`                   |
+| 15  | `state/midi-state.ts`         | 21    | `packages/core/src/state/midi-state.ts`         |
 
-**Status: 201/201 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 222/222 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/midi-state.ts`
-
-**What**: Move `midiState` (active notes / sustained notes / chord-recent
-window) plus `onMidiNoteOn` / `onMidiNoteOff` / `onMidiCC` into a typed state
-object with explicit handlers.
-
-**Why**: Foundational for the MIDI input adapter — once midiState is pure, the
-web vs native shells can both feed it without sharing code.
-
-**Acceptance**:
-
-- [ ] `MidiState` interface and `init`/`step`/`reset` functions
-- [ ] `applyMidiNoteOn` / `applyMidiNoteOff` / `applyMidiCC` are pure (return
-      new state)
-- [ ] Tests cover note tracking, sustain pedal logic, chord-window pruning
-- [ ] Re-exported from `packages/core/src/index.ts`
-
-**Est**: 200 + 200 tests.
-
-## 2. Extract `state/practice-state.ts`
+## 1. Extract `state/practice-state.ts`
 
 **What**: Move the `practice` object + lifecycle (`startPracticeSection`,
 `updatePractice`, `matchNoteOnset`, hit-window judging, section completion).
