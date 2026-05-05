@@ -6,8 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (after 12-module extraction sweep; the audio DSP
-pipeline and scoring layer now live in @piano/core).
+Last refreshed: **2026-05-05** (14 modules extracted; engine layer is
+content-complete except for render/, practice/, MIDI state).
 
 ---
 
@@ -27,54 +27,74 @@ pipeline and scoring layer now live in @piano/core).
 | 10  | `library/user-songs.ts`       | 15    | `packages/core/src/library/user-songs.ts`       |
 | 11  | `state/session-confidence.ts` | 17    | `packages/core/src/state/session-confidence.ts` |
 | 12  | `state/quality.ts`            | 27    | `packages/core/src/state/quality.ts`            |
+| 13  | `i18n/`                       | 23    | `packages/core/src/i18n/index.ts` + strings.ts  |
+| 14  | `config.ts`                   | 17    | `packages/core/src/config.ts`                   |
 
-**Status: 161/161 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 201/201 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `i18n/index.ts`
+## 1. Extract `state/midi-state.ts`
 
-**What**: Move `T_STRINGS` + `t()` + `applyI18n` (split: applyI18n stays in
-DOM-coupled web shell, `t()` and table go to core).
+**What**: Move `midiState` (active notes / sustained notes / chord-recent
+window) plus `onMidiNoteOn` / `onMidiNoteOff` / `onMidiCC` into a typed state
+object with explicit handlers.
 
-**Why**: Many other extractions need `t()`. Establishes the pattern for
-DOM-decoupled extraction.
-
-**Acceptance**:
-
-- [ ] `t()` extracted as pure function
-- [ ] `T_STRINGS` exported as const
-- [ ] User-song key handler (`__userTitle:` etc.) takes a song-resolver callback
-      instead of importing SONGS
-- [ ] Tests: en/jp lookup, var substitution, fallback to key
-
-**Est**: 100 + 80 tests.
-
-## 2. Extract `config.ts`
-
-**What**: Move the `CONFIG` object literal.
-
-**Why**: Many extracted modules currently take options as args; once `config.ts`
-exists they can import their own slice.
+**Why**: Foundational for the MIDI input adapter — once midiState is pure, the
+web vs native shells can both feed it without sharing code.
 
 **Acceptance**:
 
-- [ ] `CONFIG` exported as `as const`
-- [ ] Type `Config` exported (derived via typeof)
-- [ ] No tests needed — it's a constant
+- [ ] `MidiState` interface and `init`/`step`/`reset` functions
+- [ ] `applyMidiNoteOn` / `applyMidiNoteOff` / `applyMidiCC` are pure (return
+      new state)
+- [ ] Tests cover note tracking, sustain pedal logic, chord-window pruning
+- [ ] Re-exported from `packages/core/src/index.ts`
 
-**Est**: 200 lines (just the literal).
+**Est**: 200 + 200 tests.
+
+## 2. Extract `state/practice-state.ts`
+
+**What**: Move the `practice` object + lifecycle (`startPracticeSection`,
+`updatePractice`, `matchNoteOnset`, hit-window judging, section completion).
+This is the largest single extraction yet — practice is the killer feature.
+
+**Why**: Lifting practice into core makes the engine self-contained for
+mobile-shell use without dragging in DOM-coupled UI.
+
+**Acceptance**:
+
+- [ ] `PracticeState` interface; `init`/`step`/`matchNote`/`completeSection`
+      functions
+- [ ] OSMD interaction stays in the shell (cursor.show/hide/next abstracted as a
+      `CursorAdapter` interface the shell implements)
+- [ ] Tests cover hit-window scoring (early/perfect/late/miss), chord-mate
+      forgiveness, mode switching (guided/rhythm/listen)
+
+**Est**: 400 + 350 tests.
+
+## 3. Extract `render/particles.ts`
+
+**What**: Move the `Particle` class, `spawnBurst`, `spawnStream`,
+`MAX_PARTICLES_3D`, 3D projection helpers.
+
+**Acceptance**:
+
+- [ ] Particle class (or factory) with explicit deps for `W/H` (canvas size) and
+      theme colors — no global reads
+- [ ] `update()` is pure-ish (mutates self, no globals)
+- [ ] `draw(ctx, perfProfile)` — perfProfile gates shadowBlur
+- [ ] Tests: spawn count, lifetime decay, projection math
+
+**Est**: 250 + 150 tests.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `state/practice-state.ts`
-- `state/midi-state.ts`
-- `render/particles.ts`
 - `render/lane.ts`
 - `render/keyboard.ts`
 - `render/effects.ts`

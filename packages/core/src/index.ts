@@ -108,3 +108,41 @@ export type {
   SessionUIHint,
   SessionUIStrings,
 } from './state/session-confidence';
+
+// === State: quality scoring + coaching feedback ===
+export {
+  clamp01,
+  computeRhythmScore,
+  computeDynamicsScore,
+  computeStabilityScore,
+  composeQualityScore,
+  smoothQualityScore,
+  updateGrowthTrend,
+  buildCoachingFeedback,
+} from './state/quality';
+export type {
+  QualityWeights,
+  QualityScoringOptions,
+  QualityHistoryEntry,
+  GrowthTrendResult,
+  CoachingStrengthKey,
+  CoachingNextKey,
+  CoachingInput,
+  CoachingFeedback,
+} from './state/quality';
+
+// === i18n: translation table + pure t() ===
+export { T_STRINGS, translate, createT, NOTE_NAMES_EN, NOTE_NAMES_JP, noteNamesFor } from './i18n';
+export type {
+  Lang,
+  TranslationEntry,
+  TranslationTable,
+  UserKeyResolver,
+  TranslateOptions,
+  CreateTOptions,
+  T,
+} from './i18n';
+
+// === Config: tunable engine parameters + quest definitions ===
+export { CONFIG, QUESTS } from './config';
+export type { Config, QuestDef, QuestStateView } from './config';
