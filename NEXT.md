@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (21 modules extracted; engine + 3D particles +
-encouragement effects + 88-key keyboard + practice lane now in core. Remaining
-render layer is just background composites + theme.)
+Last refreshed: **2026-05-05** (22 modules extracted; engine + 3D particles +
+encouragement effects + 88-key keyboard + practice lane + background composites
+now in core. Remaining render is theme tables + spectrum bars.)
 
 ---
 
@@ -37,31 +37,16 @@ render layer is just background composites + theme.)
 | 19  | `render/effects.ts`           | 17    | `packages/core/src/render/effects.ts`           |
 | 20  | `render/keyboard.ts`          | 16    | `packages/core/src/render/keyboard.ts`          |
 | 21  | `render/lane.ts`              | 18    | `packages/core/src/render/lane.ts`              |
+| 22  | `render/background.ts`        | 17    | `packages/core/src/render/background.ts`        |
 
-**Status: 358/358 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 375/375 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/background.ts`
-
-**What**: Move bg-stars init + draw + aurora bands + ground flowers into a
-single background composite module.
-
-**Acceptance**:
-
-- [ ] `initBackground(opts) → BgState` builds the star field once
-- [ ] `drawBackground(ctx, bgState, opts)` paints stars, aurora, flowers given
-      `flow`, `themeColors`, `W`, `H`, `time`
-- [ ] No globals; no shared mutable star array outside the returned state
-- [ ] Tests: star count by flow tier, aurora visibility threshold (>40), flower
-      visibility threshold (>55)
-
-**Est**: 250 + 100 tests.
-
-## 2. Extract `render/theme.ts`
+## 1. Extract `render/theme.ts`
 
 **What**: Move `THEMES`, `noteThemeColor()`, synesthesia mapping, and the
 center-glow gradient builder.
@@ -75,7 +60,7 @@ center-glow gradient builder.
 
 **Est**: 180 + 80 tests.
 
-## 3. Extract `render/spectrum.ts`
+## 2. Extract `render/spectrum.ts`
 
 **What**: Move the frequency spectrum bar drawer (64 bars, piano range) into
 core. Currently reads `analyser.getByteFrequencyData()` then paints bars
@@ -90,14 +75,27 @@ proportional to magnitude.
 
 **Est**: 120 + 60 tests.
 
+## 3. Extract `render/center-glow.ts`
+
+**What**: Move the energy-reactive radial gradient (the soft glow at canvas
+center that swells with RMS / quality).
+
+**Acceptance**:
+
+- [ ] `drawCenterGlow(ctx, opts)` — pure
+- [ ] Takes `screenW/H/intensity/themeColor` — no state ownership
+- [ ] Tests: intensity scaling, palette injection, no-op at 0
+
+**Est**: 90 + 40 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/center-glow.ts` — energy-reactive radial gradient
 - `render/stage.ts` — stage banner + transitions
 - `state/flow-meter.ts` — flow + combo + silence-decay state machine
 - `state/encouragement.ts` — tier escalator (Nice → Awesome) + dispatch
+- `state/quest-tracker.ts` — quest progress + completion accounting
 
 ---
 

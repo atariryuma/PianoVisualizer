@@ -66,6 +66,17 @@ export type { KeyboardMidiView, KeyboardDrawOptions } from './render/keyboard';
 export { drawPracticeLane } from './render/lane';
 export type { LaneNoteView, LaneViewState, LaneTimings, LaneDrawOptions } from './render/lane';
 
+// === Render: background composites (stars + aurora + ground flowers) ===
+export { initBackground, drawBgStars, drawAurora, drawGroundFlowers } from './render/background';
+export type {
+  BgStar,
+  BgState,
+  InitBackgroundOptions,
+  DrawBgStarsOptions,
+  DrawAuroraOptions,
+  DrawGroundFlowersOptions,
+} from './render/background';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
