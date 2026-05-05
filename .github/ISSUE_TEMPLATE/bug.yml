@@ -1,0 +1,67 @@
+name: Bug report
+description: Something behaved unexpectedly
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing! Please be specific — for hard-to-reproduce audio bugs the
+        debug overlay (triple-tap bottom-left) often holds the answer.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "0.14.0 / commit hash / 'unknown'"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - "Web — desktop Chrome / Edge"
+        - "Web — desktop Safari"
+        - "Web — Steam Deck browser"
+        - "Web — Android Chrome"
+        - "Web — iPad Safari"
+        - "Web — iPad Web MIDI Browser"
+        - "Native — iOS app"
+        - "Native — Android app"
+    validations:
+      required: true
+  - type: dropdown
+    id: input
+    attributes:
+      label: Input source
+      options:
+        - "Microphone (mic-only)"
+        - "USB MIDI keyboard"
+        - "Bluetooth MIDI keyboard"
+        - "No input (visual bug)"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug overlay snapshot (optional)
+      description: |
+        Triple-tap the bottom-left of the canvas, then paste what's shown.
+      render: text

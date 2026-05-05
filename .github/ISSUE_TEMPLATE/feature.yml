@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      placeholder: "What's hard / impossible / annoying today?"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      placeholder: "What would good look like?"
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where would this live?
+      options:
+        - "Legacy single-file (app.js)"
+        - "packages/core"
+        - "packages/web (PWA)"
+        - "packages/mobile (Capacitor)"
+        - "Native plugin (capacitor-piano-midi)"
+        - "Docs / infra"
+        - "Not sure"
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: kids
+    attributes:
+      label: Kids-app safety
+      options:
+        - label: Doesn't add data collection
+        - label: Doesn't add external links without parental gate
+        - label: Doesn't add IAP / ads
+        - label: Doesn't introduce a new permission

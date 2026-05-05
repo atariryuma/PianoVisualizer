@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Privacy / data questions
+    url: https://github.com/atariryuma/piano-visualizer/blob/main/docs/PRIVACY.md
+    about: Privacy policy. Short answer — we collect nothing.
+  - name: Compliance checklist
+    url: https://github.com/atariryuma/piano-visualizer/blob/main/docs/COMPLIANCE.md
+    about: App Store / Play Store / COPPA / GDPR-K compliance status.

@@ -1,0 +1,57 @@
+name: AI agent task
+description: A self-contained task that an AI coding agent can execute end-to-end
+title: "[agent] "
+labels: ["agent-task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when you want to hand off work to an AI agent (Claude
+        Code, Cursor, etc.). Be precise — the agent has no context outside what's
+        written here.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      placeholder: "One sentence describing what 'done' looks like."
+    validations:
+      required: true
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Recommended playbook
+      description: "From .claude/skills/"
+      options:
+        - "extract-module"
+        - "add-song-to-library"
+        - "audit-compliance"
+        - "performance-tune"
+        - "before-pr"
+        - "(none — write the steps in 'Plan' below)"
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan
+      description: "Step-by-step. Include file paths and acceptance criteria."
+      placeholder: |
+        1. Read d:/PianoVisualizer/app.js lines X-Y
+        2. Move the function `foo()` to packages/core/src/audio/foo.ts
+        3. Add Vitest tests covering cases A, B, C
+        4. Verify `pnpm --filter @piano/core test` passes
+        5. Open a PR with type "refactor(core)"
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: "Things the agent should NOT touch in this task."
+      placeholder: "Don't refactor app.js. Don't add new features."
+  - type: textarea
+    id: verify
+    attributes:
+      label: How to verify
+      placeholder: |
+        - `pnpm verify` exits 0
+        - The new module is exported from `@piano/core`
+        - No regressions in `app.js` (still parses with `node --check`)
