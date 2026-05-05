@@ -717,25 +717,34 @@
     // ========================================
     // i18n — practice-flow strings only (free-play / quest / dev strings stay English)
     // ========================================
-    // Category A (UI chrome words / loanwords) intentionally not in T_STRINGS —
-    // those strings live as literal English in index.html / app.js. Only
-    // strings with a meaningful kid-facing JP rendering are listed here.
+    // Category A (UI chrome / operation words / loanwords): EN === JP. The
+    // language toggle is a no-op for these — they render as English regardless
+    // of prefs.lang. Kept in T_STRINGS so HTML data-i18n attrs resolve cleanly.
     const T_STRINGS = {
       // Settings panel
+      settings:           { en: 'Settings',                  jp: 'Settings' },
+      close:              { en: 'Close',                     jp: 'Close' },
       backToTitle:        { en: 'Back to title',             jp: 'タイトルにもどる' },
+      display:            { en: 'Display',                   jp: 'Display' },
       synesthesia:        { en: 'Synesthesia mode (each note has its own color)',
                             jp: '音階色モード（音ごとに色が変わる）' },
+      synesthesiaTitle:   { en: 'Synesthesia mode',          jp: 'Synesthesia mode' },
+      timingCalibration:  { en: 'Timing Calibration',        jp: 'Timing Calibration' },
       audioOffset:        { en: 'Audio offset',              jp: '音と画面のずれ補正' },
       audioOffsetHelp:    { en: 'If you play on the beat but it\'s judged "late", raise the number. If your press is rejected as "early", lower it.',
                             jp: '拍に合わせて弾いてるのに「遅い」判定になる時は数値を上げる。「早い」判定になる時は下げる。' },
       autoDetectedFmt:    { en: 'Auto-detected value in use (currently {v} ms)',
                             jp: '自動検出値を使用中（現在: {v} ms）' },
       resetToAuto:        { en: 'Use auto-detected value',   jp: '自動検出に戻す' },
+      input:              { en: 'Input',                     jp: 'Input' },
       micInput:           { en: 'Mic input',                 jp: 'マイク入力' },
       micStandby:         { en: 'Standby',                   jp: '待機中' },
       scanMidi:           { en: 'Scan for MIDI keyboard',    jp: 'MIDIキーボードを探す' },
+      connectBluetooth:   { en: 'Connect Bluetooth',         jp: 'Connect Bluetooth' },
+      other:              { en: 'Other',                     jp: 'Other' },
       resetSession:       { en: 'Reset session',             jp: 'セッションをリセット' },
       debugOverlay:       { en: 'Debug overlay',             jp: 'デバッグ表示' },
+      language:           { en: 'Language',                  jp: 'Language' },
       // Intro hint / MIDI diagnostics
       introNeedMidi:      { en: '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)',
                             jp: '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）' },
@@ -780,11 +789,13 @@
       // Leading space lives in the EN value so JP renders "1日れんしゅう中"
       // without a half-width gap between the digit and 日.
       dayStreak:          { en: ' day streak',               jp: '日れんしゅう中' },
+      tempo:              { en: 'Tempo',                     jp: 'Tempo' },
       startFrom:          { en: 'Start from',                jp: 'どこからはじめる？' },
       whichHand:          { en: 'Which hand?',               jp: 'どの手で弾く？' },
       leftOnly:           { en: '👈 Left only',              jp: '👈 左手だけ' },
       bothHands:          { en: '🤝 Both',                    jp: '🤝 両手' },
       rightOnly:          { en: 'Right only 👉',             jp: '右手だけ 👉' },
+      modeLabel:          { en: 'Mode',                      jp: 'Mode' },
       modeListen:         { en: '🎧 Listen',                 jp: '🎧 きく' },
       modeGuided:         { en: '✨ Guided',                  jp: '✨ ガイド' },
       modeRhythm:         { en: '🎵 Rhythm',                 jp: '🎵 リズム' },
@@ -800,20 +811,27 @@
       // Practice HUD
       score:              { en: 'Score',                     jp: '楽譜' },
       quit:               { en: 'Quit',                      jp: 'やめる' },
+      inputSource:        { en: 'Input source',              jp: 'Input source' },
       // Result screen
       pitchAccuracy:      { en: 'Pitch accuracy',            jp: '音程の正確さ' },
+      timing:             { en: 'Timing',                    jp: 'Timing' },
       noteLength:         { en: 'Note length',               jp: '音の長さ' },
       bestComboLabel:     { en: 'Best combo',                jp: '連続成功（最高）' },
       songSelect:         { en: 'Song select',               jp: 'きょく選択' },
       tryAgainBtn:        { en: 'Try again',                 jp: 'もう一度' },
       nextBtn:            { en: 'Next →',                    jp: 'つぎへ →' },
       // Hit chips / dynamic
+      perfect:            { en: 'Perfect!',                  jp: 'Perfect!' },
+      nice:               { en: 'Nice!',                     jp: 'Nice!' },
+      missChip:           { en: 'Miss',                      jp: 'Miss' },
       youPlayedFmt:       { en: 'You played: {v}',           jp: '弾いた音: {v}' },
       tooShort:           { en: '⏱ Too short',               jp: '⏱ 短い' },
       tooLong:            { en: '⏱ Too long',                jp: '⏱ 長い' },
       // Lane labels
       laneLeft:           { en: 'LEFT',                      jp: '左手' },
       laneRight:          { en: 'RIGHT',                     jp: '右手' },
+      // Count-in
+      countInGo:          { en: 'GO!',                       jp: 'GO!' },
       // Stages
       stage1:             { en: 'Awakening',                 jp: 'めざめ' },
       stage2:             { en: 'Blooming',                  jp: 'はなひらく' },
@@ -880,6 +898,8 @@
       // Result-screen growth chart
       growthChartFmt:     { en: 'Growth ({v} attempts)',        jp: '成長グラフ ({v}回)' },
       trendSimilar:       { en: '→ similar',                    jp: '→ おなじくらい' },
+      // Sustain pedal label (drawn on the keyboard when pedal is held)
+      sustainLabel:       { en: 'SUSTAIN',                      jp: 'SUSTAIN' },
       // Free-play HUD (session status while playing without a song)
       listeningFmt:       { en: '{p}Listening{p}',              jp: '{p}きいてるよ{p}' },
       goalCelebrate:      { en: '✨ Goal reached! Keep it up! ✨',
@@ -934,13 +954,18 @@
       questClearedFmt:    { en: '✅ {v} CLEARED!',               jp: '✅ {v} クリア！' },
       // Session summary (post free-play)
       sumTitle:           { en: '🎹 Session Results',           jp: '🎹 セッション結果' },
+      sumBestCombo:       { en: '🎵 Best Combo',                jp: '🎵 Best Combo' },
       sumStageReached:    { en: '🏔 Stage Reached',             jp: '🏔 到達ステージ' },
+      sumPlayTime:        { en: '⏱ Play Time',                  jp: '⏱ Play Time' },
       sumQuests:          { en: '⭐ Quests',                     jp: '⭐ クエスト' },
       sumTitleBtn:        { en: '🏠 Title',                     jp: '🏠 タイトル' },
       sumContinue:        { en: 'Continue →',                   jp: 'つづける →' },
       // User-song UI
       addSongBtn:         { en: '➕ Add a song',                  jp: '➕ 曲を追加' },
       addSongTitle:       { en: 'Add a song',                    jp: '曲を追加' },
+      addSongTabLibrary:  { en: '📚 Library',                    jp: '📚 Library' },
+      addSongTabFile:     { en: '📁 File',                       jp: '📁 File' },
+      addSongTabUrl:      { en: '🔗 URL',                        jp: '🔗 URL' },
       addSongLibraryHelp: { en: 'Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.',
                             jp: 'MuseTrainer のパブリックドメイン曲（jsDelivr経由）。タップでダウンロード。' },
       addSongFilePick:    { en: 'Choose .mxl / .musicxml / .xml file',
@@ -953,8 +978,10 @@
                             jp: 'https://cdn.jsdelivr.net/.../score.mxl' },
       addSongUrlHelp:     { en: 'Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).',
                             jp: '.mxl / .musicxml の直リンク（CORS対応URL、例: jsDelivr）。' },
+      addSongFetch:       { en: '⬇ Download',                   jp: '⬇ Download' },
       addSongAdded:       { en: 'Added!',                        jp: '追加しました！' },
       addSongFailed:      { en: 'Failed: {v}',                   jp: '失敗: {v}' },
+      myLibrary:          { en: 'My library',                    jp: 'My library' },
       addSongRemove:      { en: 'Delete',                        jp: '削除' },
       addSongConfirmRemove: { en: 'Delete "{v}"? This cannot be undone.',
                               jp: '「{v}」を削除しますか？元に戻せません。' },
@@ -963,8 +990,8 @@
       addSongLibraryCount:{ en: '{n} pieces',                   jp: '{n} 曲' },
       addSongLibraryOffline: { en: 'Catalog offline — showing seed list',
                                jp: 'カタログ取得失敗 — 既定リストを表示' },
-      addSongExport:      { en: '⬇ Export library',             jp: '⬇ エクスポート' },
-      addSongImport:      { en: '⬆ Import',                     jp: '⬆ インポート' },
+      addSongExport:      { en: '⬇ Export library',             jp: '⬇ Export library' },
+      addSongImport:      { en: '⬆ Import',                     jp: '⬆ Import' },
       addSongImportDone:  { en: 'Imported {n} song(s)',         jp: '{n} 曲をインポートしました' },
       addSongEditSections:{ en: '✎ Edit sections',              jp: '✎ 章を編集' },
       addSongRename:      { en: '✎ Rename',                     jp: '✎ 名前を変更' },
@@ -973,8 +1000,8 @@
       sectionEditTitle:   { en: 'Edit sections',                jp: '章の編集' },
       sectionEditHelp:    { en: 'Set start measure (1-based) for each part. Total: {v} measures.',
                             jp: '各章の開始小節を入力（1始まり）。全{v}小節。' },
-      sectionEditSave:    { en: 'Save',                         jp: '保存' },
-      sectionEditCancel:  { en: 'Cancel',                       jp: 'キャンセル' },
+      sectionEditSave:    { en: 'Save',                         jp: 'Save' },
+      sectionEditCancel:  { en: 'Cancel',                       jp: 'Cancel' },
       sectionEditError:   { en: 'Boundaries must be increasing and within range.',
                             jp: '小節番号は昇順かつ範囲内で入力してください。' },
       // Auto-section names for user-added songs (no human-curated descriptions)
@@ -3099,14 +3126,28 @@
           drawCredits: false,
           drawPartNames: false,
           // OSMD 1.8.7 throws "Can't call GetWidth on an unformatted note"
-          // for some print-object="no" notes in dense scores (La Campanella's
-          // grace-note ornaments reproduce it). Skipping hidden notes
-          // entirely sidesteps the layout-cache miss in the renderer.
+          // for some print-object="no" notes in dense scores. Skipping
+          // hidden notes at the renderer level avoids the layout-cache miss.
           drawHiddenNotes: false,
-          autoResize: true,
+          // autoResize:true wires a window-resize handler that re-runs
+          // render() OUTSIDE our retry try/catch. La Campanella throws
+          // UnformattedNote inside calculatePedals on every resize → Uncaught
+          // pollution + occasional broken layout. Disable; our #osmdContainer
+          // has fixed positioning so CSS handles viewport changes for kid use.
+          autoResize: false,
           backend: 'svg',
           cursorsOptions: [{ type: 0, color: '#FFD700', alpha: 0.5, follow: true }]
         });
+        // Disable pedal rendering — OSMD 1.8.7's calculatePedals path is the
+        // direct source of the UnformattedNote throw on Liszt / Chopin scores
+        // that mark every chord with sustain (full stack:
+        // calculatePedalSkyBottomLine → calculateSinglePedal → calculatePedals
+        // → calculateMusicSystems → calculate → reCalculate → render). We
+        // don't visually need pedals for the practice flow (lane/cursor
+        // handle timing). Wrapped in try/catch since EngravingRules access
+        // could change name in a future OSMD bump.
+        try { inst.EngravingRules.RenderPedals = false; }
+        catch (e) { console.warn('[OSMD] could not disable pedal render: ' + e.message); }
         // OSMD's load() accepts both .mxl URLs (zipped) and plain MusicXML URLs.
         // User-added songs may carry either; fall back to whichever is present.
         await inst.load(currentSong.mxlUrl || currentSong.xmlUrl);
@@ -4322,8 +4363,36 @@
         kbHeight,
         kbSafeBottom,
         noteThemeColor,
-        sustainLabel: 'SUSTAIN',
+        sustainLabel: t('sustainLabel'),
+        // Practice cue: highlight the next-up key(s) so the kid sees which key
+        // to press without taking their eyes off the keyboard. Disabled in
+        // listen mode (the song plays itself) and in free play (no schedule).
+        hintNotes: buildKeyboardHintNotes(),
+        nowMs: performance.now(),
       });
+    }
+
+    // Build the next-up keyboard hint set from the practice schedule. The
+    // "primary" hint is the very next note (gets the down-arrow); chord-mates
+    // within ±CHORD_MATE_TOLERANCE_MS share the highlight at lower intensity
+    // so they stay visually subordinate. Returns null when there's nothing to
+    // highlight (avoids pointless map churn from the keyboard renderer).
+    function buildKeyboardHintNotes() {
+      if (!practice.enabled || practice.mode === 'listen') return null;
+      const notes = practice.sectionNotes;
+      let idx = practice.currentNoteIdx;
+      while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
+      if (idx >= notes.length) return null;
+      const cur = notes[idx];
+      const out = new Map();
+      out.set(cur.midi, { hand: cur.hand, primary: true });
+      for (let i = idx + 1; i < notes.length; i++) {
+        const m = notes[i];
+        if (m.timeMs - cur.timeMs > CHORD_MATE_TOLERANCE_MS) break;
+        if (m.hit || m.missed || m._filtered) continue;
+        if (!out.has(m.midi)) out.set(m.midi, { hand: m.hand, primary: false });
+      }
+      return out;
     }
 
     function drawMidiBeams(timeMs) {
@@ -4481,7 +4550,7 @@
       const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
       practice.timingScoreSum += ts;
       const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
-      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? 'Perfect!' : 'Nice!');
+      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? t('perfect') : t('nice'));
       state.flow = Math.min(100, state.flow + 6 + ts * 4);
       state.combo++;
       if (state.combo > state.bestCombo) state.bestCombo = state.combo;
@@ -4899,7 +4968,7 @@
             n.missed = true;
             practice.misses++;
             practice.sectionCombo = 0;
-            showHitChip('miss', 'Miss');
+            showHitChip('miss', t('missChip'));
           }
           if (n.timeMs - elapsed > HIT_WINDOW_MS) break;
         }
@@ -5028,7 +5097,7 @@
           perfectMs: PERFECT_MS,
           laneLabelL,
           laneLabelR,
-          countInGoLabel: 'GO!',
+          countInGoLabel: t('countInGo'),
           midiToPitchName,
           noteRestingColor: (m) => CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff',
         }
@@ -5515,12 +5584,13 @@
 
 
     DOM.songBack.addEventListener('click', () => {
-      DOM.songPanel.classList.remove('visible');
-      if (state.running) {
-        showRunningUI();
-      } else {
-        DOM.startScreen.style.display = 'flex';
-      }
+      // selectSong is only ever wired from the title screen (the practice-song
+      // buttons + user-song list + auto-select after Add-Song import all sit
+      // under startScreen), so Back must return to the title — even when
+      // state.running is true. The earlier "if running, just hide the panel"
+      // path landed users on the bare Free Play canvas after
+      // Title → Song → Back, contradicting the Back intent.
+      returnToTitle();
     });
 
     DOM.songStart.addEventListener('click', async () => {
@@ -5679,7 +5749,7 @@
         row.addEventListener('click', async () => {
           if (row.classList.contains('busy')) return;
           row.classList.add('busy');
-          setAddSongStatus('⬇ Download…');
+          setAddSongStatus(t('addSongFetch') + '…');
           try {
             // Pass JP fields when available so the saved record carries the
             // localized title/composer separately from the auto-derived ASCII one.
@@ -5937,7 +6007,7 @@
         setAddSongStatus(t('addSongPdAttest'), true);
         return;
       }
-      setAddSongStatus('⬇ Download…');
+      setAddSongStatus(t('addSongFetch') + '…');
       try {
         const rec = await addUserSongFromBlob(file, { filename: file.name, source: 'upload' });
         setAddSongStatus(t('addSongAdded'));
@@ -5954,7 +6024,7 @@
     DOM_ADDSONG.fetchBtn?.addEventListener('click', async () => {
       const url = (DOM_ADDSONG.urlInput.value || '').trim();
       if (!url) return;
-      setAddSongStatus('⬇ Download…');
+      setAddSongStatus(t('addSongFetch') + '…');
       DOM_ADDSONG.fetchBtn.disabled = true;
       try {
         const rec = await addUserSongFromUrl(url, { source: 'url' });
@@ -6018,7 +6088,7 @@
     async function exportUserLibrary() {
       const all = await userDbAll();
       if (all.length === 0) {
-        setAddSongStatus('My library — 0', true);
+        setAddSongStatus(t('myLibrary') + ' — 0', true);
         return;
       }
       const out = { version: 1, exportedAt: new Date().toISOString(), songs: [] };
@@ -6149,6 +6219,7 @@
     DOM.resQuit.addEventListener('click', () => {
       DOM.sectionResult.classList.remove('visible');
       DOM.practiceHud.classList.remove('visible');
+      DOM.osmdContainer.classList.remove('visible');
       DOM.songPanel.classList.add('visible');
       renderSongPanel();
     });
