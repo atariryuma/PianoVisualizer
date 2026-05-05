@@ -40,6 +40,93 @@ export type {
   SpawnOptions,
 } from './render/particles';
 
+// === Render: ripples ===
+export { Ripple } from './render/ripples';
+export type { RippleUpdateOptions, RippleDrawOptions } from './render/ripples';
+
+// === Render: encouragement effects + dispatcher ===
+export {
+  effectGlowPulse,
+  effectGlowParticles,
+  effectColorWave,
+  effectStarShower,
+  effectFlowerBurst,
+  effectShimmer,
+  effectRadiance,
+  effectGoldenBurst,
+  triggerEffect,
+} from './render/effects';
+export type { EffectDeps, EffectGameState, EffectName } from './render/effects';
+
+// === Render: virtual MIDI keyboard (88-key) ===
+export { KB_WHITE, KB_BLACK, KB_BLACK_LEFT_WHITE_IDX, drawMidiKeyboard } from './render/keyboard';
+export type { KeyboardMidiView, KeyboardDrawOptions } from './render/keyboard';
+
+// === Render: practice lane (falling notes + hit window + count-in) ===
+export { drawPracticeLane } from './render/lane';
+export type { LaneNoteView, LaneViewState, LaneTimings, LaneDrawOptions } from './render/lane';
+
+// === Render: background composites (stars + aurora + ground flowers) ===
+export { initBackground, drawBgStars, drawAurora, drawGroundFlowers } from './render/background';
+export type {
+  BgStar,
+  BgState,
+  InitBackgroundOptions,
+  DrawBgStarsOptions,
+  DrawAuroraOptions,
+  DrawGroundFlowersOptions,
+} from './render/background';
+
+// === Render: theme tables + per-note color resolvers ===
+export { THEMES, noteThemeColor, synColorFor, drawBackgroundFade } from './render/theme';
+export type { Theme, SynColorOptions, DrawBackgroundFadeOptions } from './render/theme';
+
+// === Render: frequency spectrum bars ===
+export { drawSpectrumBars } from './render/spectrum';
+export type { SpectrumDrawOptions } from './render/spectrum';
+
+// === Render: center radial-gradient glow ===
+export { drawCenterGlow } from './render/center-glow';
+export type { CenterGlowOptions } from './render/center-glow';
+
+// === Render: stage tier table + lookup ===
+export { STAGES, stageForFlow, stageLabel, classifyStageTransition } from './render/stage';
+export type { Stage, StageTransition } from './render/stage';
+
+// === State: flow + combo meter (silence decay, noise penalty, MIDI gain) ===
+export { initFlowState, resetFlowState, applyFlowEvent } from './state/flow-meter';
+export type { FlowState, FlowMeterOptions, FlowEvent } from './state/flow-meter';
+
+// === State: encouragement tier escalator ===
+export {
+  DEFAULT_ENCOURAGEMENT_TIERS,
+  initEncouragementState,
+  resetEncouragementState,
+  pickTier,
+  applyEncouragementEvent,
+} from './state/encouragement';
+export type {
+  EncouragementTier,
+  EncouragementState,
+  EncouragementOptions,
+  EncouragementEvent,
+  EncouragementOutput,
+} from './state/encouragement';
+
+// === State: quest tracker (one-completion-per-tick + post-completion delay) ===
+export {
+  initQuestTrackerState,
+  resetQuestTrackerState,
+  applyQuestTick,
+} from './state/quest-tracker';
+export type {
+  Quest,
+  QuestPredicate,
+  QuestTrackerState,
+  QuestTrackerOptions,
+  QuestTickResult,
+} from './state/quest-tracker';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
