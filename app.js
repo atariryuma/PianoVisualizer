@@ -1305,31 +1305,27 @@
     const effectGoldenBurst = () => PianoCore.effectGoldenBurst(_effectDeps());
     const triggerEffect = (name) => PianoCore.triggerEffect(name, _effectDeps());
 
-    function showEncouragement(tierIndex, timeMs) {
-      const tier = CONFIG.ENCOURAGEMENT_TIERS[tierIndex];
-      if (!tier) return;
-
-      // Check cooldown — don't show same or lower tier too frequently
-      if (timeMs - state.lastEncouragementTimeMs < CONFIG.ENCOURAGEMENT_COOLDOWN_MS
-        && tierIndex <= state.currentEncouragementTier) return;
-
-      state.currentEncouragementTier = tierIndex;
-      state.lastEncouragementTimeMs = timeMs;
-      state.encouragementHideTimeMs = timeMs + CONFIG.ENCOURAGEMENT_DISPLAY_MS;
-
-      // Show message with animation
-      DOM.encouragement.textContent = t(tier.messageKey);
+    // Encouragement tier escalator — Phase 0b.3: state machine in @piano/core.
+    // Legacy state.currentEncouragementTier / lastEncouragementTimeMs /
+    // encouragementHideTimeMs are mirrored from the core state each tick so
+    // existing reads (resetSession, quest predicates, debug overlay) keep
+    // working unchanged.
+    const _encState = PianoCore.initEncouragementState();
+    const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
+    function _showEncouragementUI(out) {
+      if (out.kind !== 'show') return;
+      DOM.encouragement.textContent = t(out.messageKey);
       DOM.encouragement.classList.remove('visible');
       DOM.encouragement.classList.add('entering');
-
-      // Force reflow for animation restart
-      void DOM.encouragement.offsetWidth;
-
+      void DOM.encouragement.offsetWidth; // force reflow to restart animation
       DOM.encouragement.classList.remove('entering');
       DOM.encouragement.classList.add('visible');
-
-      // Trigger visual effect
-      triggerEffect(tier.effect);
+      triggerEffect(out.effect);
+    }
+    function _mirrorEncStateToLegacy() {
+      state.currentEncouragementTier = _encState.currentTier;
+      state.lastEncouragementTimeMs = _encState.lastShownTimeMs;
+      state.encouragementHideTimeMs = _encState.hideTimeMs > 0 ? _encState.hideTimeMs : 0;
     }
 
     // Ripples — Phase 0b.3: delegated to @piano/core.
@@ -2052,28 +2048,17 @@
     // ========================================
     function updateHUD(timeMs) {
       // v9: Check encouragement tiers (find highest matching tier)
-      let bestTier = -1;
-      for (let i = CONFIG.ENCOURAGEMENT_TIERS.length - 1; i >= 0; i--) {
-        if (state.combo >= CONFIG.ENCOURAGEMENT_TIERS[i].minCombo) {
-          bestTier = i;
-          break;
-        }
-      }
-
-      // Show encouragement when tier increases
-      if (bestTier > state.currentEncouragementTier && bestTier >= 0) {
-        showEncouragement(bestTier, timeMs);
-      }
-
-      // Reset tier tracking when combo drops
-      if (bestTier < state.currentEncouragementTier) {
-        state.currentEncouragementTier = bestTier;
-      }
-
-      // Hide encouragement after display time
-      if (timeMs > state.encouragementHideTimeMs) {
-        DOM.encouragement.classList.remove('visible');
-      }
+      // Tier-change check (climb fires show, drop silently lowers currentTier)
+      const _comboOut = PianoCore.applyEncouragementEvent(
+        _encState,
+        { type: 'comboChanged', combo: state.combo, timeMs },
+        _encOpts
+      );
+      _showEncouragementUI(_comboOut);
+      // Hide-tick: fires once when display window elapses
+      const _hideOut = PianoCore.applyEncouragementEvent(_encState, { type: 'hideTick', timeMs }, _encOpts);
+      if (_hideOut.kind === 'hide') DOM.encouragement.classList.remove('visible');
+      _mirrorEncStateToLegacy();
 
       // Flow gauge — quantize style writes to whole-percent buckets so the
       // browser doesn't reparse a fresh gradient string 60×/sec on iPad.
@@ -2615,7 +2600,8 @@
       state.completedQuests = [];
       state.activeQuestId = null;
       state.lastQuestCheckMs = 0;
-      state.currentEncouragementTier = -1;
+      PianoCore.resetEncouragementState(_encState);
+      _mirrorEncStateToLegacy();
       state.lastGoodNoteTimeMs = 0;
       state.lastSilenceStartMs = -1;
       state.lastPitch = -1;
