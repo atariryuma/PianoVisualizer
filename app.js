@@ -1287,129 +1287,26 @@
     const spawnStream = (screenX, screenY, energy, overrideColor) =>
       PianoCore.spawnStream(particles, screenX, screenY, energy, _spawnOpts(overrideColor));
 
-    // ========================================
-    // v9: Encouragement Effects (Updated to 3D)
-    // ========================================
-
-    function effectGlowPulse() {
-      state.glowPulseIntensity = 0.4;
-    }
-
-    function effectGlowParticles() {
-      state.glowPulseIntensity = 0.5;
-      spawnBurst(W / 2, H * 0.3, 5, 0.6);
-    }
-
-    function effectColorWave() {
-      state.glowPulseIntensity = 0.6;
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      for (let i = 0; i < 8; i++) {
-        const ang = (Math.PI * 2 * i) / 8;
-        const dist = 80;
-        // Ripples are 2D canvas/screen space, so kept as is or need update?
-        // Ripples are separate class. Let's keep them 2D overlay for now.
-        ripples.push(new Ripple(W / 2 + Math.cos(ang) * dist, H * 0.4 + Math.sin(ang) * dist,
-          cols[i % cols.length], 250 + state.flow * 2));
-      }
-    }
-
-    function effectStarShower(count) {
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      const n = count || 12;
-      for (let i = 0; i < n; i++) {
-        if (particles.length >= MAX_PARTICLES_3D) break;
-
-        // Spawn high up, deep in Z, falling forward
-        const startX = (Math.random() - 0.5) * W * 1.5;
-        const startY = -H / 2 - 50;
-        const startZ = 200 + Math.random() * 400; // Deep background
-
-        particles.push(new Particle(
-          startX, startY, startZ,
-          cols[Math.floor(Math.random() * cols.length)],
-          4 + Math.random() * 8,
-          (Math.random() - 0.5) * 1.5, 1 + Math.random() * 2, -4 - Math.random() * 2, // Move towards camera (negative Z)
-          180 + Math.random() * 80,
-          'star'
-        ));
-      }
-    }
-
-    function effectFlowerBurst() {
-      state.glowPulseIntensity = 0.7;
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      for (let i = 0; i < 15; i++) {
-        if (particles.length >= MAX_PARTICLES_3D) break;
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 1.5 + Math.random() * 3;
-        const zSpd = (Math.random() - 0.5) * 10;
-
-        particles.push(new Particle(
-          0, -H * 0.1, 0, // Center-ish
-          cols[Math.floor(Math.random() * cols.length)],
-          5 + Math.random() * 10,
-          Math.cos(ang) * spd, Math.sin(ang) * spd - 1.5, zSpd,
-          100 + Math.random() * 80,
-          'flower'
-        ));
-      }
-    }
-
-    function effectShimmer() {
-      state.shimmerPhase = 0;
-      state.shimmerStartMs = performance.now();
-      state.glowPulseIntensity = 0.8;
-      spawnBurst(W / 2, H * 0.4, 20, 1.0);
-      effectStarShower(8);
-    }
-
-    function effectRadiance() {
-      state.glowPulseIntensity = 1.0;
-      effectStarShower(15);
-      for (let i = 0; i < 12; i++) {
-        if (particles.length >= MAX_PARTICLES_3D) break;
-        const ang = (Math.PI * 2 * i) / 12;
-        ripples.push(new Ripple(W / 2, H * 0.4,
-          CONFIG.THEMES[state.currentTheme].colors[i % 6], 300 + i * 30));
-      }
-    }
-
-    const GOLDEN_BURST_COLORS = ['#ffd700', '#ffec8b', '#fff8dc', '#ffe4b5', '#ffc125', '#eec900'];
-    function effectGoldenBurst() {
-      state.glowPulseIntensity = 1.0;
-      state.shimmerPhase = 0;
-      state.shimmerStartMs = performance.now();
-      const goldColors = GOLDEN_BURST_COLORS;
-      for (let i = 0; i < 30; i++) {
-        if (particles.length >= MAX_PARTICLES_3D) break;
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 2 + Math.random() * 4;
-        const zSpd = (Math.random() - 0.5) * 15;
-
-        particles.push(new Particle(
-          0, -H * 0.15, 0,
-          goldColors[Math.floor(Math.random() * goldColors.length)],
-          4 + Math.random() * 12,
-          Math.cos(ang) * spd, Math.sin(ang) * spd - 2, zSpd,
-          100 + Math.random() * 100,
-          Math.random() > 0.5 ? 'star' : 'circle'
-        ));
-      }
-      effectStarShower(10);
-    }
-
-    function triggerEffect(effectName) {
-      switch (effectName) {
-        case 'glowPulse': effectGlowPulse(); break;
-        case 'glowParticles': effectGlowParticles(); break;
-        case 'colorWave': effectColorWave(); break;
-        case 'starShower': effectStarShower(12); break;
-        case 'flowerBurst': effectFlowerBurst(); break;
-        case 'shimmer': effectShimmer(); break;
-        case 'radiance': effectRadiance(); break;
-        case 'goldenBurst': effectGoldenBurst(); break;
-      }
-    }
+    // Encouragement effects — Phase 0b.3: 8 effects + triggerEffect dispatcher
+    // delegated to @piano/core via a single deps-bag adapter.
+    const _effectDeps = () => ({
+      particles,
+      ripples,
+      themeColors: CONFIG.THEMES[state.currentTheme].colors,
+      screenW: W,
+      screenH: H,
+      maxParticles: MAX_PARTICLES_3D,
+      state, // EffectGameState slice — effects mutate glowPulseIntensity, shimmerPhase, shimmerStartMs
+    });
+    const effectGlowPulse = () => PianoCore.effectGlowPulse(_effectDeps());
+    const effectGlowParticles = () => PianoCore.effectGlowParticles(_effectDeps());
+    const effectColorWave = () => PianoCore.effectColorWave(_effectDeps());
+    const effectStarShower = (count) => PianoCore.effectStarShower(_effectDeps(), count);
+    const effectFlowerBurst = () => PianoCore.effectFlowerBurst(_effectDeps());
+    const effectShimmer = () => PianoCore.effectShimmer(_effectDeps());
+    const effectRadiance = () => PianoCore.effectRadiance(_effectDeps());
+    const effectGoldenBurst = () => PianoCore.effectGoldenBurst(_effectDeps());
+    const triggerEffect = (name) => PianoCore.triggerEffect(name, _effectDeps());
 
     function showEncouragement(tierIndex, timeMs) {
       const tier = CONFIG.ENCOURAGEMENT_TIERS[tierIndex];
