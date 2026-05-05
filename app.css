@@ -1754,8 +1754,23 @@
     }
     /* Inserted user-song buttons on the start screen — match .mode-btn sizing. */
     #userSongList { display: contents; }
+    /* iOS HIG recommends 44x44 px minimum tap targets. Earlier 2x8 padding +
+       0.85rem font hit ~22px — too easy to misclick on iPad / Android tablets,
+       and the danger of accidentally tapping ✕ instead of the song made the
+       feature feel risky. Bumped to ~40x36 effective touch area. */
     #userSongList .mode-btn .my-remove {
       position: absolute; top: 6px; right: 8px;
-      background: rgba(0,0,0,.3); border: none; color: rgba(255,180,190,.85);
-      font-size: .85rem; padding: 2px 8px; border-radius: 8px; cursor: pointer;
+      background: rgba(0,0,0,.4); border: 1px solid rgba(255,180,190,.4);
+      color: rgba(255,200,210,.95);
+      font-size: 1.05rem; line-height: 1; padding: 8px 12px; border-radius: 10px;
+      cursor: pointer; min-width: 40px; min-height: 36px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #userSongList .mode-btn .my-remove:hover { background: rgba(180,40,60,.55); }
+    /* My library rename button (inside add-song modal). Inherits the danger-pill
+       base from .my-remove; this overrides the tone to neutral so users don't
+       confuse it with the destructive Delete button. */
+    #addSongMyList .my-row .my-rename {
+      border-color: rgba(180,200,255,.35);
+      color: rgba(200,220,255,.9);
     }

@@ -991,6 +991,9 @@
       addSongImport:      { en: '⬆ Import',                     jp: '⬆ インポート' },
       addSongImportDone:  { en: 'Imported {n} song(s)',         jp: '{n} 曲をインポートしました' },
       addSongEditSections:{ en: '✎ Edit sections',              jp: '✎ 章を編集' },
+      addSongRename:      { en: '✎ Rename',                     jp: '✎ 名前を変更' },
+      addSongRenamePromptTitle:    { en: 'New title:',           jp: '新しい曲名：' },
+      addSongRenamePromptComposer: { en: 'New composer:',        jp: '新しい作曲家：' },
       sectionEditTitle:   { en: 'Edit sections',                jp: '章の編集' },
       sectionEditHelp:    { en: 'Set start measure (1-based) for each part. Total: {v} measures.',
                             jp: '各章の開始小節を入力（1始まり）。全{v}小節。' },
@@ -2888,6 +2891,29 @@
       return addUserSongFromBlob(blob, { ...opts, filename, source: opts.source || 'url' });
     }
 
+    // Update an existing user-song's display title + composer. Persists to
+    // IndexedDB and patches the in-memory SONGS entry so the next render
+    // (My library / start-screen tile / song panel header) picks it up
+    // without needing a reload. Caller passes already-validated strings.
+    async function renameUserSong(id, newTitle, newComposer) {
+      const db = await openUserDb();
+      const rec = await new Promise((res, rej) => {
+        const tx = db.transaction(USER_DB_STORE, 'readonly');
+        const r = tx.objectStore(USER_DB_STORE).get(id);
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+      if (!rec) throw new Error('Song not found: ' + id);
+      rec.title = newTitle;
+      rec.composer = newComposer;
+      await userDbPut(rec);
+      const song = SONGS[id];
+      if (song) {
+        song._userTitle = newTitle;
+        song._userComposer = newComposer;
+      }
+    }
+
     async function removeUserSong(id) {
       await userDbDelete(id);
       const song = SONGS[id];
@@ -2914,8 +2940,87 @@
     // Bump this SHA + LIBRARY_PINNED_SHA together when intentionally refreshing.
     const LIBRARY_PINNED_SHA = '9128876f6164d96997c877a2be843349a32bdabb';
     const LIBRARY_API_URL = 'https://api.github.com/repos/musetrainer/library/contents/scores?ref=' + LIBRARY_PINNED_SHA + '&per_page=200';
-    const LIBRARY_CACHE_KEY = 'pianoViz_libraryCache';
+    // v2: bumped after adding `filename` + JP translations to the cached entry
+    // shape. Forces a one-time cache miss so existing v1 caches don't deny
+    // the user the new Japanese labels.
+    const LIBRARY_CACHE_KEY = 'pianoViz_libraryCache_v2';
     const LIBRARY_CACHE_TTL_MS = 60 * 60 * 1000;   // 1 hour
+
+    // Curated Japanese labels for every score in the pinned MuseTrainer catalog
+    // (69 .mxl files at SHA 9128876…). Keyed by exact filename so a future
+    // pin bump only needs additions (no rebuilds). Falls back to the
+    // ASCII-derived label when a filename isn't in the table.
+    const LIBRARY_JP = {
+      '12_Variations_of_Twinkle_Twinkle_Little_Star.mxl':                 { titleJp: 'キラキラ星変奏曲',                composerJp: 'モーツァルト' },
+      'Arabesque_L._66_No._1_in_E_Major.mxl':                             { titleJp: 'アラベスク 第1番',                composerJp: 'ドビュッシー' },
+      'Ave_Maria_D839_-_Schubert_-_Solo_Piano_Arrg..mxl':                 { titleJp: 'アヴェ・マリア D.839',           composerJp: 'シューベルト' },
+      'Bach_Minuet_in_G_Major_BWV_Anh._114.mxl':                          { titleJp: 'メヌエット ト長調 BWV Anh.114',   composerJp: 'バッハ' },
+      'Bach_Toccata_and_Fugue_in_D_Minor_Piano_solo.mxl':                 { titleJp: 'トッカータとフーガ ニ短調',       composerJp: 'バッハ' },
+      'Beethoven_Symphony_No._5_1st_movement_Piano_solo.mxl':             { titleJp: '交響曲第5番「運命」第1楽章',      composerJp: 'ベートーヴェン' },
+      'Bella_Ciao.mxl':                                                   { titleJp: 'ベラ・チャオ',                    composerJp: 'イタリア民謡' },
+      'Bella_Ciao_-_La_Casa_de_Papel.mxl':                                { titleJp: 'ベラ・チャオ (ペーパー・ハウス版)', composerJp: 'イタリア民謡' },
+      'Canon_in_D.mxl':                                                   { titleJp: 'カノン ニ長調',                   composerJp: 'パッヘルベル' },
+      'Canon_in_D_3.mxl':                                                 { titleJp: 'カノン ニ長調 (アレンジ)',         composerJp: 'パッヘルベル' },
+      'Canon_in_D_easy.mxl':                                              { titleJp: 'カノン ニ長調 (やさしい)',         composerJp: 'パッヘルベル' },
+      'Carol_of_the_Bells.mxl':                                           { titleJp: 'キャロル・オブ・ザ・ベルズ',       composerJp: 'レオントーヴィチ' },
+      'Carol_of_the_Bells_easy_piano.mxl':                                { titleJp: 'キャロル・オブ・ザ・ベルズ (やさしい)', composerJp: 'レオントーヴィチ' },
+      'Chopin_-_Ballade_no._1_in_G_minor_Op._23.mxl':                     { titleJp: 'バラード第1番 ト短調 Op.23',     composerJp: 'ショパン' },
+      'Chopin_-_Nocturne_Op._9_No._1.mxl':                                { titleJp: 'ノクターン Op.9-1',              composerJp: 'ショパン' },
+      'Chopin_-_Nocturne_Op_9_No_2_E_Flat_Major.mxl':                     { titleJp: 'ノクターン Op.9-2 変ホ長調',     composerJp: 'ショパン' },
+      'Chopin_-_Spring_Waltz.mxl':                                        { titleJp: '春のワルツ',                       composerJp: 'ショパン' },
+      'Clair_de_Lune__Debussy.mxl':                                       { titleJp: '月の光',                          composerJp: 'ドビュッシー' },
+      'Clair_de_lune_-_Claude_Debussy.mxl':                               { titleJp: '月の光 (別編)',                   composerJp: 'ドビュッシー' },
+      'DANSE_VILLAGEOISE_Beethoven.mxl':                                  { titleJp: '田舎の踊り',                      composerJp: 'ベートーヴェン' },
+      'Dance_of_the_sugar_plum_fairy.mxl':                                { titleJp: '金平糖の踊り',                    composerJp: 'チャイコフスキー' },
+      'Erik_Satie_-_Gymnopedie_No.1.mxl':                                 { titleJp: 'ジムノペディ 第1番',              composerJp: 'サティ' },
+      'Flight_of_the_Bumblebee.mxl':                                      { titleJp: '熊蜂の飛行',                      composerJp: 'リムスキー=コルサコフ' },
+      'Fur_Elise.mxl':                                                    { titleJp: 'エリーゼのために',                composerJp: 'ベートーヴェン' },
+      'Fur_Elise_-_Beethoven_-_for_beginner_piano.mxl':                   { titleJp: 'エリーゼのために (初心者用)',     composerJp: 'ベートーヴェン' },
+      'Fur_Elise_Easy_Piano.mxl':                                         { titleJp: 'エリーゼのために (やさしい)',     composerJp: 'ベートーヴェン' },
+      'Fur_Elise_fingered.mxl':                                           { titleJp: 'エリーゼのために (運指付き)',     composerJp: 'ベートーヴェン' },
+      'G_Minor_Bach.mxl':                                                 { titleJp: 'メヌエット ト短調 BWV Anh.115',   composerJp: 'ペツォールト' },
+      'G_Minor_Bach_Original.mxl':                                        { titleJp: 'メヌエット ト短調 (原曲)',         composerJp: 'ペツォールト' },
+      'Gnossienne_No._1.mxl':                                             { titleJp: 'グノシエンヌ 第1番',              composerJp: 'サティ' },
+      'Greensleeves_for_Piano_easy_and_beautiful.mxl':                    { titleJp: 'グリーンスリーブス',              composerJp: 'イングランド民謡' },
+      'Gymnopdie_No._1__Satie.mxl':                                       { titleJp: 'ジムノペディ 第1番 (別編)',       composerJp: 'サティ' },
+      'Happy_Birthday_To_You_C_Major.mxl':                                { titleJp: 'ハッピーバースデー (ハ長調)',      composerJp: 'ヒル姉妹' },
+      'Happy_Birthday_To_You_Piano.mxl':                                  { titleJp: 'ハッピーバースデー',              composerJp: 'ヒル姉妹' },
+      'Hungarian_Dance_No_5_in_G_Minor.mxl':                              { titleJp: 'ハンガリー舞曲 第5番',            composerJp: 'ブラームス' },
+      'Hungarian_Sonata.mxl':                                             { titleJp: 'ハンガリー狂詩曲',                composerJp: 'リスト' },
+      'J._S._Bach_-_Air_on_the_G_String_Piano_arrangement.mxl':           { titleJp: 'G線上のアリア',                   composerJp: 'バッハ' },
+      'La_Campanella_-_Grandes_Etudes_de_Paganini_No._3_-_Franz_Liszt.mxl': { titleJp: 'ラ・カンパネラ',                composerJp: 'リスト' },
+      'Lacrimosa_-_Requiem.mxl':                                          { titleJp: 'レクイエム より「ラクリモーサ」',   composerJp: 'モーツァルト' },
+      'Liebestraum_No._3_in_A_Major.mxl':                                 { titleJp: '愛の夢 第3番',                    composerJp: 'リスト' },
+      'Maple_Leaf_Rag_Scott_Joplin.mxl':                                  { titleJp: 'メイプル・リーフ・ラグ',          composerJp: 'ジョプリン' },
+      'Mariage_dAmour.mxl':                                               { titleJp: '愛の喜び (Mariage d\'Amour)',     composerJp: 'P. ド・センヌヴィル' },
+      'Minuet_in_G_Major_Bach.mxl':                                       { titleJp: 'メヌエット ト長調',                composerJp: 'バッハ' },
+      'Mozart_-_Piano_Sonata_No._16_-_Allegro.mxl':                       { titleJp: 'ピアノソナタ第16番 第1楽章',     composerJp: 'モーツァルト' },
+      'Nocturne_No._20_in_C_Minor.mxl':                                   { titleJp: 'ノクターン第20番 嬰ハ短調 (遺作)', composerJp: 'ショパン' },
+      'Nocturne_in_C_sharp_Minor.mxl':                                    { titleJp: 'ノクターン 嬰ハ短調 (遺作)',       composerJp: 'ショパン' },
+      'Nocturne_in_E-flat_Major_Op._9_No._2_Easy.mxl':                    { titleJp: 'ノクターン Op.9-2 (やさしい)',     composerJp: 'ショパン' },
+      'Ode_to_Joy_Easy_variation.mxl':                                    { titleJp: '歓喜の歌 (やさしい)',              composerJp: 'ベートーヴェン' },
+      'Passacaglia.mxl':                                                  { titleJp: 'パッサカリア',                     composerJp: 'ヘンデル / ハルヴォルセン' },
+      'Passacaglia2.mxl':                                                 { titleJp: 'パッサカリア (アレンジ2)',         composerJp: 'ヘンデル / ハルヴォルセン' },
+      'Piano_Sonata_No._11_K._331_3rd_Movement_Rondo_alla_Turca.mxl':     { titleJp: 'トルコ行進曲 (ピアノソナタ第11番第3楽章)', composerJp: 'モーツァルト' },
+      'Prelude_I_in_C_major_BWV_846_-_Well_Tempered_Clavier_First_Book.mxl': { titleJp: '前奏曲 第1番 ハ長調 BWV 846', composerJp: 'バッハ' },
+      'Prelude_No._2_BWV_847_in_C_Minor.mxl':                             { titleJp: '前奏曲 第2番 ハ短調 BWV 847',    composerJp: 'バッハ' },
+      'Prlude_No._4_in_E_Minor_Op._28_-_Frdric_Chopin.mxl':               { titleJp: '前奏曲 第4番 ホ短調 Op.28',      composerJp: 'ショパン' },
+      'Prlude_Opus_28_No._4_in_E_Minor__Chopin.mxl':                      { titleJp: '前奏曲 Op.28-4 ホ短調',          composerJp: 'ショパン' },
+      'Schubert_Serenade_-_Standchen_-_By_Lizst.mxl':                     { titleJp: 'セレナーデ (リスト編)',            composerJp: 'シューベルト' },
+      'Sonata_No._16_1st_Movement_K._545.mxl':                            { titleJp: 'ピアノソナタ第16番 K.545 第1楽章',composerJp: 'モーツァルト' },
+      'Sonate_No._14_Moonlight_1st_Movement.mxl':                         { titleJp: '月光ソナタ 第1楽章',              composerJp: 'ベートーヴェン' },
+      'Sonate_No._14_Moonlight_3rd_Movement.mxl':                         { titleJp: '月光ソナタ 第3楽章',              composerJp: 'ベートーヴェン' },
+      'Sonate_No._8_Pathetique_2nd_Movement.mxl':                         { titleJp: '悲愴ソナタ 第2楽章',              composerJp: 'ベートーヴェン' },
+      'Spring_Waltz_Mariage_dAmour_-_Chopin.mxl':                         { titleJp: '春のワルツ (Mariage d\'Amour)',   composerJp: 'P. ド・センヌヴィル' },
+      'Swan_Lake.mxl':                                                    { titleJp: '白鳥の湖',                        composerJp: 'チャイコフスキー' },
+      'The_Entertainer_-_Scott_Joplin.mxl':                               { titleJp: 'ジ・エンターテイナー',             composerJp: 'ジョプリン' },
+      'The_Entertainer_-_Scott_Joplin_-_1902.mxl':                        { titleJp: 'ジ・エンターテイナー (1902)',     composerJp: 'ジョプリン' },
+      'WA_Mozart_Marche_Turque_Turkish_March_fingered.mxl':               { titleJp: 'トルコ行進曲 (運指付き)',          composerJp: 'モーツァルト' },
+      'Waltz_Opus_64_No._2_in_C_Minor.mxl':                               { titleJp: 'ワルツ Op.64-2 嬰ハ短調',         composerJp: 'ショパン' },
+      'Waltz_in_A_MinorChopin.mxl':                                       { titleJp: 'ワルツ イ短調 (遺作)',             composerJp: 'ショパン' },
+      'Waltz_of_the_Flowers.mxl':                                         { titleJp: '花のワルツ',                      composerJp: 'チャイコフスキー' },
+      'moonlight_sonata_3rd_movement.mxl':                                { titleJp: '月光ソナタ 第3楽章',              composerJp: 'ベートーヴェン' }
+    };
 
     function libraryEntryFromGhFile(f) {
       // f.name = "Bach_Minuet_in_G_Major_BWV_Anh._114.mxl"
@@ -2927,12 +3032,17 @@
       const title = parts.slice(1).join(' ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
       const label = (composer && title) ? (composer + ' — ' + title)
                   : (composer || title || stem);
+      const jp = LIBRARY_JP[f.name] || null;
       return {
         url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@' + LIBRARY_PINNED_SHA
            + '/scores/' + encodeURIComponent(f.name),
+        filename: f.name,
         label,
         composer,
         title,
+        labelJp:    jp ? (jp.composerJp + ' — ' + jp.titleJp) : null,
+        composerJp: jp ? jp.composerJp : null,
+        titleJp:    jp ? jp.titleJp    : null,
         icon: '🎼',
         size: f.size || 0
       };
@@ -5508,23 +5618,42 @@
       return _libraryLoadPromise;
     }
 
+    // Pick the best display label for a library entry given current language.
+    // JP labels exist for the 69 pinned scores; falls back to ASCII label
+    // for anything not in the table (e.g. future additions before the JP
+    // map is updated).
+    function libraryDisplayLabel(item) {
+      if (prefs.lang === 'jp' && item.labelJp) return item.labelJp;
+      return item.label;
+    }
+
     function renderAddSongLibrary() {
       DOM_ADDSONG.libraryList.innerHTML = '';
       const search = (document.getElementById('addSongLibrarySearch')?.value || '').toLowerCase();
+      // Search matches both EN and JP labels so kids can type in either script.
       const filtered = search
-        ? ONLINE_LIBRARY.filter(it => (it.label || '').toLowerCase().includes(search))
+        ? ONLINE_LIBRARY.filter(it =>
+            (it.label || '').toLowerCase().includes(search) ||
+            (it.labelJp || '').toLowerCase().includes(search))
         : ONLINE_LIBRARY;
       for (const item of filtered) {
         const row = document.createElement('div');
         row.className = 'lib-row';
         row.innerHTML = `<span class="lib-icon">${item.icon || '🎼'}</span><span class="lib-label"></span>`;
-        row.querySelector('.lib-label').textContent = item.label;
+        const displayLabel = libraryDisplayLabel(item);
+        row.querySelector('.lib-label').textContent = displayLabel;
         row.addEventListener('click', async () => {
           if (row.classList.contains('busy')) return;
           row.classList.add('busy');
           setAddSongStatus(t('addSongFetch') + '…');
           try {
-            const rec = await addUserSongFromUrl(item.url, { source: 'library', titleOverride: item.label });
+            // Pass JP fields when available so the saved record carries the
+            // localized title/composer separately from the auto-derived ASCII one.
+            const rec = await addUserSongFromUrl(item.url, {
+              source: 'library',
+              titleOverride: prefs.lang === 'jp' && item.titleJp ? item.titleJp : item.label,
+              composerOverride: prefs.lang === 'jp' && item.composerJp ? item.composerJp : undefined
+            });
             setAddSongStatus(t('addSongAdded'));
             renderAddSongMyList();
             renderUserSongButtons();
@@ -5555,10 +5684,15 @@
         const subParts = [];
         if (song._userComposer) subParts.push(song._userComposer);
         const sub = subParts.join(' · ');
+        // 3-button row: rename / edit-sections / delete. All carry .my-remove
+        // for the shared danger-pill styling; the visual difference is the
+        // button label. Order matters: rename is the most common rescue
+        // action when a kid imports a file with an ugly auto-derived title.
         row.innerHTML = `<span class="my-icon">${song.icon || '🎵'}</span>
           <span class="my-label"></span>
-          <button class="my-remove my-edit"></button>
-          <button class="my-remove"></button>`;
+          <button class="my-remove my-rename" type="button"></button>
+          <button class="my-remove my-edit" type="button"></button>
+          <button class="my-remove" type="button"></button>`;
         const labelEl = row.querySelector('.my-label');
         labelEl.textContent = song._userTitle || song.id;
         if (sub) {
@@ -5567,14 +5701,41 @@
           sb.textContent = sub;
           labelEl.appendChild(sb);
         }
-        const btns = row.querySelectorAll('button');
-        btns[0].textContent = t('addSongEditSections');
-        btns[1].textContent = t('addSongRemove');
-        btns[0].addEventListener('click', (e) => {
+        const renameBtn = row.querySelector('.my-rename');
+        const editBtn = row.querySelector('.my-edit');
+        const removeBtn = row.querySelectorAll('button')[2];
+        renameBtn.textContent = t('addSongRename');
+        editBtn.textContent = t('addSongEditSections');
+        removeBtn.textContent = t('addSongRemove');
+        renameBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const newTitle = prompt(t('addSongRenamePromptTitle'), song._userTitle || '');
+          if (newTitle == null) return; // cancel
+          const trimmedTitle = newTitle.trim();
+          if (!trimmedTitle) return;
+          const newComposer = prompt(t('addSongRenamePromptComposer'), song._userComposer || '');
+          if (newComposer == null) return; // cancel
+          try {
+            await renameUserSong(song.id, trimmedTitle, newComposer.trim());
+          } catch (err) {
+            console.error('renameUserSong failed', err);
+            setAddSongStatus(t('addSongFailed', { v: (err && err.message) || 'rename' }), true);
+            return;
+          }
+          renderAddSongMyList();
+          renderUserSongButtons();
+          // If the renamed song is currently displayed in the song panel header,
+          // refresh its title/composer text too.
+          if (currentSong && currentSong.id === song.id) {
+            DOM.songTitle.textContent = t(currentSong.titleKey);
+            DOM.songComposer.textContent = t(currentSong.composerKey);
+          }
+        });
+        editBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           openSectionEditor(song.id);
         });
-        btns[1].addEventListener('click', async (e) => {
+        removeBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (!confirm(t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
           try {
