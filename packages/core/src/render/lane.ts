@@ -57,8 +57,13 @@ export interface LaneDrawOptions {
   screenW: number;
   screenH: number;
   /** OSMD score panel is showing — start the lane below it so notes aren't
-   *  hidden behind the score (332 vs 50 px from top). */
+   *  hidden behind the score (332 vs 50 px from top by default). */
   osmdVisible: boolean;
+  /** Optional explicit pixel offset for the lane top edge, overriding the
+   *  default (332 when osmdVisible, 50 otherwise). Set this when the OSMD
+   *  strip is sized non-default (e.g. landscape phone media query) so the
+   *  lane sits exactly under the score regardless of viewport shape. */
+  laneTopOverride?: number;
   /** Reserve at the bottom of the canvas (keyboard + safe area, or small
    *  padding when the keyboard is hidden). */
   kbReserve: number;
@@ -99,7 +104,7 @@ export function drawPracticeLane(
   const W = opts.screenW;
   const H = opts.screenH;
 
-  const laneTop = opts.osmdVisible ? 332 : 50;
+  const laneTop = opts.laneTopOverride ?? (opts.osmdVisible ? 332 : 50);
   const laneHeight = Math.max(280, H - laneTop - opts.kbReserve);
   const hitLineY = laneTop + laneHeight - 60;
   const pxPerMs = (laneHeight - 40) / opts.laneLookaheadMs;

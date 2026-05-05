@@ -1417,6 +1417,41 @@
       background: rgba(255, 255, 255, .25);
     }
 
+    /* Landscape-phone overrides — viewport is ~360-440 px tall once URL bar
+       eats into it, so the default OSMD strip (260 px) + a wrapped topBar
+       leave essentially zero room for the falling-notes lane.
+       Two fixes: force the topBar to a single tight row, and cap the OSMD
+       height at 45vh so the lane always gets at least half the height. */
+    @media (orientation: landscape) and (max-height: 520px) {
+      #practiceTopBar {
+        font-size: .75rem;
+        gap: 6px;
+        padding: 4px 10px;
+        flex-wrap: nowrap;
+        max-width: 96vw;
+        overflow: hidden;
+      }
+      #practiceTopBar .ptb-section {
+        max-width: 28vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #practiceTopBar .ptb-input {
+        font-size: .75rem;
+        padding: 1px 6px;
+      }
+      #practiceTopBar button {
+        font-size: .7rem;
+        padding: 2px 8px;
+        white-space: nowrap;
+      }
+      #osmdContainer {
+        top: 48px;
+        height: min(180px, 45vh);
+      }
+    }
+
     /* Section result overlay */
     #sectionResult {
       position: fixed;

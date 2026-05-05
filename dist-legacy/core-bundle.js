@@ -672,7 +672,7 @@ var PianoCore = (() => {
     if (!view.enabled) return;
     const W = opts.screenW;
     const H = opts.screenH;
-    const laneTop = opts.osmdVisible ? 332 : 50;
+    const laneTop = opts.laneTopOverride ?? (opts.osmdVisible ? 332 : 50);
     const laneHeight = Math.max(280, H - laneTop - opts.kbReserve);
     const hitLineY = laneTop + laneHeight - 60;
     const pxPerMs = (laneHeight - 40) / opts.laneLookaheadMs;
