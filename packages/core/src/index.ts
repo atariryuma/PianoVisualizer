@@ -16,9 +16,29 @@ export type {
   MidiMessageListener,
 } from './input/types';
 
-// === Render ===
+// === Render: device perf tier ===
 export { detectPerfTier, PERF_PROFILES } from './render/perf-tier';
 export type { PerfTier, PerfProfile } from './render/perf-tier';
+
+// === Render: particle system (3D-projected canvas particles) ===
+export {
+  FOCAL_LENGTH,
+  NEAR_CLIPPING,
+  Particle,
+  project3D,
+  drawStar,
+  drawFlower,
+  getNoteColor,
+  spawnBurst,
+  spawnStream,
+} from './render/particles';
+export type {
+  ParticleType,
+  ProjectedPoint,
+  Project3DOptions,
+  ParticleDrawOptions,
+  SpawnOptions,
+} from './render/particles';
 
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';

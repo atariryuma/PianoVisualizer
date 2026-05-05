@@ -6,8 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (16 modules extracted; engine layer is now
-content-complete — only render/ remains).
+Last refreshed: **2026-05-05** (17 modules extracted; engine + 3D particle
+system in core. Remaining render layer is largely thin Canvas glue.)
 
 ---
 
@@ -31,57 +31,69 @@ content-complete — only render/ remains).
 | 14  | `config.ts`                   | 17    | `packages/core/src/config.ts`                   |
 | 15  | `state/midi-state.ts`         | 21    | `packages/core/src/state/midi-state.ts`         |
 | 16  | `state/practice-state.ts`     | 41    | `packages/core/src/state/practice-state.ts`     |
+| 17  | `render/particles.ts`         | 34    | `packages/core/src/render/particles.ts`         |
 
-**Status: 263/263 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 297/297 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/practice-state.ts`
+## 1. Extract `render/effects.ts`
 
-**What**: Move the `practice` object + lifecycle (`startPracticeSection`,
-`updatePractice`, `matchNoteOnset`, hit-window judging, section completion).
-This is the largest single extraction yet — practice is the killer feature.
+**What**: Move encouragement effects (`effectGlowPulse`, `effectGlowParticles`,
+`effectColorWave`, `effectStarShower`, `effectFlowerBurst`, `effectShimmer`,
+`effectRadiance`, `effectGoldenBurst`) and the `triggerEffect(name)` dispatcher.
 
-**Why**: Lifting practice into core makes the engine self-contained for
-mobile-shell use without dragging in DOM-coupled UI.
-
-**Acceptance**:
-
-- [ ] `PracticeState` interface; `init`/`step`/`matchNote`/`completeSection`
-      functions
-- [ ] OSMD interaction stays in the shell (cursor.show/hide/next abstracted as a
-      `CursorAdapter` interface the shell implements)
-- [ ] Tests cover hit-window scoring (early/perfect/late/miss), chord-mate
-      forgiveness, mode switching (guided/rhythm/listen)
-
-**Est**: 400 + 350 tests.
-
-## 3. Extract `render/particles.ts`
-
-**What**: Move the `Particle` class, `spawnBurst`, `spawnStream`,
-`MAX_PARTICLES_3D`, 3D projection helpers.
+**Why**: These are the celebration feedback fired at combo milestones. Each is a
+thin wrapper over `spawnBurst` / `Ripple` / state nudges, so extraction is
+mostly mechanical now that particles is in core.
 
 **Acceptance**:
 
-- [ ] Particle class (or factory) with explicit deps for `W/H` (canvas size) and
-      theme colors — no global reads
-- [ ] `update()` is pure-ish (mutates self, no globals)
-- [ ] `draw(ctx, perfProfile)` — perfProfile gates shadowBlur
-- [ ] Tests: spawn count, lifetime decay, projection math
+- [ ] Each effect takes a deps bag (particles, ripples, themeColors, W/H/flow)
+      and returns void / event records
+- [ ] No reads of globals (`state`, `CONFIG`, `W`, `H`)
+- [ ] `triggerEffect(name, deps)` looks up by name and dispatches
+- [ ] Tests assert each effect spawns the expected particle types/counts
 
 **Est**: 250 + 150 tests.
+
+## 2. Extract `render/keyboard.ts`
+
+**What**: Move `drawMidiKeyboard()` + the `KB_WHITE` / `KB_BLACK` /
+`KB_BLACK_LEFT_WHITE_IDX` precomputed tables.
+
+**Acceptance**:
+
+- [ ] Pure helper: `drawMidiKeyboard(ctx, opts)` where opts carries the
+      midiState (active/sustained), W/kbHeight/kbY/sustainLabel
+- [ ] Key tables exposed as exports (built once at module load)
+- [ ] Tests: white/black indexing, paint per-key state (lit/sustained/idle)
+
+**Est**: 200 + 100 tests.
+
+## 3. Extract `render/lane.ts`
+
+**What**: Move `drawPracticeLane(ctx, opts, practiceState)` — the falling-notes
+lane + count-in countdown + hit zones.
+
+**Acceptance**:
+
+- [ ] Pure: takes ctx + state + opts (W/H/kbHeight/laneTop/etc.) + i18n callback
+- [ ] Computes geometry without globals
+- [ ] Tests: visible window culling, position math, count-in countdown timing
+
+**Est**: 350 + 150 tests.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/lane.ts`
-- `render/keyboard.ts`
-- `render/effects.ts`
-- `render/theme.ts`
+- `render/theme.ts` — theme application + synesthesia
+- `render/background.ts` — bg stars + aurora + ground flowers
+- `render/ripples.ts` — Ripple class
 
 ---
 
