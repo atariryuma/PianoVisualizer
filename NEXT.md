@@ -6,8 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (after 11-module extraction including the
-session-confidence state machine).
+Last refreshed: **2026-05-05** (after 12-module extraction sweep; the audio DSP
+pipeline and scoring layer now live in @piano/core).
 
 ---
 
@@ -26,31 +26,16 @@ session-confidence state machine).
 | 9   | `library/auto-section.ts`     | 11    | `packages/core/src/library/auto-section.ts`     |
 | 10  | `library/user-songs.ts`       | 15    | `packages/core/src/library/user-songs.ts`       |
 | 11  | `state/session-confidence.ts` | 17    | `packages/core/src/state/session-confidence.ts` |
+| 12  | `state/quality.ts`            | 27    | `packages/core/src/state/quality.ts`            |
 
-**Status: 134/134 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 161/161 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/quality.ts`
-
-**What**: Move `computeRhythmScore`, `computeDynamicsScore`,
-`computeStabilityScore`, `updateQualityScores`, `updateGrowthTrend`,
-`buildCoachingFeedback`.
-
-**Why**: Pure scoring functions, easy targets, valuable to test.
-
-**Acceptance**:
-
-- [ ] All 6 functions exported, no `state.X` reads/writes (pass values in)
-- [ ] Tests: rhythm CV → score curve; dynamics CV → score curve
-- [ ] `buildCoachingFeedback` returns object instead of mutating
-
-**Playbook**: extract-module. **Est**: 150 + 200 tests.
-
-## 2. Extract `i18n/index.ts`
+## 1. Extract `i18n/index.ts`
 
 **What**: Move `T_STRINGS` + `t()` + `applyI18n` (split: applyI18n stays in
 DOM-coupled web shell, `t()` and table go to core).
@@ -68,7 +53,7 @@ DOM-decoupled extraction.
 
 **Est**: 100 + 80 tests.
 
-## 3. Extract `config.ts`
+## 2. Extract `config.ts`
 
 **What**: Move the `CONFIG` object literal.
 
