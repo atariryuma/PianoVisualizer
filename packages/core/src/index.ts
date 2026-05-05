@@ -120,6 +120,40 @@ export {
 } from './state/midi-state';
 export type { MidiState, MidiStateOptions, ActiveNote, MidiEvent } from './state/midi-state';
 
+// === State: practice mode (section schedule, hit-window judging, stars) ===
+export {
+  HIT_WINDOW_EARLY_MS,
+  HIT_WINDOW_MS,
+  PERFECT_MS,
+  CHORD_MATE_TOLERANCE_MS,
+  DURATION_MIN_TOL_MS,
+  DURATION_TOL_FRACTION,
+  STAR_TIERS,
+  initPracticeState,
+  resetPracticeState,
+  buildSectionNotes,
+  computeHandRanges,
+  matchNoteOnset,
+  finalizeNoteHold,
+  computeStars,
+  practiceElapsedMs,
+} from './state/practice-state';
+export type {
+  PracticeMode,
+  Hand,
+  HandFilter,
+  PracticeNote,
+  PracticeSectionDef,
+  PracticeSourceNote,
+  BuildSectionNotesOptions,
+  HandRanges,
+  PracticeState,
+  MatchOptions,
+  MatchOutcome,
+  FinalizeHoldResult,
+  StarTier,
+} from './state/practice-state';
+
 // === State: quality scoring + coaching feedback ===
 export {
   clamp01,

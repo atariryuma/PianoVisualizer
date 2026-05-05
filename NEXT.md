@@ -6,8 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (15 modules extracted; engine layer is now
-content-complete except for render/ and practice-state).
+Last refreshed: **2026-05-05** (16 modules extracted; engine layer is now
+content-complete — only render/ remains).
 
 ---
 
@@ -30,8 +30,9 @@ content-complete except for render/ and practice-state).
 | 13  | `i18n/`                       | 23    | `packages/core/src/i18n/index.ts` + strings.ts  |
 | 14  | `config.ts`                   | 17    | `packages/core/src/config.ts`                   |
 | 15  | `state/midi-state.ts`         | 21    | `packages/core/src/state/midi-state.ts`         |
+| 16  | `state/practice-state.ts`     | 41    | `packages/core/src/state/practice-state.ts`     |
 
-**Status: 222/222 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 263/263 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
