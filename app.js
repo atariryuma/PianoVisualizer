@@ -1049,11 +1049,8 @@
       applyI18n();
     }
 
-    // Build a stage label out of its prefix (✦ marks) + its translated name.
-    function stageLabel(stage) {
-      if (!stage || !stage.nameKey) return '';
-      return stage.prefix + t(stage.nameKey);
-    }
+    // Stage label — Phase 0b.3: delegated to @piano/core.
+    const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
 
     function applyTheme(idx) {
       prefs.theme = idx;
@@ -2052,21 +2049,14 @@
 
 
 
-      // Stage transitions — v9: enhanced with more particles
+      // Stage transitions — Phase 0b.3: delegated to @piano/core.
       const prevStage = state.currentStage;
-      let newStage = 0;
-      for (let i = CONFIG.STAGES.length - 1; i >= 0; i--) {
-        if (state.flow >= CONFIG.STAGES[i].minFlow) { newStage = i; break; }
-      }
-
+      const newStage = PianoCore.stageForFlow(state.flow, CONFIG.STAGES);
       if (newStage !== prevStage) {
         state.currentStage = newStage;
         DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[newStage]);
-        if (newStage > 0) { DOM.stageLabel.classList.add('visible'); }
-        else { DOM.stageLabel.classList.remove('visible'); }
-
-        // v9: Enhanced stage-up celebration
-        if (newStage > prevStage && newStage > 0) {
+        DOM.stageLabel.classList.toggle('visible', newStage > 0);
+        if (PianoCore.classifyStageTransition(prevStage, newStage) === 'up' && newStage > 0) {
           for (let i = 0; i < 40; i++) {
             spawnBurst(Math.random() * W, Math.random() * H, 3, 0.9);
           }
@@ -4061,15 +4051,15 @@
       return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
     }
 
-    function noteThemeColor(midiNum) {
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      return cols[midiNum % cols.length];
-    }
-
-    function synColorFor(midiNum) {
-      if (!state.useSynesthesiaMode) return null;
-      return getNoteColor(CONFIG.NOTE_NAMES[midiNum % 12]);
-    }
+    // Per-note color helpers — Phase 0b.3: delegated to @piano/core.
+    const noteThemeColor = (midiNum) =>
+      PianoCore.noteThemeColor(midiNum, CONFIG.THEMES[state.currentTheme]);
+    const synColorFor = (midiNum) =>
+      PianoCore.synColorFor(midiNum, {
+        enabled: state.useSynesthesiaMode,
+        noteNames: CONFIG.NOTE_NAMES,
+        colorMap: CONFIG.NOTE_COLORS,
+      });
 
     function showNoteDisplay(displayText, changeKey, color, timeMs) {
       // In practice mode the falling lane already shows the just-played note,
