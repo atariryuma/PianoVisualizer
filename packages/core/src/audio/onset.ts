@@ -188,10 +188,12 @@ export function stepOnset(
   const centroid = computeSpectralCentroid(spectrum, startBin, endBin, binHz);
 
   // Update centroid history (bounded) — used for debug CV display.
-  const centroidHistory = prev.centroidHistory.concat(centroid);
-  if (centroidHistory.length > opts.centroidHistorySize) {
-    centroidHistory.splice(0, centroidHistory.length - opts.centroidHistorySize);
-  }
+  // Mutate the prev array in place + return the same reference (matches the
+  // prevSpectrum pattern below); concat() would allocate ~60 throwaway arrays
+  // per second on the per-frame onset path.
+  const centroidHistory = prev.centroidHistory;
+  centroidHistory.push(centroid);
+  while (centroidHistory.length > opts.centroidHistorySize) centroidHistory.shift();
   const centroidCV = coefficientOfVariation(centroidHistory);
 
   // === Feature 5: harmonicity (only when we have a pitch to anchor on) ===
@@ -206,11 +208,10 @@ export function stepOnset(
   // Update prevSpectrum (mutate in place; it's owned by us via the seed step).
   prev.prevSpectrum.set(spectrum);
 
-  // Update flux history for adaptive threshold.
-  const fluxHistory = prev.fluxHistory.concat(flux);
-  if (fluxHistory.length > opts.spectralFluxHistorySize) {
-    fluxHistory.splice(0, fluxHistory.length - opts.spectralFluxHistorySize);
-  }
+  // Update flux history for adaptive threshold (mutate in place, see above).
+  const fluxHistory = prev.fluxHistory;
+  fluxHistory.push(flux);
+  while (fluxHistory.length > opts.spectralFluxHistorySize) fluxHistory.shift();
 
   // === Combined decision (need at least 5 history samples for adaptive threshold) ===
   let isOnset = false;

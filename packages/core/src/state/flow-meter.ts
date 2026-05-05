@@ -26,6 +26,11 @@ export interface FlowState {
   lastSilenceStartMs: number;
   /** Wall-clock ms of the last noise penalty (for cooldown). */
   lastNoisePenaltyMs: number;
+  /** Fractional combo-decay carried across ticks so the per-second drop rate
+   *  stays framerate-independent (combo is integer; without an accumulator,
+   *  Math.ceil(rate × dtSec) rounds up every frame and the effective rate
+   *  scales with refresh rate — was 144/sec on 144 Hz vs 60/sec on 60 Hz). */
+  comboDecayAccum: number;
 }
 
 export interface FlowMeterOptions {
@@ -39,8 +44,11 @@ export interface FlowMeterOptions {
   flowDecaySoft: number;
   /** Hard flow decay rate (units per second) during the hard band. */
   flowDecayHard: number;
-  /** Combo decay rate during hard silence — interpreted as "per frame at 60fps"
-   *  so the actual drop = `ceil(rate × dtSec × 60)` to match legacy framing. */
+  /** Combo decay rate during hard silence, scaled as "drops per frame at
+   *  60fps" for legacy parity (so e.g. rate=0.1 = 6 drops/sec). The reducer
+   *  multiplies by `60 × dtSec` and accumulates fractional remainders into
+   *  `state.comboDecayAccum` so the actual per-second rate is the same on
+   *  60 Hz, 90 Hz, 120 Hz, and 144 Hz displays. */
   comboDecayRate: number;
   /** Flow penalty rate (units/second) during a noise event. */
   flowNoisePenalty: number;
@@ -90,6 +98,7 @@ export function initFlowState(): FlowState {
     lastGoodNoteTimeMs: 0,
     lastSilenceStartMs: -1,
     lastNoisePenaltyMs: 0,
+    comboDecayAccum: 0,
   };
 }
 
@@ -102,6 +111,7 @@ export function resetFlowState(state: FlowState): void {
   state.lastGoodNoteTimeMs = 0;
   state.lastSilenceStartMs = -1;
   state.lastNoisePenaltyMs = 0;
+  state.comboDecayAccum = 0;
 }
 
 /**
@@ -137,6 +147,7 @@ export function applyFlowEvent(state: FlowState, event: FlowEvent, opts: FlowMet
       }
       state.lastGoodNoteTimeMs = event.timeMs;
       state.lastSilenceStartMs = -1;
+      state.comboDecayAccum = 0;
       return;
     }
 
@@ -176,10 +187,12 @@ export function applyFlowEvent(state: FlowState, event: FlowEvent, opts: FlowMet
         state.flow = Math.max(0, state.flow - opts.flowDecaySoft * event.dtSec);
         if (silenceDuration > opts.silenceHardDecayMs) {
           state.flow = Math.max(0, state.flow - opts.flowDecayHard * event.dtSec);
-          state.combo = Math.max(
-            0,
-            state.combo - Math.ceil(opts.comboDecayRate * event.dtSec * 60)
-          );
+          state.comboDecayAccum += opts.comboDecayRate * 60 * event.dtSec;
+          if (state.comboDecayAccum >= 1) {
+            const drops = Math.floor(state.comboDecayAccum);
+            state.combo = Math.max(0, state.combo - drops);
+            state.comboDecayAccum -= drops;
+          }
         }
       }
       return;

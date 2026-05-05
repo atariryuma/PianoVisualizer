@@ -53,25 +53,25 @@
     <button id="homeBtn" data-i18n-title="backToTitle" title="Back to title">🏠</button>
   </div>
 
-  <div id="settingsPanel">
+  <div id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsPanelTitle">
     <div class="settings-card">
       <div class="settings-header">
-        <div class="settings-title">⚙ <span data-i18n="settings">Settings</span></div>
-        <button class="settings-close" id="settingsCloseBtn" data-i18n-title="close" title="Close">✕</button>
+        <div class="settings-title" id="settingsPanelTitle">⚙ <span data-i18n="settings">Settings</span></div>
+        <button class="settings-close" id="settingsCloseBtn" data-i18n-title="close" title="Close" aria-label="Close">✕</button>
       </div>
 
       <div class="settings-section">
         <div class="settings-section-label">🎨 <span data-i18n="display">Display</span></div>
         <div class="settings-row">
-          <div class="settings-theme-row">
-            <div class="theme-dot active" data-theme="0" title="Purple × Pink"></div>
-            <div class="theme-dot" data-theme="1" title="Cyan × Green"></div>
-            <div class="theme-dot" data-theme="2" title="Orange × Red"></div>
-            <div class="theme-dot" data-theme="3" title="White × Lavender"></div>
+          <div class="settings-theme-row" role="radiogroup" aria-label="Theme">
+            <div class="theme-dot active" data-theme="0" title="Purple × Pink" role="radio" tabindex="0" aria-checked="true" aria-label="Purple × Pink"></div>
+            <div class="theme-dot" data-theme="1" title="Cyan × Green" role="radio" tabindex="0" aria-checked="false" aria-label="Cyan × Green"></div>
+            <div class="theme-dot" data-theme="2" title="Orange × Red" role="radio" tabindex="0" aria-checked="false" aria-label="Orange × Red"></div>
+            <div class="theme-dot" data-theme="3" title="White × Lavender" role="radio" tabindex="0" aria-checked="false" aria-label="White × Lavender"></div>
           </div>
         </div>
         <div class="settings-row">
-          <div id="synesthesiaToggle" data-i18n-title="synesthesiaTitle" title="Synesthesia mode">🎨</div>
+          <div id="synesthesiaToggle" data-i18n-title="synesthesiaTitle" title="Synesthesia mode" role="switch" tabindex="0" aria-checked="false" aria-label="Synesthesia mode">🎨</div>
           <span style="font-size:.85rem" data-i18n="synesthesia">Synesthesia mode (each note has its own color)</span>
         </div>
         <div class="settings-row">
@@ -123,9 +123,9 @@
     </div>
   </div>
   <div id="playTime"></div>
-  <div id="sessionSummary">
+  <div id="sessionSummary" role="dialog" aria-modal="true" aria-labelledby="sumTitleHeading">
     <div class="summary-card">
-      <h2 data-i18n="sumTitle">🎹 Session Results</h2>
+      <h2 id="sumTitleHeading" data-i18n="sumTitle">🎹 Session Results</h2>
       <div class="summary-stat"><span class="summary-label" data-i18n="sumBestCombo">🎵 Best Combo</span><span class="summary-value"
           id="sumCombo">0</span></div>
       <div class="summary-stat"><span class="summary-label" data-i18n="sumStageReached">🏔 Stage Reached</span><span class="summary-value"
@@ -168,7 +168,7 @@
   <div id="midiBadge"></div>
 
   <!-- ===== Practice Mode ===== -->
-  <div id="songPanel">
+  <div id="songPanel" role="dialog" aria-modal="true" aria-labelledby="songTitle">
     <div class="song-card">
       <div class="song-title" id="songTitle">Für Elise</div>
       <div class="song-composer" id="songComposer">L. v. Beethoven</div>
@@ -230,7 +230,7 @@
   <!-- Section-start banner that flies in at the start of each section -->
   <div id="sectionBanner"></div>
 
-  <div id="sectionResult">
+  <div id="sectionResult" role="dialog" aria-modal="true" aria-labelledby="resTitle">
     <div class="result-card">
       <div class="result-title" id="resTitle">Part Clear!</div>
       <div class="result-section-name" id="resSectionName">Part 1</div>
@@ -255,11 +255,11 @@
   </div>
 
   <!-- ===== Add-song modal ===== -->
-  <div id="addSongModal">
+  <div id="addSongModal" role="dialog" aria-modal="true" aria-labelledby="addSongModalTitle">
     <div class="settings-card add-song-card">
       <div class="settings-header">
-        <div class="settings-title">➕ <span data-i18n="addSongTitle">Add a song</span></div>
-        <button class="settings-close" id="addSongCloseBtn" data-i18n-title="close" title="Close">✕</button>
+        <div class="settings-title" id="addSongModalTitle">➕ <span data-i18n="addSongTitle">Add a song</span></div>
+        <button class="settings-close" id="addSongCloseBtn" data-i18n-title="close" title="Close" aria-label="Close">✕</button>
       </div>
 
       <div class="add-song-tabs">
@@ -312,11 +312,11 @@
   </div>
 
   <!-- ===== Section editor modal (sub-modal of addSongModal) ===== -->
-  <div id="sectionEditModal">
+  <div id="sectionEditModal" role="dialog" aria-modal="true" aria-labelledby="sectionEditModalTitle">
     <div class="settings-card">
       <div class="settings-header">
-        <div class="settings-title">✎ <span data-i18n="sectionEditTitle">Edit sections</span></div>
-        <button class="settings-close" id="sectionEditCloseBtn" data-i18n-title="close" title="Close">✕</button>
+        <div class="settings-title" id="sectionEditModalTitle">✎ <span data-i18n="sectionEditTitle">Edit sections</span></div>
+        <button class="settings-close" id="sectionEditCloseBtn" data-i18n-title="close" title="Close" aria-label="Close">✕</button>
       </div>
       <div class="settings-help" id="sectionEditHelp"></div>
       <div id="sectionEditRows" style="margin:10px 0"></div>
