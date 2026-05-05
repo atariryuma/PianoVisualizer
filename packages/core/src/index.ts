@@ -43,6 +43,10 @@ export type { HarmonicityOptions } from './audio/harmonicity';
 export { initAgcState, stepAgc, suppressVoice } from './audio/agc';
 export type { AgcOptions, AgcState, AgcStepResult } from './audio/agc';
 
+// === Audio: multi-feature onset gate ===
+export { initOnsetState, stepOnset } from './audio/onset';
+export type { OnsetOptions, OnsetState, OnsetFrameInput, OnsetResult } from './audio/onset';
+
 // === Audio: AudioContext lifecycle ===
 export {
   AUDIO_SAMPLE_RATE,

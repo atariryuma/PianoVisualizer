@@ -6,7 +6,8 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (after 7-module extraction sweep).
+Last refreshed: **2026-05-05** (after 9-module extraction sweep, including the
+gnarly onset gate).
 
 ---
 
@@ -20,39 +21,18 @@ Last refreshed: **2026-05-05** (after 7-module extraction sweep).
 | 4   | `audio/harmonicity.ts`     | 6     | `packages/core/src/audio/harmonicity.ts`     |
 | 5   | `audio/audio-context.ts`   | 8     | `packages/core/src/audio/audio-context.ts`   |
 | 6   | `audio/agc.ts`             | 13    | `packages/core/src/audio/agc.ts`             |
-| 7   | `library/musicxml-meta.ts` | 4     | `packages/core/src/library/musicxml-meta.ts` |
-| 8   | `library/auto-section.ts`  | 11    | `packages/core/src/library/auto-section.ts`  |
+| 7   | `audio/onset.ts`           | 11    | `packages/core/src/audio/onset.ts`           |
+| 8   | `library/musicxml-meta.ts` | 4     | `packages/core/src/library/musicxml-meta.ts` |
+| 9   | `library/auto-section.ts`  | 11    | `packages/core/src/library/auto-section.ts`  |
 
-**Status: 91/91 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 102/102 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `audio/onset.ts`
-
-**What**: Move `updateMultiFeatureOnset` from `app.js`. The 5-condition gate
-(spectral flux, spread, flatness, crest, harmonicity) plus hysteresis +
-voice-rejection counting.
-
-**Why**: This is the gnarliest audio module; lifting it gates everything
-downstream. All dependencies (spectral, harmonicity) are now extracted.
-
-**Acceptance**:
-
-- [ ] Pure or takes explicit state parameter (no global `state.X` mutation)
-- [ ] Tests with 3 fixture spectra: piano-like, voice-like, white-noise. Piano
-      fixture passes the gate; voice and noise fail.
-- [ ] State counters (`consecutiveOnsetFrames`, `agcVoiceRejectCount`) become
-      explicit return values rather than global mutations
-- [ ] Re-exported from `packages/core/src/index.ts`
-- [ ] `app.js` MIRROR comment added
-
-**Playbook**: `.claude/skills/extract-module/SKILL.md` + state-machine refactor
-note. **Est lines**: 250 + 200 tests + 100 fixture data.
-
-## 2. Extract `library/user-songs.ts`
+## 1. Extract `library/user-songs.ts`
 
 **What**: Move `openUserDb`, `userDbAll`, `userDbPut`, `userDbDelete`,
 `addUserSongFromBlob`, `addUserSongFromUrl`, `removeUserSong`,
