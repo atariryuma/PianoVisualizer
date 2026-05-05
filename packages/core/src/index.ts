@@ -62,6 +62,10 @@ export type { EffectDeps, EffectGameState, EffectName } from './render/effects';
 export { KB_WHITE, KB_BLACK, KB_BLACK_LEFT_WHITE_IDX, drawMidiKeyboard } from './render/keyboard';
 export type { KeyboardMidiView, KeyboardDrawOptions } from './render/keyboard';
 
+// === Render: practice lane (falling notes + hit window + count-in) ===
+export { drawPracticeLane } from './render/lane';
+export type { LaneNoteView, LaneViewState, LaneTimings, LaneDrawOptions } from './render/lane';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

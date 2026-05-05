@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (20 modules extracted; engine + 3D particles +
-encouragement effects + 88-key keyboard now in core. Remaining render layer is
-the practice lane + background composites.)
+Last refreshed: **2026-05-05** (21 modules extracted; engine + 3D particles +
+encouragement effects + 88-key keyboard + practice lane now in core. Remaining
+render layer is just background composites + theme.)
 
 ---
 
@@ -36,36 +36,16 @@ the practice lane + background composites.)
 | 18  | `render/ripples.ts`           | 10    | `packages/core/src/render/ripples.ts`           |
 | 19  | `render/effects.ts`           | 17    | `packages/core/src/render/effects.ts`           |
 | 20  | `render/keyboard.ts`          | 16    | `packages/core/src/render/keyboard.ts`          |
+| 21  | `render/lane.ts`              | 18    | `packages/core/src/render/lane.ts`              |
 
-**Status: 340/340 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 358/358 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `render/lane.ts`
-
-**What**: Move `drawPracticeLane(ctx, opts, practiceState)` — the falling-notes
-lane + count-in countdown + hit zones.
-
-**Why**: This is the most user-visible piece of practice mode. With particles +
-keyboard already in core, the lane is the last big render module before the
-background composites.
-
-**Acceptance**:
-
-- [ ] Pure: takes ctx + state + opts (W/H/kbHeight/laneTop/etc.) + i18n callback
-- [ ] Computes geometry without globals (no reads of `state`, `W`, `H`,
-      `CONFIG`)
-- [ ] Tests: visible window culling, position math, count-in countdown timing,
-      hit-zone painting, two-hand split
-- [ ] Uses `KB_WHITE` / `KB_BLACK_LEFT_WHITE_IDX` from `render/keyboard` for
-      x-positioning math
-
-**Est**: 350 + 150 tests.
-
-## 2. Extract `render/background.ts`
+## 1. Extract `render/background.ts`
 
 **What**: Move bg-stars init + draw + aurora bands + ground flowers into a
 single background composite module.
@@ -81,7 +61,7 @@ single background composite module.
 
 **Est**: 250 + 100 tests.
 
-## 3. Extract `render/theme.ts`
+## 2. Extract `render/theme.ts`
 
 **What**: Move `THEMES`, `noteThemeColor()`, synesthesia mapping, and the
 center-glow gradient builder.
@@ -95,14 +75,29 @@ center-glow gradient builder.
 
 **Est**: 180 + 80 tests.
 
+## 3. Extract `render/spectrum.ts`
+
+**What**: Move the frequency spectrum bar drawer (64 bars, piano range) into
+core. Currently reads `analyser.getByteFrequencyData()` then paints bars
+proportional to magnitude.
+
+**Acceptance**:
+
+- [ ] `drawSpectrum(ctx, freqData: Uint8Array, opts)` — pure
+- [ ] No analyser ownership; caller passes the freqData buffer
+- [ ] Bar count + colors injected via opts
+- [ ] Tests: bar count, palette mapping, height scaling, no-op on empty buffer
+
+**Est**: 120 + 60 tests.
+
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/spectrum.ts` — frequency spectrum bars (64-bar piano range)
 - `render/center-glow.ts` — energy-reactive radial gradient
 - `render/stage.ts` — stage banner + transitions
 - `state/flow-meter.ts` — flow + combo + silence-decay state machine
+- `state/encouragement.ts` — tier escalator (Nice → Awesome) + dispatch
 
 ---
 
