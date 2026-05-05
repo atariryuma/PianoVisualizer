@@ -1232,78 +1232,20 @@
     const NEAR_CLIPPING = PianoCore.NEAR_CLIPPING;
     const project3D = (x, y, z, size) => PianoCore.project3D(x, y, z, size, { screenW: W, screenH: H });
 
-    // ========================================
-    // Particle System (3D)
-    // ========================================
+    // Particle system (3D) \u2014 Phase 0b.3: delegated to @piano/core.
+    // Monkey-patch core's Particle.prototype.draw so the legacy positional
+    // draw(c) signature continues to work everywhere \u2014 closures provide
+    // the deps that the new API takes via opts.
     let particles = [];
-    class Particle {
-      constructor(x, y, z, color, size, vx, vy, vz, life, type) {
-        this.x = x; this.y = y; this.z = z;
-        this.color = color; this.baseSize = size;
-        this.vx = vx; this.vy = vy; this.vz = vz;
-        this.life = life; this.maxLife = life;
-        this.type = type || 'circle';
-        this.angle = Math.random() * Math.PI * 2;
-        this.spin = (Math.random() - 0.5) * 0.04;
-        this.gravity = 0; // Set individually if needed
-      }
-
-      update() {
-        this.x += this.vx; this.y += this.vy; this.z += this.vz;
-        // Simple gravity effect based on type
-        if (this.type !== 'star' && this.type !== 'note') {
-          this.vy += 0.15;
-        }
-        this.vx *= 0.99; this.vy *= 0.99; this.vz *= 0.99; // Drag
-        this.life--; this.angle += this.spin;
-      }
-
-      draw(c) {
-        // Project 3D to 2D
-        const savedX = this.x; // Logical coords (0,0 is center)
-        const savedY = this.y;
-
-        // Project
-        const p = project3D(this.x, this.y, this.z, this.baseSize);
-        if (!p || !p.visible) return;
-
-        const a = Math.max(0, this.life / this.maxLife);
-        let size = p.size * (0.4 + 0.6 * a);
-
-        // Size check optimization
-        if (size < 0.5) return;
-
-        c.save();
-        c.globalAlpha = a;
-        c.translate(p.x, p.y);
-        c.rotate(this.angle);
-        const useShadow = CONFIG.SHADOW_BLUR_ENABLED && particles.length < 300; // stricter limit
-
-        if (this.type === 'circle') {
-          c.beginPath(); c.arc(0, 0, size, 0, Math.PI * 2);
-          c.fillStyle = this.color;
-          if (useShadow) { c.shadowColor = this.color; c.shadowBlur = size * 2; }
-          c.fill();
-        } else if (this.type === 'ring') {
-          c.beginPath(); c.arc(0, 0, size, 0, Math.PI * 2);
-          c.strokeStyle = this.color; c.lineWidth = 1.5 * p.scale;
-          if (useShadow) { c.shadowColor = this.color; c.shadowBlur = size; }
-          c.stroke();
-        } else if (this.type === 'star') {
-          drawStar(c, 0, 0, 5, size, size * 0.45, this.color, useShadow);
-        } else if (this.type === 'note') {
-          // Scale font size
-          c.font = (size * 2.5) + 'px serif';
-          c.fillStyle = this.color;
-          if (useShadow) { c.shadowColor = this.color; c.shadowBlur = 10 * p.scale; }
-          c.textAlign = 'center'; c.textBaseline = 'middle';
-          c.fillText('\u266A', 0, 0);
-        } else if (this.type === 'flower') {
-          drawFlower(c, 0, 0, size, this.color, a, useShadow);
-        }
-        c.restore();
-      }
-    }
+    const _coreParticleDraw = PianoCore.Particle.prototype.draw;
+    PianoCore.Particle.prototype.draw = function (c) {
+      return _coreParticleDraw.call(this, c, {
+        screenW: W,
+        screenH: H,
+        useShadow: CONFIG.SHADOW_BLUR_ENABLED && particles.length < 300,
+      });
+    };
+    const Particle = PianoCore.Particle;
 
     // drawStar / drawFlower — Phase 0b.3: drop-in from @piano/core.
     const drawStar = PianoCore.drawStar;
@@ -1329,63 +1271,21 @@
     // getNoteColor — Phase 0b.3: adapter passes legacy CONFIG.NOTE_COLORS.
     const getNoteColor = (noteName) => PianoCore.getNoteColor(noteName, CONFIG.NOTE_COLORS);
 
-    function spawnBurst(screenX, screenY, count, energy, overrideColor) {
-      // Convert screen coords to logical 3D coords (assuming z=0 plane)
-      // Center is (0,0)
-      const lx = screenX - W / 2;
-      const ly = screenY - H / 2;
-      const lz = 0;
-
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      const typePool = ['circle', 'circle', 'ring', 'star', 'note'];
-      if (state.flow > 35) typePool.push('flower');
-      if (state.flow > 60) typePool.push('star', 'star');
-
-      const actualCount = Math.min(count, MAX_PARTICLES_3D - particles.length);
-      for (let i = 0; i < actualCount; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 1 + Math.random() * 3.5 * energy;
-        const zSpd = (Math.random() - 0.5) * 10 * energy; // explode in Z too
-
-        // Choose color: override > random theme color
-        const color = overrideColor || cols[Math.floor(Math.random() * cols.length)];
-
-        particles.push(new Particle(
-          lx, ly, lz,
-          color,
-          3 + Math.random() * 9 * energy,
-          Math.cos(ang) * spd, Math.sin(ang) * spd - 1.2, zSpd,
-          70 + Math.random() * 90,
-          typePool[Math.floor(Math.random() * typePool.length)]
-        ));
-      }
-    }
-
-    function spawnStream(screenX, screenY, energy, overrideColor) {
-      const lx = screenX - W / 2;
-      const ly = screenY - H / 2;
-
-      const cols = CONFIG.THEMES[state.currentTheme].colors;
-      const count = 2 + Math.floor(state.flow / 25);
-      for (let i = 0; i < count; i++) {
-        if (particles.length >= MAX_PARTICLES_3D) break;
-
-        // Spread in Z
-        const z = (Math.random() - 0.5) * 50;
-
-        const color = overrideColor || cols[Math.floor(Math.random() * cols.length)];
-
-        particles.push(new Particle(
-          lx + (Math.random() - 0.5) * 40, ly, z,
-          color,
-          2 + Math.random() * 5 * energy,
-          (Math.random() - 0.5) * 1.2, -1.5 - Math.random() * 2.5 * energy,
-          (Math.random() - 0.5) * 2, // Slight Z drift
-          90 + Math.random() * 70,
-          Math.random() > 0.6 ? 'note' : 'circle'
-        ));
-      }
-    }
+    // spawnBurst / spawnStream — Phase 0b.3: adapter passes legacy closure
+    // state (W/H/themeColors/flow/MAX_PARTICLES_3D) via opts so call sites
+    // stay positional.
+    const _spawnOpts = (overrideColor) => ({
+      screenW: W,
+      screenH: H,
+      themeColors: CONFIG.THEMES[state.currentTheme].colors,
+      flow: state.flow,
+      maxParticles: MAX_PARTICLES_3D,
+      overrideColor,
+    });
+    const spawnBurst = (screenX, screenY, count, energy, overrideColor) =>
+      PianoCore.spawnBurst(particles, screenX, screenY, count, energy, _spawnOpts(overrideColor));
+    const spawnStream = (screenX, screenY, energy, overrideColor) =>
+      PianoCore.spawnStream(particles, screenX, screenY, energy, _spawnOpts(overrideColor));
 
     // ========================================
     // v9: Encouragement Effects (Updated to 3D)
