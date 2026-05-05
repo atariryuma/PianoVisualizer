@@ -53,8 +53,7 @@ jobs:
 
       - if: steps.check.outputs.skip == 'false'
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # Reads version from package.json#packageManager.
 
       - if: steps.check.outputs.skip == 'false'
         uses: actions/setup-node@v4
