@@ -307,6 +307,8 @@
       songBack: document.getElementById('songBack'),
       songStart: document.getElementById('songStart'),
       practiceHud: document.getElementById('practiceHud'),
+      practiceTopBar: document.getElementById('practiceTopBar'),
+      themeBar: document.getElementById('themeBar'),
       ptbSection: document.getElementById('ptbSection'),
       ptbTempo: document.getElementById('ptbTempo'),
       ptbProgress: document.getElementById('ptbProgress'),
@@ -659,6 +661,8 @@
     let W, H;
     let kbSafeBottom = 4;
     let kbHeight = 50;
+    let safeLeft = 0;
+    let safeRight = 0;
     function resize() {
       const dpr = window.devicePixelRatio || 1;
       W = window.innerWidth;
@@ -667,14 +671,72 @@
       DOM.canvas.height = H * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // Cached so the per-frame draw can skip getComputedStyle / Math.min/max.
-      const sb = parseFloat(getComputedStyle(document.documentElement)
-        .getPropertyValue('--safe-bottom')) || 0;
-      kbSafeBottom = sb + 4;
+      const cs = getComputedStyle(document.documentElement);
+      const readPx = (name) => parseFloat(cs.getPropertyValue(name)) || 0;
+      kbSafeBottom = readPx('--safe-bottom') + 4;
+      safeLeft = readPx('--safe-left');
+      safeRight = readPx('--safe-right');
       kbHeight = Math.min(56, Math.max(38, H * 0.065));
       if (state.running) initBgStars();
     }
     resize();
     window.addEventListener('resize', resize);
+
+    // Single source of truth for "where things live on the screen": JS
+    // decides the layout mode and measures the top UI cluster's bottom;
+    // CSS computes the regions from --top-cluster-bottom / --kb-height
+    // and the body[data-layout="..."] selectors. drawPracticeLane reads
+    // currentLayoutMode (cached below) to switch between stacked and
+    // split-h rendering.
+    let currentLayoutMode = 'phone-portrait';
+    let lastTopClusterPx = -1;
+    let lastKbHeightPx = -1;
+    function detectLayout() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (w >= 1200) return 'desktop';
+      if (w > 640 && h > 600) return 'tablet';
+      if (w > h && h <= 520) return 'phone-landscape';
+      return 'phone-portrait';
+    }
+    function measureBottom(el) {
+      if (!el) return 0;
+      const r = el.getBoundingClientRect();
+      return r.height > 0 ? r.bottom : 0;
+    }
+    function syncLayout() {
+      const layout = detectLayout();
+      if (currentLayoutMode !== layout) {
+        currentLayoutMode = layout;
+        document.body.dataset.layout = layout;
+      }
+      const topClusterBottom = Math.round(
+        Math.max(measureBottom(DOM.practiceTopBar), measureBottom(DOM.themeBar))
+      );
+      const kbPx = Math.round(kbHeight);
+      const root = document.documentElement.style;
+      // Skip same-value writes — ResizeObserver fires on every topBar text
+      // mutation (section name, tempo, progress); unconditional setProperty
+      // would trigger a :root style recalc on each.
+      if (topClusterBottom !== lastTopClusterPx) {
+        lastTopClusterPx = topClusterBottom;
+        if (topClusterBottom > 0) {
+          root.setProperty('--top-cluster-bottom', topClusterBottom + 'px');
+        } else {
+          root.removeProperty('--top-cluster-bottom');
+        }
+      }
+      if (kbPx !== lastKbHeightPx) {
+        lastKbHeightPx = kbPx;
+        root.setProperty('--kb-height', kbPx + 'px');
+      }
+    }
+    syncLayout();
+    window.addEventListener('resize', syncLayout);
+    window.addEventListener('orientationchange', syncLayout);
+    if (typeof ResizeObserver !== 'undefined' && DOM.practiceTopBar) {
+      new ResizeObserver(syncLayout).observe(DOM.practiceTopBar);
+    }
 
     // ========================================
     // Debug toggle — triple-tap bottom-left
@@ -717,34 +779,34 @@
     // ========================================
     // i18n — practice-flow strings only (free-play / quest / dev strings stay English)
     // ========================================
-    // Category A (UI chrome / operation words / loanwords): EN === JP. The
-    // language toggle is a no-op for these — they render as English regardless
-    // of prefs.lang. Kept in T_STRINGS so HTML data-i18n attrs resolve cleanly.
+    // Entries without a `jp` field are reserved for true loanwords that read
+    // identically in JP context (Perfect, Nice, GO!, SUSTAIN, URL). `t()`
+    // falls back to `en` for those. Everything else has a real translation.
     const T_STRINGS = {
       // Settings panel
-      settings:           { en: 'Settings',                  jp: 'Settings' },
-      close:              { en: 'Close',                     jp: 'Close' },
+      settings:           { en: 'Settings',                  jp: '設定' },
+      close:              { en: 'Close',                     jp: '閉じる' },
       backToTitle:        { en: 'Back to title',             jp: 'タイトルにもどる' },
-      display:            { en: 'Display',                   jp: 'Display' },
+      display:            { en: 'Display',                   jp: '表示' },
       synesthesia:        { en: 'Synesthesia mode (each note has its own color)',
                             jp: '音階色モード（音ごとに色が変わる）' },
-      synesthesiaTitle:   { en: 'Synesthesia mode',          jp: 'Synesthesia mode' },
-      timingCalibration:  { en: 'Timing Calibration',        jp: 'Timing Calibration' },
+      synesthesiaTitle:   { en: 'Synesthesia mode',         jp: '音階色モード' },
+      timingCalibration:  { en: 'Timing Calibration',       jp: 'タイミング調整' },
       audioOffset:        { en: 'Audio offset',              jp: '音と画面のずれ補正' },
       audioOffsetHelp:    { en: 'If you play on the beat but it\'s judged "late", raise the number. If your press is rejected as "early", lower it.',
                             jp: '拍に合わせて弾いてるのに「遅い」判定になる時は数値を上げる。「早い」判定になる時は下げる。' },
       autoDetectedFmt:    { en: 'Auto-detected value in use (currently {v} ms)',
                             jp: '自動検出値を使用中（現在: {v} ms）' },
       resetToAuto:        { en: 'Use auto-detected value',   jp: '自動検出に戻す' },
-      input:              { en: 'Input',                     jp: 'Input' },
+      input:              { en: 'Input',                    jp: '入力' },
       micInput:           { en: 'Mic input',                 jp: 'マイク入力' },
       micStandby:         { en: 'Standby',                   jp: '待機中' },
       scanMidi:           { en: 'Scan for MIDI keyboard',    jp: 'MIDIキーボードを探す' },
-      connectBluetooth:   { en: 'Connect Bluetooth',         jp: 'Connect Bluetooth' },
-      other:              { en: 'Other',                     jp: 'Other' },
+      connectBluetooth:   { en: 'Connect Bluetooth',         jp: 'Bluetooth接続' },
+      other:              { en: 'Other',                     jp: 'その他' },
       resetSession:       { en: 'Reset session',             jp: 'セッションをリセット' },
       debugOverlay:       { en: 'Debug overlay',             jp: 'デバッグ表示' },
-      language:           { en: 'Language',                  jp: 'Language' },
+      language:           { en: 'Language',                  jp: '言語' },
       // Intro hint / MIDI diagnostics
       introNeedMidi:      { en: '🎹 Please connect a MIDI keyboard<br>(microphone unavailable)',
                             jp: '🎹 MIDIキーボードを接続してください<br>（マイクが使えません）' },
@@ -789,13 +851,13 @@
       // Leading space lives in the EN value so JP renders "1日れんしゅう中"
       // without a half-width gap between the digit and 日.
       dayStreak:          { en: ' day streak',               jp: '日れんしゅう中' },
-      tempo:              { en: 'Tempo',                     jp: 'Tempo' },
+      tempo:              { en: 'Tempo',                    jp: 'テンポ' },
       startFrom:          { en: 'Start from',                jp: 'どこからはじめる？' },
       whichHand:          { en: 'Which hand?',               jp: 'どの手で弾く？' },
       leftOnly:           { en: '👈 Left only',              jp: '👈 左手だけ' },
       bothHands:          { en: '🤝 Both',                    jp: '🤝 両手' },
       rightOnly:          { en: 'Right only 👉',             jp: '右手だけ 👉' },
-      modeLabel:          { en: 'Mode',                      jp: 'Mode' },
+      modeLabel:          { en: 'Mode',                     jp: 'モード' },
       modeListen:         { en: '🎧 Listen',                 jp: '🎧 きく' },
       modeGuided:         { en: '✨ Guided',                  jp: '✨ ガイド' },
       modeRhythm:         { en: '🎵 Rhythm',                 jp: '🎵 リズム' },
@@ -811,27 +873,26 @@
       // Practice HUD
       score:              { en: 'Score',                     jp: '楽譜' },
       quit:               { en: 'Quit',                      jp: 'やめる' },
-      inputSource:        { en: 'Input source',              jp: 'Input source' },
+      inputSource:        { en: 'Input source',             jp: '入力ソース' },
       // Result screen
       pitchAccuracy:      { en: 'Pitch accuracy',            jp: '音程の正確さ' },
-      timing:             { en: 'Timing',                    jp: 'Timing' },
+      timing:             { en: 'Timing',                   jp: 'タイミング' },
       noteLength:         { en: 'Note length',               jp: '音の長さ' },
       bestComboLabel:     { en: 'Best combo',                jp: '連続成功（最高）' },
       songSelect:         { en: 'Song select',               jp: 'きょく選択' },
       tryAgainBtn:        { en: 'Try again',                 jp: 'もう一度' },
       nextBtn:            { en: 'Next →',                    jp: 'つぎへ →' },
       // Hit chips / dynamic
-      perfect:            { en: 'Perfect!',                  jp: 'Perfect!' },
-      nice:               { en: 'Nice!',                     jp: 'Nice!' },
-      missChip:           { en: 'Miss',                      jp: 'Miss' },
+      perfect:            { en: 'Perfect!' },
+      nice:               { en: 'Nice!' },
+      missChip:           { en: 'Miss',                     jp: 'ミス' },
       youPlayedFmt:       { en: 'You played: {v}',           jp: '弾いた音: {v}' },
       tooShort:           { en: '⏱ Too short',               jp: '⏱ 短い' },
       tooLong:            { en: '⏱ Too long',                jp: '⏱ 長い' },
       // Lane labels
       laneLeft:           { en: 'LEFT',                      jp: '左手' },
       laneRight:          { en: 'RIGHT',                     jp: '右手' },
-      // Count-in
-      countInGo:          { en: 'GO!',                       jp: 'GO!' },
+      countInGo:          { en: 'GO!' },
       // Stages
       stage1:             { en: 'Awakening',                 jp: 'めざめ' },
       stage2:             { en: 'Blooming',                  jp: 'はなひらく' },
@@ -898,8 +959,7 @@
       // Result-screen growth chart
       growthChartFmt:     { en: 'Growth ({v} attempts)',        jp: '成長グラフ ({v}回)' },
       trendSimilar:       { en: '→ similar',                    jp: '→ おなじくらい' },
-      // Sustain pedal label (drawn on the keyboard when pedal is held)
-      sustainLabel:       { en: 'SUSTAIN',                      jp: 'SUSTAIN' },
+      sustainLabel:       { en: 'SUSTAIN' },
       // Free-play HUD (session status while playing without a song)
       listeningFmt:       { en: '{p}Listening{p}',              jp: '{p}きいてるよ{p}' },
       goalCelebrate:      { en: '✨ Goal reached! Keep it up! ✨',
@@ -954,18 +1014,18 @@
       questClearedFmt:    { en: '✅ {v} CLEARED!',               jp: '✅ {v} クリア！' },
       // Session summary (post free-play)
       sumTitle:           { en: '🎹 Session Results',           jp: '🎹 セッション結果' },
-      sumBestCombo:       { en: '🎵 Best Combo',                jp: '🎵 Best Combo' },
+      sumBestCombo:       { en: '🎵 Best Combo',                jp: '🎵 ベストコンボ' },
       sumStageReached:    { en: '🏔 Stage Reached',             jp: '🏔 到達ステージ' },
-      sumPlayTime:        { en: '⏱ Play Time',                  jp: '⏱ Play Time' },
+      sumPlayTime:        { en: '⏱ Play Time',                  jp: '⏱ 演奏時間' },
       sumQuests:          { en: '⭐ Quests',                     jp: '⭐ クエスト' },
       sumTitleBtn:        { en: '🏠 Title',                     jp: '🏠 タイトル' },
       sumContinue:        { en: 'Continue →',                   jp: 'つづける →' },
       // User-song UI
       addSongBtn:         { en: '➕ Add a song',                  jp: '➕ 曲を追加' },
       addSongTitle:       { en: 'Add a song',                    jp: '曲を追加' },
-      addSongTabLibrary:  { en: '📚 Library',                    jp: '📚 Library' },
-      addSongTabFile:     { en: '📁 File',                       jp: '📁 File' },
-      addSongTabUrl:      { en: '🔗 URL',                        jp: '🔗 URL' },
+      addSongTabLibrary:  { en: '📚 Library',                   jp: '📚 ライブラリ' },
+      addSongTabFile:     { en: '📁 File',                      jp: '📁 ファイル' },
+      addSongTabUrl:      { en: '🔗 URL' },
       addSongLibraryHelp: { en: 'Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.',
                             jp: 'MuseTrainer のパブリックドメイン曲（jsDelivr経由）。タップでダウンロード。' },
       addSongFilePick:    { en: 'Choose .mxl / .musicxml / .xml file',
@@ -974,14 +1034,13 @@
                             jp: 'MusicXML ファイルをドロップ。パブリックドメインまたは自作の曲であることを確認します。' },
       addSongPdAttest:    { en: 'I confirm this score is public domain or my own work',
                             jp: 'パブリックドメインまたは自作の曲です' },
-      addSongUrlPlaceholder: { en: 'https://cdn.jsdelivr.net/.../score.mxl',
-                            jp: 'https://cdn.jsdelivr.net/.../score.mxl' },
+      addSongUrlPlaceholder: { en: 'https://cdn.jsdelivr.net/.../score.mxl' },
       addSongUrlHelp:     { en: 'Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).',
                             jp: '.mxl / .musicxml の直リンク（CORS対応URL、例: jsDelivr）。' },
-      addSongFetch:       { en: '⬇ Download',                   jp: '⬇ Download' },
+      addSongFetch:       { en: '⬇ Download',                   jp: '⬇ ダウンロード' },
       addSongAdded:       { en: 'Added!',                        jp: '追加しました！' },
       addSongFailed:      { en: 'Failed: {v}',                   jp: '失敗: {v}' },
-      myLibrary:          { en: 'My library',                    jp: 'My library' },
+      myLibrary:          { en: 'My library',                    jp: 'マイライブラリ' },
       addSongRemove:      { en: 'Delete',                        jp: '削除' },
       addSongConfirmRemove: { en: 'Delete "{v}"? This cannot be undone.',
                               jp: '「{v}」を削除しますか？元に戻せません。' },
@@ -990,8 +1049,8 @@
       addSongLibraryCount:{ en: '{n} pieces',                   jp: '{n} 曲' },
       addSongLibraryOffline: { en: 'Catalog offline — showing seed list',
                                jp: 'カタログ取得失敗 — 既定リストを表示' },
-      addSongExport:      { en: '⬇ Export library',             jp: '⬇ Export library' },
-      addSongImport:      { en: '⬆ Import',                     jp: '⬆ Import' },
+      addSongExport:      { en: '⬇ Export library',             jp: '⬇ エクスポート' },
+      addSongImport:      { en: '⬆ Import',                     jp: '⬆ インポート' },
       addSongImportDone:  { en: 'Imported {n} song(s)',         jp: '{n} 曲をインポートしました' },
       addSongEditSections:{ en: '✎ Edit sections',              jp: '✎ 章を編集' },
       addSongRename:      { en: '✎ Rename',                     jp: '✎ 名前を変更' },
@@ -1000,8 +1059,8 @@
       sectionEditTitle:   { en: 'Edit sections',                jp: '章の編集' },
       sectionEditHelp:    { en: 'Set start measure (1-based) for each part. Total: {v} measures.',
                             jp: '各章の開始小節を入力（1始まり）。全{v}小節。' },
-      sectionEditSave:    { en: 'Save',                         jp: 'Save' },
-      sectionEditCancel:  { en: 'Cancel',                       jp: 'Cancel' },
+      sectionEditSave:    { en: 'Save',                         jp: '保存' },
+      sectionEditCancel:  { en: 'Cancel',                       jp: 'キャンセル' },
       sectionEditError:   { en: 'Boundaries must be increasing and within range.',
                             jp: '小節番号は昇順かつ範囲内で入力してください。' },
       // Auto-section names for user-added songs (no human-curated descriptions)
@@ -4825,6 +4884,7 @@
       DOM.ptbProgress.textContent = '0 / ' + practice._sectionTargetCount;
       DOM.practiceHud.classList.add('visible');
       DOM.osmdContainer.classList.add('visible');
+      syncLayout();
       setInputIndicator();
       requestWakeLock();
 
@@ -5057,14 +5117,25 @@
       if (!practice.enabled) return;
       const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
-      // Read the OSMD strip's actual bottom edge so the lane top adapts to
-      // the landscape-phone media query (which shrinks #osmdContainer to
-      // ~180px instead of the default 260px). Falls back to the legacy
-      // hardcoded layout when OSMD has zero rect (transition flicker).
+      // split-h translates the canvas by laneLeft and passes screenW=laneWidth
+      // so lane.ts treats the right half as its full drawable region — the
+      // lane.ts math is reused unchanged.
+      let laneLeft = 0;
+      let laneWidth = W;
       let laneTopOverride;
       if (osmdVisible) {
         const r = DOM.osmdContainer.getBoundingClientRect();
-        if (r && r.height > 0) laneTopOverride = Math.round(r.bottom + 12);
+        if (r && r.height > 0) {
+          if (currentLayoutMode === 'phone-landscape') {
+            laneLeft = Math.round(r.right + 8);
+            // Subtract safeRight so notes near the right edge don't fall into
+            // the home-indicator / notch zone on iPhones held landscape.
+            laneWidth = Math.max(160, W - laneLeft - 4 - safeRight);
+            laneTopOverride = Math.round(r.top);
+          } else {
+            laneTopOverride = Math.round(r.bottom + 12);
+          }
+        }
       }
       // Build a view that aliases practice fields (so cursor mutation flows
       // back) and adds the resolved isBoss flag the renderer needs.
@@ -5076,6 +5147,11 @@
         currentNoteIdx: practice.currentNoteIdx,
         isBoss: !!currentSong.sections[practice.sectionIdx].isBoss,
       };
+      const translated = laneLeft !== 0;
+      if (translated) {
+        ctx.save();
+        ctx.translate(laneLeft, 0);
+      }
       PianoCore.drawPracticeLane(
         ctx,
         view,
@@ -5085,7 +5161,7 @@
           nowMs: timeMs,
         },
         {
-          screenW: W,
+          screenW: laneWidth,
           screenH: H,
           osmdVisible,
           laneTopOverride,
@@ -5102,6 +5178,7 @@
           noteRestingColor: (m) => CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff',
         }
       );
+      if (translated) ctx.restore();
       // Thread the amortized cursor back so subsequent frames don't re-scan.
       practice.laneDrawFromIdx = view.laneDrawFromIdx;
     }

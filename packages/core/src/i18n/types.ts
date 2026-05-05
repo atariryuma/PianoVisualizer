@@ -5,7 +5,10 @@ export type Lang = 'en' | 'jp';
 
 export interface TranslationEntry {
   en: string;
-  jp: string;
+  /** Omit (or leave empty) for English-only entries — UI chrome / loanwords
+   *  where the language toggle is intentionally a no-op. `translate()` falls
+   *  back to `en` when `jp` is missing. */
+  jp?: string;
 }
 
 /** Catalog of i18n keys → entries. Index signature lets callers add ad-hoc keys

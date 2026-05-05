@@ -130,27 +130,32 @@ describe('NOTE_NAMES_EN / JP / noteNamesFor', () => {
 });
 
 describe('T_STRINGS — schema sanity', () => {
-  it('every entry has both en and jp', () => {
+  it('every entry has en; jp is optional (English-only entries omit it)', () => {
     for (const [key, entry] of Object.entries(T_STRINGS)) {
       expect(entry, `key ${key}`).toHaveProperty('en');
-      expect(entry, `key ${key}`).toHaveProperty('jp');
       expect(typeof entry.en, `key ${key}.en`).toBe('string');
-      expect(typeof entry.jp, `key ${key}.jp`).toBe('string');
       expect(entry.en.length, `key ${key}.en`).toBeGreaterThan(0);
-      expect(entry.jp.length, `key ${key}.jp`).toBeGreaterThan(0);
+      if (entry.jp !== undefined) {
+        expect(typeof entry.jp, `key ${key}.jp`).toBe('string');
+        expect(entry.jp.length, `key ${key}.jp`).toBeGreaterThan(0);
+      }
     }
   });
 
-  it('contains a known stable key', () => {
-    expect(T_STRINGS.settings.en).toBe('Settings');
-    expect(T_STRINGS.settings.jp).toBe('設定');
+  it('contains a known stable bilingual key', () => {
+    // tagline is a kid-facing entry — it has a real JP rendering and is unlikely
+    // to migrate to the EN-only set.
+    expect(T_STRINGS.tagline.en).toBe('Play the piano and watch the screen come alive');
+    expect(T_STRINGS.tagline.jp).toBe('ピアノを弾くと画面がきれいに光るよ');
   });
 
   it('Fmt-suffixed keys actually contain at least one placeholder', () => {
     for (const [key, entry] of Object.entries(T_STRINGS)) {
       if (!key.endsWith('Fmt')) continue;
       expect(entry.en, `${key}.en should have {placeholder}`).toMatch(/\{[a-zA-Z]+\}/);
-      expect(entry.jp, `${key}.jp should have {placeholder}`).toMatch(/\{[a-zA-Z]+\}/);
+      if (entry.jp !== undefined) {
+        expect(entry.jp, `${key}.jp should have {placeholder}`).toMatch(/\{[a-zA-Z]+\}/);
+      }
     }
   });
 });

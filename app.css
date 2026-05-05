@@ -17,7 +17,99 @@
     }
 
     :root {
+      /* === Safe-area edges (notch / home-indicator) === */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+
+      /* === Top cluster (practiceTopBar pill + 🏠/⚙ button) ===
+         JS (syncLayout) overrides this with the measured bottom of those
+         elements. Default is a sensible first-paint fallback. */
+      --top-cluster-bottom: calc(var(--safe-top) + 56px);
+
+      /* === Keyboard preview reserve ===
+         JS keeps these in sync with the runtime kbHeight / safe-bottom. */
+      --kb-bottom-inset: calc(var(--safe-bottom) + 4px);
+      --kb-height: 50px;
+
+      /* === OSMD score panel region (defaults = phone-portrait stacked) ===
+         All four corners are var()-driven so layout-mode overrides below
+         can move/resize the panel without touching #osmdContainer's CSS.
+         (set width:auto + left/right for stretch, or width:value + right:auto
+         for left-anchored fixed-width.) */
+      --osmd-top: calc(var(--top-cluster-bottom) + 8px);
+      --osmd-left: max(8px, var(--safe-left));
+      --osmd-right: max(8px, var(--safe-right));
+      --osmd-width: auto;
+      --osmd-height: clamp(140px, 28vh, 240px);
+    }
+
+    /* === Layout-mode overrides ===
+       JS (syncLayout) sets <body data-layout="..."> based on viewport.
+       Each mode redefines the OSMD region; #osmdContainer just consumes
+       the variables. Adding a new breakpoint = add one selector here. */
+
+    /* phone-landscape: split — OSMD left half (full height), lanes right half.
+       Solves the "180px score eats half the 360px viewport" problem on
+       horizontal phones. Drawer translates the canvas by laneLeft so the
+       lane.ts code is reused unchanged. */
+    body[data-layout="phone-landscape"] {
+      --osmd-top: calc(var(--top-cluster-bottom) + 4px);
+      --osmd-left: max(8px, var(--safe-left));
+      --osmd-right: auto;
+      --osmd-width: calc(50vw - max(16px, var(--safe-left)));
+      --osmd-height: calc(100vh - var(--top-cluster-bottom)
+                          - var(--kb-height) - var(--kb-bottom-inset) - 16px);
+    }
+
+    /* tablet / desktop: stacked but centered with max-width and roomier
+       height so the score doesn't stretch awkwardly across a 1440px monitor. */
+    body[data-layout="tablet"],
+    body[data-layout="desktop"] {
+      --osmd-left: max(16px, calc(50vw - 480px));
+      --osmd-right: max(16px, calc(50vw - 480px));
+      --osmd-top: calc(var(--top-cluster-bottom) + 12px);
+      --osmd-height: clamp(200px, 32vh, 440px);
+    }
+    body[data-layout="desktop"] {
+      --osmd-height: clamp(220px, 34vh, 480px);
+    }
+
+    /* phone-landscape elements that would otherwise sit behind the OSMD
+       panel on the left half. flowGauge moves to the seam between OSMD
+       and lanes; bottom labels squeeze toward the lane's center so they
+       don't bridge across the score panel. */
+    body[data-layout="phone-landscape"] #flowGauge {
+      left: calc(50vw + 2px);
+      height: 70vh;
+    }
+    body[data-layout="phone-landscape"] #stageLabel,
+    body[data-layout="phone-landscape"] #noteDisplay {
+      left: 75vw;
+    }
+
+    /* Modal cards (settings / song detail / result / summary / add-song)
+       are 88-92vw on phones — fine — but capped at ~340-520px which
+       feels lonely on tablets/desktops with 1000+ px of width. Widen
+       the caps so the cards utilize the available headroom. */
+    body[data-layout="tablet"] .settings-card,
+    body[data-layout="desktop"] .settings-card,
+    body[data-layout="tablet"] .song-card,
+    body[data-layout="desktop"] .song-card {
+      max-width: 600px;
+    }
+    body[data-layout="tablet"] .result-card,
+    body[data-layout="desktop"] .result-card {
+      max-width: 480px;
+    }
+    body[data-layout="tablet"] .summary-card,
+    body[data-layout="desktop"] .summary-card {
+      max-width: 440px;
+    }
+    body[data-layout="tablet"] .add-song-card,
+    body[data-layout="desktop"] .add-song-card {
+      max-width: 720px;
     }
 
     canvas {
@@ -54,6 +146,20 @@
       margin-bottom: 2.5rem
     }
 
+    /* Title text scales with layout: compress on short landscape, enlarge
+       on tablet/desktop where there's headroom. */
+    body[data-layout="phone-landscape"] #startScreen h1 {
+      font-size: 1.7rem;
+      margin-bottom: .25rem;
+      letter-spacing: .1em;
+    }
+    body[data-layout="phone-landscape"] #startScreen p {
+      margin-bottom: 1rem;
+      font-size: .85rem;
+    }
+    body[data-layout="tablet"] #startScreen h1 { font-size: 2.8rem; }
+    body[data-layout="desktop"] #startScreen h1 { font-size: 3.4rem; }
+
     #startBtn {
       font-size: 1.2rem;
       padding: 1rem 3rem;
@@ -84,8 +190,8 @@
        below the settings panel modal (60) which it launches. */
     #themeBar {
       position: fixed;
-      top: 16px;
-      right: 16px;
+      top: max(16px, calc(var(--safe-top) + 12px));
+      right: max(16px, var(--safe-right));
       z-index: 55;
       display: flex;
       gap: 8px;
@@ -1048,12 +1154,30 @@
     /* ============================== */
     /* Practice Mode (Für Elise) — v12 */
     /* ============================== */
+    /* Title-screen song picker. Grid columns adapt to body[data-layout]
+       (overrides below) so the buttons use horizontal space on tablet /
+       desktop instead of forming one long stack. The "+ Add a song" tile
+       always spans the final row regardless of column count. */
     #modeButtons {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: minmax(220px, 320px);
       gap: 14px;
-      align-items: center;
+      justify-content: center;
       margin-top: 4px;
+      width: min(96vw, 1100px);
+    }
+    body[data-layout="phone-landscape"] #modeButtons,
+    body[data-layout="tablet"] #modeButtons {
+      grid-template-columns: repeat(2, minmax(220px, 320px));
+    }
+    body[data-layout="desktop"] #modeButtons {
+      grid-template-columns: repeat(3, minmax(220px, 320px));
+    }
+    #modeButtons #addSongBtn {
+      grid-column: 1 / -1;
+      justify-self: center;
+      min-width: 220px;
+      max-width: 320px;
     }
 
     .mode-btn {
@@ -1067,7 +1191,7 @@
       transition: all .25s;
       -webkit-tap-highlight-color: transparent;
       letter-spacing: .08em;
-      min-width: 240px;
+      width: 100%;
     }
 
     .mode-btn.primary {
@@ -1354,7 +1478,7 @@
 
     #practiceTopBar {
       position: absolute;
-      top: max(10px, env(safe-area-inset-top, 10px));
+      top: max(10px, calc(var(--safe-top) + 10px));
       left: 50%;
       transform: translateX(-50%);
       display: flex;
@@ -1422,7 +1546,10 @@
        (section name + tempo + progress + MIDI/MIC pill + 楽譜 + やめる all
        together exceed ~360px), and the wrapped bar covers the score top.
        Force the bar to one compact row + ellipsis the section name so the
-       OSMD strip below it stays visible. */
+       OSMD strip below it stays visible.
+       NOTE: OSMD position no longer overridden here — see :root and the
+       body[data-layout="..."] selectors above. The topBar bottom is measured
+       at runtime and flows into --top-cluster-bottom, which OSMD reads. */
     @media (max-width: 520px) {
       #practiceTopBar {
         font-size: .72rem;
@@ -1446,20 +1573,6 @@
         font-size: .68rem;
         padding: 2px 7px;
         white-space: nowrap;
-      }
-      /* Push OSMD down a bit so the now-compact topBar (single row, ~28px)
-         doesn't overlap the staff. 50px gives ~12px clearance. */
-      #osmdContainer {
-        top: 50px;
-      }
-    }
-
-    /* Landscape-phone — additionally cap OSMD height so the lane gets at
-       least half the (very short) viewport. */
-    @media (orientation: landscape) and (max-height: 520px) {
-      #osmdContainer {
-        top: 46px;
-        height: min(180px, 45vh);
       }
     }
 
@@ -1639,13 +1752,17 @@
 
     /* OSMD sheet music container — top-level fixed strip, always laid out so OSMD can
        render into it before practice mode is visible. Hidden via opacity only (not
-       visibility/display) so OSMD's layout measurements always work. */
+       visibility/display) so OSMD's layout measurements always work.
+       Position/size driven by --osmd-* variables on :root (see top of file).
+       Layout-mode overrides on body[data-layout=...] redefine those vars
+       — never override #osmdContainer's properties directly here. */
     #osmdContainer {
       position: fixed;
-      top: 60px;
-      left: 8px;
-      right: 8px;
-      height: 260px;
+      top: var(--osmd-top);
+      left: var(--osmd-left);
+      right: var(--osmd-right);
+      width: var(--osmd-width);
+      height: var(--osmd-height);
       overflow-y: auto;
       background: rgba(255, 255, 255, .98);
       border-radius: 10px;
@@ -1798,17 +1915,24 @@
       border-radius: 6px; color: #e8e0ff;
       font-size: .9rem; text-align: right;
     }
-    /* Inserted user-song buttons on the start screen — match .mode-btn sizing. */
+    /* Inserted user-song buttons on the start screen — match .mode-btn sizing.
+       Reserve horizontal padding equal on both sides so the centered label
+       can't run into the absolutely-positioned ✕ delete button. */
     #userSongList { display: contents; }
+    #userSongList .mode-btn {
+      padding-right: 56px;
+      padding-left: 56px;
+    }
     /* iOS HIG recommends 44x44 px minimum tap targets. Earlier 2x8 padding +
        0.85rem font hit ~22px — too easy to misclick on iPad / Android tablets,
        and the danger of accidentally tapping ✕ instead of the song made the
        feature feel risky. Bumped to ~40x36 effective touch area. */
     #userSongList .mode-btn .my-remove {
-      position: absolute; top: 6px; right: 8px;
+      position: absolute; top: 50%; right: 8px;
+      transform: translateY(-50%);
       background: rgba(0,0,0,.4); border: 1px solid rgba(255,180,190,.4);
       color: rgba(255,200,210,.95);
-      font-size: 1.05rem; line-height: 1; padding: 8px 12px; border-radius: 10px;
+      font-size: 1rem; line-height: 1; padding: 7px 11px; border-radius: 10px;
       cursor: pointer; min-width: 40px; min-height: 36px;
       -webkit-tap-highlight-color: transparent;
     }
