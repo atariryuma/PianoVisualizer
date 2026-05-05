@@ -1417,37 +1417,48 @@
       background: rgba(255, 255, 255, .25);
     }
 
-    /* Landscape-phone overrides — viewport is ~360-440 px tall once URL bar
-       eats into it, so the default OSMD strip (260 px) + a wrapped topBar
-       leave essentially zero room for the falling-notes lane.
-       Two fixes: force the topBar to a single tight row, and cap the OSMD
-       height at 45vh so the lane always gets at least half the height. */
-    @media (orientation: landscape) and (max-height: 520px) {
+    /* Narrow-viewport overrides — phone widths (≤520 px) regardless of
+       orientation. The default topBar wraps to 3-4 rows on portrait phones
+       (section name + tempo + progress + MIDI/MIC pill + 楽譜 + やめる all
+       together exceed ~360px), and the wrapped bar covers the score top.
+       Force the bar to one compact row + ellipsis the section name so the
+       OSMD strip below it stays visible. */
+    @media (max-width: 520px) {
       #practiceTopBar {
-        font-size: .75rem;
-        gap: 6px;
-        padding: 4px 10px;
+        font-size: .72rem;
+        gap: 5px;
+        padding: 4px 9px;
         flex-wrap: nowrap;
         max-width: 96vw;
         overflow: hidden;
       }
       #practiceTopBar .ptb-section {
-        max-width: 28vw;
+        max-width: 30vw;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
       #practiceTopBar .ptb-input {
-        font-size: .75rem;
-        padding: 1px 6px;
+        font-size: .72rem;
+        padding: 1px 5px;
       }
       #practiceTopBar button {
-        font-size: .7rem;
-        padding: 2px 8px;
+        font-size: .68rem;
+        padding: 2px 7px;
         white-space: nowrap;
       }
+      /* Push OSMD down a bit so the now-compact topBar (single row, ~28px)
+         doesn't overlap the staff. 50px gives ~12px clearance. */
       #osmdContainer {
-        top: 48px;
+        top: 50px;
+      }
+    }
+
+    /* Landscape-phone — additionally cap OSMD height so the lane gets at
+       least half the (very short) viewport. */
+    @media (orientation: landscape) and (max-height: 520px) {
+      #osmdContainer {
+        top: 46px;
         height: min(180px, 45vh);
       }
     }
