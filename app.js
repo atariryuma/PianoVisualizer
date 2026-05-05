@@ -2342,9 +2342,25 @@
         drawPracticeLane(timeMs);
       }
 
-      if (!practice.enabled) updateQuestState(timeMs);
+      // Quests only tick during ACTIVE free-play. Without this gate the
+      // tracker would keep evaluating predicates while the user browses
+      // menus (start screen, song panel, session summary) — making
+      // questDisplay flicker on top of the wrong screen and progress
+      // accumulating in the background.
+      if (isFreeplayActive()) updateQuestState(timeMs);
       updatePlayTime(timeMs);
       updateDebugOverlay();
+    }
+
+    // True only when the canvas / HUD is the front-most surface (i.e. the
+    // user is actually free-playing, not picking a song or reviewing a result).
+    function isFreeplayActive() {
+      return state.running
+        && !practice.enabled
+        && DOM.startScreen.style.display === 'none'
+        && !DOM.songPanel.classList.contains('visible')
+        && !DOM.sessionSummary.classList.contains('visible')
+        && !DOM.sectionResult.classList.contains('visible');
     }
 
     // ========================================
@@ -5409,6 +5425,7 @@
       practice.mode = 'guided';
       DOM.startScreen.style.display = 'none';
       DOM.songPanel.classList.add('visible');
+      DOM.questDisplay.classList.remove('visible'); // free-play quest dots shouldn't peek through
       // Keep the invariant: if audio is already alive, the theme bar should be
       // restored beneath the song panel so a subsequent "Back" lands the user
       // on a visualizer with full controls (not a bare canvas).
@@ -6031,6 +6048,7 @@
       DOM.osmdContainer.classList.remove('visible');
       DOM.themeBar.classList.remove('visible');
       DOM.hud.style.display = 'none';
+      DOM.questDisplay.classList.remove('visible'); // wipe stale free-play quest UI
       hideIntroHint();
       DOM.micMeter.classList.remove('visible');
       stopMidiAutoRescan();
