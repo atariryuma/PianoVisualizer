@@ -32,7 +32,7 @@ The app logs to console at startup:
 Ask the reporter to:
 
 1. Open the app
-2. Triple-tap bottom-left to open debug overlay
+2. Enable the debug overlay (⚙ → その他 → デバッグ表示)
 3. Open browser DevTools (or Safari Web Inspector for iOS over USB)
 4. Find the `[PERF]` log line
 

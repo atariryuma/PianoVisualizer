@@ -248,8 +248,8 @@ background star count are overridden at runtime by the detected `PERF_PROFILE`.
 
 ### Debug Mode
 
-Triple-tap the bottom-left corner OR enable in the settings panel to toggle a
-debug overlay showing real-time values for all detection layers (flux, flatness,
+Enable in the settings panel (⚙ → その他 → デバッグ表示) to toggle a debug
+overlay showing real-time values for all detection layers (flux, flatness,
 crest, harmonicity, AGC gain, session state, pitch, RMS, etc.).
 
 ## User-added songs
