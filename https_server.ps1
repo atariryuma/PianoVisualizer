@@ -4,7 +4,16 @@ param(
     # ad-hoc serving. The cert lookup still happens from $PSScriptRoot
     # so cert.pfx doesn't have to live inside the served directory.
     [string]$Root = (Join-Path $PSScriptRoot "packages\web\dist"),
-    [int]$Port = 8443
+    [int]$Port = 8443,
+    # Concurrent worker cap. The single-threaded version (pre-2026-05-07)
+    # made Workbox's importScripts() race the page's chunk fetches during
+    # a cold load — Chrome would then report `Failed to register a
+    # ServiceWorker ... An unknown error occurred when fetching the
+    # script` because the SW thread's `workbox-*.js` request stalled
+    # behind the HTML/JS/MXL fan-out and tripped the 5s socket timeout.
+    # 16 covers Chrome's typical concurrent-request burst on a cold load
+    # while keeping memory bounded.
+    [int]$MaxConcurrent = 16
 )
 
 Add-Type -AssemblyName System.Net
@@ -12,10 +21,10 @@ Add-Type -AssemblyName System.Security
 
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $serverDir = [System.IO.Path]::GetFullPath($Root)
-$port = $Port
 $certPath = Join-Path $scriptDir "cert.pfx"
 $certPass = if ([string]::IsNullOrWhiteSpace($env:PIANO_CERT_PASS)) { "piano123" } else { $env:PIANO_CERT_PASS }
 $logPath = Join-Path $scriptDir "server.log"
+
 # Block server-only files from being served to LAN clients:
 #   - cert.pfx          : private key + cert
 #   - cert.cer          : also private (export marker; intentionally NOT blocked
@@ -27,77 +36,82 @@ $logPath = Join-Path $scriptDir "server.log"
 #                         (debug dumps that may include score data, device info)
 $blockedFiles = @("cert.pfx", "https_server.ps1", "gen_cert.ps1", "server.log")
 
-function Write-Log([string]$message) {
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp $message" | Out-File $logPath -Append -Encoding utf8
-}
+# Per-client handler. Runs inside a runspace from $pool below. Helpers and the
+# MIME map are inlined so we don't have to plumb functions through
+# InitialSessionState — the per-call cost is in the microseconds compared to
+# the TLS handshake we're about to do.
+$clientHandler = {
+    param(
+        [System.Net.Sockets.TcpClient]$client,
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]$cert,
+        [string]$serverDir,
+        [string[]]$blockedFiles,
+        [string]$logPath
+    )
 
-# UA-based client tag for /log entries. Previously hardcoded as "iPad" which
-# misled when other devices (Steam Deck, desktop browsers) hit the same endpoint.
-function Get-ClientTag([hashtable]$hdrs) {
-    $ua = $hdrs["User-Agent"]
-    if (-not $ua) { return "Unknown" }
-    if ($ua -match "iPad")             { return "iPad" }
-    if ($ua -match "iPhone")           { return "iPhone" }
-    if ($ua -match "Android")          { return "Android" }
-    if ($ua -match "Macintosh|Mac OS X") { return "Mac" }
-    if ($ua -match "Linux")            { return "Linux" }
-    if ($ua -match "Windows")          { return "Windows" }
-    return "Web"
-}
-
-function Send-Response(
-    [System.Net.Security.SslStream]$stream,
-    [int]$statusCode,
-    [string]$reason,
-    [byte[]]$body,
-    [string]$contentType
-) {
-    if (-not $body) { $body = [byte[]]@() }
-    if ([string]::IsNullOrWhiteSpace($contentType)) { $contentType = "text/plain; charset=utf-8" }
-
-    $header = "HTTP/1.1 $statusCode $reason`r`nContent-Type: $contentType`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n"
-    $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($header)
-    $stream.Write($headerBytes, 0, $headerBytes.Length)
-
-    if ($body.Length -gt 0) {
-        $stream.Write($body, 0, $body.Length)
+    $mimeMap = @{
+        ".html" = "text/html; charset=utf-8"
+        ".js"   = "application/javascript; charset=utf-8"
+        ".css"  = "text/css; charset=utf-8"
+        ".json" = "application/json; charset=utf-8"
+        ".txt"  = "text/plain; charset=utf-8"
+        ".svg"  = "image/svg+xml"
+        ".png"  = "image/png"
+        ".jpg"  = "image/jpeg"
+        ".jpeg" = "image/jpeg"
+        ".ico"  = "image/x-icon"
+        ".cer"  = "application/pkix-cert"
+        ".crt"  = "application/pkix-cert"
     }
-}
 
-$mimeMap = @{
-    ".html" = "text/html; charset=utf-8"
-    ".js"   = "application/javascript; charset=utf-8"
-    ".css"  = "text/css; charset=utf-8"
-    ".json" = "application/json; charset=utf-8"
-    ".txt"  = "text/plain; charset=utf-8"
-    ".svg"  = "image/svg+xml"
-    ".png"  = "image/png"
-    ".jpg"  = "image/jpeg"
-    ".jpeg" = "image/jpeg"
-    ".ico"  = "image/x-icon"
-    ".cer"  = "application/pkix-cert"
-    ".crt"  = "application/pkix-cert"
-}
+    function Write-Log([string]$message) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        # Best-effort: concurrent appends from sibling workers can occasionally
+        # collide on the file lock. We swallow the exception rather than fail
+        # the request — the log is debug-only.
+        try {
+            "$timestamp $message" | Out-File $logPath -Append -Encoding utf8
+        } catch { }
+    }
 
-if (-not (Test-Path $certPath -PathType Leaf)) {
-    throw "Certificate file not found: $certPath"
-}
+    # UA-based client tag for /log entries. Previously hardcoded as "iPad" which
+    # misled when other devices (Steam Deck, desktop browsers) hit the same endpoint.
+    function Get-ClientTag([hashtable]$hdrs) {
+        $ua = $hdrs["User-Agent"]
+        if (-not $ua) { return "Unknown" }
+        if ($ua -match "iPad")             { return "iPad" }
+        if ($ua -match "iPhone")           { return "iPhone" }
+        if ($ua -match "Android")          { return "Android" }
+        if ($ua -match "Macintosh|Mac OS X") { return "Mac" }
+        if ($ua -match "Linux")            { return "Linux" }
+        if ($ua -match "Windows")          { return "Windows" }
+        return "Web"
+    }
 
-$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPass)
-$listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $port)
-$listener.Start()
+    function Send-Response(
+        [System.Net.Security.SslStream]$stream,
+        [int]$statusCode,
+        [string]$reason,
+        [byte[]]$body,
+        [string]$contentType
+    ) {
+        if (-not $body) { $body = [byte[]]@() }
+        if ([string]::IsNullOrWhiteSpace($contentType)) { $contentType = "text/plain; charset=utf-8" }
 
-"Server started on port $port" | Out-File $logPath -Encoding utf8
-Write-Log "Serving files from $serverDir"
+        $header = "HTTP/1.1 $statusCode $reason`r`nContent-Type: $contentType`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n"
+        $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($header)
+        $stream.Write($headerBytes, 0, $headerBytes.Length)
 
-$serverRoot = $serverDir
-if (-not $serverRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
-    $serverRoot += [System.IO.Path]::DirectorySeparatorChar
-}
+        if ($body.Length -gt 0) {
+            $stream.Write($body, 0, $body.Length)
+        }
+    }
 
-while ($true) {
-    $client = $listener.AcceptTcpClient()
+    $serverRoot = $serverDir
+    if (-not $serverRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $serverRoot += [System.IO.Path]::DirectorySeparatorChar
+    }
+
     $client.ReceiveTimeout = 5000
     $client.SendTimeout = 5000
 
@@ -117,7 +131,7 @@ while ($true) {
         $requestLine = $reader.ReadLine()
         if ([string]::IsNullOrWhiteSpace($requestLine)) {
             Send-Response -stream $sslStream -statusCode 400 -reason "Bad Request" -body ([System.Text.Encoding]::UTF8.GetBytes("Bad Request")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
 
         # v10: Parse headers
@@ -134,7 +148,7 @@ while ($true) {
         $parts = $requestLine -split " "
         if ($parts.Length -lt 2) {
             Send-Response -stream $sslStream -statusCode 400 -reason "Bad Request" -body ([System.Text.Encoding]::UTF8.GetBytes("Bad Request")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
 
         $method = $parts[0].ToUpperInvariant()
@@ -153,19 +167,17 @@ while ($true) {
                 # Fix: Use [string]::new constructor to avoid array unrolling issues
                 $bodyStr = [string]::new($buffer)
                 $now = Get-Date -Format "HH:mm:ss"
-                # NOTE: Don't overwrite $client — it's the TcpClient handle from
-                # line 81 and the per-iteration cleanup needs it intact.
                 $clientTag = Get-ClientTag $headers
                 Write-Host "[$now $clientTag Log] $bodyStr" -ForegroundColor Cyan
                 Write-Log "[$clientTag] $bodyStr"
             }
             Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body ([System.Text.Encoding]::UTF8.GetBytes("Logged")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
 
         if ($method -ne "GET") {
             Send-Response -stream $sslStream -statusCode 405 -reason "Method Not Allowed" -body ([System.Text.Encoding]::UTF8.GetBytes("Method Not Allowed")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
 
         # Default to index.html (the canonical entry as of 2026-05-05).
@@ -184,15 +196,15 @@ while ($true) {
 
         if (-not $candidatePath.StartsWith($serverRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
             Send-Response -stream $sslStream -statusCode 403 -reason "Forbidden" -body ([System.Text.Encoding]::UTF8.GetBytes("Forbidden")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
         if ($blockedFiles -contains $fileName) {
             Send-Response -stream $sslStream -statusCode 403 -reason "Forbidden" -body ([System.Text.Encoding]::UTF8.GetBytes("Forbidden")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
         if (-not (Test-Path $candidatePath -PathType Leaf)) {
             Send-Response -stream $sslStream -statusCode 404 -reason "Not Found" -body ([System.Text.Encoding]::UTF8.GetBytes("Not Found")) -contentType "text/plain; charset=utf-8"
-            continue
+            return
         }
 
         $content = [System.IO.File]::ReadAllBytes($candidatePath)
@@ -203,12 +215,85 @@ while ($true) {
         Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body $content -contentType $contentType
     }
     catch {
-        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Log $_.Exception.Message
+        # Don't crash the worker — log and let `finally` close the streams.
+        Write-Log "Worker error: $($_.Exception.Message)"
     }
     finally {
-        if ($reader) { $reader.Close() }
-        $sslStream.Close()
-        $client.Close()
+        if ($reader)    { try { $reader.Close()    } catch { } }
+        if ($sslStream) { try { $sslStream.Close() } catch { } }
+        if ($client)    { try { $client.Close()    } catch { } }
     }
+}
+
+if (-not (Test-Path $certPath -PathType Leaf)) {
+    throw "Certificate file not found: $certPath"
+}
+
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPass)
+$listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $Port)
+
+# Bind+listen separately so a port-in-use failure is fatal with a useful hint
+# instead of silently dropping into the accept loop and re-throwing on every
+# `AcceptTcpClient` call. (Pre-2026-05-07 we relied on $ErrorActionPreference
+# default which let the script march past Start() and confusingly print the
+# green "listening" line right after the SocketException.)
+try {
+    $listener.Start()
+}
+catch {
+    Write-Host "ERROR: cannot bind to port ${Port}: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Hint: another https_server.ps1 instance is probably still listening." -ForegroundColor Yellow
+    Write-Host "  Get-NetTCPConnection -LocalPort $Port -State Listen | ForEach-Object { Get-Process -Id `$_.OwningProcess }" -ForegroundColor Yellow
+    Write-Host "  Get-NetTCPConnection -LocalPort $Port -State Listen | ForEach-Object { Stop-Process -Id `$_.OwningProcess -Force }" -ForegroundColor Yellow
+    exit 1
+}
+
+"Server started on port $Port" | Out-File $logPath -Encoding utf8
+"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Serving files from $serverDir (max $MaxConcurrent concurrent)" | Out-File $logPath -Append -Encoding utf8
+Write-Host "HTTPS server listening on port $Port (root: $serverDir, max concurrent: $MaxConcurrent)" -ForegroundColor Green
+
+# Each accepted client gets dispatched to its own runspace so Workbox's
+# importScripts() (and the page's parallel chunk fan-out) can complete
+# without queueing behind another client's response. Min=1 keeps cold-start
+# cheap; Max=$MaxConcurrent caps memory under flood.
+$pool = [RunspaceFactory]::CreateRunspacePool(1, $MaxConcurrent, $Host)
+$pool.Open()
+
+# In-flight worker handles. We sweep this list every accept so completed
+# runspaces are released back to the pool and don't leak. AddScript wants a
+# string, so the scriptblock is converted once here.
+$handlerText = $clientHandler.ToString()
+$jobs = [System.Collections.ArrayList]::new()
+
+try {
+    while ($true) {
+        $client = $listener.AcceptTcpClient()
+
+        $ps = [PowerShell]::Create()
+        $ps.RunspacePool = $pool
+        [void]$ps.AddScript($handlerText).
+            AddArgument($client).
+            AddArgument($cert).
+            AddArgument($serverDir).
+            AddArgument($blockedFiles).
+            AddArgument($logPath)
+        $async = $ps.BeginInvoke()
+        [void]$jobs.Add([pscustomobject]@{ PS = $ps; Async = $async })
+
+        for ($i = $jobs.Count - 1; $i -ge 0; $i--) {
+            if ($jobs[$i].Async.IsCompleted) {
+                try { $jobs[$i].PS.EndInvoke($jobs[$i].Async) | Out-Null } catch { }
+                $jobs[$i].PS.Dispose()
+                $jobs.RemoveAt($i)
+            }
+        }
+    }
+}
+finally {
+    foreach ($j in $jobs) {
+        try { $j.PS.Stop() } catch { }
+        try { $j.PS.Dispose() } catch { }
+    }
+    try { $pool.Close(); $pool.Dispose() } catch { }
+    try { $listener.Stop() } catch { }
 }
