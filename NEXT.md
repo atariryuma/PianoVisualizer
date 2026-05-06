@@ -6,9 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-05** (29 modules extracted; render layer fully in
-core; state machines for flow, encouragement, and quests done. Remaining work is
-IOI/dynamics history, pitch stability, and a few audio helpers.)
+Last refreshed: **2026-05-06** (32 modules extracted; the per-onset reducer trio
+— quality-history, pitch-stability, chord-window — is now in core. Next batch
+focuses on persistence + small render adapters before the Phase 0b.3 dual-build
+wire-up.)
 
 ---
 
@@ -45,65 +46,75 @@ IOI/dynamics history, pitch stability, and a few audio helpers.)
 | 27  | `state/flow-meter.ts`         | 27    | `packages/core/src/state/flow-meter.ts`         |
 | 28  | `state/encouragement.ts`      | 22    | `packages/core/src/state/encouragement.ts`      |
 | 29  | `state/quest-tracker.ts`      | 16    | `packages/core/src/state/quest-tracker.ts`      |
+| 30  | `state/quality-history.ts`    | 16    | `packages/core/src/state/quality-history.ts`    |
+| 31  | `state/pitch-stability.ts`    | 26    | `packages/core/src/state/pitch-stability.ts`    |
+| 32  | `audio/chord-window.ts`       | 16    | `packages/core/src/audio/chord-window.ts`       |
 
-**Status: 497/497 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 643/643 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/quality-history.ts`
+## 1. Extract `state/wake-up-flash.ts`
 
-**What**: Move the IOI + dynamics ring buffer that feeds `state/quality.ts`.
-Currently lives as `noteOnsetTimes` + `noteVelocities` arrays directly in
-app.js.
-
-**Acceptance**:
-
-- [ ] `(state, onset) → state` reducer; bounded buffer length via opts
-- [ ] Computes derived stats (IOI mean / std, velocity CV) on demand
-- [ ] Tests: bounded growth, FIFO eviction, IOI rejection of duplicate onsets
-      within debounce window
-
-**Est**: 130 + 80 tests.
-
-## 2. Extract `state/pitch-stability.ts`
-
-**What**: Move the per-onset semitone-deviation tracker. Currently mixed in with
-the onset branch in app.js — when a clean onset arrives, compares its detected
-pitch to the previous and grows or decays a 0..1 stability score.
+**What**: Move the input-flash decay. Currently `state.inputFlash` is a 0..1
+scalar set to 0.2 on flow drops + first-key feedback, multiplied by 0.85 each
+frame in the canvas overlay path.
 
 **Acceptance**:
 
-- [ ] `applyOnsetPitch(state, pitchHz, dtSec, opts)` reducer
-- [ ] `decayStability(state, dtSec, opts)` for active-but-not-onset frames
-- [ ] Tests: same-pitch growth, semitone-jump decay, idle decay rate
+- [ ] `triggerWakeUpFlash(state, opts)` and
+      `decayWakeUpFlash(state, dtSec, opts)`
+- [ ] Frame-rate-independent decay (half-life or exponential per second, not
+      per-frame multiplier — same lesson as pitch-stability's idle decay)
+- [ ] Tests: trigger sets to peak, decays to ~0 within a target window, repeated
+      triggers don't compound past 1.0
 
-**Est**: 100 + 50 tests.
+**Est**: 60 + 40 tests.
 
-## 3. Extract `audio/chord-window.ts`
+## 2. Extract `state/streak.ts`
 
-**What**: Move the chord aggregation window — collects MIDI/onset note events
-within a short tolerance and emits a chord signature once the window closes.
+**What**: Move the daily-streak counter. Currently the
+`practice.progress.streakDays` array and `streakCount` are computed inline in
+the practice-state persistence layer (date-list dedupe → backward walk for
+consecutive-day count). Pure date math that belongs in core.
 
 **Acceptance**:
 
-- [ ] `(state, event) → state` reducer; window closes on quiet-tick
-- [ ] Pure: tolerance + window length from opts
-- [ ] Tests: single-note (no chord), 3-note triad, late note dropped,
-      chord-after-chord debounce
+- [ ] `recordPracticeDay(state, todayIso)` adds today's date if absent
+- [ ] `computeStreakCount(state, todayIso)` returns the current consecutive-day
+      count (the shell only stores the day list; count is derived)
+- [ ] Tests: same-day idempotent, gap > 1 day breaks streak, week-long streak
+      counts correctly across month boundaries, future-date guard
 
-**Est**: 140 + 80 tests.
+**Est**: 90 + 50 tests.
+
+## 3. Extract `state/quest-cooldown.ts`
+
+**What**: Move the toast-completion queue + spacing. Currently the quest
+completion celebration is gated by an ad-hoc `lastQuestCheckMs + 2500` delay
+inside quest-tracker. A dedicated cooldown reducer would let multiple quests
+queue up cleanly when several conditions fire close together (e.g. flow 50 +
+combo 30 simultaneously).
+
+**Acceptance**:
+
+- [ ] `(state, completionEvent) → state` queue reducer
+- [ ] `popReadyToast(state, timeMs, opts)` returns the next toast iff the
+      previous toast's display window has elapsed
+- [ ] Tests: empty queue → no toast, two-quest queue → spaced emission, drain
+      order is FIFO
+
+**Est**: 110 + 60 tests.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/midi-beams.ts` — sustained-note beam overlay
-- `state/streak.ts` — daily-streak persistence + calendar formatting
-- `state/quest-cooldown.ts` — toast spacing + completion notification queue
-- `state/wake-up-flash.ts` — input-flash decay state
+- `render/midi-beams.ts` — sustained-note beam overlay (per-key vertical light
+  beams while held; currently ad-hoc canvas drawing in the lane renderer)
 
 ---
 
