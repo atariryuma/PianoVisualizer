@@ -3695,6 +3695,13 @@
       // measure changes. Lets us verify OSMD's iterator visits each
       // expected note position.
       const cursorTrace = [];
+      // Time-driven cursor needs source-time of EVERY OSMD iterator step,
+      // not just steps that have notes. Otherwise the cursor freezes
+      // during rest periods (whole/half/fermata rests, between movements,
+      // etc.) and "lurches forward" multi-step at the next note onset —
+      // perceived as the cursor skipping notes. Index aligned: stepTimeline[i]
+      // is the source-time the cursor should reach OSMD step i.
+      const stepTimeline = [];
 
       osmd.cursor.reset();
       const it = osmd.cursor.iterator;
@@ -3712,6 +3719,7 @@
           const inBarQuarters = Math.max(0, tsFrac.realValue - measureStartTs) * 4;
           const { offsetSec, localQBpm } = timeAtInBar(measureIdx, inBarQuarters);
           const timeSec = measureStartSec[measureIdx] + offsetSec;
+          stepTimeline.push({ step: cursorStep, timeSec, measureIdx });
           const voiceEntries = it.CurrentVoiceEntries;
           // DIAG: snapshot this step (notes added below)
           // Capture ALL steps in early measures (covers m=0..7 fully even
@@ -3819,7 +3827,7 @@
         tieReport,
       } : null;
       return {
-        notes, stepToMeasure, measureStartSec, measureBpm, _diag,
+        notes, stepToMeasure, measureStartSec, measureBpm, stepTimeline, _diag,
       };
     }
 
@@ -4628,6 +4636,11 @@
         song.totalSec = totalSec;
         song.playbackOrder = order;
         song.measureToCursorStep = measureToCursorStep;
+        // Time-driven cursor source: every OSMD iterator step with its
+        // source-time. Used by the per-frame cursor sync to advance through
+        // rest periods + tempo-direction steps continuously instead of
+        // freezing at the last note then leaping at the next onset.
+        song.stepTimeline = extractRet.stepTimeline || [];
         // Pass the per-source-measure start times so sections begin at the
         // measure boundary (preserving any leading rest visually) instead of
         // cropping to the first note's onset.
@@ -6139,6 +6152,29 @@
       return out;
     }
 
+    // Build a section-local cursor timeline: every OSMD iterator step that
+    // falls inside the section's time range, mapped to playback timeMs.
+    // Drives the per-frame cursor sync so it advances through rests +
+    // invisible steps continuously (instead of freezing on the last note).
+    function buildSectionCursorTimeline(sectionIdx) {
+      const sec = currentSong.sections[sectionIdx];
+      const speedFactor = 100 / practice.tempoPct;
+      const tl = currentSong.stepTimeline;
+      if (!tl || !tl.length) return [];
+      const out = [];
+      for (const s of tl) {
+        if (s.timeSec >= sec.startSec && s.timeSec < sec.endSec) {
+          out.push({
+            step: s.step,
+            timeMs: (s.timeSec - sec.startSec) * 1000 * speedFactor + COUNT_IN_MS,
+          });
+        }
+      }
+      // stepTimeline is already in OSMD-iterator order which is monotonic
+      // in timeSec, so timeMs is monotonic too. No sort needed.
+      return out;
+    }
+
     // Per-hand MIDI range used by the lane drawer to map pitch → x-position.
     // Computed once per section so the hot path doesn't re-scan every frame.
     function computeHandRanges(sectionNotes) {
@@ -6179,6 +6215,12 @@
       practice.enabled = true;
       practice.sectionIdx = sectionIdx;
       practice.sectionNotes = buildSectionNotes(sectionIdx);
+      // Cursor advances through this timeline (every OSMD step incl. rests),
+      // not through sectionNotes (notes only). Otherwise it freezes during
+      // rests then leaps multi-step at the next note onset — the kid sees
+      // the cursor "skip notes" because the leap renders in one frame.
+      practice.sectionCursorTimeline = buildSectionCursorTimeline(sectionIdx);
+      practice._cursorTimelineIdx = 0;
       // ---------- DIAG: section playback notes ----------
       // Verifies that the per-section playback timeline (timeMs values that
       // drive the lane + the cursor sync) was built from the song notes
@@ -6549,25 +6591,38 @@
       const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
 
-      // === Per-frame OSMD cursor sync ===
-      // Cursor follows note onsets only — it sits at the last played note
-      // during rests, then jumps to the next note exactly when that note's
-      // audio fires. This matches the kid's mental model: "the cursor moves
-      // when I hear a note", and the wait between notes IS the rest duration.
+      // === Per-frame OSMD cursor sync (time-driven) ===
+      // Walks the per-section step timeline (every OSMD iterator step incl.
+      // rests + tempo-direction steps), advancing the cursor whenever
+      // elapsed crosses each step's timeMs. The beat keeps progressing
+      // during rests, so the cursor must too — driving by sectionNotes
+      // (which excludes rest steps) freezes the cursor on the last note
+      // and then "skips" multi-step at the next note onset.
       //
-      // Replaces the old Tone.Draw.schedule path which inherited
-      // Tone.Transport's ~100ms lookAhead — per-frame sync has no audio lag.
-      if (osmdVisible && practice.sectionNotes.length > 0) {
+      // Fallback: when stepTimeline is missing (older song-records loaded
+      // before the timeline was added), use sectionNotes — cursor will
+      // freeze through rests but at least won't crash.
+      if (osmdVisible) {
         const elapsed = practiceElapsedMs();
-        const notes = practice.sectionNotes;
-        let pIdx = practice._cursorScanIdx | 0;
-        if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
-        while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
-        practice._cursorScanIdx = pIdx;
-        const target = notes[pIdx];
-        if (target && typeof target.sourceStep === 'number' &&
-            target.sourceStep !== _osmdStepCursor) {
-          setOsmdCursorStep(target.sourceStep);
+        const tl = practice.sectionCursorTimeline;
+        let target = null;
+        if (tl && tl.length > 0) {
+          let tIdx = practice._cursorTimelineIdx | 0;
+          if (tIdx >= tl.length || tl[tIdx].timeMs > elapsed) tIdx = 0;
+          while (tIdx + 1 < tl.length && tl[tIdx + 1].timeMs <= elapsed) tIdx++;
+          practice._cursorTimelineIdx = tIdx;
+          target = tl[tIdx];
+        } else if (practice.sectionNotes.length > 0) {
+          const notes = practice.sectionNotes;
+          let pIdx = practice._cursorScanIdx | 0;
+          if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
+          while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
+          practice._cursorScanIdx = pIdx;
+          const n = notes[pIdx];
+          if (n && typeof n.sourceStep === 'number') target = { step: n.sourceStep };
+        }
+        if (target && target.step !== _osmdStepCursor) {
+          setOsmdCursorStep(target.step);
           osmdScrollToCursor();
         }
       }
