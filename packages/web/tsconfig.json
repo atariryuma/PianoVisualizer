@@ -5,10 +5,13 @@
     "rootDir": "./src",
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
     "types": ["vite/client", "vite-plugin-pwa/client"],
-    // Phase 0c kickoff: bring legacy-app.js into the typecheck graph so
-    // main.ts can import it as a real module. `checkJs` stays off — the
-    // file is 7800 lines of vanilla JS; we'll opt-in regions to type
-    // checking as they're carved out into focused modules.
+    // Phase 0c.5 (2026-05-07): legacy-app.js now passes strict TS with
+    // 0 residual errors. `// @ts-check` at the top of legacy-app.js
+    // belt-and-suspenders the ratchet so future regressions error at
+    // typecheck time. `checkJs: true` would also work; we keep it false
+    // here so dist-built JS (Vite output, vendor chunks) doesn't pull
+    // into the typecheck graph — only files that opt in via `@ts-check`
+    // are checked.
     "allowJs": true,
     "checkJs": false,
     // Phase 0c: relax catch-variable narrowing for the legacy shell. The

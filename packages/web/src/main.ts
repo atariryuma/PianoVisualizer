@@ -47,30 +47,34 @@ declare global {
   /** Web Bluetooth — Chromium-only experimental API used by the BLE-MIDI
    *  fallback path. Not in lib.dom by default; declare a minimal subset
    *  matching what legacy-app.js actually reads. */
+  interface BluetoothGATTServer {
+    connected: boolean;
+    disconnect(): void;
+    getPrimaryService(uuid: string): Promise<{
+      getCharacteristic(uuid: string): Promise<
+        EventTarget & {
+          startNotifications(): Promise<unknown>;
+          stopNotifications(): Promise<unknown>;
+        }
+      >;
+    }>;
+  }
+  interface BluetoothDevice {
+    name: string | null;
+    /** The remote GATT server. Per spec the same object holds both
+     *  connect() and connected/disconnect — connecting is a no-op once
+     *  it's already established. */
+    gatt?: BluetoothGATTServer & { connect(): Promise<BluetoothGATTServer> };
+    addEventListener(event: string, handler: () => void): void;
+    removeEventListener(event: string, handler: () => void): void;
+  }
   interface Navigator {
     bluetooth?: {
       requestDevice(opts: {
         acceptAllDevices?: boolean;
         filters?: Array<{ services?: string[]; name?: string; namePrefix?: string }>;
         optionalServices?: string[];
-      }): Promise<{
-        name: string | null;
-        gatt?: {
-          connect(): Promise<{
-            getPrimaryService(uuid: string): Promise<{
-              getCharacteristic(uuid: string): Promise<
-                EventTarget & {
-                  startNotifications(): Promise<unknown>;
-                  stopNotifications(): Promise<unknown>;
-                }
-              >;
-            }>;
-            disconnect(): void;
-            connected: boolean;
-          }>;
-        };
-        addEventListener(event: string, handler: () => void): void;
-      }>;
+      }): Promise<BluetoothDevice>;
     };
   }
   // Bare-identifier declarations so legacy-app.js (when @ts-check

@@ -30,10 +30,13 @@ export interface LaneNoteView {
   midi: number;
   /** Which hand the note belongs to. */
   hand: 'L' | 'R';
-  /** Set true once the note has been judged a hit. */
-  hit: boolean;
-  /** Set true once the note has been judged missed. */
-  missed: boolean;
+  /** Set true once the note has been judged a hit. Optional because
+   *  source-stage notes (`song.notes`, the ExpandedNote pipeline) don't
+   *  carry it; the lane reads it via truthiness which handles undefined. */
+  hit?: boolean;
+  /** Set true once the note has been judged missed. Same optional rationale
+   *  as `hit`. */
+  missed?: boolean;
   /** Hand-filter flag — true when one-hand practice hides the other hand. */
   _filtered?: boolean;
 }

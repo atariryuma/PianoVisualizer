@@ -1,3 +1,4 @@
+    // @ts-check
     'use strict';
 
     // ============================================================
@@ -30,15 +31,16 @@
     // ============================================================
 
     /**
+     * The per-note record used by the practice lane, OSMD cursor walker,
+     * and scoring. Wider than @piano/core's `OsmdNote` — carries
+     * lane-render fields and per-section copies.
+     *
      * @typedef OsmdLikeNote
-     *   The per-note record used by the practice lane, OSMD cursor
-     *   walker, and scoring. Wider than @piano/core's `OsmdNote` —
-     *   carries lane-render fields and per-section copies.
      * @property {number} midi               MIDI note (0–127).
      * @property {'L'|'R'} hand              Hand assignment.
-     * @property {number} timeSec            Onset (s) at authored tempo.
+     * @property {number} timeSec            Onset (s) at authored tempo. Always set on song.notes (ExpandedNote stage).
      * @property {number} durSec             Duration (s) at authored tempo.
-     * @property {number} timeMs             Onset at the kid's chosen tempoPct.
+     * @property {number} timeMs             Onset at the kid's chosen tempoPct. Set on practice.sectionNotes; song.notes carries this too as a redundant copy after `buildSectionNotes`.
      * @property {number} durMs              Duration at the kid's chosen tempoPct.
      * @property {number} measureIdx         0-based MusicXML measure index.
      * @property {number} inBarQuarters      Position in the bar (quarter-note units).
@@ -46,6 +48,12 @@
      * @property {boolean=} tieEnd
      * @property {boolean=} hit              Set by the practice tick when matched.
      * @property {boolean=} missed           Set when the hit window closes unmatched.
+     * @property {boolean=} _filtered        One-hand mode: pre-flagged hit so the cursor auto-skips.
+     * @property {number|null=} cursorJump   OSMD cursor target measure (rare; for repeat-jump notes). null on sequential notes.
+     * @property {number=}  holdStartMs      Set by onMidiNoteOn when this note becomes a pending hold.
+     * @property {number=}  expectedDurMs    Cached for finalizeNoteHold's duration scoring.
+     * @property {number=}  expectedEndMs    Cached for finalizeNoteHold's duration scoring.
+     * @property {number=}  onTimeMs         Cached for finalizeNoteHold's duration scoring.
      */
 
     /**
@@ -67,7 +75,7 @@
      * @property {number} timingScoreSum
      * @property {number} durationScoreSum
      * @property {number} durationScoredCount
-     * @property {Map<number, {midi:number, expectedDurMs:number, expectedEndMs:number, onTimeMs:number, holdStartMs?:number, durMs?:number}>} pendingHolds
+     * @property {Map<number, OsmdLikeNote>} pendingHolds  Note → OsmdLikeNote being held; finalizeNoteHold reads `holdStartMs` + `durMs` (set on hit + section build).
      * @property {number} sectionCombo
      * @property {number} sectionBestCombo
      * @property {'L'|'R'|null} handFilter
@@ -336,11 +344,14 @@
 
     /**
      * @typedef SectionDef
-     *   Per-section quest layout in a song's sectionDefs array.
+     *   Per-section quest layout in a song's sectionDefs array. Matches
+     *   `@piano/core`'s `BuildSectionsInputDef`: descKey + startMeasure
+     *   are required so the section assembler can deterministically
+     *   resolve the section's start window and i18n key.
      * @property {string} id
      * @property {string} nameKey
-     * @property {string=} descKey
-     * @property {number=} startMeasure
+     * @property {string} descKey
+     * @property {number} startMeasure
      * @property {boolean=} isBoss
      */
 
@@ -957,7 +968,9 @@
     const AUDIO_SAMPLE_RATE = 48000;
 
     function createAudioContext() {
-      const Ctor = window.AudioContext || window.webkitAudioContext;
+      const Ctor = window.AudioContext || /** @type {typeof AudioContext} */ (
+        /** @type {any} */ (window).webkitAudioContext
+      );
       try {
         return new Ctor({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: 'interactive' });
       } catch (e) {
@@ -1003,7 +1016,7 @@
       if (midiInput.enabled) {
         console.log('[AUDIO] MIDI detected — skipping microphone acquisition');
         state.micSuspended = true;
-      } else if (isAppleMobile() && navigator.requestMIDIAccess) {
+      } else if (isAppleMobile() && typeof navigator.requestMIDIAccess === 'function') {
         // Web MIDI Browser (or any iOS WKWebView wrapper that polyfills Web MIDI):
         // mic permission is consistently broken on iOS WKWebView wrappers, so we
         // skip it on purpose. Note we set `micIntentionallySkipped` (not
@@ -3109,16 +3122,23 @@
         drawMidiBeams(timeMs);
       }
 
+      // ripples[i].update() / .draw(ctx) are monkey-patched on the prototype
+      // earlier (see "Ripples — Phase 0b.3" + "Particle system" sections);
+      // the patches inject the closure deps so call sites stay positional.
+      // TS still sees the core types' original signatures (.update(opts) /
+      // .draw(ctx, opts)) — the casts pin the runtime arity.
       let alive = 0;
       for (let i = 0; i < ripples.length; i++) {
-        ripples[i].update(); ripples[i].draw(ctx);
+        /** @type {() => void} */ (ripples[i].update).call(ripples[i]);
+        /** @type {(c:CanvasRenderingContext2D) => void} */ (ripples[i].draw).call(ripples[i], ctx);
         if (ripples[i].life > 0) ripples[alive++] = ripples[i];
       }
       ripples.length = alive;
 
       alive = 0;
       for (let i = 0; i < particles.length; i++) {
-        particles[i].update(); particles[i].draw(ctx);
+        particles[i].update();
+        /** @type {(c:CanvasRenderingContext2D) => void} */ (particles[i].draw).call(particles[i], ctx);
         if (particles[i].life > 0 && alive < CONFIG.MAX_PARTICLES) particles[alive++] = particles[i];
       }
       particles.length = alive;
@@ -3592,7 +3612,9 @@
         }
       }
       if (!scorePath) throw new Error('No score file inside .mxl archive');
-      return zip.file(scorePath).async('text');
+      const scoreFile = zip.file(scorePath);
+      if (!scoreFile) throw new Error('Score file vanished from zip mid-parse: ' + scorePath);
+      return scoreFile.async('text');
     }
 
     // Promote a stored-or-just-fetched record into the SONGS registry. Returns
@@ -4241,7 +4263,13 @@
           if (end > totalSec) totalSec = end;
         }
 
-        song.notes = expanded;
+        // ExpandedNote shape is OsmdLikeNote-compatible — same midi/hand/
+        // timeSec/durSec/measureIdx/inBarQuarters fields. timeMs/durMs are
+        // computed downstream by buildSectionNotes per-section before the
+        // practice tick reads them; song.notes is only iterated by timeSec
+        // (see buildSectionNotes at line ~5837), so the missing-at-this-stage
+        // ms fields don't matter here.
+        song.notes = /** @type {OsmdLikeNote[]} */ (/** @type {unknown} */ (expanded));
         song.totalSec = totalSec;
         song.playbackOrder = order;
         // Pass the per-source-measure start times so sections begin at the
@@ -4284,9 +4312,13 @@
         //   [DIAG/tie]     tie-merge events (if any)
         //   [DIAG/section] section construction details
         if (REMOTE_LOG_ENABLED) {
+          // xmlMeasureTiming intentionally NOT passed — the diag dumper
+          // re-derives per-measure timing from scoreTiming, and the legacy
+          // shell's xmlMeasureTiming is a different shape than the dumper
+          // expects. Kept in scope here only for the shell's own use.
           dumpLoadDiagnostics({
             song,
-            scoreTiming, xmlMeasureTiming,
+            scoreTiming,
             extractRet,
             baseNotes, expanded,
             measures, order, totalSec,
@@ -4403,7 +4435,7 @@
     // Backward seeks always reset() and walk forward; cursor.previous()
     // in OSMD 1.9.x leaves the visual cursor at the previous position
     // while iterator state moves backward (ghost cursor).
-    /** @param {OsmdLikeNote} note */
+    /** @param {{measureIdx:number, inBarQuarters:number}} note */
     function setOsmdCursorToNote(note) {
       if (!osmd || !osmd.cursor || !note) return;
       const it = osmd.cursor.iterator;
@@ -4700,6 +4732,7 @@
     // NOT recover audio after iOS backgrounds the page — the only reliable fix
     // is closing the context and creating a fresh one. We keep the same mic
     // MediaStream (it survives backgrounding) and re-wire it.
+    /** @type {Promise<void>|null} */
     let _audioRecovering = null;
     async function recoverAudioContext() {
       if (!audioCtx) return;
@@ -4901,7 +4934,7 @@
     // while no events ever fire — so we filter them out.
     /** @param {{name?:string|null, manufacturer?:string|null}|null} port */
     function isVirtualMidiPort(port) {
-      const name = (port.name || '').toLowerCase();
+      const name = (port?.name || '').toLowerCase();
       return !name
         || name.includes('through')
         || name.includes('loop')
@@ -4999,6 +5032,7 @@
     // onstatechange events, so we only need to request once and re-iterate
     // for rescans. Re-requesting bypasses cached permission on some polyfills
     // and may also fail outside the original user gesture.
+    /** @type {MIDIAccess|null} */
     let _midiAccess = null;
 
     // Force=true drops the cache and re-requests. Used by the explicit user
@@ -5042,6 +5076,7 @@
     // plain-object polyfill shapes.
     /** @param {MIDIAccess} access */
     function gatherMidiInputs(access) {
+      /** @type {MIDIInput[]} */
       const out = [];
       const inputs = access && access.inputs;
       if (!inputs) return out;
@@ -5050,8 +5085,11 @@
       } else if (typeof inputs.forEach === 'function') {
         inputs.forEach((/** @type {MIDIInput} */ p) => out.push(p));
       } else if (typeof inputs === 'object') {
-        for (const k in inputs) {
-          const p = inputs[k];
+        // Plain-object polyfill (older Chromium / Web MIDI Browser shapes).
+        // The wider lookup is necessary because MIDIInputMap doesn't expose
+        // an index signature.
+        for (const k in /** @type {Record<string, MIDIInput>} */ (/** @type {unknown} */ (inputs))) {
+          const p = /** @type {Record<string, MIDIInput>} */ (/** @type {unknown} */ (inputs))[k];
           if (p && (p.type === 'input' || p.type == null)) out.push(p);
         }
       }
@@ -5211,11 +5249,23 @@
           filters: [{ services: [BLE_MIDI_SERVICE] }],
           optionalServices: [BLE_MIDI_SERVICE]
         });
+        if (!device.gatt) throw new Error('BLE device exposes no GATT server');
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
         const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
         await ch.startNotifications();
-        ch.addEventListener('characteristicvaluechanged', (e) => parseBleMidiPacket(/** @type {{value:DataView}} */ (/** @type {Event} */ (e).target).value.buffer));
+        ch.addEventListener('characteristicvaluechanged', (e) => {
+          // The double-cast through `unknown` is needed because TS doesn't
+          // think EventTarget overlaps with the BluetoothCharacteristic
+          // shape — they're nominally distinct interfaces.
+          // DataView.buffer is `ArrayBufferLike` (covers SharedArrayBuffer);
+          // BLE packets always come from a real ArrayBuffer (the GATT stack
+          // doesn't ship shared memory). Safe to narrow.
+          const target = /** @type {{value:DataView}} */ (/** @type {unknown} */ (
+            /** @type {Event} */ (e).target
+          ));
+          parseBleMidiPacket(/** @type {ArrayBuffer} */ (target.value.buffer));
+        });
 
         bleMidi.device = device;
         bleMidi.characteristic = ch;
@@ -5709,7 +5759,9 @@
     // ========================================
     // Tone.js helpers
     // ========================================
+    /** @type {import('tone').PolySynth|null} */
     let tonePiano = null;
+    /** @type {import('tone').Synth|null} */
     let toneMetronome = null;
     function ensureToneInstruments() {
       if (tonePiano || typeof Tone === 'undefined') return;
@@ -5770,10 +5822,11 @@
     // ========================================
     // Section build + start
     // ========================================
-    /** @param {number} sectionIdx */
+    /** @param {number} sectionIdx @returns {OsmdLikeNote[]} */
     function buildSectionNotes(sectionIdx) {
       const sec = currentSong.sections[sectionIdx];
       const speedFactor = 100 / practice.tempoPct;
+      /** @type {OsmdLikeNote[]} */
       const out = [];
       const handFilter = practice.handFilter;   // 'R' / 'L' / null
       for (const n of currentSong.notes ?? []) {
@@ -5786,6 +5839,8 @@
           out.push({
             hand: n.hand,
             midi: n.midi,
+            timeSec: n.timeSec,
+            durSec: n.durSec,
             timeMs: relSec * 1000 * speedFactor + COUNT_IN_MS,
             durMs: n.durSec * 1000 * speedFactor,
             measureIdx: n.measureIdx,
@@ -6111,7 +6166,7 @@
       //    or the kid's voice between MIDI presses can otherwise credit a wrong
       //    note (especially under the chord-forgiveness forward-search).
       //    Visualizer effects keep their own recency window (see drawMidiBeams path).
-      if (!midiInput.enabled && isOnsetNote && pitchHz > 0) {
+      if (!midiInput.enabled && isOnsetNote && pitchHz != null && pitchHz > 0) {
         const stablePitch = medianRecentPitch() || pitchHz;
         const detectedMidi = Math.round(12 * Math.log2(stablePitch / 440) + 69);
         matchNoteOnset(detectedMidi, false);
@@ -6187,7 +6242,7 @@
           targetIdx = Math.min(practice.currentNoteIdx | 0, notes.length - 1);
         } else {
           const elapsed = practiceRealElapsedMs();
-          let pIdx = practice._cursorScanIdx | 0;
+          let pIdx = (practice._cursorScanIdx ?? 0) | 0;
           if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
           while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
           practice._cursorScanIdx = pIdx;
@@ -6398,7 +6453,10 @@
       // score rows/stars and offer a "Try playing" button that switches the
       // kid into Guided on the same section — natural pedagogical flow.
       if (practice.mode === 'listen') {
-        practice._lastResult = { mode: 'listen', secId: sec.id };
+        practice._lastResult = {
+          mode: 'listen', secId: sec.id,
+          stars: 0, unlockedTempo: null, unlockedSecKey: null, streakDays: null,
+        };
         renderResultCard();
         DOM.sectionResult.classList.add('visible');
         practice._completing = false;
@@ -6446,9 +6504,10 @@
       }
 
       if (!sp.history[sec.id]) sp.history[sec.id] = [];
-      sp.history[sec.id].push({ d: Date.now(), a: accPct, t: timingPct, s: stars });
-      if (sp.history[sec.id].length > 8) sp.history[sec.id].shift();
-      const sectionHistory = /** @type {Array<{d:number, a:number, t:number, s:number}>} */ (sp.history[sec.id]);
+      const histArr = /** @type {Array<{d:number, a:number, t:number, s:number}>} */ (sp.history[sec.id]);
+      histArr.push({ d: Date.now(), a: accPct, t: timingPct, s: stars });
+      if (histArr.length > 8) histArr.shift();
+      const sectionHistory = histArr;
 
       savePracticeProgress();
 
@@ -6884,7 +6943,10 @@
     }
 
     document.querySelectorAll('.practice-song-btn').forEach((btn) => {
-      btn.addEventListener('click', () => selectSong(btn.getAttribute('data-song')));
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-song');
+        if (id) selectSong(id);
+      });
     });
 
     // ========================================
@@ -6956,7 +7018,7 @@
     // JP labels exist for the 69 pinned scores; falls back to ASCII label
     // for anything not in the table (e.g. future additions before the JP
     // map is updated).
-    /** @param {{label:string, labelJp?:string}} item */
+    /** @param {{label:string, labelJp?:string|null}} item */
     function libraryDisplayLabel(item) {
       if (prefs.lang === 'jp' && item.labelJp) return item.labelJp;
       return item.label;
@@ -7223,9 +7285,11 @@
         btn.innerHTML = `<span class="mode-btn-label"></span>
           <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
           <button class="my-remove" type="button" aria-label="delete">✕</button>`;
-        btn.querySelector('.mode-btn-label').textContent = labelText;
+        const labelEl = btn.querySelector('.mode-btn-label');
+        if (labelEl) labelEl.textContent = labelText;
         btn.addEventListener('click', () => selectSong(song.id));
-        const removeBtn = btn.querySelector('.my-remove');
+        const removeBtn = /** @type {HTMLButtonElement|null} */ (btn.querySelector('.my-remove'));
+        if (!removeBtn) continue;
         removeBtn.title = t('addSongRemove');
         removeBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -7342,7 +7406,12 @@
     function blobToDataUrl(blob) {
       return new Promise((resolve, reject) => {
         const r = new FileReader();
-        r.onload = () => resolve(r.result);
+        r.onload = () => {
+          // readAsDataURL always yields a string result; the FileReader.result
+          // type is the wider `string | ArrayBuffer | null` because the same
+          // FileReader can be used for readAsArrayBuffer.
+          resolve(/** @type {string} */ (r.result));
+        };
         r.onerror = () => reject(r.error);
         r.readAsDataURL(blob);
       });
@@ -7359,6 +7428,7 @@
         setAddSongStatus(t('myLibrary') + ' — 0', true);
         return;
       }
+      /** @type {{version:number, exportedAt:string, songs:Array<Omit<import('@piano/core').UserSongRecord, 'mxlBlob'> & {mxlDataUrl:string}>}} */
       const out = { version: 1, exportedAt: new Date().toISOString(), songs: [] };
       for (const rec of all) {
         out.songs.push({
@@ -7442,7 +7512,7 @@
       exportUserLibrary().catch(e => setAddSongStatus(t('addSongFailed', { v: e.message }), true));
     });
     document.getElementById('addSongImportBtn')?.addEventListener('click', () => {
-      document.getElementById('addSongImportInput').click();
+      /** @type {HTMLInputElement|null} */ (document.getElementById('addSongImportInput'))?.click();
     });
     document.getElementById('addSongImportInput')?.addEventListener('change', async (e) => {
       const target = /** @type {HTMLInputElement} */ (e.target);
