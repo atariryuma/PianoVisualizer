@@ -49,7 +49,10 @@ export interface ExtractResult {
   notes: ExtractedNote[];
   measureStartSec: number[];
   measureBpm: number[];
-  _diag: ExtractDiag | null;
+  /** Optional telemetry — undefined (not null) so the field is omittable
+   *  when collectDiag=false, and the diag-load consumer's
+   *  `_diag?: DiagExtractInfo` typing accepts the result directly. */
+  _diag?: ExtractDiag;
 }
 
 export interface ExtractOptions {
@@ -125,7 +128,7 @@ interface OsmdTieLike {
  */
 export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}): ExtractResult {
   if (!osmd || !osmd.cursor) {
-    return { notes: [], measureStartSec: [], measureBpm: [], _diag: null };
+    return { notes: [], measureStartSec: [], measureBpm: [] };
   }
 
   const sourceMeasures = osmd.Sheet?.SourceMeasures ?? [];
@@ -275,6 +278,6 @@ export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}):
     notes,
     measureStartSec,
     measureBpm,
-    _diag: collectDiag ? { totalSteps: cursorStep, skippedNotes, tieReport } : null,
+    ...(collectDiag ? { _diag: { totalSteps: cursorStep, skippedNotes, tieReport } } : {}),
   };
 }

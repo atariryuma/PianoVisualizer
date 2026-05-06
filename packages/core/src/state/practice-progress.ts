@@ -55,9 +55,14 @@ export interface SongProgress {
   unlockedTempos: Record<string, boolean>;
   /** Section ID → unlocked. A1 starts unlocked; B / A2 unlock by play. */
   unlockedSections: Record<string, boolean>;
-  /** Attempt history keyed by ms-since-epoch (or any unique key the
-   *  shell picks). Bounded — the shell trims old entries periodically. */
-  history: Record<string, AttemptRecord>;
+  /** Attempt history. Two shape variants in the wild:
+   *  - Modern (legacy shell): `Record<sectionId, Array<{d,a,t,s}>>` — per-section
+   *    rolling buffer of the last 8 attempts; drives the result-screen growth chart.
+   *  - Older / placeholder: `Record<msEpoch, AttemptRecord>` — flat per-attempt log.
+   *  The shell migrator (`migrateAndDefaultProgress`) keeps both in scope so a
+   *  future schema bump can pick one canonical shape. Until then this typedef
+   *  accepts either. */
+  history: Record<string, AttemptRecord | Array<{ d: number; a: number; t: number; s: number }>>;
 }
 
 /** Top-level shape persisted under `pianoViz_practice_v1`. The streak

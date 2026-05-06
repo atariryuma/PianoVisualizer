@@ -52,3 +52,4 @@ packages/plugins/*/ios/build/
 
 # Audit / scratch
 docs/LICENSES/_drafts/
+tmp_probe.log

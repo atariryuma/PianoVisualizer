@@ -330,7 +330,7 @@
      * @property {readonly string[]} NOTE_NAMES
      * @property {number} PIANO_KEY_MIN
      * @property {number} PIANO_KEY_COUNT
-     * @property {{bg:number[], colors:string[], glow:string}[]} THEMES
+     * @property {ReadonlyArray<{bg:readonly [number,number,number], colors:readonly string[], glow:string}>} THEMES
      * @property {{id:string, nameKey:string, descKey:string, condition:(s:GameStateShape)=>boolean, reward:string}[]} QUESTS
      */
 
@@ -420,6 +420,7 @@
     // song's DIAG dump (200+ lines per load).
     const remoteLog = (() => {
       if (!REMOTE_LOG_ENABLED) return () => {};
+      /** @type {Promise<unknown>} */
       let chain = Promise.resolve();
       let pending = 0;
       /** @param {string|object} msg */
@@ -3913,10 +3914,12 @@
 
     // Tiny seed used while the API request is in flight, and as fallback if the
     // network is unreachable. Never replaces the live catalog once loaded.
+    /** @type {Array<Partial<import('@piano/core').LibraryEntry> & {url:string, label:string, icon:string}>} */
     const LIBRARY_SEED = [
       { url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@9128876f6164d96997c877a2be843349a32bdabb/scores/Pachelbel_Canon_in_D.mxl',  label: 'Pachelbel — Canon in D',  icon: '🎻' },
       { url: 'https://cdn.jsdelivr.net/gh/musetrainer/library@9128876f6164d96997c877a2be843349a32bdabb/scores/Satie_Gymnopedie_No._1.mxl', label: 'Satie — Gymnopédie No. 1', icon: '🌿' }
     ];
+    /** @type {Array<Partial<import('@piano/core').LibraryEntry> & {url:string, label:string, icon:string}>} */
     let ONLINE_LIBRARY = LIBRARY_SEED.slice();
 
     // Convert per-song measure-based sectionDefs into time-anchored sections by
@@ -4296,7 +4299,7 @@
         // IndexedDB record (record.xmlText) and the blob URL resolves;
         // dropping the per-song JS-heap copy avoids piling up >5MB strings
         // when several large user songs sit in SONGS at once.
-        song._xmlText = null;
+        song._xmlText = undefined;
       })();
       try { await song._loadingPromise; }
       finally { song._loadingPromise = null; }
@@ -4347,7 +4350,7 @@
       for (const p of _highlightedPaths) {
         try {
           if (p.dataset && '_origFill' in p.dataset) {
-            p.style.fill = p.dataset._origFill;
+            p.style.fill = p.dataset._origFill ?? '';
             delete p.dataset._origFill;
           } else {
             p.style.fill = '';
@@ -4465,7 +4468,21 @@
         return !!osmd;
       },
       extractNotes(opts) {
-        return extractNotesFromOsmd(opts?.xmlMeasureTiming, null);
+        // Shell extractNotesFromOsmd returns `{notes, measureStartSec, measureBpm, _diag}`
+        // — adapt to OsmdExtractResult's `{notes, measureTiming}` shape. The
+        // current consumer (loadCurrentScore) reads via the shell function
+        // directly, so the adapter form is here for Phase 0d/future modules.
+        const ret = extractNotesFromOsmd(
+          /** @type {any} */ (opts?.xmlMeasureTiming),
+          null
+        );
+        return {
+          notes: ret.notes,
+          measureTiming: ret.measureStartSec.map((startSec, i) => ({
+            startSec,
+            bpm: ret.measureBpm[i] ?? 72,
+          })),
+        };
       },
       cursorTo(measureIdx, inBarQuarters) {
         setOsmdCursorToNote({ measureIdx, inBarQuarters });
@@ -4644,7 +4661,9 @@
         return false;
       }
       // Re-bind unconditionally. Cheap; idempotent on a healthy port; required on a suspended one.
-      midiInput.port.onmidimessage = onMidiMessageHandler;
+      // The MIDIInput|{name:string} union narrows here because `stillThere` was
+      // found in the WebMIDI inputs list (real MIDIInput, not the BLE marker).
+      /** @type {MIDIInput} */ (midiInput.port).onmidimessage = onMidiMessageHandler;
       return true;
     }
 
@@ -4901,7 +4920,9 @@
         return false;
       }
       const wasMidiOn = midiInput.enabled;
-      if (midiInput.port) midiInput.port.onmidimessage = null;
+      if (midiInput.port && 'onmidimessage' in midiInput.port) {
+        midiInput.port.onmidimessage = null;
+      }
       midiInput.port = port;
       midiInput.enabled = true;
       midiInput.lastEventTime = 0;
@@ -5962,7 +5983,7 @@
         // is the speaker-side buffer delay; baseLatency is the processing block.
         // The total is roughly how late audio reaches the kid's ears vs Tone.now().
         try {
-          const ctx = Tone.context.rawContext || Tone.context;
+          const ctx = /** @type {AudioContext} */ (/** @type {unknown} */ (Tone.context.rawContext || Tone.context));
           const out = (ctx.outputLatency || 0) * 1000;
           const base = (ctx.baseLatency || 0) * 1000;
           // pickAudioOffsetMs in @piano/core encapsulates the user-override-
@@ -6254,10 +6275,12 @@
     const _laneTiming = { elapsedMs: 0, realElapsedMs: 0, nowMs: 0 };
     // Localized strings are refreshed on `langchange` (see refreshLaneOptsI18n)
     // so the per-frame draw doesn't pay for t() lookups.
+    /** @type {{screenW:number, screenH:number, osmdVisible:boolean, laneTopOverride: number|undefined, kbReserve:number, laneLookaheadMs:number, countInMs:number, hitWindowEarlyMs:number, hitWindowMs:number, perfectMs:number, laneLabelL:string, laneLabelR:string, countInGoLabel:string, midiToPitchName:(midi:number)=>string, noteRestingColor:(midi:number)=>string}} */
     const _laneOpts = {
       screenW: 0,
       screenH: 0,
       osmdVisible: false,
+      /** @type {number|undefined} */
       laneTopOverride: undefined,
       kbReserve: 0,
       laneLookaheadMs: LANE_LOOKAHEAD_MS,
@@ -6402,6 +6425,7 @@
       // The result is the *facts* (which tempo / which section / streak count)
       // so renderResultCard can re-build the localized message on language
       // change without re-running the gating logic.
+      /** @type {Record<string, string>} */
       const sectionNameKeys = {};
       for (const s of currentSong.sections) sectionNameKeys[s.id] = s.nameKey;
       const unlocks = computeUnlocks({
@@ -6424,7 +6448,7 @@
       if (!sp.history[sec.id]) sp.history[sec.id] = [];
       sp.history[sec.id].push({ d: Date.now(), a: accPct, t: timingPct, s: stars });
       if (sp.history[sec.id].length > 8) sp.history[sec.id].shift();
-      const sectionHistory = sp.history[sec.id];
+      const sectionHistory = /** @type {Array<{d:number, a:number, t:number, s:number}>} */ (sp.history[sec.id]);
 
       savePracticeProgress();
 
@@ -6451,7 +6475,7 @@
         if (DOM.resDurationRow) DOM.resDurationRow.style.display = '';
         DOM.resDuration.textContent = durPct + '%';
       }
-      DOM.resCombo.textContent = practice.sectionBestCombo;
+      DOM.resCombo.textContent = String(practice.sectionBestCombo);
 
       const nextIdx = SECTION_IDS.indexOf(sec.id) + 1;
       const hasNext = nextIdx > 0 && nextIdx < SECTION_IDS.length
@@ -6471,7 +6495,7 @@
 
       if (sectionHistory.length >= 2) {
         DOM.resHistoryWrap.classList.remove('hidden');
-        drawHistoryChart(DOM.resHistoryChart, sectionHistory);
+        drawHistoryChart(/** @type {HTMLCanvasElement} */ (DOM.resHistoryChart), sectionHistory);
       } else {
         DOM.resHistoryWrap.classList.add('hidden');
       }
@@ -6578,7 +6602,7 @@
         DOM.songTitle.textContent = t(currentSong.titleKey);
         DOM.songComposer.textContent = t(currentSong.composerKey);
       }
-      DOM.streakCount.textContent = top.streakCount || 0;
+      DOM.streakCount.textContent = String(top.streakCount || 0);
       DOM.streakCal.innerHTML = '';
       const days = [];
       for (let i = 6; i >= 0; i--) {
@@ -6653,7 +6677,7 @@
           <div class="section-icon">${sec.isBoss ? '👑' : (unlocked ? '🎵' : '🔒')}</div>
           <div>
             <div style="font-weight:500;">${t(sec.nameKey)}</div>
-            <div style="font-size:.75rem; color:rgba(255,255,255,.45);">${t(sec.descKey)}</div>
+            <div style="font-size:.75rem; color:rgba(255,255,255,.45);">${t(sec.descKey ?? '')}</div>
           </div>
           <div class="section-stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
         `;
@@ -6765,7 +6789,8 @@
 
     /** @param {unknown} e */
     function alertAudioInitError(e) {
-      alert(t('audioInitFailedFmt', { v: (e && e.message) || e }));
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(t('audioInitFailedFmt', { v: msg }));
     }
 
     DOM.songBack.addEventListener('click', () => {
@@ -6843,13 +6868,13 @@
       if (state.running) showRunningUI();
       // Clear any prior load error so the spinner shows on fresh attempts
       // (e.g. user backed out then re-tapped the same song).
-      song._loadError = null;
+      song._loadError = undefined;
       renderSongPanel();
       initWebMIDI();
       // Capture `song` in the closures so a rapid second selectSong() can't
       // pollute the new song's _loadError with the previous song's failure.
       loadCurrentScore().then(() => {
-        song._loadError = null;
+        song._loadError = undefined;
         if (currentSong === song && DOM.songPanel.classList.contains('visible')) renderSongPanel();
       }).catch((e) => {
         console.error('preload', e);
@@ -7230,7 +7255,7 @@
         const which = tab.getAttribute('data-tab');
         DOM_ADDSONG.tabs.forEach(t => t.classList.toggle('active', t === tab));
         DOM_ADDSONG.bodies.forEach(b => {
-          b.hidden = b.getAttribute('data-tab-body') !== which;
+          /** @type {HTMLElement} */ (b).hidden = b.getAttribute('data-tab-body') !== which;
         });
         setAddSongStatus('');
       });
@@ -7547,7 +7572,7 @@
       }
       if (state.starting) return;
       state.starting = true;
-      setStartButtonLoading(DOM.startBtn, true);
+      setStartButtonLoading(/** @type {HTMLButtonElement} */ (DOM.startBtn), true);
       try {
         await initAudio();
         showRunningUI();
@@ -7561,7 +7586,7 @@
       } finally {
         // Unconditional reset — even on success, so a later returnToTitle
         // shows the button in its resting state instead of a frozen "Starting...".
-        setStartButtonLoading(DOM.startBtn, false);
+        setStartButtonLoading(/** @type {HTMLButtonElement} */ (DOM.startBtn), false);
         state.starting = false;
       }
     });
