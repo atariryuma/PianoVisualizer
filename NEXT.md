@@ -20,16 +20,14 @@ extension for `bluetooth` + `Window._audioDeviceChangeTimer`), the module-scoped
 singletons …) are JSDoc-typed (the audio-graph singletons via a `null`-cast pin
 so post-init reads no longer flag possibly-null), the `DOM` / `DOM_ADDSONG` /
 `DOM_SECEDIT` bags assert `Record<string, HTMLElement>`, the four big runtime
-singletons (`state` / `practice` / `midiState` / `midiInput`)
-
-- `CONFIG` carry full shape typedefs, and the `SongRec` library record is fully
-  typed. The hot helpers (60+ functions across `updatePractice`, `loop`,
-  `onMidiNoteOn`, the PianoCore adapter arrows, the WebMIDI port handlers, the
-  OSMD cursor walker, the user-songs catalog, …) carry per-function `@param`
-  JSDoc. `useUnknownInCatchVariables: false` cleared the `catch (e)` →
-  `e.message` strict-mode pile in one stroke. **`@ts-check` residual count:
-  1,041 → 207** (-834, -80%). SW takeover hardened. 786 vitest cases,
-  `pnpm verify` clean.)
+singletons (`state` / `practice` / `midiState` / `midiInput`) and `CONFIG` carry
+full shape typedefs, and the `SongRec` library record is fully typed. The hot
+helpers (60+ functions across `updatePractice`, `loop`, `onMidiNoteOn`, the
+PianoCore adapter arrows, the WebMIDI port handlers, the OSMD cursor walker, the
+user-songs catalog, …) carry per-function `@param` JSDoc.
+`useUnknownInCatchVariables: false` cleared the `catch (e)` → `e.message`
+strict-mode pile in one stroke. **`@ts-check` residual count: 1,041 → 207**
+(-834, -80%). SW takeover hardened. 786 vitest cases, `pnpm verify` clean.)
 
 ---
 
@@ -94,11 +92,15 @@ no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
 ## 1. Whole-file `// @ts-check` — once the residual count is manageable
 
 **What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
-errors. Current residual is 359 (down from 629 after shape typedefs + the
-`@param` sweep). The remaining error mix is dominated by TS18047 (~109,
-"possibly null") + TS2339 (~79, scattered DOM and external lib edges) + TS2345
-(~31, arg-type mismatches at @piano/core boundaries). Knock those down enough to
-flip the global ratchet.
+errors. Current residual is **207** (down from 629 after shape typedefs +
+`@param` sweep + null-pinning + catch-strict relaxation). The remaining mix is
+TS2339 (~60, mostly HTMLElement-cast sites where call sites read `.value` /
+`.disabled` / `.style` / `.files` on the generic DOM bag entries — fix by
+typed-element casts at access points, ~30 sites), TS18047 (~27, mostly `port` /
+`e.port` / `input` / `rec` from MIDI / catch / IDB result paths), TS2322 (~24,
+return-type mismatches at the @piano/core boundary), and TS2345 (~24, arg-type
+mismatches when shell objects are handed to typed core functions). Each pile is
+well under 35 — push to ~50 then flip the ratchet.
 
 **Acceptance**:
 
