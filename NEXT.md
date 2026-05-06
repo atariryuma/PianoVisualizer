@@ -16,10 +16,13 @@ highlight call sites routed through it. `legacy-app.js` is a real ES module
 (`export {}`), `allowJs: true` is on. Type-scaffolding landed: bare-identifier
 globals are `declare global { var }`-typed in `main.ts`, the module-scoped
 `let`s (`audioCtx`, `W`, `H`, `osmd`, `particles`, `ripples`, …) are
-JSDoc-typed, and the `DOM` bag asserts `Record<string, HTMLElement>`.
-**`@ts-check` residual count: 1,041 → 629** (-412, -40%) via the eight
-extractions + the globals + the JSDoc scaffolding. SW takeover hardened. 786
-vitest cases, `pnpm verify` clean.)
+JSDoc-typed, the `DOM` bag asserts `Record<string, HTMLElement>`, and the four
+big runtime singletons (`state` / `practice` / `midiState` / `midiInput`) +
+`CONFIG` carry full `GameStateShape` / `PracticeStateShape` / `MidiStateShape` /
+`MidiInputShape` / `ConfigShape` typedefs. **`@ts-check` residual count: 1,041 →
+557** (-484, -47%) via the eight extractions + the globals + the JSDoc
+scaffolding + the shape typedefs. SW takeover hardened. 786 vitest cases,
+`pnpm verify` clean.)
 
 ---
 
@@ -70,6 +73,7 @@ vitest cases, `pnpm verify` clean.)
 | 41  | `library/diag-load.ts`        | 15    | `packages/core/src/library/diag-load.ts`        |
 | 42  | `state/practice-progress.ts`  | 15    | `packages/core/src/state/practice-progress.ts`  |
 | 43  | `web/note-extractor.ts`       | —     | `packages/web/src/note-extractor.ts`            |
+| 44  | shape typedefs (state etc.)   | —     | `packages/web/src/legacy-app.js` (top of file)  |
 
 **Status: 786/786 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.** (audio-scheduler.ts and note-extractor.ts are web-shell typed modules —
@@ -79,47 +83,34 @@ no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
 
 ## ⏳ In queue
 
-## 1. Type the `state` / `practice` / `midiState` / `CONFIG` shapes
+## 1. Per-function `@param` annotations on the hot helpers
 
-The next biggest TS7005 / TS2339 source. Apply the same pattern that worked for
-the module-scoped `let`s + the DOM bag:
-
-- `const state = /** @type {GameStateShape} */ ({ … })` — the boundary
-  `@typedef`s at the top of `legacy-app.js` already partly cover the shape
-  (`PracticeStateShape`, `MidiStateShape`); extend with a `GameStateShape` for
-  the live game state object.
-- Same treatment for `practice` and `midiState`.
-- `CONFIG` is read-mostly — wrapping in `Object.freeze` + a JSDoc `@type` would
-  also let TS narrow `CONFIG.X` correctly.
-
-**Est**: ~50 lines of type definitions + ~20 cast sites. Should drop TS2339
-(~153 errors) and the remaining TS7005 (~34) substantially.
-
-## 2. Per-function `@param` annotations on the hot helpers
-
-The TS7006 'Parameter X implicitly has any' category (~206 errors) is spread
+The TS7006 'Parameter X implicitly has any' category (~203 errors) is spread
 across maybe 80 functions. The hot ones (`updatePractice`, `drawPracticeLane`,
 `loop`, `onMidiNoteOn`, etc.) account for the plurality. Each function takes
-5-10 minutes to annotate.
+5-10 minutes to annotate. The runtime singletons (`state` / `practice` /
+`midiState`) now have full named shapes, so JSDoc `@param` types can reference
+`GameStateShape` etc. directly.
 
 **Strategy**: annotate the top 20 by error-count first; that knocks out maybe
 half the TS7006s.
 
-## 3. Whole-file `// @ts-check` — once the residual count is manageable
+## 2. Whole-file `// @ts-check` — once the residual count is manageable
 
 **What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
-errors. Current residual is 629; #1 + #2 above should bring it under 200 if both
-land cleanly.
+errors. Current residual is 557 (down from 629 after the shape typedefs); #1
+above should bring it under 350 if it lands cleanly.
 
 **Acceptance**:
 
 - [ ] `// @ts-check` at the top of `legacy-app.js`
 - [ ] `pnpm typecheck` clean
 
-**Est**: budget depends on the residual count when scheduling — re- probe via
-`// @ts-check` + `tsconfig.probe.json` to gauge.
+**Est**: budget depends on the residual count when scheduling — re-probe via
+`tsconfig.probe.json` (`packages/web/tsconfig.probe.json` flips `checkJs: true`
+without the `// @ts-check` ratchet) to gauge.
 
-## 4. More leaf extractions — when worth it
+## 3. More leaf extractions — when worth it
 
 Each extraction reduces the `@ts-check` surface by 50-200 errors. Candidates
 that haven't been tackled (ordered hardest-last):

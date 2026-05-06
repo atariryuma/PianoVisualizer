@@ -20,10 +20,17 @@
     // Add fields here as they become relevant to extraction. Don't
     // try to mirror every field — these are BOUNDARY types, intended
     // for cross-module communication.
+    //
+    // Style note: typedefs use the markerless form `@typedef Name`
+    // (NOT `@typedef {object} Name`). Under `checkJs: true` + strict,
+    // TS narrows `{object}`-marked typedefs to the bare lowercase
+    // `object` type — every property access on the typedef then errors
+    // as "does not exist on type 'object'". The markerless form lets
+    // the `@property` lines build the interface cleanly.
     // ============================================================
 
     /**
-     * @typedef {Object} OsmdLikeNote
+     * @typedef OsmdLikeNote
      *   The per-note record used by the practice lane, OSMD cursor
      *   walker, and scoring. Wider than @piano/core's `OsmdNote` —
      *   carries lane-render fields and per-section copies.
@@ -42,26 +49,44 @@
      */
 
     /**
-     * @typedef {Object} PracticeStateShape
+     * @typedef PracticeStateShape
      *   The cross-section practice transport state. Lives at module
      *   scope as `practice`. Mode-specific fields (e.g. `ghostOn`)
      *   are read by both the audio scheduler and the lane renderer.
      * @property {boolean} enabled
+     * @property {number} sectionIdx
+     * @property {number} tempoPct                    60 / 75 / 90 / 100.
      * @property {'guided'|'rhythm'|'listen'} mode
-     * @property {OsmdLikeNote[]} sectionNotes        Active section's note list.
-     * @property {number} currentNoteIdx              Next-to-resolve idx in sectionNotes.
-     * @property {number} startAudioTime              Tone.now() at section start.
-     * @property {number} _cursorScanIdx              Per-frame note-scan position.
-     * @property {number} _lastCursorNoteIdx          Last cursor-walked target.
-     * @property {boolean} _completing
-     * @property {ReturnType<typeof setTimeout>|null} _completionTimer
      * @property {boolean} ghostOn
      * @property {boolean} metronomeOn
-     * @property {Object} progress                    Persisted progress (streak / songs).
+     * @property {number} startAudioTime              Tone.now() at section start.
+     * @property {OsmdLikeNote[]} sectionNotes        Active section's note list.
+     * @property {number} currentNoteIdx              Next-to-resolve idx in sectionNotes.
+     * @property {number} hits
+     * @property {number} misses
+     * @property {number} timingScoreSum
+     * @property {number} durationScoreSum
+     * @property {number} durationScoredCount
+     * @property {Map<number, {midi:number, expectedDurMs:number, expectedEndMs:number, onTimeMs:number}>} pendingHolds
+     * @property {number} sectionCombo
+     * @property {number} sectionBestCombo
+     * @property {'L'|'R'|null} handFilter
+     * @property {number} audioOffsetMs
+     * @property {import('@piano/core').PracticeProgress|null} progress
+     * @property {boolean} _completing
+     * @property {ReturnType<typeof setTimeout>|null} [_completionTimer]
+     * @property {number} _lastProgUpdate
+     * @property {number} [_cursorScanIdx]            Per-frame note-scan position.
+     * @property {number} [_lastCursorNoteIdx]        Last cursor-walked target.
+     * @property {number} [_dbgNextLog]               Next ms timestamp at which to emit a debug log.
+     * @property {number} [_sectionTargetCount]       Total scoreable notes in active section.
+     * @property {{accuracy:number, timing:number, stars:number}|null} [_lastResult]
+     * @property {number} [laneDrawFromIdx]           Amortized cursor for lane-render culling.
+     * @property {{rMin:number, rMax:number, lMin:number, lMax:number}} [handRanges]
      */
 
     /**
-     * @typedef {Object} MidiStateShape
+     * @typedef MidiStateShape
      *   Live MIDI runtime state. Held under `midiState`.
      * @property {Map<number, {velocity:number, onTimeMs:number, synColor?:string}>} activeNotes
      * @property {boolean} sustainOn
@@ -72,7 +97,245 @@
      */
 
     /**
-     * @typedef {Object} PrefsShape
+     * @typedef MidiInputShape
+     *   Held under `midiInput`. Tracks the active Web MIDI / BLE-MIDI port +
+     *   coarse health flags consumed by the mic-vs-MIDI arbitration loop.
+     * @property {boolean} enabled
+     * @property {MIDIInput|{name:string}|null} port
+     * @property {boolean} _accessRequested
+     * @property {boolean} platformBlocked
+     * @property {number} [lastEventTime]
+     */
+
+    /**
+     * @typedef BestScoresShape
+     *   Persisted in localStorage as `pianoViz_best`. Returned from
+     *   `saveBestScores` and embedded in `state._lastSummary.bestStat`.
+     * @property {number} bestCombo
+     * @property {number} peakFlow
+     * @property {number} totalSessions
+     */
+
+    /**
+     * @typedef LastSummaryShape
+     *   Cached so `renderSessionSummaryText` can replay the same numbers when
+     *   the user toggles language without restarting the session.
+     * @property {number} bestCombo
+     * @property {number} stageIdx
+     * @property {number} elapsed
+     * @property {string[]} completedQuests
+     * @property {BestScoresShape} bestStat
+     */
+
+    /**
+     * @typedef GameStateShape
+     *   Module-scoped `state`. Optional (`?`) fields are added lazily
+     *   by hot-path code; making them optional means the cast site
+     *   doesn't need to seed them, but reads still see `T | undefined`.
+     * @property {boolean} running
+     * @property {boolean} starting
+     * @property {number} flow
+     * @property {number} combo
+     * @property {number} bestCombo
+     * @property {number} currentStage
+     * @property {number} lastGoodNoteTimeMs
+     * @property {number} lastSilenceStartMs
+     * @property {number} lastNoisePenaltyMs
+     * @property {number|null} lastPitchSemitones
+     * @property {boolean} useSynesthesiaMode
+     * @property {string[]} completedQuests
+     * @property {number} lastQuestCheckMs
+     * @property {string|null} activeQuestId
+     * @property {number} pitchStability
+     * @property {number} lastNoteTimeMs
+     * @property {number} smoothEnergy
+     * @property {string} lastDetectedNote
+     * @property {number} noteShowTimeMs
+     * @property {number} currentTheme
+     * @property {number} lastFrameTimeMs
+     * @property {Float32Array|null} prevSpectrum
+     * @property {number[]} spectralFluxHistory
+     * @property {number} lastOnsetTimeMs
+     * @property {boolean} micSuspended
+     * @property {number} agcGain
+     * @property {number} agcSmoothedRms
+     * @property {number} agcLastUpdateMs
+     * @property {number} agcVoiceRejectCount
+     * @property {number} agcVoiceSuppressUntilMs
+     * @property {'waiting'|'warmup'|'performing'} sessionState
+     * @property {number} sessionStartMs
+     * @property {number} sessionConfidence
+     * @property {number} sessionPerformingStartMs
+     * @property {number} lastSessionSampleMs
+     * @property {number} sessionRingHead
+     * @property {number} sessionRingTail
+     * @property {number} sessionRingSize
+     * @property {number} sessionPianoCount
+     * @property {number} goalWindowStartMs
+     * @property {number} goalCelebrateUntilMs
+     * @property {number} goalCompletedCount
+     * @property {number[]} noteOnsetTimes
+     * @property {number[]} ioiHistory
+     * @property {number[]} amplitudeHistory
+     * @property {number[]} centroidHistory
+     * @property {number} rhythmScore
+     * @property {number} dynamicsScore
+     * @property {number} stabilityScore
+     * @property {number} qualityScore
+     * @property {number} displayedQualityScore
+     * @property {number} growthScore
+     * @property {{timeMs:number, score:number}[]} qualityHistory
+     * @property {string} feedbackGood
+     * @property {string} feedbackNext
+     * @property {number} lastScoreUpdateMs
+     * @property {number} currentEncouragementTier
+     * @property {number} lastEncouragementTimeMs
+     * @property {number} encouragementHideTimeMs
+     * @property {number} glowPulseIntensity
+     * @property {number} shimmerPhase
+     * @property {number} shimmerStartMs
+     * @property {number} inputFlash
+     * @property {boolean} debugMode
+     * @property {number} debugLastFlux
+     * @property {number} debugLastSpread
+     * @property {number} debugLastThreshold
+     * @property {boolean} debugGateOpen
+     * @property {number} debugLastRms
+     * @property {number} debugLastConf
+     * @property {number} debugLastPitch
+     * @property {boolean} debugIsGoodNote
+     * @property {boolean} debugIsActivePlay
+     * @property {number} debugLastFlatness
+     * @property {number} debugLastCrest
+     * @property {string} debugOnsetReason
+     * @property {number} debugLastCentroid
+     * @property {number} debugCentroidCV
+     * @property {number} debugSessionConf
+     * @property {string} debugSessionState
+     * @property {number} debugAgcGain
+     * @property {number} debugHarmonicity
+     * @property {number} yinSkipCounter
+     * @property {{pitch:number, conf:number, rms:number}} cachedPitchResult
+     * @property {number} sessionStartTimeMs
+     * @property {number} peakFlow
+     * @property {number|null} adaptiveSilenceRms
+     * @property {number[]|null} recentPitches
+     * @property {number} consecutiveOnsetFrames
+     * @property {number} lastDebugLogMs
+     * @property {number} debugMaxRms
+     * @property {number} debugMaxConf
+     * @property {number} debugMaxHarm
+     * @property {number} debugOnsetCount
+     * @property {number|null} lastMidiNoteForStability
+     * @property {boolean} micPermissionFailed
+     * @property {boolean} micIntentionallySkipped
+     * @property {(()=>void)|null} lastIntroDiag
+     * @property {LastSummaryShape|null} _lastSummary
+     * @property {number} [comboDecayAccum]
+     */
+
+    /**
+     * @typedef ConfigShape
+     *   Tunable runtime constants. Read-only after init; `MAX_PARTICLES`,
+     *   `SHADOW_BLUR_ENABLED`, `AMBIENT_PARTICLE_CHANCE` and the bg-star
+     *   count are mutated post-init from `PERF_PROFILE`. Treat all other
+     *   fields as immutable.
+     * @property {number} FFT_SIZE
+     * @property {number} SMOOTHING
+     * @property {number} PIANO_FREQ_MIN
+     * @property {number} PIANO_FREQ_MAX
+     * @property {number} ONSET_FFT_SIZE
+     * @property {number} ONSET_SMOOTHING
+     * @property {number} AGC_TARGET_RMS
+     * @property {number} AGC_ATTACK_COEFF
+     * @property {number} AGC_RELEASE_COEFF
+     * @property {number} AGC_MIN_GAIN
+     * @property {number} AGC_MAX_GAIN
+     * @property {number} AGC_UPDATE_INTERVAL_MS
+     * @property {number} AGC_SILENCE_FLOOR
+     * @property {number} AGC_VOICE_REJECT_COUNT
+     * @property {number} AGC_VOICE_SUPPRESS_MAX
+     * @property {number} AGC_VOICE_SUPPRESS_MS
+     * @property {number} AGC_VOICE_RMS_MIN
+     * @property {Record<string,string>} NOTE_COLORS
+     * @property {number} YIN_THRESHOLD
+     * @property {number} YIN_PROBABILITY_THRESHOLD
+     * @property {number} RMS_SILENCE_THRESHOLD
+     * @property {number} PITCH_MIN_HZ
+     * @property {number} PITCH_MIN_HZ_PRACTICE
+     * @property {number} PITCH_MAX_HZ
+     * @property {number} GOOD_NOTE_RMS
+     * @property {number} CONFIDENCE_THRESHOLD
+     * @property {number} SPECTRAL_FLUX_THRESHOLD
+     * @property {number} SPECTRAL_FLUX_ADAPTIVE_K
+     * @property {number} SPECTRAL_FLUX_HISTORY_SIZE
+     * @property {number} ONSET_SPREAD_THRESHOLD
+     * @property {number} ONSET_SPREAD_MAX
+     * @property {number} ONSET_SPREAD_MIN_CHANGE
+     * @property {number} FLATNESS_PIANO_MIN
+     * @property {number} CREST_VOICE_MAX
+     * @property {number} ONSET_GATE_DURATION_MS
+     * @property {number} ONSET_COOLDOWN_MS
+     * @property {number} FLUX_FREQ_MIN_HZ
+     * @property {number} FLUX_FREQ_MAX_HZ
+     * @property {number} HARMONICITY_MIN
+     * @property {number} HARMONICITY_MIN_PRACTICE
+     * @property {number} SESSION_WINDOW_MS
+     * @property {number} SESSION_CONFIRM_THRESHOLD
+     * @property {number} SESSION_LOSE_THRESHOLD
+     * @property {number} SESSION_WARMUP_MS
+     * @property {number} SESSION_SAMPLE_INTERVAL_MS
+     * @property {number} CENTROID_HISTORY_SIZE
+     * @property {number} SCORE_RHYTHM_WEIGHT
+     * @property {number} SCORE_DYNAMICS_WEIGHT
+     * @property {number} SCORE_STABILITY_WEIGHT
+     * @property {number} IOI_HISTORY_SIZE
+     * @property {number} IOI_IDEAL_CV
+     * @property {number} IOI_MAX_CV
+     * @property {number} AMPLITUDE_HISTORY_SIZE
+     * @property {number} DYNAMICS_IDEAL_CV_MIN
+     * @property {number} DYNAMICS_IDEAL_CV_MAX
+     * @property {number} SCORE_UPDATE_INTERVAL_MS
+     * @property {number} SCORE_SMOOTHING
+     * @property {number} GROWTH_WINDOW_MS
+     * @property {number} MOTIVATION_GOAL_MS
+     * @property {number} COMBO_WINDOW_MS
+     * @property {number} SILENCE_DECAY_START_MS
+     * @property {number} SILENCE_HARD_DECAY_MS
+     * @property {number} NOISE_PENALTY_COOLDOWN_MS
+     * @property {number} NOTE_DISPLAY_DURATION_MS
+     * @property {number} MIN_NOTE_INTERVAL_MS
+     * @property {number} FLOW_GAIN_BASE
+     * @property {number} FLOW_GAIN_COMBO_MAX
+     * @property {number} FLOW_GAIN_STABILITY_MAX
+     * @property {number} FLOW_GAIN_QUALITY_MAX
+     * @property {number} FLOW_DECAY_SOFT
+     * @property {number} FLOW_DECAY_HARD
+     * @property {number} NOISE_RMS_THRESHOLD
+     * @property {number} FLOW_NOISE_PENALTY
+     * @property {number} COMBO_DECAY_RATE
+     * @property {number} COMBO_NOISE_PENALTY
+     * @property {number} STABILITY_SEMITONE_THRESHOLD
+     * @property {number} STABILITY_GROWTH
+     * @property {number} STABILITY_DECAY_GOOD
+     * @property {number} STABILITY_DECAY_IDLE
+     * @property {number} MAX_PARTICLES
+     * @property {boolean} SHADOW_BLUR_ENABLED
+     * @property {number} AMBIENT_PARTICLE_CHANCE
+     * @property {number} BAR_COUNT
+     * @property {{nameKey:string|null, prefix:string, minFlow:number}[]} STAGES
+     * @property {{minCombo:number, messageKey:string, effect:string}[]} ENCOURAGEMENT_TIERS
+     * @property {number} ENCOURAGEMENT_COOLDOWN_MS
+     * @property {number} ENCOURAGEMENT_DISPLAY_MS
+     * @property {readonly string[]} NOTE_NAMES
+     * @property {number} PIANO_KEY_MIN
+     * @property {number} PIANO_KEY_COUNT
+     * @property {{bg:number[], colors:string[], glow:string}[]} THEMES
+     * @property {{id:string, nameKey:string, descKey:string, condition:(s:GameStateShape)=>boolean, reward:string}[]} QUESTS
+     */
+
+    /**
+     * @typedef PrefsShape
      *   Persisted user preferences (localStorage `pianoViz_prefs`).
      * @property {number} theme               0..3
      * @property {boolean} synesthesia
@@ -144,7 +407,7 @@
 
     console.log("App Started: Piano Visualizer");
 
-    const CONFIG = {
+    const CONFIG = /** @type {ConfigShape} */ (/** @type {any} */ ({
       // Audio — main analyser (for pitch + visualisation)
       FFT_SIZE: 4096,
       SMOOTHING: 0.82,
@@ -351,7 +614,7 @@
         { id: 'q10', nameKey: 'qst10Name', descKey: 'qst10Desc', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
         { id: 'q11', nameKey: 'qst11Name', descKey: 'qst11Desc', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
       ]
-    };
+    }));
 
     // ========================================
     // DOM references
@@ -457,7 +720,7 @@
     // ========================================
     // Game State
     // ========================================
-    const state = {
+    const state = /** @type {GameStateShape} */ (/** @type {any} */ ({
       running: false,
       starting: false,
       flow: 0,
@@ -589,7 +852,7 @@
       micIntentionallySkipped: false,
       lastIntroDiag: null,
       _lastSummary: null
-    };
+    }));
 
     // ========================================
     // Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime)
@@ -4154,7 +4417,7 @@
     const ONSET_HYSTERESIS_FRAMES = 1;
     const PITCH_MEDIAN_FRAMES = 5;      // ring buffer length for octave-error correction
 
-    const practice = {
+    const practice = /** @type {PracticeStateShape} */ (/** @type {any} */ ({
       enabled: false,
       sectionIdx: 0,
       tempoPct: 60,                    // 60 / 75 / 90 / 100  (slower → bigger speedFactor)
@@ -4190,7 +4453,7 @@
       progress: null,
       _completing: false,
       _lastProgUpdate: 0
-    };
+    }));
 
     // ========================================
     // Section banner
@@ -4397,14 +4660,14 @@
     // Both sources funnel into matchNoteOnset(midi, isExact). When a MIDI keyboard is
     // connected, mic input is suppressed automatically (single source of truth).
     // ========================================
-    const midiInput = {
+    const midiInput = /** @type {MidiInputShape} */ (/** @type {any} */ ({
       enabled: false,           // true while a MIDI input port is connected
       port: null,
       _accessRequested: false,
       // Set when the platform is known to never expose Web MIDI (iOS Safari /
       // any iPadOS browser). Drives a friendlier hint in the UI.
       platformBlocked: false
-    };
+    }));
 
     // Single point of MIDI message dispatch — called from Web MIDI port handler
     // (above) and from the BLE-MIDI parser. Updates lastEventTime so the loop's
@@ -4856,14 +5119,14 @@
     //   - sustained vertical light beams while keys are held
     //   - left/right hand zones split at C4 (midi 60)
     // ========================================
-    const midiState = {
+    const midiState = /** @type {MidiStateShape} */ (/** @type {any} */ ({
       activeNotes: new Map(),     // midiNum -> { velocity, onTimeMs, synColor }
       sustainOn: false,
       sustainedNotes: new Set(),  // released keys held by pedal
       recentOnsets: [],           // {midi, timeMs} within 80ms — chord candidate
       lastChordName: '',
       lastChordTimeMs: 0,
-    };
+    }));
 
     // Chord detection — Phase 0b.3: delegated to @piano/core's drop-in
     // implementation (same algorithm, same NOTE_NAMES table, same CHORD_DICT).
