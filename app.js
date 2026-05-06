@@ -2094,6 +2094,12 @@
       detectChord,
     };
 
+    // Wake-up flash — Phase 0b.3: delegated to @piano/core/state/wake-up-flash.
+    // Half-life ≈0.071s matches the legacy 60Hz `*= 0.85`-per-frame feel
+    // (log(0.5)/log(0.85) ≈ 4.27 frames @ 60fps), but the new decay is time-
+    // based so 144Hz screens don't fade twice as fast as 60Hz ones.
+    const WUF_OPTS = { triggerLevel: 0.2, halfLifeSec: 0.071 };
+
     function updateGrowthTrend(timeMs) {
       const result = PianoCore.updateGrowthTrend(
         state.qualityHistory,
@@ -2458,12 +2464,12 @@
       drawAurora(timeMs);
       drawGroundFlowers(timeMs);
 
-      // v10: "Wake Up" Flash rendering
+      // Wake-up flash overlay — frame-rate-independent decay via core.
       if (state.inputFlash > 0.01) {
         ctx.fillStyle = `rgba(255, 255, 255, ${state.inputFlash})`;
         ctx.fillRect(0, 0, W, H);
-        state.inputFlash *= 0.85; // Fast decay
       }
+      PianoCore.decayWakeUpFlash(state, dt / 1000, WUF_OPTS);
 
       // v9: Glow pulse effect (from encouragement)
       const glowExtra = state.glowPulseIntensity;
@@ -2571,11 +2577,8 @@
 
               state.lastNoteTimeMs = timeMs;
 
-              // v10: "Wake Up" Flash — clear confirmation at low flow
-              if (state.flow < 10) {
-                if (!state.inputFlash) state.inputFlash = 0;
-                state.inputFlash = 0.2; // 20% white flash
-              }
+              // Wake-up flash — clear confirmation at low flow.
+              if (state.flow < 10) PianoCore.triggerWakeUpFlash(state, WUF_OPTS);
             }
             // Pass noteColor to spawnStream
             spawnStream(noteX, H * 0.65, state.smoothEnergy, noteColor);
@@ -2956,7 +2959,7 @@
       state.prevSpectrum = null;
       state.lastOnsetTimeMs = -9999;
       state.smoothEnergy = 0;
-      state.inputFlash = 0;
+      PianoCore.resetWakeUpFlashState(state);
       state.glowPulseIntensity = 0;
       state.shimmerPhase = -1;
       ripples.length = 0;
@@ -5584,7 +5587,7 @@
 
       const noteName = CONFIG.NOTE_NAMES[midiNum % 12];
       showNoteDisplay(noteName, noteName + (Math.floor(midiNum / 12) - 1), synColor, now);
-      if (state.flow < 10) state.inputFlash = 0.2;
+      if (state.flow < 10) PianoCore.triggerWakeUpFlash(state, WUF_OPTS);
     }
 
     function onMidiNoteOn(midiNum, velocity) {

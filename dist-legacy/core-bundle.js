@@ -87,6 +87,7 @@ var PianoCore = (() => {
     createAudioContext: () => createAudioContext,
     createT: () => createT,
     decayStability: () => decayStability,
+    decayWakeUpFlash: () => decayWakeUpFlash,
     deriveSessionUIHint: () => deriveSessionUIHint,
     detectChord: () => detectChord,
     detectPerfTier: () => detectPerfTier,
@@ -126,6 +127,7 @@ var PianoCore = (() => {
     initQualityHistoryState: () => initQualityHistoryState,
     initQuestTrackerState: () => initQuestTrackerState,
     initSessionConfidenceState: () => initSessionConfidenceState,
+    initWakeUpFlashState: () => initWakeUpFlashState,
     keyboardKeyCenterX: () => keyboardKeyCenterX,
     libraryEntryFromGhFile: () => libraryEntryFromGhFile,
     makeUserSong: () => makeUserSong,
@@ -151,6 +153,7 @@ var PianoCore = (() => {
     resetQualityHistoryState: () => resetQualityHistoryState,
     resetQuestTrackerState: () => resetQuestTrackerState,
     resetSessionConfidence: () => resetSessionConfidence,
+    resetWakeUpFlashState: () => resetWakeUpFlashState,
     resolveResultTier: () => resolveResultTier,
     smoothQualityScore: () => smoothQualityScore,
     spawnBurst: () => spawnBurst,
@@ -164,6 +167,7 @@ var PianoCore = (() => {
     synColorFor: () => synColorFor,
     translate: () => translate,
     triggerEffect: () => triggerEffect,
+    triggerWakeUpFlash: () => triggerWakeUpFlash,
     updateGrowthTrend: () => updateGrowthTrend,
     userDbAll: () => userDbAll,
     userDbDelete: () => userDbDelete,
@@ -1445,6 +1449,24 @@ var PianoCore = (() => {
     if (!Number.isFinite(dtSec) || dtSec <= 0) return;
     const factor = Math.pow(0.5, dtSec / opts.idleHalfLifeSec);
     state.pitchStability = Math.max(0, state.pitchStability * factor);
+  }
+
+  // src/state/wake-up-flash.ts
+  function initWakeUpFlashState() {
+    return { inputFlash: 0 };
+  }
+  function resetWakeUpFlashState(state) {
+    state.inputFlash = 0;
+  }
+  function triggerWakeUpFlash(state, opts) {
+    state.inputFlash = Math.max(0, Math.min(1, opts.triggerLevel));
+  }
+  function decayWakeUpFlash(state, dtSec, opts) {
+    if (!Number.isFinite(dtSec) || dtSec <= 0) return;
+    if (state.inputFlash <= 0) return;
+    const factor = Math.pow(0.5, dtSec / opts.halfLifeSec);
+    const next = state.inputFlash * factor;
+    state.inputFlash = next < 1e-3 ? 0 : next;
   }
 
   // src/audio/chord.ts

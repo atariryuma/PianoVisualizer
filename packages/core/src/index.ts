@@ -156,6 +156,15 @@ export {
 } from './state/pitch-stability';
 export type { PitchStabilityState, PitchStabilityOptions } from './state/pitch-stability';
 
+// === State: wake-up flash (low-flow note-confirm white overlay) ===
+export {
+  initWakeUpFlashState,
+  resetWakeUpFlashState,
+  triggerWakeUpFlash,
+  decayWakeUpFlash,
+} from './state/wake-up-flash';
+export type { WakeUpFlashState, WakeUpFlashOptions } from './state/wake-up-flash';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
