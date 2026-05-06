@@ -5394,52 +5394,18 @@
       return realElapsed;
     }
 
-    // ========================================
-    // Persistence: streak + best stars + tempo unlock
-    // ========================================
-    function defaultSongProgress() {
-      return {
-        sections: { A1: { stars: 0, bestPct: 0 }, B: { stars: 0, bestPct: 0 }, A2: { stars: 0, bestPct: 0 } },
-        unlockedTempos: { 60: true, 75: false, 90: false, 100: false },
-        unlockedSections: { A1: true, B: false, A2: false },
-        history: {}
-      };
-    }
+    // Persisted practice progress — Phase 0c: pure schema/migration
+    // logic delegated to @piano/core/state/practice-progress. The two
+    // localStorage I/O wrappers stay here (loadJSON / saveJSON are
+    // legacy shell helpers).
+    const defaultSongProgress = PianoCore.defaultSongProgress;
     function loadPracticeProgress() {
-      const def = { streakDays: [], streakCount: 0, songs: {} };
-      const p = loadJSON('pianoViz_practice_v1', null);
-      if (!p) return def;
-      // Migrate legacy schema (top-level sections/unlocked*) into songs.fur_elise.
-      if (p.sections && !p.songs) {
-        p.songs = {
-          fur_elise: {
-            sections: p.sections,
-            unlockedTempos: p.unlockedTempos || { 60: true, 75: false, 90: false, 100: false },
-            unlockedSections: p.unlockedSections || { A1: true, B: false, A2: false }
-          }
-        };
-        delete p.sections;
-        delete p.unlockedTempos;
-        delete p.unlockedSections;
-      }
-      return Object.assign(def, p);
+      return PianoCore.migrateAndDefaultProgress(loadJSON('pianoViz_practice_v1', null));
     }
     function savePracticeProgress() { saveJSON('pianoViz_practice_v1', practice.progress); }
     // Always returns the per-song state, lazily creating it on first access.
     function songProg() {
-      if (!practice.progress.songs) practice.progress.songs = {};
-      const id = currentSong.id;
-      if (!practice.progress.songs[id]) {
-        practice.progress.songs[id] = defaultSongProgress();
-      }
-      const s = practice.progress.songs[id];
-      // Migrate any missing keys (defensive)
-      const def = defaultSongProgress();
-      s.sections = Object.assign({}, def.sections, s.sections);
-      s.unlockedTempos = Object.assign({}, def.unlockedTempos, s.unlockedTempos);
-      s.unlockedSections = Object.assign({}, def.unlockedSections, s.unlockedSections);
-      if (!s.history) s.history = {};   // Migration from older save format.
-      return s;
+      return PianoCore.getSongProgress(practice.progress, currentSong.id);
     }
     // Daily-streak math — Phase 0b.3: delegated to @piano/core/state/streak.
     // The reducer mutates practice.progress in place (it has the same shape

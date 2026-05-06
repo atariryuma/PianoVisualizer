@@ -189,6 +189,20 @@ export {
 } from './state/streak';
 export type { StreakState, StreakOptions } from './state/streak';
 
+// === State: persisted practice progress (per-song stars / unlocks / history) ===
+export {
+  defaultPracticeProgress,
+  defaultSongProgress,
+  migrateAndDefaultProgress,
+  getSongProgress,
+} from './state/practice-progress';
+export type {
+  PracticeProgress,
+  SongProgress,
+  SectionProgress,
+  AttemptRecord,
+} from './state/practice-progress';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
