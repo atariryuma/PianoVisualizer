@@ -27,6 +27,10 @@ export interface UserSongRecord {
   sectionDefs: SectionDef[];
   addedAt: number;
   source: 'upload' | 'url' | 'library' | 'import' | string;
+  /** Cached unzipped XML text. Optional because older records (added
+   *  before this fix) didn't cache it; the loader writes it back on
+   *  first read so subsequent loads don't re-unzip. */
+  xmlText?: string;
 }
 
 /** The Song shape the engine consumes. Mirrors the hardcoded SONGS entries. */

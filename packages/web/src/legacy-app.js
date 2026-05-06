@@ -67,7 +67,7 @@
      * @property {number} timingScoreSum
      * @property {number} durationScoreSum
      * @property {number} durationScoredCount
-     * @property {Map<number, {midi:number, expectedDurMs:number, expectedEndMs:number, onTimeMs:number}>} pendingHolds
+     * @property {Map<number, {midi:number, expectedDurMs:number, expectedEndMs:number, onTimeMs:number, holdStartMs?:number, durMs?:number}>} pendingHolds
      * @property {number} sectionCombo
      * @property {number} sectionBestCombo
      * @property {'L'|'R'|null} handFilter
@@ -1123,8 +1123,9 @@
       const prevH = _bgStarsPrevH;
       W = window.innerWidth;
       H = window.innerHeight;
-      DOM.canvas.width = W * dpr;
-      DOM.canvas.height = H * dpr;
+      const canvas = /** @type {HTMLCanvasElement} */ (DOM.canvas);
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // Cached so the per-frame draw can skip getComputedStyle / Math.min/max.
       const cs = getComputedStyle(document.documentElement);
@@ -1625,12 +1626,13 @@
       const entry = T_STRINGS[key];
       if (!entry) return key;
       let s = entry[prefs.lang] || entry.en || key;
-      if (vars) for (const k in vars) s = s.replace('{' + k + '}', vars[k]);
+      if (vars) for (const k in vars) s = s.replace('{' + k + '}', String(vars[k]));
       return s;
     }
 
     function applyI18n() {
-      document.querySelectorAll('[data-i18n], [data-i18n-title], [data-i18n-placeholder], [data-i18n-aria-label]').forEach(el => {
+      document.querySelectorAll('[data-i18n], [data-i18n-title], [data-i18n-placeholder], [data-i18n-aria-label]').forEach(rawEl => {
+        const el = /** @type {HTMLInputElement} */ (rawEl); // widest of the targets — has title + placeholder + textContent
         const k = el.getAttribute('data-i18n');
         const tk = el.getAttribute('data-i18n-title');
         const pk = el.getAttribute('data-i18n-placeholder');
@@ -2066,7 +2068,7 @@
     // working unchanged.
     const _encState = PianoCore.initEncouragementState();
     const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
-    /** @param {ReturnType<typeof PianoCore.tickEncouragement>} out */
+    /** @param {import('@piano/core').EncouragementOutput} out */
     function _showEncouragementUI(out) {
       if (out.kind !== 'show') return;
       DOM.encouragement.textContent = t(out.messageKey);
@@ -3033,7 +3035,7 @@
               let burstSize = Math.floor((10 + state.smoothEnergy * 25 + state.flow * 0.2) * bassBoost);
 
               // Pass noteColor to spawnBurst
-              spawnBurst(noteX, noteY, burstSize, state.smoothEnergy * (1 + state.flow * 0.02), noteColor);
+              spawnBurst(noteX, noteY, burstSize, state.smoothEnergy * (1 + state.flow * 0.02), noteColor ?? undefined);
 
               // v10: Ensure minimum ripple size + Bass Boost
               const rippleSize = Math.max(200, 150 + state.flow * 3 + state.combo * 0.5) * bassBoost;
@@ -3048,7 +3050,7 @@
               if (state.flow < 10) PianoCore.triggerWakeUpFlash(state, WUF_OPTS);
             }
             // Pass noteColor to spawnStream
-            spawnStream(noteX, H * 0.65, state.smoothEnergy, noteColor);
+            spawnStream(noteX, H * 0.65, state.smoothEnergy, noteColor ?? undefined);
 
             showNoteDisplay(note.name, note.name + note.octave, noteColor, timeMs);
           }
@@ -3261,7 +3263,7 @@
 
       // Draw radar chart with animated grow-in
       drawRadarChart(
-        DOM.radarChart,
+        /** @type {HTMLCanvasElement} */ (DOM.radarChart),
         ['Stability', 'Rhythm', 'Dynamics'],
         [state.stabilityScore, state.rhythmScore, state.dynamicsScore]
       );
@@ -3662,7 +3664,7 @@
     // Add a song from a Blob (file upload or fetched URL). The MIME hint helps
     // distinguish .mxl (zip) from .musicxml/.xml (plain text). On success the
     // song is registered AND persisted; the returned song id can be selectSong'd.
-    /** @param {Blob} blob @param {{filename?:string, source?:string, allowAcceptSession?:boolean}} [opts] */
+    /** @param {Blob} blob @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
     async function addUserSongFromBlob(blob, opts) {
       opts = opts || {};
       const isMxl = blob.type === 'application/vnd.recordare.musicxml+zip'
@@ -3674,6 +3676,7 @@
       const id = 'usr_' + Date.now().toString(36) + '_'
         + Math.random().toString(36).slice(2, 7);
       const sectionDefs = autoSectionDefs(xmlText, meta.measureCount);
+      /** @type {import('@piano/core').UserSongRecord} */
       const record = {
         id,
         title: opts.titleOverride || meta.title || (opts.filename || 'Untitled').replace(/\.[^.]+$/, ''),
@@ -3695,7 +3698,7 @@
 
     const USER_SONG_URL_TIMEOUT_MS = 30000;
     const USER_SONG_MAX_BYTES = 20 * 1024 * 1024;  // 20 MB
-    /** @param {string} url @param {{filename?:string, source?:string, allowAcceptSession?:boolean}} [opts] */
+    /** @param {string} url @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
     async function addUserSongFromUrl(url, opts) {
       opts = opts || {};
       const ctrl = new AbortController();
@@ -6151,6 +6154,7 @@
     // The view + timing + opts triple is rebuilt per frame from legacy
     // closures so call sites pass nothing changed. core mutates the
     // view.laneDrawFromIdx cursor in-place each frame.
+    /** @param {number} timeMs */
     function drawPracticeLane(timeMs) {
       if (!practice.enabled) return;
       const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
@@ -6241,6 +6245,7 @@
     // Honour the synesthesia toggle: when off, fall back to the active theme's
     // cyclic palette so the lane tiles match the keyboard's resting colors
     // (rainbow lane while synesthesia is OFF was a leak from before).
+    /** @param {number} m */
     const _laneNoteRestingColor = (m) => {
       if (state.useSynesthesiaMode) {
         return CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff';
@@ -6301,6 +6306,7 @@
     // rapid passages (12+ notes/sec). Hits keep registering; only the visual chip is
     // skipped when the previous one is still settling in.
     let _lastChipMs = 0;
+    /** @param {string} kind @param {string} text */
     function showHitChip(kind, text) {
       const now = performance.now();
       if (now - _lastChipMs < 100) return;
@@ -6766,6 +6772,7 @@
       clearIntroDiagCache();
     }
 
+    /** @param {unknown} e */
     function alertAudioInitError(e) {
       alert(t('audioInitFailedFmt', { v: (e && e.message) || e }));
     }
@@ -6813,6 +6820,7 @@
       }
     });
 
+    /** @param {string} songId */
     function selectSong(songId) {
       const song = SONGS[songId];
       if (!song) return;
@@ -7100,6 +7108,7 @@
     //   Section names are auto (Part 1/2/3) — naming UI is YAGNI for now.
     // ========================================
     let _sectionEditingId = null;
+    /** @param {string} songId */
     async function openSectionEditor(songId) {
       const db = await openUserDb();
       const rec = await new Promise((res, rej) => {
@@ -7313,6 +7322,7 @@
     //   Designed for "rebuild on a new iPad after a reset" — file size ≈
     //   sum of .mxl sizes × 1.33 (base64 overhead). 50 songs ≈ ~3 MB.
     // ========================================
+    /** @param {Blob} blob @returns {Promise<string>} */
     function blobToDataUrl(blob) {
       return new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -7321,6 +7331,7 @@
         r.readAsDataURL(blob);
       });
     }
+    /** @param {string} dataUrl */
     async function dataUrlToBlob(dataUrl) {
       const res = await fetch(dataUrl);
       return res.blob();
@@ -7357,6 +7368,7 @@
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
 
+    /** @param {Blob} file */
     async function importUserLibrary(file) {
       const text = await file.text();
       let parsed;
@@ -7493,6 +7505,7 @@
     // `await Tone.start()` resolves and re-enters the Tone.Transport
     // cancel/stop/schedule block on top of incomplete cleanup.
     let _practiceTransitioning = false;
+    /** @param {number} idx */
     async function transitionToSection(idx) {
       if (_practiceTransitioning) return;
       _practiceTransitioning = true;
@@ -7527,6 +7540,7 @@
     // Toggle the loading state on a start-screen mode button. The button's
     // i18n markup stays intact so language re-renders keep working and a return
     // to the title screen always finds the button in its resting state.
+    /** @param {HTMLButtonElement} btn @param {boolean} loading */
     function setStartButtonLoading(btn, loading) {
       if (!btn) return;
       btn.classList.toggle('is-loading', !!loading);
