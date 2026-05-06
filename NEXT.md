@@ -6,34 +6,13 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0b done; Phase 0c deep dive. Eight typed
-modules extracted (`library/score-timing.ts`, `library/measure-timing.ts`,
-`library/playback-order.ts`, `library/merge-tied-notes.ts`,
-`library/diag-load.ts`, `state/practice-progress.ts`, `web/audio-scheduler.ts`,
-`web/note-extractor.ts`), shrinking `legacy-app.js` by ~1,000 lines
-cumulatively. `OsmdAdapter` interface in `@piano/core` + impl + all cursor /
-highlight call sites routed through it. `legacy-app.js` is a real ES module
-(`export {}`), `allowJs: true` is on. Type-scaffolding landed: bare-identifier
-globals are `declare global { var }`-typed in `main.ts` (incl. `Navigator`
-extension for `bluetooth` + `Window._audioDeviceChangeTimer`), the module-scoped
-`let`s (`audioCtx`, `W`, `H`, `osmd`, `particles`, `ripples`, audio-graph
-singletons …) are JSDoc-typed (the audio-graph singletons via a `null`-cast pin
-so post-init reads no longer flag possibly-null), the `DOM` / `DOM_ADDSONG` /
-`DOM_SECEDIT` bags assert `Record<string, HTMLElement>`, the four big runtime
-singletons (`state` / `practice` / `midiState` / `midiInput`) and `CONFIG` carry
-full shape typedefs, and the `SongRec` library record is fully typed. The hot
-helpers (60+ functions across `updatePractice`, `loop`, `onMidiNoteOn`, the
-PianoCore adapter arrows, the WebMIDI port handlers, the OSMD cursor walker, the
-user-songs catalog, …) carry per-function `@param` JSDoc.
-`useUnknownInCatchVariables: false` cleared the `catch (e)` → `e.message`
-strict-mode pile in one stroke. Audio-graph singletons (`audioCtx`, `gainNode`,
-`analyser`, `dataArray`, …) are pinned non-null at declaration via a `null`-cast
-and `Uint8Array<ArrayBuffer>` generic; the canvas 2D context, the `ctx`-shadow
-draw helpers, the `pendingHolds` map, the `UserSongRecord.xmlText` field, and
-the `bleMidi._disconnectHandler` slot all type-check at every read site.
-**`@ts-check` residual count: 1,041 → 91** (-950, -91%). SW takeover hardened;
-mkcert migration cleared Chromium's SW SSL validator on the LAN dev server. 786
-vitest cases, `pnpm verify` clean.)
+Last refreshed: **2026-05-07** (Phase 0c.5 ✅ DONE — `// @ts-check` is now ON at
+the top of `packages/web/src/legacy-app.js`. Residual TS error count: **1,041 →
+0** (-100%). Tag: `phase-0c.5-done`. The 7,624-line legacy shell type-checks
+under `pnpm typecheck` as part of the regular verify cycle — regressions error
+at typecheck time, no silent re-introduction possible. Wakelock first leaf
+extraction landed (`packages/web/src/wakelock.ts`). 786/786 vitest cases green;
+`pnpm verify` clean across 5 packages.)
 
 ---
 
@@ -86,60 +65,47 @@ vitest cases, `pnpm verify` clean.)
 | 43  | `web/note-extractor.ts`       | —     | `packages/web/src/note-extractor.ts`            |
 | 44  | shape typedefs (state etc.)   | —     | `packages/web/src/legacy-app.js` (top of file)  |
 | 45  | `@param` sweep (60+ helpers)  | —     | `packages/web/src/legacy-app.js`                |
+| 46  | Phase 0c.5 — `// @ts-check`   | —     | `packages/web/src/legacy-app.js` (top of file)  |
+| 47  | `web/wakelock.ts`             | —     | `packages/web/src/wakelock.ts`                  |
 
-**Status: 786/786 tests green, 0 lint errors, 0 type errors. `pnpm verify`
-clean.** (audio-scheduler.ts and note-extractor.ts are web-shell typed modules —
-no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
+**Status: 786/786 tests green, 0 lint errors, 0 type errors, 0 residual TS
+errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
 
 ---
 
 ## ⏳ In queue
 
-## 1. Whole-file `// @ts-check` — once the residual count is manageable
+## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-**What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
-errors. Current residual is **91** (down from 629 after shape typedefs +
-`@param` sweep + null-pinning + catch-strict relaxation + DOM cast sweep +
-boundary type fixes + mkcert migration). The remaining mix is largely genuine
-boundary engineering — each error is its own per-site analysis, not a pattern
-that sweeps clear:
+The shell is currently 7,623 lines. Goal: ≤200 lines, with each carved-out
+module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
+extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-- TS2345 (~17): arg-type mismatches at `@piano/core` boundaries. Several are
-  `SectionDef[] | undefined` vs `BuildSectionsInputDef[]`, `string | null` vs
-  `string | undefined`, `MIDIPort` vs `MIDIInput` (the inputs map iteration),
-  and the legacy shell's mxlBlob+xmlText literal-type narrowing. Fix mostly by
-  `?? undefined` coercion or inline `/** @type {...} */` casts at the call site.
-- TS2322 (~17): assignment mismatches. Includes the legacy
-  `_xmlText: string | null` field on SongRec vs the @piano/core
-  `xmlText?: string`, the `setupHiDPICanvas` return inferred from
-  `getContext('2d')` (CanvasRenderingContext2D|null vs strict
-  CanvasRenderingContext2D), and a few "number → string textContent" pin-ups
-  still hiding in the result/section panels.
-- TS2339 (~11): scattered DOM property reads on Element/HTMLElement where the
-  call site needs HTMLInputElement / HTMLButtonElement / HTMLLabelElement, plus
-  the `_xmlText`/`titleOverride` field set fixed in this commit but with a few
-  remaining echoes.
-- TS7005 (~12) + TS7034 (~6): a handful of `let X` decls that still need a
-  `@type` annotation — closure-captured arrays / Promises in the user-songs /
-  settings panel scope.
+Wakelock landed in this session (commit `fa479f4`). Remaining batches in order
+of size / ease:
 
-The remaining errors don't share a single root-cause that sweeps them all out —
-the typedefs / shape work is done. From here, every fix is "read the call site,
-decide whether to widen the typedef in @piano/core or cast at the shell call
-site." Budget ~3-4h of careful per-error work to drive to zero, or accept ~91 as
-the floor and flip the ratchet with `// @ts-check` set on a region-by-region
-basis as new modules carve out.
+- [ ] `web/section-editor.ts` — section-edit modal (~300 lines, low difficulty)
+- [ ] `web/settings-panel.ts` — settings panel + persist (~500 lines, low)
+- [ ] `web/audio-init.ts` — getUserMedia + AudioContext + visibility-recovery
+      seam (~250 lines, mid)
+- [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid)
+- [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical)
+- [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
+- [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
 
-**Acceptance**:
+**Acceptance per extraction**:
 
-- [ ] `// @ts-check` at the top of `legacy-app.js`
-- [ ] `pnpm typecheck` clean
+- [ ] New `.ts` file under `packages/web/src/` with focused exports
+- [ ] Wired into `main.ts` (typed import) + pinned to `globalThis` if shell
+      needs
+- [ ] Old block deleted from `legacy-app.js`
+- [ ] `pnpm verify` clean
+- [ ] iPad practice-mode A/B (or desktop Chrome equivalent) — section start +
+      hit detection + scoring all work end-to-end
 
-**Est**: budget depends on the residual count when scheduling — re-probe via
-`tsconfig.probe.json` (`packages/web/tsconfig.probe.json` flips `checkJs: true`
-without the `// @ts-check` ratchet) to gauge.
+**DoD for Phase 0d**: `wc -l packages/web/src/legacy-app.js` ≤ 200.
 
-## 2. More leaf extractions — when worth it
+## 2. Phase 0e — Retire `legacy-app.js` entirely
 
 Each extraction reduces the `@ts-check` surface by 50-200 errors. Candidates
 that haven't been tackled (ordered hardest-last):
