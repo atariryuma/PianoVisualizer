@@ -3625,7 +3625,7 @@
     //
     // When XML parsing fails entirely we fall back to OSMD's TempoInBPM.
     function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
-      if (!osmd || !osmd.cursor) return { notes: [], stepToMeasure: [], measureStartSec: [], measureBpm: [] };
+      if (!osmd || !osmd.cursor) return { notes: [], stepToMeasure: [], measureStartSec: [], measureBpm: [], cursorPositions: new Map() };
       const notes = [];
       const stepToMeasure = [];
 
@@ -3698,12 +3698,34 @@
       // expected note position.
       const cursorTrace = [];
 
+      // Custom-cursor position map: sourceStep -> {x, y, h} where (x, y) is
+      // the position of the OSMD cursor element relative to #osmdContainer's
+      // scrollable content (so it's scroll-independent). We capture in the
+      // SAME walk as note extraction by using `osmd.cursor.next()` (advances
+      // iterator AND updates visual transform) instead of `it.moveToNext()`.
+      // A transparent (alpha=0) OSMD cursor stays in the layout so its
+      // getBoundingClientRect returns valid coords.
+      const cursorPositions = new Map();
+      const containerEl = DOM.osmdContainer;
+      const containerRect = containerEl ? containerEl.getBoundingClientRect() : null;
+
+      osmd.cursor.show();
       osmd.cursor.reset();
       const it = osmd.cursor.iterator;
       let cursorStep = 0;
       let skippedNotes = 0;
       let prevMeasureForTrace = -1;
       while (!it.endReached && cursorStep < 20000) {
+        if (containerRect && osmd.cursor.cursorElement) {
+          const r = osmd.cursor.cursorElement.getBoundingClientRect();
+          if (r.height > 0) {
+            cursorPositions.set(cursorStep, {
+              x: r.left - containerRect.left + containerEl.scrollLeft,
+              y: r.top - containerRect.top + containerEl.scrollTop,
+              h: r.height,
+            });
+          }
+        }
         try {
           const measureIdx = it.CurrentMeasureIndex;
           stepToMeasure.push(measureIdx);
@@ -3798,11 +3820,16 @@
         } catch (_) {
           skippedNotes++;
         }
-        try { it.moveToNext(); }
+        // cursor.next() = it.moveToNext() + cursor.update(). The visual
+        // update is what lets us read the cursor's bounding rect on the
+        // next iteration; without it, the position map would only have the
+        // first step's coords.
+        try { osmd.cursor.next(); }
         catch (_) { break; }
         cursorStep++;
       }
       try { osmd.cursor.reset(); } catch (_) { /* ignore */ }
+      try { osmd.cursor.hide(); } catch (_) { /* ignore */ }
       notes.sort((a, b) => a.timeSec - b.timeSec || a.midi - b.midi);
       if (skippedNotes > 0) {
         console.warn('[OSMD] skipped ' + skippedNotes + ' unformattable note(s)');
@@ -3821,7 +3848,7 @@
         tieReport,
       } : null;
       return {
-        notes, stepToMeasure, measureStartSec, measureBpm, _diag,
+        notes, stepToMeasure, measureStartSec, measureBpm, cursorPositions, _diag,
       };
     }
 
@@ -4630,6 +4657,10 @@
         song.totalSec = totalSec;
         song.playbackOrder = order;
         song.measureToCursorStep = measureToCursorStep;
+        // sourceStep -> {x, y, h} (relative to #osmdContainer scrollable
+        // content). Populated by extractNotesFromOsmd's cursor walk. Used
+        // by the per-frame practice loop to position #osmdCustomCursor.
+        song.cursorPositions = extractRet.cursorPositions || new Map();
         // Pass the per-source-measure start times so sections begin at the
         // measure boundary (preserving any leading rest visually) instead of
         // cropping to the first note's onset.
@@ -4697,27 +4728,19 @@
     let _lastOsmdScrollMs = 0;
     let _lastCustomCursorX = -1;
     let _lastCustomCursorY = -1;
-    // Position the #osmdCustomCursor overlay at the OSMD cursor's live
-    // bounding box. We call this AFTER setOsmdCursorStep, so OSMD's
-    // (alpha=0) built-in cursor has already moved its transform to the
-    // current iterator step. Reading getBoundingClientRect once per
-    // step-change fires only at note onsets (~4-10 Hz), not per frame.
-    function syncCustomCursor() {
+    // Position the #osmdCustomCursor overlay at the captured (x, y, h) for
+    // a given sourceStep. CSS transition smooths the movement between
+    // steps — replaces OSMD's stepwise (acknowledged-jerky) cursor.
+    function syncCustomCursor(sourceStep) {
       const el = DOM.osmdCustomCursor;
-      const c = DOM.osmdContainer;
-      const osmdEl = osmd && osmd.cursor && osmd.cursor.cursorElement;
-      if (!el || !c || !osmdEl) return;
-      const r = osmdEl.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) return; // not laid out yet
-      const cRect = c.getBoundingClientRect();
-      const x = r.left - cRect.left + c.scrollLeft;
-      const y = r.top - cRect.top + c.scrollTop;
-      const h = r.height || 50;
-      if (x === _lastCustomCursorX && y === _lastCustomCursorY) return;
-      _lastCustomCursorX = x;
-      _lastCustomCursorY = y;
-      el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
-      el.style.height = h + 'px';
+      if (!el || !currentSong || !currentSong.cursorPositions) return;
+      const pos = currentSong.cursorPositions.get(sourceStep);
+      if (!pos) return;
+      if (pos.x === _lastCustomCursorX && pos.y === _lastCustomCursorY) return;
+      _lastCustomCursorX = pos.x;
+      _lastCustomCursorY = pos.y;
+      el.style.transform = 'translate3d(' + pos.x + 'px,' + pos.y + 'px,0)';
+      el.style.height = pos.h + 'px';
     }
     function showCustomCursor() {
       if (DOM.osmdCustomCursor) DOM.osmdCustomCursor.classList.add('visible');
@@ -6304,17 +6327,13 @@
       _osmdStepCursor = 0;
       _lastCustomCursorX = -1;
       _lastCustomCursorY = -1;
-      // OSMD cursor must be shown (display:block) so its cursorElement is
-      // in the DOM for syncCustomCursor's getBoundingClientRect. alpha=0
-      // (set via cursorOptions) keeps it visually transparent.
-      try { if (osmd && osmd.cursor) osmd.cursor.show(); } catch (_) {}
       const firstNote = practice.sectionNotes[0];
       if (firstNote && typeof firstNote.sourceStep === 'number') {
         setOsmdCursorStep(firstNote.sourceStep);
+        syncCustomCursor(firstNote.sourceStep);
       } else if (firstNote && typeof firstNote.measureIdx === 'number') {
         jumpCursorToMeasure(firstNote.measureIdx);
       }
-      syncCustomCursor();
       // Sections that start past the first system need a scroll so the
       // cursor is visible from frame one — without this the kid stares at
       // the top of the score during count-in (the per-frame scroll only
@@ -6612,8 +6631,8 @@
         const target = notes[pIdx];
         if (target && typeof target.sourceStep === 'number' &&
             target.sourceStep !== _osmdStepCursor) {
-          setOsmdCursorStep(target.sourceStep);  // moves OSMD's (invisible) cursor
-          syncCustomCursor();                     // mirrors its rect to overlay
+          setOsmdCursorStep(target.sourceStep);  // keeps OSMD iterator in sync
+          syncCustomCursor(target.sourceStep);    // moves visible overlay
           osmdScrollToCursor();
         }
       }
