@@ -51,8 +51,13 @@
 // sourceStep). Walks linearly across the gap between consecutive
 // notes' sourceSteps so it visits intervening rest steps at score
 // tempo, with no parallel data structure to keep in sync.
+// 2026-05-06: bumped to v13 — drop the linear inter-note step walk
+// from v12. OSMD iterator steps are NOT uniformly spaced in time
+// (multi-voice rests, dotted rhythms, mid-bar tempo events break the
+// uniformity), so the linear walk visibly raced past rest measures.
+// Cursor now sits on the current note's sourceStep — no synthesis.
 
-const CACHE = 'piano-viz-v12';
+const CACHE = 'piano-viz-v13';
 const APP_SHELL = [
   './',
   './index.html',

@@ -6538,55 +6538,37 @@
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
 
       // === Per-frame cursor sync ===
-      // Drives OSMD's built-in cursor straight from sectionNotes — every
-      // note already carries (timeMs, sourceStep), the only data we need.
+      // Sits OSMD's cursor on the note we're currently working on. Each
+      // note already carries `sourceStep` (its absolute OSMD iterator
+      // position), so this is a one-line lookup.
       //
-      // Time source:
-      // - rhythm/listen: real elapsed (score plays itself, cursor follows).
-      // - guided: real elapsed capped at the current note's timeMs so the
-      //   cursor walks at score tempo up to that note then waits for the
-      //   kid to play. Uncapped, it would race ahead.
+      // Which note is "current":
+      // - rhythm/listen: the latest note whose timeMs <= real elapsed.
+      // - guided: practice.currentNoteIdx (kept in sync by updatePractice
+      //   as the kid resolves notes).
       //
-      // Between two consecutive notes the cursor doesn't jump — it walks
-      // through the OSMD steps that lie between (rests, voice-2 entries,
-      // tempo-direction steps). The walk is paced linearly across the
-      // gap's time so it tracks the underlying beat pulse.
+      // Between two consecutive notes the cursor stays on the earlier
+      // one. We don't synthesise rest-step movement — OSMD's iterator
+      // step indices aren't uniformly spaced in time (multi-voice rests,
+      // tempo directions, dotted rhythms all break the uniformity), so
+      // any time-based interpolation would visibly drift on some scores.
       if (osmdVisible && practice.sectionNotes.length > 0) {
-        let cursorElapsed = practiceRealElapsedMs();
         const notes = practice.sectionNotes;
+        let targetIdx;
         if (practice.mode === 'guided') {
-          const curNote = notes[practice.currentNoteIdx];
-          if (curNote && Number.isFinite(curNote.timeMs)) {
-            cursorElapsed = Math.min(cursorElapsed, curNote.timeMs);
-          }
+          targetIdx = Math.min(practice.currentNoteIdx | 0, notes.length - 1);
+        } else {
+          const elapsed = practiceRealElapsedMs();
+          let pIdx = practice._cursorScanIdx | 0;
+          if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
+          while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
+          practice._cursorScanIdx = pIdx;
+          targetIdx = pIdx;
         }
-        // Find the latest note whose timeMs <= cursorElapsed.
-        let pIdx = practice._cursorScanIdx | 0;
-        if (pIdx >= notes.length || notes[pIdx].timeMs > cursorElapsed) pIdx = 0;
-        while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= cursorElapsed) pIdx++;
-        practice._cursorScanIdx = pIdx;
-        const cur = notes[pIdx];
-        const next = notes[pIdx + 1];
-        let targetStep = cur.sourceStep;
-        // Linear step walk between cur and next. Skip when the gap crosses
-        // a cursorJump (repeat back-jump / volta skip) — those need a clean
-        // jump at next.timeMs, not interpolation across a non-monotonic step
-        // delta.
-        if (typeof targetStep === 'number'
-          && next
-          && typeof next.sourceStep === 'number'
-          && next.cursorJump == null
-          && next.sourceStep > cur.sourceStep + 1) {
-          const gap = next.sourceStep - cur.sourceStep;
-          const dtTotal = next.timeMs - cur.timeMs;
-          if (dtTotal > 0) {
-            const dtElapsed = cursorElapsed - cur.timeMs;
-            const stepsPassed = Math.floor((dtElapsed / dtTotal) * gap);
-            targetStep = cur.sourceStep + Math.min(gap, Math.max(0, stepsPassed));
-          }
-        }
-        if (typeof targetStep === 'number' && targetStep !== _osmdStepCursor) {
-          setOsmdCursorStep(targetStep);
+        const note = notes[targetIdx];
+        if (note && typeof note.sourceStep === 'number'
+          && note.sourceStep !== _osmdStepCursor) {
+          setOsmdCursorStep(note.sourceStep);
           osmdScrollToCursor();
         }
       }
