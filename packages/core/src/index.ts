@@ -285,6 +285,17 @@ export type {
   MergeTiedResult,
 } from './library/merge-tied-notes';
 
+// === Library: load-time DIAG dump ===
+export { dumpLoadDiagnostics } from './library/diag-load';
+export type {
+  DiagPayload,
+  DiagSong,
+  DiagSection,
+  DiagNote,
+  DiagExtractInfo,
+  DiagLogger,
+} from './library/diag-load';
+
 export {
   autoSectionDefs,
   collectSectionCandidates,
