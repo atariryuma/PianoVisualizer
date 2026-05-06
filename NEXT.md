@@ -6,13 +6,16 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-06** (Phase 0b done; Phase 0c started. `OsmdAdapter`
-interface lives in `@piano/core` and `legacy-app.js` implements it; external
-cursor / highlight call sites now route through the adapter. `legacy-app.js` is
-now a real ES module (`export {}` at the end), `packages/web/tsconfig.json` has
-`allowJs: true`, and the `@ts-expect-error` shim in `main.ts` is gone. Boundary
-`@typedef`s for the long-lived shapes (Note / PracticeState / MidiState / Prefs)
-seeded at the top of `legacy-app.js`. 688 vitest cases.)
+Last refreshed: **2026-05-06** (Phase 0b done; Phase 0c well under way.
+`OsmdAdapter` interface in `@piano/core`; legacy cursor / highlight call sites
+all route through it. `legacy-app.js` is a real ES module (`export {}`),
+`allowJs: true` is on, the `@ts-expect-error` shim is gone, boundary `@typedef`s
+for Note / PracticeState / MidiState / Prefs are seeded at the top of the file.
+Two typed modules already extracted (`library/score-timing.ts`,
+`library/measure-timing.ts`), shrinking `legacy-app.js` by ~240 lines. SW
+takeover hardened (`skipWaiting + clientsClaim + cleanupOutdatedCaches` + a
+one-shot legacy-cache cleanup in `main.ts`). 717 vitest cases, `pnpm verify`
+clean.)
 
 ---
 
@@ -56,8 +59,9 @@ seeded at the top of `legacy-app.js`. 688 vitest cases.)
 | 34  | `state/streak.ts`             | 19    | `packages/core/src/state/streak.ts`             |
 | 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
 | 36  | `library/score-timing.ts`     | 16    | `packages/core/src/library/score-timing.ts`     |
+| 37  | `library/measure-timing.ts`   | 13    | `packages/core/src/library/measure-timing.ts`   |
 
-**Status: 704/704 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 717/717 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 This session also added:
@@ -75,45 +79,73 @@ This session also added:
 
 ## ⏳ In queue
 
-## 1. Extract `library/measure-timing.ts` (the second pure parser)
+## 1. Extract `library/playback-order.ts` (XML repeat / ending parser)
 
-**What**: Move `buildMeasureTimingFromXml` from `legacy-app.js` into
-`@piano/core/library/measure-timing.ts`. It consumes the `ScoreTiming` output of
-`parseScoreTimingFromXml` (already extracted) and produces per-measure
-`(startSec, durationSec)` accounting for mid-bar tempo changes — the audio
-scheduler's source of truth.
+**What**: Move `fetchPlaybackOrder` and `expandNotesByPlaybackOrder` from
+`legacy-app.js` into `@piano/core/library/playback-order.ts`. Reads the raw
+MusicXML for `<repeat>` / `<ending>` markers and emits the linear sequence of
+measure indices in the order they should sound (OSMD's API doesn't surface these
+in 1.9.9).
 
-**Why**: Companion to `score-timing.ts`. Pure (string in, plain objects out),
-already tested via OSMD A/B on real scores. Same extraction shape as
-score-timing, ~80 lines.
-
-**Acceptance**:
-
-- [ ] `parseScoreTiming` output is consumed via the existing `ScoreTiming` type
-      from core
-- [ ] Vitest cases: constant tempo, mid-bar ramp, anacrusis, partial measure
-      (`actualDiv < durationDiv`)
-- [ ] legacy-app.js shrinks by ~80 lines
-
-**Est**: ~120 lines core + ~150 lines tests.
-
-## 2. Enable `checkJs` per-region in `legacy-app.js`
-
-**What**: Use TypeScript's `@ts-check` directive at the top of specific FUNCTION
-blocks in `legacy-app.js` to opt-in regions to type checking, without flipping
-the whole file's `checkJs` switch.
-
-**Why**: Once a region is `@ts-check`-clean, it's a clear extraction candidate
-(no implicit `any`s, no missing parameter types). It also gives the editor full
-IntelliSense for that region.
+**Why**: Same shape as score-timing.ts / measure-timing.ts — a string- in,
+plain-objects-out parser. Currently the only piece of repeat-aware playback
+logic still in the legacy file. Once extracted, the audio scheduler can move to
+a typed module against a stable contract.
 
 **Acceptance**:
 
-- [ ] At least 3 regions marked `@ts-check`
-- [ ] `pnpm typecheck` clean with those regions checked
-- [ ] Bumps the boundary `@typedef`s where needed
+- [ ] `fetchPlaybackOrder(xmlText)` returns a flat array of measure indices in
+      playback order
+- [ ] `expandNotesByPlaybackOrder(notes, order)` shape stays compatible with the
+      practice-state engine's `sectionNotes`
+- [ ] Vitest cases: no repeats (passthrough), simple `|: ... :|`, first / second
+      endings, nested repeats, D.C. al Fine bare-words
+- [ ] legacy-app.js shrinks by ~150 lines
 
-**Est**: ~50 lines of incremental annotation per region, no behavior change.
+**Est**: ~250 lines core + ~250 lines tests.
+
+## 2. Carve a typed entry point off the audio scheduler
+
+**What**: Move `scheduleCountInBeeps` + the rhythm-mode `Tone.Transport`
+scheduling block from `legacy-app.js` into `packages/web/src/audio-scheduler.ts`
+(a typed `.ts` shell module, not core — it directly touches Tone.js, which is a
+web-only dependency).
+
+**Why**: The audio scheduler is the longest single chunk of Tone-coupled code in
+the legacy file (~120 lines). Moving it to a typed module is a natural Phase 0c
+milestone — the boundary `@typedef`s (`PracticeStateShape`) already cover what
+it needs from the legacy `practice` object.
+
+**Acceptance**:
+
+- [ ] `audio-scheduler.ts` exports `scheduleCountInBeeps` +
+      `scheduleSectionPlayback`
+- [ ] Both functions are typed against `PracticeStateShape` from
+      `legacy-app.js`'s boundary @typedefs
+- [ ] legacy-app.js delegates via `import { scheduleCountInBeeps }`
+- [ ] No runtime change (manual A/B against a Für Elise practice session: same
+      count-in beep timing, same Listen-mode auto-play)
+
+**Est**: ~150 lines move + ~50 lines wiring.
+
+## 3. Enable `checkJs` per-region in `legacy-app.js`
+
+**What**: Add `// @ts-check` to `legacy-app.js` and ratchet through the
+resulting type errors, fixing them in place via JSDoc annotations or opting out
+via `// @ts-nocheck` for stubbornly-untyped regions until later extractions
+clean them up.
+
+**Why**: Once `@ts-check` is on, every function in the file is a typed function
+whether we like it or not. The rolling cleanup it forces makes each subsequent
+extraction cheaper.
+
+**Acceptance**:
+
+- [ ] `// @ts-check` at the top of `legacy-app.js`
+- [ ] `pnpm typecheck` clean (whatever it takes — typically a few hundred JSDoc
+      additions or `/** @type {any} */` casts at edge points)
+
+**Est**: One-day grind, no behavior change.
 
 ---
 
