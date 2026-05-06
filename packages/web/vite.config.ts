@@ -51,7 +51,16 @@ export default defineConfig(({ mode }) => ({
       : [
           VitePWA({
             registerType: 'autoUpdate',
-            includeAssets: ['icon.svg', 'assets/*.mxl', 'assets/*.xml'],
+            // NOTE: `includeAssets` was previously set to
+            //   ['icon.svg', 'assets/*.mxl', 'assets/*.xml']
+            // but those exact files are already swept up by
+            // workbox.globPatterns below. The two paths build the precache
+            // list independently — includeAssets emits `{ url, revision: null }`
+            // entries while globPatterns emits `{ url, revision: <hash> }`
+            // entries — so every overlapping file ended up registered twice
+            // and Workbox threw `add-to-cache-list-conflicting-entries` on
+            // SW startup. globPatterns is the right home for these (revision
+            // is required for stable URLs to invalidate correctly).
             manifest: {
               name: 'Piano Visualizer',
               short_name: 'PianoViz',
