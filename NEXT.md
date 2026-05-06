@@ -6,10 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-06** (32 modules extracted; the per-onset reducer trio
-— quality-history, pitch-stability, chord-window — is now in core. Next batch
-focuses on persistence + small render adapters before the Phase 0b.3 dual-build
-wire-up.)
+Last refreshed: **2026-05-06** (35 modules extracted; per-onset trio
+(quality-history / pitch-stability / chord-window) plus the wake-up flash,
+daily-streak, and MIDI-beam adapters are now all in core. Quest-cooldown turned
+out to be subsumed by the existing quest-tracker's `postCompletionDelayMs` and
+was not extracted separately. Phase 0b.3 dual-build wire-up is the next
+architectural milestone.)
 
 ---
 
@@ -49,72 +51,71 @@ wire-up.)
 | 30  | `state/quality-history.ts`    | 16    | `packages/core/src/state/quality-history.ts`    |
 | 31  | `state/pitch-stability.ts`    | 26    | `packages/core/src/state/pitch-stability.ts`    |
 | 32  | `audio/chord-window.ts`       | 16    | `packages/core/src/audio/chord-window.ts`       |
+| 33  | `state/wake-up-flash.ts`      | 14    | `packages/core/src/state/wake-up-flash.ts`      |
+| 34  | `state/streak.ts`             | 19    | `packages/core/src/state/streak.ts`             |
+| 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
 
-**Status: 643/643 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 684/684 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Extract `state/wake-up-flash.ts`
+## 1. Phase 0b.3 — dual-build wire-up
 
-**What**: Move the input-flash decay. Currently `state.inputFlash` is a 0..1
-scalar set to 0.2 on flow drops + first-key feedback, multiplied by 0.85 each
-frame in the canvas overlay path.
+**What**: Make `packages/web` the real production entry, not a placeholder. Vite
+consumes `@piano/core` directly; `app.js` shrinks to glue + DOM wiring.
+Eventually `index.html` loads the Vite output (or a copy of it) instead of the
+legacy 3-file shell.
 
-**Acceptance**:
-
-- [ ] `triggerWakeUpFlash(state, opts)` and
-      `decayWakeUpFlash(state, dtSec, opts)`
-- [ ] Frame-rate-independent decay (half-life or exponential per second, not
-      per-frame multiplier — same lesson as pitch-stability's idle decay)
-- [ ] Tests: trigger sets to peak, decays to ~0 within a target window, repeated
-      triggers don't compound past 1.0
-
-**Est**: 60 + 40 tests.
-
-## 2. Extract `state/streak.ts`
-
-**What**: Move the daily-streak counter. Currently the
-`practice.progress.streakDays` array and `streakCount` are computed inline in
-the practice-state persistence layer (date-list dedupe → backward walk for
-consecutive-day count). Pure date math that belongs in core.
+**Why**: With 35 modules extracted, the legacy app.js is now mostly adapters /
+DOM glue / per-frame composition. The next major reduction requires moving the
+entry, which is an architectural cut — needs a single PR with full LAN-test +
+iPad + service-worker validation, not piecemeal.
 
 **Acceptance**:
 
-- [ ] `recordPracticeDay(state, todayIso)` adds today's date if absent
-- [ ] `computeStreakCount(state, todayIso)` returns the current consecutive-day
-      count (the shell only stores the day list; count is derived)
-- [ ] Tests: same-day idempotent, gap > 1 day breaks streak, week-long streak
-      counts correctly across month boundaries, future-date guard
+- [ ] `pnpm --filter @piano/web build` produces a working `dist/` that serves
+      equivalently to the current root `index.html`
+- [ ] PWA service worker still caches the right asset list
+- [ ] OSMD load path still works (Vite handles the dynamic-import properly)
+- [ ] LAN HTTPS server renamed/repurposed to serve the Vite output
+- [ ] iPad + Web MIDI Browser both render the visualizer end-to-end
+- [ ] Manual A/B against legacy build: identical behavior on at least three
+      songs (Für Elise, La Campanella, a user-imported piece)
 
-**Est**: 90 + 50 tests.
+**Est**: ~400 lines of moves + a handful of new files. Roughly 1 day's work.
 
-## 3. Extract `state/quest-cooldown.ts`
+## 2. OSMD adapter design
 
-**What**: Move the toast-completion queue + spacing. Currently the quest
-completion celebration is gated by an ad-hoc `lastQuestCheckMs + 2500` delay
-inside quest-tracker. A dedicated cooldown reducer would let multiple quests
-queue up cleanly when several conditions fire close together (e.g. flow 50 +
-combo 30 simultaneously).
+**What**: Wrap the OpenSheetMusicDisplay touch points (cursor positioning,
+notehead highlight, score load, note extraction) behind a thin core interface so
+the legacy `app.js` and the future `packages/web` can share the same OSMD wiring
+without copy-paste.
+
+**Why**: The recent cursor / notehead-highlight work touched several legacy-
+shaped surfaces (DOM lookups, SVG mutation, OSMD object property reads) that
+will be a friction point once `packages/web` becomes authoritative. Easier to
+design the abstraction now while the call sites are fresh.
 
 **Acceptance**:
 
-- [ ] `(state, completionEvent) → state` queue reducer
-- [ ] `popReadyToast(state, timeMs, opts)` returns the next toast iff the
-      previous toast's display window has elapsed
-- [ ] Tests: empty queue → no toast, two-quest queue → spaced emission, drain
-      order is FIFO
+- [ ] `packages/core/src/adapters/osmd-adapter.ts` interface (no concrete
+      implementation; the OSMD library itself stays in the shells)
+- [ ] Methods cover: `loadScore`, `getCursorPositionAt`, `getCurrentNotes`,
+      `walkIteratorTo`, `highlightNotes`, `clearHighlights`
+- [ ] Legacy app.js implements the interface as a thin adapter over its existing
+      `osmd` instance
+- [ ] All cursor / highlight / scroll call sites go through the adapter
 
-**Est**: 110 + 60 tests.
+**Est**: ~250 lines core + ~150 lines legacy adapter. ~half-day.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-- `render/midi-beams.ts` — sustained-note beam overlay (per-key vertical light
-  beams while held; currently ad-hoc canvas drawing in the lane renderer)
+(empty — the in-queue items now blockers for further work)
 
 ---
 

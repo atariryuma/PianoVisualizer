@@ -144,7 +144,7 @@ self.addEventListener('fetch', (e) => {
   const isShell =
     url.origin === self.location.origin &&
     (url.pathname === '/' ||
-      url.pathname.endsWith('/') ||                  // GH Pages sub-path root
+      url.pathname.endsWith('/') || // GH Pages sub-path root
       url.pathname.endsWith('/index.html') ||
       url.pathname.endsWith('/app.css') ||
       url.pathname.endsWith('/app.js') ||
@@ -162,7 +162,11 @@ self.addEventListener('fetch', (e) => {
         // Offline: try the exact request, then fall back to index.html for
         // navigations so a stranded user gets the shell instead of a blank
         // browser-error page.
-        .catch(() => caches.match(req).then((c) => c || (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))
+        .catch(() =>
+          caches
+            .match(req)
+            .then((c) => c || (req.mode === 'navigate' ? caches.match('./index.html') : undefined))
+        )
     );
     return;
   }
