@@ -597,14 +597,24 @@
     // ========================================
     // Audio — dual analyser + software AGC
     // ========================================
+    /** @type {AudioContext | null} */
     let audioCtx;
+    /** @type {AnalyserNode | null} */
     let analyser;
+    /** @type {AnalyserNode | null} */
     let onsetAnalyser;
+    /** @type {GainNode | null} */
     let gainNode;
-    let dataArray, freqArray;
+    /** @type {Float32Array | null} */
+    let dataArray;
+    /** @type {Uint8Array | null} */
+    let freqArray;
+    /** @type {Float32Array | null} */
     let onsetDataArray;
-    let micStream;       // v13: keep ref so we can stop tracks when MIDI takes over
-    let micSourceNode;   // v13: rewireable source between gainNode and the live mic
+    /** @type {MediaStream | null} v13: keep ref so we can stop tracks when MIDI takes over */
+    let micStream;
+    /** @type {MediaStreamAudioSourceNode | null} v13: rewireable source between gainNode and the live mic */
+    let micSourceNode;
 
     const MIC_CONSTRAINTS = {
       audio: {
@@ -772,7 +782,11 @@
     // ========================================
     // Canvas
     // ========================================
-    let W, H;
+    /** @type {number} canvas width in CSS pixels */
+    let W = 0;
+    /** @type {number} canvas height in CSS pixels */
+    let H = 0;
+    /** @type {number} bottom inset (safe-area + small pad), CSS px */
     let kbSafeBottom = 4;
     let kbHeight = 50;
     let safeLeft = 0;
@@ -1619,6 +1633,7 @@
     // Monkey-patch core's Particle.prototype.draw so the legacy positional
     // draw(c) signature continues to work everywhere \u2014 closures provide
     // the deps that the new API takes via opts.
+    /** @type {InstanceType<typeof PianoCore.Particle>[]} */
     let particles = [];
     const _coreParticleDraw = PianoCore.Particle.prototype.draw;
     PianoCore.Particle.prototype.draw = function (c) {
@@ -1718,6 +1733,7 @@
     // Same monkey-patch pattern as Particle: keep legacy positional
     // r.update() / r.draw(c) call sites by injecting closures into the
     // shared prototype.
+    /** @type {InstanceType<typeof PianoCore.Ripple>[]} */
     let ripples = [];
     const _coreRippleUpdate = PianoCore.Ripple.prototype.update;
     PianoCore.Ripple.prototype.update = function () {
@@ -3522,7 +3538,10 @@
     //   * Walked at load to extract every played note (timing + pitch + hand).
     //   * Cursor advances one step per onset event during practice (perfect sync).
     // ========================================
+    /** @type {any} OSMD instance (typed `any` because OSMD's surface is wide and version-fragile;
+     *  consumers go through osmdAdapter for the typed boundary). */
     let osmd = null;
+    /** @type {Promise<any> | null} */
     let _osmdInitPromise = null;
 
     async function initOsmd() {
