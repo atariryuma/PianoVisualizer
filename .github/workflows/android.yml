@@ -11,7 +11,6 @@ on:
     branches: [main]
     paths:
       - "packages/**"
-      - "app.js"
       - ".github/workflows/android.yml"
   pull_request:
     paths:

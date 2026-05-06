@@ -1,8 +1,7 @@
 # Web build — runs on every PR + push to main.
-# Verifies the legacy single-file build (root index.html / app.css / app.js)
-# AND the Vite shell (packages/web). Once Phase 0b extraction completes,
-# the legacy step can be deleted. Push to main also auto-deploys the
-# legacy build to GitHub Pages (deploy-pages job below).
+# Phase 0b.3 (2026-05-06) retired the repo-root 3-file shell; the Vite shell
+# at packages/web/ is now the single production entry. Push to main
+# auto-deploys packages/web/dist/ to GitHub Pages.
 
 name: Web
 
@@ -26,31 +25,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  legacy-syntax-check:
-    name: Legacy single-file build (syntax)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Verify app.js parses
-        run: node --check app.js
-
-      # NOTE: HTML well-formedness via xmllint was removed — it flags HTML5
-      # elements like <canvas> as "invalid". Vite build (vite-build job below)
-      # is the authoritative HTML validator.
-
-      - name: Service worker syntax
-        run: node --check sw.js
-
   vite-build:
     name: Vite shell build
     runs-on: ubuntu-latest
-    needs: legacy-syntax-check
     steps:
       - uses: actions/checkout@v4
 
@@ -65,8 +42,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm --filter @piano/core typecheck && pnpm --filter @piano/web typecheck
+      - name: Lint + format check
+        run: pnpm lint
+
+      - name: Typecheck (all packages)
+        run: pnpm typecheck
+
+      - name: Test (@piano/core)
+        run: pnpm --filter @piano/core test -- --run
 
       - name: Build web
         run: pnpm --filter @piano/web build
@@ -76,17 +59,15 @@ jobs:
         with:
           name: web-dist
           path: packages/web/dist/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
-  # Deploy the legacy single-file build (root index.html + app.css + app.js
-  # + sw.js + assets/ + dist-legacy/) to GitHub Pages. Vite shell is NOT
-  # deployed yet — `index.html` at the repo root is the production entry.
-  # First run requires the repo's Settings → Pages → Source = "GitHub Actions".
+  # Deploy packages/web/dist/ to GitHub Pages. First run requires the
+  # repo's Settings → Pages → Source = "GitHub Actions".
   deploy-pages:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
-    needs: [legacy-syntax-check, vite-build]
+    needs: vite-build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       pages: write
@@ -95,17 +76,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Stage legacy build artifacts
-        # Whitelist runtime files only — keep PowerShell server scripts,
-        # self-signed certs, source packages, and tooling out of the public
-        # bundle so the published site mirrors the LAN dev experience.
-        run: |
-          mkdir -p _site/dist-legacy _site/assets
-          cp index.html app.css app.js sw.js manifest.json icon.svg _site/
-          cp dist-legacy/core-bundle.js _site/dist-legacy/
-          cp -r assets/. _site/assets/
+      - name: Download web-dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: _site
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
