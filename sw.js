@@ -45,8 +45,14 @@
 // resolved (skipping rest steps between notes). Cursor sync now uses
 // real elapsed time, capped at the current note's timeMs — beats tick
 // at score tempo, then the cursor waits on the current note for input.
+// 2026-05-06: bumped to v12 — strip stepTimeline/sectionCursorTimeline
+// machinery (~120 lines). The cursor now drives directly off the
+// existing sectionNotes (each note already carries timeMs +
+// sourceStep). Walks linearly across the gap between consecutive
+// notes' sourceSteps so it visits intervening rest steps at score
+// tempo, with no parallel data structure to keep in sync.
 
-const CACHE = 'piano-viz-v11';
+const CACHE = 'piano-viz-v12';
 const APP_SHELL = [
   './',
   './index.html',
