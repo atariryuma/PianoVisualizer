@@ -16,6 +16,16 @@ export type {
   MidiMessageListener,
 } from './input/types';
 
+// === Adapter contracts ===
+export type {
+  OsmdAdapter,
+  OsmdNote,
+  OsmdMeasureTiming,
+  OsmdExtractResult,
+  OsmdExtractOptions,
+  OsmdCursorGeometry,
+} from './adapters/osmd-adapter';
+
 // === Render: device perf tier ===
 export { detectPerfTier, PERF_PROFILES } from './render/perf-tier';
 export type { PerfTier, PerfProfile } from './render/perf-tier';

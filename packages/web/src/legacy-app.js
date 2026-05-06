@@ -4758,6 +4758,63 @@
       highlightCurrentNotes();
     }
 
+    // OSMD adapter — implements @piano/core/adapters/osmd-adapter's
+    // OsmdAdapter interface. Phase 0c modules will consume the adapter
+    // (typed against the interface) instead of touching the OSMD object
+    // graph directly. The adapter is a thin wrapper around the existing
+    // legacy functions; the heavy lifting (initOsmd / extractNotesFromOsmd
+    // / setOsmdCursorToNote / etc.) stays put until the TS migration.
+    //
+    // Note: extractNotes here is a thin shim — the real extraction is
+    // driven from `loadCurrentSong()` because it depends on additional
+    // shell state (xmlMeasureTiming, scoreTiming) that the adapter
+    // shouldn't have to know about. Kept on the adapter so Phase 0c
+    // can find the call site via the interface.
+    const osmdAdapter = {
+      async load(url) {
+        if (currentSong) currentSong.mxlUrl = url;
+        await initOsmd();
+      },
+      isLoaded() {
+        return !!osmd;
+      },
+      extractNotes(opts) {
+        return extractNotesFromOsmd(opts?.xmlMeasureTiming, null);
+      },
+      cursorTo(measureIdx, inBarQuarters) {
+        setOsmdCursorToNote({ measureIdx, inBarQuarters });
+      },
+      resetCursor() {
+        osmdResetToStart();
+      },
+      showCursor() {
+        try { if (osmd && osmd.cursor) osmd.cursor.show(); } catch (_) {}
+      },
+      hideCursor() {
+        try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {}
+      },
+      getCursorGeometry() {
+        if (!osmd || !osmd.cursor || !osmd.cursor.cursorElement) return null;
+        return {
+          offsetTop: osmd.cursor.cursorElement.offsetTop,
+          offsetHeight: osmd.cursor.cursorElement.offsetHeight || 30,
+        };
+      },
+      highlightCurrentNotes() {
+        // Legacy implementation hard-codes HIGHLIGHT_FILL; the color
+        // parameter on the interface is ignored for now (Phase 0c will
+        // thread it through).
+        highlightCurrentNotes();
+      },
+      clearHighlights() {
+        clearNoteHighlights();
+      },
+    };
+    // Promote to globalThis so Phase 0c-extracted modules can resolve it
+    // from typed code without an import (matches the Tone / OSMD / JSZip
+    // / PianoCore globals seeded by main.ts).
+    globalThis.osmdAdapter = osmdAdapter;
+
     // ========================================
     // Practice state + tunable constants
     // ========================================
@@ -6169,13 +6226,14 @@
       // Section banner — flies in to celebrate the start
       showSectionBanner(sec);
 
-      // Position OSMD's cursor at the section's first note.
-      try { osmd.cursor.reset(); } catch (_) {}
+      // Position OSMD's cursor at the section's first note. cursorTo
+      // handles the backward-seek case internally (resets first if the
+      // target is behind the current iterator position).
       const firstNote = practice.sectionNotes[0];
-      if (firstNote) setOsmdCursorToNote(firstNote);
+      if (firstNote) osmdAdapter.cursorTo(firstNote.measureIdx, firstNote.inBarQuarters);
       _lastOsmdScrollMs = 0;
       osmdScrollToCursor();
-      try { osmd.cursor.show(); } catch (_) {}
+      osmdAdapter.showCursor();
       // Reset the per-frame scan cursor so the lane drawer's elapsed →
       // step lookup starts from index 0 for the new section.
       practice._cursorScanIdx = 0;
@@ -6195,7 +6253,7 @@
 
         if (practice.mode === 'guided') {
           // Guided: cursor visible immediately, lane shows current note at hit line.
-          if (osmd && osmd.cursor) osmd.cursor.show();
+          osmdAdapter.showCursor();
           practice.startAudioTime = Tone.now();
           scheduleCountInBeeps(practice.startAudioTime);
         } else {
@@ -6235,7 +6293,7 @@
           Tone.Transport.start(practice.startAudioTime);
           // Cursor visible during count-in too — kid can see "this is where
           // we'll start" instead of an empty score with notes about to fall.
-          if (osmd && osmd.cursor) osmd.cursor.show();
+          osmdAdapter.showCursor();
         }
         // Diagnostic: log device audio output latency. AudioContext.outputLatency
         // is the speaker-side buffer delay; baseLatency is the processing block.
@@ -6282,10 +6340,10 @@
           Tone.Transport.cancel();
         }
       } catch (e) {}
-      try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {}
+      osmdAdapter.hideCursor();
       // Drop the active notehead pink so a paused/ended section doesn't
       // leave a stale highlighted note glowing in the score.
-      try { clearNoteHighlights(); } catch (_) {}
+      osmdAdapter.clearHighlights();
     }
 
     // ========================================
@@ -6452,7 +6510,7 @@
         if (targetIdx !== practice._lastCursorNoteIdx) {
           const note = notes[targetIdx];
           if (note) {
-            setOsmdCursorToNote(note);
+            osmdAdapter.cursorTo(note.measureIdx, note.inBarQuarters);
             osmdScrollToCursor();
           }
           practice._lastCursorNoteIdx = targetIdx;
