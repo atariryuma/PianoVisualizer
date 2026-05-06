@@ -24,7 +24,7 @@
 
 import * as Tone from 'tone';
 import * as opensheetmusicdisplay from 'opensheetmusicdisplay';
-import JSZip from 'jszip';
+import JSZipImpl from 'jszip';
 import * as PianoCore from '@piano/core';
 import * as AudioScheduler from './audio-scheduler';
 import * as NoteExtractor from './note-extractor';
@@ -33,16 +33,37 @@ declare global {
   interface Window {
     Tone: typeof Tone;
     opensheetmusicdisplay: typeof opensheetmusicdisplay;
-    JSZip: typeof JSZip;
+    JSZip: typeof JSZipImpl;
     PianoCore: typeof PianoCore;
     AudioScheduler: typeof AudioScheduler;
     NoteExtractor: typeof NoteExtractor;
   }
+  // Bare-identifier declarations so legacy-app.js (when @ts-check
+  // ratchets up further) can reference these without `window.` prefix.
+  // Phase 0c: each is seeded onto globalThis below before legacy-app.js
+  // is dynamically imported.
+   
+  var Tone: typeof import('tone');
+   
+  var opensheetmusicdisplay: typeof import('opensheetmusicdisplay');
+   
+  var JSZip: typeof JSZipImpl;
+   
+  var PianoCore: typeof import('@piano/core');
+   
+  var AudioScheduler: typeof import('./audio-scheduler');
+   
+  var NoteExtractor: typeof import('./note-extractor');
+  // Adapter pinned by legacy-app.js itself (not main.ts) — declared
+  // here so a future @ts-check pass on legacy-app.js sees a typed
+  // identity for the bare `osmdAdapter` global.
+   
+  var osmdAdapter: import('@piano/core').OsmdAdapter;
 }
 
 (globalThis as unknown as Window).Tone = Tone;
 (globalThis as unknown as Window).opensheetmusicdisplay = opensheetmusicdisplay;
-(globalThis as unknown as Window).JSZip = JSZip;
+(globalThis as unknown as Window).JSZip = JSZipImpl;
 (globalThis as unknown as Window).PianoCore = PianoCore;
 (globalThis as unknown as Window).AudioScheduler = AudioScheduler;
 (globalThis as unknown as Window).NoteExtractor = NoteExtractor;
