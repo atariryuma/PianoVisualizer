@@ -4311,6 +4311,70 @@
       return expanded;
     }
 
+    // Expand stepTimeline by playbackOrder using the SAME math as
+    // expandNotesByPlaybackOrder: each measure visit emits all steps that
+    // landed in that measure, shifted to the cumulative playback time.
+    // Without this, songs with repeats had stepTimeline entries on the
+    // first-pass time domain while sectionNotes were on the playback time
+    // domain — the cursor advanced to a step the notes had already passed
+    // (or hadn't reached yet), visibly drifting from the music.
+    function expandStepTimelineByPlaybackOrder(stepTimeline, order, measures, sourceMeasureStartSec) {
+      if (!stepTimeline || !stepTimeline.length || !order || !order.length) {
+        return stepTimeline ? stepTimeline.slice() : [];
+      }
+      const byMeasure = new Map();
+      for (const s of stepTimeline) {
+        let arr = byMeasure.get(s.measureIdx);
+        if (!arr) { arr = []; byMeasure.set(s.measureIdx, arr); }
+        arr.push(s);
+      }
+      // measureStartSec / measureDurSec — same fallback chain as
+      // expandNotesByPlaybackOrder so timing matches exactly.
+      let measureStartSec, measureDurSec;
+      if (sourceMeasureStartSec && sourceMeasureStartSec.length === measures.length) {
+        measureStartSec = sourceMeasureStartSec;
+        measureDurSec = new Array(measures.length).fill(0);
+        for (let i = 0; i < measures.length; i++) {
+          if (i + 1 < measures.length) {
+            measureDurSec[i] = measureStartSec[i + 1] - measureStartSec[i];
+          } else {
+            const m = measures[i];
+            const bpm = m?.TempoInBPM || 72;
+            measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
+          }
+        }
+      } else {
+        measureStartSec = new Array(measures.length).fill(0);
+        measureDurSec = new Array(measures.length).fill(0);
+        let prevBpm = 72;
+        for (let i = 0; i < measures.length; i++) {
+          const m = measures[i];
+          const bpm = m?.TempoInBPM || prevBpm;
+          measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
+          if (i > 0) measureStartSec[i] = measureStartSec[i - 1] + measureDurSec[i - 1];
+          prevBpm = bpm;
+        }
+      }
+      const out = [];
+      let cumTime = 0;
+      for (const mIdx of order) {
+        const ms = byMeasure.get(mIdx);
+        const mStart = measureStartSec[mIdx] || 0;
+        if (ms) {
+          for (const s of ms) {
+            out.push({
+              step: s.step,
+              timeSec: cumTime + (s.timeSec - mStart),
+              measureIdx: mIdx,
+            });
+          }
+        }
+        cumTime += measureDurSec[mIdx] || 0.5;
+      }
+      out.sort((a, b) => a.timeSec - b.timeSec || a.step - b.step);
+      return out;
+    }
+
     // ============================================================
     // Comprehensive load-time DIAG dump.
     //
@@ -4637,10 +4701,12 @@
         song.playbackOrder = order;
         song.measureToCursorStep = measureToCursorStep;
         // Time-driven cursor source: every OSMD iterator step with its
-        // source-time. Used by the per-frame cursor sync to advance through
-        // rest periods + tempo-direction steps continuously instead of
-        // freezing at the last note then leaping at the next onset.
-        song.stepTimeline = extractRet.stepTimeline || [];
+        // source-time, expanded by playbackOrder so its time domain matches
+        // the expanded notes exactly. Drives the per-frame cursor sync to
+        // advance through rests + tempo-direction steps continuously.
+        song.stepTimeline = expandStepTimelineByPlaybackOrder(
+          extractRet.stepTimeline, order, measures, srcMeasureStartSec
+        );
         // Pass the per-source-measure start times so sections begin at the
         // measure boundary (preserving any leading rest visually) instead of
         // cropping to the first note's onset.

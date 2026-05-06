@@ -35,8 +35,12 @@
 // stepTimeline (which lets OSMD's cursor advance through rests instead of
 // freezing on the last note onset) but drive OSMD's own cursor directly
 // — no overlay element, no interpolation, no rect capture.
+// 2026-05-06: bumped to v10 — fix cursor drifting from notes on songs
+// with repeats. stepTimeline was on the first-pass time domain while
+// notes were expanded by playbackOrder; v10 expands stepTimeline the
+// same way so both share one timeline.
 
-const CACHE = 'piano-viz-v9';
+const CACHE = 'piano-viz-v10';
 const APP_SHELL = [
   './',
   './index.html',
