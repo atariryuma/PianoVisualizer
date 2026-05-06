@@ -80,7 +80,7 @@
      * @property {number} [_lastCursorNoteIdx]        Last cursor-walked target.
      * @property {number} [_dbgNextLog]               Next ms timestamp at which to emit a debug log.
      * @property {number} [_sectionTargetCount]       Total scoreable notes in active section.
-     * @property {{accuracy:number, timing:number, stars:number}|null} [_lastResult]
+     * @property {{mode:string, secId:string, stars:number, unlockedTempo:number|null, unlockedSecKey:string|null, streakDays:number|null}|null} [_lastResult]
      * @property {number} [laneDrawFromIdx]           Amortized cursor for lane-render culling.
      * @property {{rMin:number, rMax:number, lMin:number, lMax:number}} [handRanges]
      */
@@ -764,7 +764,9 @@
       settingsInputStatus: document.getElementById('settingsInputStatus'),
       settingsDebugToggle: document.getElementById('settingsDebugToggle'),
     });
-    const ctx = /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d');
+    const ctx = /** @type {CanvasRenderingContext2D} */ (
+      /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d')
+    );
 
     // ========================================
     // Game State
@@ -913,24 +915,30 @@
     // ========================================
     // Audio — dual analyser + software AGC
     // ========================================
-    /** @type {AudioContext | null} */
-    let audioCtx;
-    /** @type {AnalyserNode | null} */
-    let analyser;
-    /** @type {AnalyserNode | null} */
-    let onsetAnalyser;
-    /** @type {GainNode | null} */
-    let gainNode;
-    /** @type {Float32Array | null} */
-    let dataArray;
-    /** @type {Uint8Array | null} */
-    let freqArray;
-    /** @type {Float32Array | null} */
-    let onsetDataArray;
+    // Audio-graph singletons. Typed as non-null because every call-site
+    // reads them only after `initAudio()` has populated them; the IIFE
+    // bootstraps from `startBtn.click → initAudio → loop()`, so any
+    // code path that touches these post-init is guaranteed a live value.
+    // The casts pin TS to the post-init view; the runtime values are
+    // null until init, but no reader fires before that.
+    /** @type {AudioContext} */
+    let audioCtx = /** @type {AudioContext} */ (/** @type {unknown} */ (null));
+    /** @type {AnalyserNode} */
+    let analyser = /** @type {AnalyserNode} */ (/** @type {unknown} */ (null));
+    /** @type {AnalyserNode} */
+    let onsetAnalyser = /** @type {AnalyserNode} */ (/** @type {unknown} */ (null));
+    /** @type {GainNode} */
+    let gainNode = /** @type {GainNode} */ (/** @type {unknown} */ (null));
+    /** @type {Uint8Array} */
+    let dataArray = /** @type {Uint8Array} */ (/** @type {unknown} */ (null));
+    /** @type {Float32Array} */
+    let freqArray = /** @type {Float32Array} */ (/** @type {unknown} */ (null));
+    /** @type {Uint8Array} */
+    let onsetDataArray = /** @type {Uint8Array} */ (/** @type {unknown} */ (null));
     /** @type {MediaStream | null} v13: keep ref so we can stop tracks when MIDI takes over */
-    let micStream;
+    let micStream = null;
     /** @type {MediaStreamAudioSourceNode | null} v13: rewireable source between gainNode and the live mic */
-    let micSourceNode;
+    let micSourceNode = null;
 
     const MIC_CONSTRAINTS = {
       audio: {
@@ -5125,11 +5133,12 @@
     const BLE_MIDI_SERVICE = '03b80e5a-ede8-4b33-a751-6ce34ec4c700';
     const BLE_MIDI_CHAR    = '7772e5db-3868-4112-a1a9-f2669d106bf3';
 
-    const bleMidi = {
+    /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
+    const bleMidi = /** @type {any} */ ({
       device: null,
       characteristic: null,
       connected: false
-    };
+    });
 
     // Parse BLE-MIDI 1.0 packet. The packet starts with a header byte (high bit set,
     // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
@@ -6464,7 +6473,7 @@
     }
 
     // Growth chart — line graph of accuracy over the last 8 attempts.
-    /** @param {HTMLCanvasElement} canvas @param {Array<{accuracy:number}>} history */
+    /** @param {HTMLCanvasElement} canvas @param {Array<{d:number, a:number, t:number, s:number}>} history */
     function drawHistoryChart(canvas, history) {
       const w = 280, h = 80;
       const c = setupHiDPICanvas(canvas, w, h);
@@ -6845,7 +6854,8 @@
     // ========================================
     // Add-song modal — file / URL / curated library
     // ========================================
-    const DOM_ADDSONG = {
+    /** @type {Record<string, HTMLElement> & {tabs: NodeListOf<Element>, bodies: NodeListOf<Element>}} */
+    const DOM_ADDSONG = /** @type {any} */ ({
       modal: document.getElementById('addSongModal'),
       btn: document.getElementById('addSongBtn'),
       closeBtn: document.getElementById('addSongCloseBtn'),
@@ -6859,7 +6869,7 @@
       status: document.getElementById('addSongStatus'),
       myList: document.getElementById('addSongMyList'),
       userSongList: document.getElementById('userSongList')
-    };
+    });
 
     /** @param {string} msg @param {boolean} [isError] */
     function setAddSongStatus(msg, isError) {
@@ -7262,7 +7272,8 @@
     // duplicate listener here.
 
     // Section-editor modal wiring
-    const DOM_SECEDIT = {
+    /** @type {Record<string, HTMLElement> & {_totalMeasures: number, _record: import('@piano/core').UserSongRecord|null}} */
+    const DOM_SECEDIT = /** @type {any} */ ({
       modal: document.getElementById('sectionEditModal'),
       help: document.getElementById('sectionEditHelp'),
       rows: document.getElementById('sectionEditRows'),
@@ -7272,7 +7283,7 @@
       closeBtn: document.getElementById('sectionEditCloseBtn'),
       _totalMeasures: 0,
       _record: null
-    };
+    });
     DOM_SECEDIT.cancelBtn?.addEventListener('click', closeSectionEditor);
     DOM_SECEDIT.closeBtn?.addEventListener('click', closeSectionEditor);
     DOM_SECEDIT.saveBtn?.addEventListener('click', saveSectionEditor);

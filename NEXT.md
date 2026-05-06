@@ -14,17 +14,22 @@ modules extracted (`library/score-timing.ts`, `library/measure-timing.ts`,
 cumulatively. `OsmdAdapter` interface in `@piano/core` + impl + all cursor /
 highlight call sites routed through it. `legacy-app.js` is a real ES module
 (`export {}`), `allowJs: true` is on. Type-scaffolding landed: bare-identifier
-globals are `declare global { var }`-typed in `main.ts`, the module-scoped
-`let`s (`audioCtx`, `W`, `H`, `osmd`, `particles`, `ripples`, …) are
-JSDoc-typed, the `DOM` bag asserts `Record<string, HTMLElement>`, the four big
-runtime singletons (`state` / `practice` / `midiState` / `midiInput`) + `CONFIG`
-carry full shape typedefs, and the `SongRec` library record is fully typed. The
-hot helpers (`updatePractice`, `loop`, `onMidiNoteOn`,
-`updateSessionConfidence`, `dispatchMidiMessage`, the PianoCore adapter arrows,
-the WebMIDI port handlers, the OSMD cursor walker, plus 60+ other single-purpose
-functions) carry per-function `@param` JSDoc. **`@ts-check` residual count:
-1,041 → 359** (-682, -66%). SW takeover hardened. 786 vitest cases,
-`pnpm verify` clean.)
+globals are `declare global { var }`-typed in `main.ts` (incl. `Navigator`
+extension for `bluetooth` + `Window._audioDeviceChangeTimer`), the module-scoped
+`let`s (`audioCtx`, `W`, `H`, `osmd`, `particles`, `ripples`, audio-graph
+singletons …) are JSDoc-typed (the audio-graph singletons via a `null`-cast pin
+so post-init reads no longer flag possibly-null), the `DOM` / `DOM_ADDSONG` /
+`DOM_SECEDIT` bags assert `Record<string, HTMLElement>`, the four big runtime
+singletons (`state` / `practice` / `midiState` / `midiInput`)
+
+- `CONFIG` carry full shape typedefs, and the `SongRec` library record is fully
+  typed. The hot helpers (60+ functions across `updatePractice`, `loop`,
+  `onMidiNoteOn`, the PianoCore adapter arrows, the WebMIDI port handlers, the
+  OSMD cursor walker, the user-songs catalog, …) carry per-function `@param`
+  JSDoc. `useUnknownInCatchVariables: false` cleared the `catch (e)` →
+  `e.message` strict-mode pile in one stroke. **`@ts-check` residual count:
+  1,041 → 207** (-834, -80%). SW takeover hardened. 786 vitest cases,
+  `pnpm verify` clean.)
 
 ---
 

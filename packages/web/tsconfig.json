@@ -10,7 +10,14 @@
     // file is 7800 lines of vanilla JS; we'll opt-in regions to type
     // checking as they're carved out into focused modules.
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    // Phase 0c: relax catch-variable narrowing for the legacy shell. The
+    // strict default (`unknown`) would force a JSDoc `@type {Error}` cast
+    // at every `e.message` / `e.name` read across ~30 catch blocks. The
+    // typed @piano/core modules don't lean on catch-variable strictness
+    // anyway — every `throw` they emit is `new Error(...)`, and the
+    // shell's catch sites only stringify for log output.
+    "useUnknownInCatchVariables": false
   },
   "include": ["src/**/*", "index.html"],
   "exclude": ["dist", "node_modules"]

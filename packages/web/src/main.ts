@@ -37,6 +37,39 @@ declare global {
     PianoCore: typeof PianoCore;
     AudioScheduler: typeof AudioScheduler;
     NoteExtractor: typeof NoteExtractor;
+    /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
+     *  prop on stricter checkers, but keeps the legacy `window._audio…`
+     *  read site happy without a JSDoc cast. */
+    _audioDeviceChangeTimer?: ReturnType<typeof setTimeout>;
+  }
+  /** Web Bluetooth — Chromium-only experimental API used by the BLE-MIDI
+   *  fallback path. Not in lib.dom by default; declare a minimal subset
+   *  matching what legacy-app.js actually reads. */
+  interface Navigator {
+    bluetooth?: {
+      requestDevice(opts: {
+        acceptAllDevices?: boolean;
+        filters?: Array<{ services?: string[]; name?: string; namePrefix?: string }>;
+        optionalServices?: string[];
+      }): Promise<{
+        name: string | null;
+        gatt?: {
+          connect(): Promise<{
+            getPrimaryService(uuid: string): Promise<{
+              getCharacteristic(uuid: string): Promise<
+                EventTarget & {
+                  startNotifications(): Promise<unknown>;
+                  stopNotifications(): Promise<unknown>;
+                }
+              >;
+            }>;
+            disconnect(): void;
+            connected: boolean;
+          }>;
+        };
+        addEventListener(event: string, handler: () => void): void;
+      }>;
+    };
   }
   // Bare-identifier declarations so legacy-app.js (when @ts-check
   // ratchets up further) can reference these without `window.` prefix.
