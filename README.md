@@ -21,8 +21,12 @@ iPad with mic input or a USB / Bluetooth MIDI keyboard.
 ```bash
 pnpm install
 
-# Generate self-signed certs for HTTPS (mic requires HTTPS):
+# One-time: install mkcert (https://github.com/FiloSottile/mkcert)
+scoop install mkcert         # or: choco install mkcert
+
+# Generate trusted dev certs (mic + Service Worker both require HTTPS):
 powershell -File gen_cert.ps1
+# → cert.pfx (server) + rootCA.cer (iPad/Android trust)
 
 # Build + serve the web shell on port 8443:
 pnpm serve
@@ -36,7 +40,7 @@ powershell -File https_server.ps1
 # or from iPad: https://<host-ip>:8443
 ```
 
-iPad needs the cert installed as a trusted profile — see
+iPad needs `rootCA.cer` installed once as a trusted profile — see
 [`CLAUDE.md`](CLAUDE.md) for the walkthrough.
 
 ## Project layout
@@ -55,7 +59,7 @@ iPad needs the cert installed as a trusted profile — see
 │   └── plugins/
 │       └── capacitor-piano-midi/  ← Native MIDI plugin (Swift + Kotlin)
 │
-├── gen_cert.ps1            ← Self-signed cert generator (LAN dev)
+├── gen_cert.ps1            ← mkcert wrapper: cert.pfx + rootCA.cer
 ├── https_server.ps1        ← PowerShell HTTPS server (port 8443)
 └── docs/                   ← Privacy / compliance / score licenses
 ```

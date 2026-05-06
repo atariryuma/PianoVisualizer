@@ -43,7 +43,7 @@ piano-visualizer/
 │   └── plugins/
 │       └── capacitor-piano-midi/   # Native MIDI plugin (Swift + Kotlin)
 │
-├── gen_cert.ps1            # Self-signed cert generator (LAN dev)
+├── gen_cert.ps1            # mkcert wrapper: cert.pfx (server) + rootCA.cer (iPad)
 ├── https_server.ps1        # PowerShell HTTPS server (port 8443) — serves
 │                           # packages/web/dist by default
 │
@@ -83,28 +83,42 @@ The 9000-line `piano-visualizer.html` monolith was split into a 3-file shell on
 
 ## Running the Application
 
-The app requires HTTPS for microphone access (especially on iPad/Safari). A
-PowerShell HTTPS server is provided:
+The app requires HTTPS for microphone access (especially on iPad/Safari) and for
+Service Worker registration. A PowerShell HTTPS server is provided. Cert
+generation is delegated to [mkcert](https://github.com/FiloSottile/mkcert) so
+Chrome accepts the cert for SW registration over both `localhost` and the LAN IP
+— the previous self-signed-leaf-with-`CA:TRUE` approach passed page navigation
+but failed Chrome's stricter SW SSL validator
+(`Failed to register a ServiceWorker ... An SSL certificate error occurred when fetching the script`).
 
-1. **Generate certs** with `powershell -File gen_cert.ps1` (auto-detects LAN IP,
-   outputs `cert.pfx` for the server + `cert.cer` for iOS to trust). Re-run any
-   time the LAN IP changes.
-2. **Build** with `pnpm build:web` — produces `packages/web/dist/`.
-3. **Run server**: `powershell -File https_server.ps1` — serves
-   `packages/web/dist` on port 8443. (Or `pnpm serve` to do step 2 + 3.)
-4. **Access** at `https://<host-ip>:8443`.
+1. **One-time mkcert install**: `scoop install mkcert` (or
+   `choco install mkcert`, or download `mkcert.exe` from
+   [releases](https://github.com/FiloSottile/mkcert/releases) and put it on
+   PATH). Only needed once per dev machine.
+2. **Generate certs** with `powershell -File gen_cert.ps1` — auto-detects LAN
+   IP, runs `mkcert -install` (idempotent), outputs `cert.pfx` (server leaf,
+   password `piano123`) + `rootCA.cer` (mkcert root CA in DER, for iPad /
+   Android trust install). Re-run any time the LAN IP changes; the root stays
+   the same so devices that already trust `rootCA.cer` keep working.
+3. **Build** with `pnpm build:web` — produces `packages/web/dist/`.
+4. **Run server**: `powershell -File https_server.ps1` — serves
+   `packages/web/dist` on port 8443. (Or `pnpm serve` to do step 3 + 4.)
+5. **Access** at `https://localhost:8443/` (same machine — just works) or
+   `https://<host-ip>:8443/` (LAN — also works because mkcert's root is in the
+   OS trust store).
 
 ### iPad / strict-cert browser (Web MIDI Browser etc.) setup
 
-Stock Safari lets you bypass the self-signed-cert warning, but Web MIDI Browser
-and many WKWebView-based apps don't. Install the cert as trusted:
+This is a **one-time setup per iPad**. Once the mkcert root CA is installed,
+every `cert.pfx` regeneration (LAN IP change, expiry, etc.) is picked up
+automatically — no per-cert reinstall.
 
-1. iPad Safari → `https://<host-ip>:8443/cert.cer` → tap through the cert
+1. iPad Safari → `https://<host-ip>:8443/rootCA.cer` → tap through the cert
    warning once → tap **"Download Profile"** → **OK**.
 2. **Settings → General → VPN & Device Management** → tap the downloaded
-   _PianoVisualizer_ profile → tap **Install**.
-3. **Settings → General → About → Certificate Trust Settings** → enable the
-   _PianoVisualizer_ root certificate.
+   _mkcert_ profile → tap **Install**.
+3. **Settings → General → About → Certificate Trust Settings** → enable **mkcert
+   development CA** as a trusted root.
 4. Re-open `https://<host-ip>:8443/` in Web MIDI Browser — no more cert error.
 
 For local development, any HTTPS-capable static server works once

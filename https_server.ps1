@@ -26,14 +26,18 @@ $certPass = if ([string]::IsNullOrWhiteSpace($env:PIANO_CERT_PASS)) { "piano123"
 $logPath = Join-Path $scriptDir "server.log"
 
 # Block server-only files from being served to LAN clients:
-#   - cert.pfx          : private key + cert
-#   - cert.cer          : also private (export marker; intentionally NOT blocked
-#                         here because the iPad install path needs it — see
-#                         CLAUDE.md "iPad / strict-cert browser setup")
+#   - cert.pfx          : server leaf cert + private key (signed by mkcert root)
 #   - https_server.ps1  : exposing the server source itself adds nothing
 #   - gen_cert.ps1      : leaks the default cert password literal "piano123"
 #   - server.log        : contains every client's UA + every /log POST body
 #                         (debug dumps that may include score data, device info)
+#
+# Intentionally NOT blocked:
+#   - rootCA.cer        : public mkcert root CA (DER). Needs to be downloadable
+#                         so iPad / Android / Web MIDI Browser can install
+#                         trust once. See CLAUDE.md "iPad / strict-cert
+#                         browser setup". The root *private* key never lands
+#                         here — it stays in `mkcert -CAROOT`, outside the repo.
 $blockedFiles = @("cert.pfx", "https_server.ps1", "gen_cert.ps1", "server.log")
 
 # Per-client handler. Runs inside a runspace from $pool below. Helpers and the
