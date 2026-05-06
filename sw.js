@@ -63,8 +63,14 @@
 // uses OSMD's iterator native state — each note carries
 // (measureIdx, inBarQuarters), and we walk osmd.cursor until its
 // CurrentMeasureIndex + currentTimeStamp match. No shadow counter.
+// 2026-05-06: bumped to v15 — cleanup pass after the v14 fix landed.
+// Removed dead code now that the iterator-native cursor positioning
+// works: sourceStep field, stepToMeasure[] / measureToCursorStep[]
+// lookups, advanceOsmdCursor / jumpCursorToMeasure helpers, the
+// updatePractice guided-mode cursor-nudge path, and the
+// measureToCursorStep field on the user-songs interface in @piano/core.
 
-const CACHE = 'piano-viz-v14';
+const CACHE = 'piano-viz-v15';
 const APP_SHELL = [
   './',
   './index.html',

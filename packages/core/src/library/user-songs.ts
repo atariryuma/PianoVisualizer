@@ -42,7 +42,6 @@ export interface UserSong {
   totalSec: number;
   sections: SectionDef[];
   playbackOrder: number[];
-  measureToCursorStep: number[];
   _loaded: boolean;
   _loadingPromise: Promise<unknown> | null;
   _isUser: true;
@@ -266,7 +265,6 @@ export function makeUserSong(record: UserSongRecord, opts: MakeSongOptions = {})
     totalSec: 0,
     sections: [],
     playbackOrder: [],
-    measureToCursorStep: [],
     _loaded: false,
     _loadingPromise: null,
     _isUser: true,

@@ -3013,7 +3013,6 @@
         totalSec: 0,
         sections: [],
         playbackOrder: [],
-        measureToCursorStep: [],
         _loaded: false,
         _loadingPromise: null
       };
@@ -3149,7 +3148,7 @@
         _xmlText: xmlText || null,
         sectionDefs: record.sectionDefs,
         notes: null, totalSec: 0, sections: [], playbackOrder: [],
-        measureToCursorStep: [], _loaded: false, _loadingPromise: null,
+        _loaded: false, _loadingPromise: null,
         _isUser: true,
         _userTitle: record.title || record.id,
         _userComposer: record.composer || ''
@@ -3458,8 +3457,9 @@
           autoResize: false,
           backend: 'svg',
           // OSMD's built-in cursor — wide yellow highlight block (Standard
-          // type, alpha 0.4). Driven from sectionNotes' sourceStep field
-          // by the per-frame sync in drawPracticeLane.
+          // type, alpha 0.4). Positioned per frame by setOsmdCursorToNote
+          // (in drawPracticeLane) using the active note's measureIdx +
+          // inBarQuarters.
           cursorsOptions: [{ type: 0, color: '#FFD700', alpha: 0.4, follow: false }]
         });
         // Disable pedal rendering — OSMD's calculatePedals path used to throw
@@ -3472,8 +3472,8 @@
         // expandNotesByPlaybackOrder() pipeline already unfolds repeats by
         // re-parsing the raw XML, so we ASK OSMD to keep the legacy 1.8.x
         // behavior (one linear walk through the score). Without this, the
-        // iterator would visit the same measure twice and stepToMeasure[]
-        // would have duplicate entries, breaking the cursor positioning.
+        // iterator would visit the same measure twice and notes' inBarQuarters
+        // values would alias across passes, breaking cursor positioning.
         try { inst.EngravingRules.CursorIgnoreRepetitions = true; }
         catch (_) { /* older OSMD: option doesn't exist, behavior is the same */ }
         // OSMD's load() accepts both .mxl URLs (zipped) and plain MusicXML URLs.
@@ -3619,9 +3619,8 @@
     //
     // When XML parsing fails entirely we fall back to OSMD's TempoInBPM.
     function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
-      if (!osmd || !osmd.cursor) return { notes: [], stepToMeasure: [], measureStartSec: [], measureBpm: [] };
+      if (!osmd || !osmd.cursor) return { notes: [], measureStartSec: [], measureBpm: [] };
       const notes = [];
-      const stepToMeasure = [];
 
       const sourceMeasures = osmd.Sheet?.SourceMeasures || [];
       const measureCount = sourceMeasures.length;
@@ -3699,7 +3698,6 @@
       while (!it.endReached && cursorStep < 20000) {
         try {
           const measureIdx = it.CurrentMeasureIndex;
-          stepToMeasure.push(measureIdx);
           const measure = sourceMeasures[measureIdx];
           const tsFrac = it.currentTimeStamp;
           const measureStartTs = measure?.AbsoluteTimestamp?.realValue || 0;
@@ -3747,10 +3745,6 @@
                   // notes rarely cross mid-bar tempo events in practice.
                   const durSec = Math.max(0.05, lengthQuarters * 60 / localQBpm);
                   const noteTimeSec = timeSec;
-                  // sourceStep = OSMD iterator step at extract time. Used at
-                  // playback to absolute-jump the cursor (no relative-advance
-                  // drift across repeats / voltas / D.C.). Notes in the same
-                  // chord share the same step.
                   // tieStart/tieEnd: detected via OSMD's note.NoteTie or the
                   // `Tie` getter (varies by OSMD version) so we can later merge
                   // tied notes into a single sustained event.
@@ -3775,10 +3769,9 @@
                     // inBarQuarters = position within the bar in quarter-note
                     // units. Drives cursor positioning via OSMD's iterator
                     // currentTimeStamp — robust against partial measures
-                    // (la Campanella m=5 actualDur < nominalDur) where step
-                    // counts can drift between extraction and playback.
+                    // (la Campanella m=5 actualDur < nominalDur).
                     inBarQuarters,
-                    sourceStep: cursorStep, tieStart, tieEnd,
+                    tieStart, tieEnd,
                   });
                   if (stepDiag) {
                     stepDiag.notes.push({
@@ -3823,7 +3816,7 @@
         tieReport,
       } : null;
       return {
-        notes, stepToMeasure, measureStartSec, measureBpm, _diag,
+        notes, measureStartSec, measureBpm, _diag,
       };
     }
 
@@ -4297,7 +4290,6 @@
             durSec: n.durSec,
             measureIdx: mIdx,
             inBarQuarters: n.inBarQuarters,
-            sourceStep: n.sourceStep,
             cursorJump: (j === 0 && isJump) ? mIdx : null
           });
         }
@@ -4465,7 +4457,7 @@
           ' midi=' + n.midi +
           ' ' + n.hand +
           ' m=' + n.measureIdx +
-          ' step=' + n.sourceStep +
+          ' q=' + (n.inBarQuarters ?? 0).toFixed(2) +
           (n.cursorJump != null ? ' jump→m=' + n.cursorJump : '');
         const head = Math.min(12, expanded.length);
         for (let i = 0; i < head; i++) {
@@ -4585,7 +4577,6 @@
 
         const extractRet = extractNotesFromOsmd(xmlMeasureTiming, scoreTiming);
         const baseNotes = extractRet.notes;
-        const stepToMeasure = extractRet.stepToMeasure;
         const srcMeasureStartSec = extractRet.measureStartSec;
         const osmdMeasureBpm = extractRet.measureBpm;
         if (baseNotes.length === 0) throw new Error('No notes extracted from MusicXML');
@@ -4601,13 +4592,7 @@
           song._bpmRescaled = Math.abs(osmdBpm0 / xmlBpm0 - 1) > 0.05;
         }
 
-        // Build measure → first-cursor-step lookup for cursor jump-on-pass-start.
         const measures = osmd.Sheet?.SourceMeasures || [];
-        const measureToCursorStep = new Array(measures.length).fill(-1);
-        for (let s = 0; s < stepToMeasure.length; s++) {
-          const mi = stepToMeasure[s];
-          if (measureToCursorStep[mi] < 0) measureToCursorStep[mi] = s;
-        }
 
         // Parse the raw XML to discover the actual playback order. Reads the
         // pre-decoded xmlText cached on the song record (avoids a re-fetch
@@ -4632,7 +4617,6 @@
         song.notes = expanded;
         song.totalSec = totalSec;
         song.playbackOrder = order;
-        song.measureToCursorStep = measureToCursorStep;
         // Pass the per-source-measure start times so sections begin at the
         // measure boundary (preserving any leading rest visually) instead of
         // cropping to the first note's onset.
@@ -4719,45 +4703,17 @@
       DOM.osmdContainer.scrollTop = 0;
     }
 
-    // Jump the OSMD cursor to the first position of a specific written-score
-    // measure. Used when the playback order takes a non-sequential jump
-    // (repeat back-jump or forward skip over a 1st-ending volta).
-    function jumpCursorToMeasure(measureIdx) {
-      if (!osmd || !osmd.cursor) return;
-      // Synthetic "first beat of the measure" target — setOsmdCursorToNote
-      // walks OSMD's iterator to (measureIdx, inBarQuarters >= 0), landing
-      // on the first iterator step in that measure.
-      setOsmdCursorToNote({ measureIdx, inBarQuarters: 0 });
-    }
-
-    // Advance the OSMD cursor one playback step. cursorJump != null = next
-    // playback note is in a non-sequential measure (repeat back-jump / 1st-
-    // ending skip) — reposition rather than step.
-    function advanceOsmdCursor(cursorJump) {
-      if (!osmd || !osmd.cursor) return;
-      if (cursorJump != null) jumpCursorToMeasure(cursorJump);
-      else if (!osmd.cursor.iterator.endReached) {
-        try { osmd.cursor.next(); } catch (_) { /* grace-note throws — iterator still advances */ }
-      }
-    }
 
     // === Cursor positioning by OSMD iterator's native state ===
-    // Each note carries (measureIdx, inBarQuarters) — OSMD's iterator
-    // exposes the same coordinates via CurrentMeasureIndex and
-    // currentTimeStamp. So we walk the iterator until its position
-    // matches the target's, with no parallel step counter to drift.
+    // Each note carries (measureIdx, inBarQuarters); OSMD's iterator
+    // exposes the same coordinates via CurrentMeasureIndex +
+    // currentTimeStamp. We walk the iterator until they match — no
+    // parallel step counter, no drift on partial measures or grace-note
+    // throws.
     //
-    // This replaces the previous sourceStep-counting model. In partial
-    // measures (la Campanella m=5: actualDur 480 of nominal 720 ticks)
-    // OSMD's iterator visit count diverged from our manual cursorStep
-    // counter — the cursor visibly skipped notes. Driving by the
-    // iterator's own currentTimeStamp eliminates that whole class of
-    // off-by-one bugs.
-    //
-    // Backward seeks always reset() and walk forward — cursor.previous()
-    // in OSMD 1.9.x leaves the visual cursor at its previous position
-    // while the iterator state moves backward, producing a "ghost"
-    // cursor. The forward walk from reset() is reliable.
+    // Backward seeks always reset() and walk forward; cursor.previous()
+    // in OSMD 1.9.x leaves the visual cursor at the previous position
+    // while iterator state moves backward (ghost cursor).
     function setOsmdCursorToNote(note) {
       if (!osmd || !osmd.cursor || !note) return;
       const it = osmd.cursor.iterator;
@@ -6142,7 +6098,6 @@
             durMs: n.durSec * 1000 * speedFactor,
             measureIdx: n.measureIdx,
             inBarQuarters: n.inBarQuarters,
-            sourceStep: n.sourceStep,
             cursorJump: n.cursorJump,
             hit: filtered,
             missed: false,
@@ -6227,7 +6182,7 @@
           ' midi=' + n.midi +
           ' ' + n.hand +
           ' m=' + n.measureIdx +
-          ' step=' + n.sourceStep +
+          ' q=' + (n.inBarQuarters ?? 0).toFixed(2) +
           (n._filtered ? ' (filtered)' : '');
         const head = Math.min(8, psn.length);
         for (let i = 0; i < head; i++) {
@@ -6472,37 +6427,14 @@
         matchNoteOnset(detectedMidi, false);
       }
 
-      // 3. Skip past resolved notes. Guided mode: this is the single driver of OSMD
-      //    cursor advancement.
-      //
-      //    Critical: a chord (multiple notes sharing the same timeMs) corresponds
-      //    to ONE cursor step in OSMD. Calling cursor.next() per note would advance
-      //    the cursor by N steps for an N-note chord, racing the score ahead of
-      //    where the kid actually is. We only advance the cursor when crossing
-      //    into a *new* beat (different timeMs) or when an explicit cursorJump
-      //    is set (repeats). Chord-mates within the same timeMs share the step.
-      const idxBefore = practice.currentNoteIdx;
-      const driveCursor = practice.mode === 'guided';
+      // 3. Skip past resolved notes. The OSMD cursor follows currentNoteIdx
+      //    via the per-frame sync in drawPracticeLane — no need to nudge it
+      //    here (chord notes share an iterator step, so successive
+      //    setOsmdCursorToNote calls within a chord are no-ops anyway).
       while (practice.currentNoteIdx < len &&
         (notes[practice.currentNoteIdx].hit || notes[practice.currentNoteIdx].missed)) {
-        const skipped = notes[practice.currentNoteIdx];
         practice.currentNoteIdx++;
-        if (driveCursor) {
-          const next = notes[practice.currentNoteIdx];
-          const sameBeat = next && skipped.cursorJump == null
-            && Math.abs(next.timeMs - skipped.timeMs) < 5;
-          if (!sameBeat) advanceOsmdCursor(skipped.cursorJump);
-        }
       }
-      if (driveCursor && practice.currentNoteIdx !== idxBefore) {
-        osmdScrollToCursor();
-      }
-
-      // 4. (OSMD cursor advance: the per-frame sync in drawPracticeLane is
-      //     the primary driver — it positions the cursor by walking OSMD's
-      //     iterator to the active note's (measureIdx, inBarQuarters). The
-      //     advanceOsmdCursor call above just nudges by one step on note
-      //     resolve; the next frame's sync corrects any drift.)
 
       // 5. Progress UI (rate-limited) — exclude the other hand in one-hand mode
       if (timeMs - practice._lastProgUpdate > 100) {
@@ -6544,9 +6476,9 @@
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
 
       // === Per-frame cursor sync ===
-      // Sits OSMD's cursor on the note we're currently working on. Each
-      // note already carries `sourceStep` (its absolute OSMD iterator
-      // position), so this is a one-line lookup.
+      // Sits OSMD's cursor on the note we're currently working on, using
+      // (measureIdx, inBarQuarters) → setOsmdCursorToNote walks OSMD's
+      // iterator natively. No shadow step counter, no parallel timeline.
       //
       // Which note is "current":
       // - rhythm/listen: the latest note whose timeMs <= real elapsed.
@@ -6554,10 +6486,9 @@
       //   as the kid resolves notes).
       //
       // Between two consecutive notes the cursor stays on the earlier
-      // one. We don't synthesise rest-step movement — OSMD's iterator
-      // step indices aren't uniformly spaced in time (multi-voice rests,
-      // tempo directions, dotted rhythms all break the uniformity), so
-      // any time-based interpolation would visibly drift on some scores.
+      // one — we don't synthesise rest-step movement (intermediate steps
+      // aren't uniformly spaced in time on multi-voice scores, so any
+      // synthesised pacing would visibly drift).
       if (osmdVisible && practice.sectionNotes.length > 0) {
         const notes = practice.sectionNotes;
         let targetIdx;

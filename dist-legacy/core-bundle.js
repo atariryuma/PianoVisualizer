@@ -2141,7 +2141,6 @@ var PianoCore = (() => {
       totalSec: 0,
       sections: [],
       playbackOrder: [],
-      measureToCursorStep: [],
       _loaded: false,
       _loadingPromise: null,
       _isUser: true,
