@@ -4004,6 +4004,35 @@
           leadingQuarterBpm = 72;
           leadingSource = 'default (no marking)';
         }
+
+        // === Tempo-direction snap to measure boundary ===
+        // MusicXML exporters often place tempo <direction> elements in
+        // document order, which lands them AFTER one or more notes of the
+        // measure they're meant to govern. Reader's intent: "this whole
+        // measure plays at the new tempo." Strict-position playback: "the
+        // first N notes still use the previous measure's tempo, then it
+        // changes mid-bar." la Campanella m=5 is the canonical case — the
+        // ♪=194 metronome lives at inBarDiv=120 (after the 3rd 16th), so
+        // the first two pickup sixteenths play at the carried-in bpm (94,
+        // from m=4) and notes 3+ snap to 97. The kid sees the cursor
+        // "lurch ahead" at note 3 because the inter-note spacing visibly
+        // shrinks.
+        // Heuristic: a measure's FIRST tempo event that sits in the early
+        // half (< durationDiv/2) and differs from the carried-in bpm is
+        // promoted to inBarDiv=0 — i.e. takes effect from the bar's start.
+        // Mid-bar rallentandos (further events) keep their actual position.
+        let carriedQBpm = leadingQuarterBpm;
+        for (const meas of out) {
+          const ev0 = meas.tempoEvents[0];
+          if (
+            ev0 && ev0.inBarDiv > 0 && ev0.inBarDiv < meas.durationDiv / 2 &&
+            Math.abs(ev0.qBpm - carriedQBpm) > 0.01
+          ) {
+            ev0.inBarDiv = 0;
+            ev0.src = (ev0.src || '') + ' [snapped to bar start]';
+          }
+          for (const ev of meas.tempoEvents) carriedQBpm = ev.qBpm;
+        }
         return { measures: out, leadingQuarterBpm, leadingSource };
       } catch (e) {
         console.warn('[parseScoreTimingFromXml] failed:', e);
