@@ -2083,6 +2083,17 @@
       activePlayFloor: 0.2,
     };
 
+    // Chord aggregation window — Phase 0b.3: delegated to
+    // @piano/core/audio/chord-window. Reducer mutates midiState's recentOnsets
+    // / lastChordName / lastChordTimeMs in place; downstream renderers read
+    // those fields off the same object so wiring is one call per onset.
+    const CW_OPTS = {
+      windowMs: 80,
+      minNotes: 3,
+      repeatCooldownMs: 600,
+      detectChord,
+    };
+
     function updateGrowthTrend(timeMs) {
       const result = PianoCore.updateGrowthTrend(
         state.qualityHistory,
@@ -2967,10 +2978,9 @@
       // Drop any held MIDI keys / sustain so the next session starts clean.
       midiState.activeNotes.clear();
       midiState.sustainedNotes.clear();
-      midiState.recentOnsets.length = 0;
       midiState.sustainOn = false;
-      midiState.lastChordName = '';
-      midiState.lastChordTimeMs = 0;
+      // Chord-window fields cleared via the dedicated reducer reset.
+      PianoCore.resetChordWindowState(midiState);
       // Drop the BLE-redelivery dedupe cache too; otherwise a long mic-only
       // session that included a stray MIDI note can theoretically swallow
       // the first MIDI note after a reconnect (same `(midi<<8)|velocity`
@@ -5600,19 +5610,9 @@
         state.lastSilenceStartMs = -1;
       }
 
-      // In-place trim of the chord-window deque to avoid per-event allocation.
-      const recents = midiState.recentOnsets;
-      while (recents.length && now - recents[0].timeMs >= 80) recents.shift();
-      recents.push({ midi: midiNum, timeMs: now });
-      if (recents.length >= 3) {
-        const chord = detectChord(recents.map(o => o.midi));
-        if (chord && (chord !== midiState.lastChordName || now - midiState.lastChordTimeMs > 600)) {
-          midiState.lastChordName = chord;
-          midiState.lastChordTimeMs = now;
-          // Free-play also runs the glow effect; practice just shows the name quietly.
-          if (!practice.enabled) effectGlowPulse();
-        }
-      }
+      const cw = PianoCore.applyOnsetToWindow(midiState, midiNum, now, CW_OPTS);
+      // Free-play also runs the glow effect; practice just shows the name quietly.
+      if (cw.emitted && !practice.enabled) effectGlowPulse();
     }
 
     function onMidiNoteOff(midiNum) {

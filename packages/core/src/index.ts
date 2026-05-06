@@ -159,6 +159,19 @@ export type { PitchStabilityState, PitchStabilityOptions } from './state/pitch-s
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
+// === Audio: chord aggregation window (debounced multi-note → chord name) ===
+export {
+  initChordWindowState,
+  resetChordWindowState,
+  applyOnsetToWindow,
+} from './audio/chord-window';
+export type {
+  ChordWindowState,
+  ChordWindowOptions,
+  ChordWindowEvent,
+  ChordWindowResult,
+} from './audio/chord-window';
+
 // === Audio: YIN pitch detection ===
 export { detectPitchYIN, freqToNote } from './audio/yin';
 export type { YinOptions, YinResult } from './audio/yin';

@@ -60,6 +60,7 @@ var PianoCore = (() => {
     applyMidiNoteOn: () => applyMidiNoteOn,
     applyOnsetPitch: () => applyOnsetPitch,
     applyOnsetToHistory: () => applyOnsetToHistory,
+    applyOnsetToWindow: () => applyOnsetToWindow,
     applyQuestTick: () => applyQuestTick,
     autoSectionDefs: () => autoSectionDefs,
     buildAudioGraph: () => buildAudioGraph,
@@ -115,6 +116,7 @@ var PianoCore = (() => {
     getNoteColor: () => getNoteColor,
     initAgcState: () => initAgcState,
     initBackground: () => initBackground,
+    initChordWindowState: () => initChordWindowState,
     initEncouragementState: () => initEncouragementState,
     initFlowState: () => initFlowState,
     initMidiState: () => initMidiState,
@@ -140,6 +142,7 @@ var PianoCore = (() => {
     practiceElapsedMs: () => practiceElapsedMs,
     project3D: () => project3D,
     recoverAudioContext: () => recoverAudioContext,
+    resetChordWindowState: () => resetChordWindowState,
     resetEncouragementState: () => resetEncouragementState,
     resetFlowState: () => resetFlowState,
     resetMidiState: () => resetMidiState,
@@ -1477,6 +1480,41 @@ var PianoCore = (() => {
     const quality = CHORD_DICT[sig];
     if (quality === void 0) return null;
     return NOTE_NAMES[(root % 12 + 12) % 12] + quality;
+  }
+
+  // src/audio/chord-window.ts
+  function initChordWindowState() {
+    return {
+      recentOnsets: [],
+      lastChordName: "",
+      lastChordTimeMs: 0
+    };
+  }
+  function resetChordWindowState(state) {
+    state.recentOnsets.length = 0;
+    state.lastChordName = "";
+    state.lastChordTimeMs = 0;
+  }
+  function applyOnsetToWindow(state, midi, timeMs, opts) {
+    const recents = state.recentOnsets;
+    while (recents.length > 0 && timeMs - recents[0].timeMs >= opts.windowMs) {
+      recents.shift();
+    }
+    recents.push({ midi, timeMs });
+    if (recents.length < opts.minNotes) {
+      return { emitted: null };
+    }
+    const midis = recents.map((e) => e.midi);
+    const chord = opts.detectChord(midis);
+    if (!chord) {
+      return { emitted: null };
+    }
+    if (chord === state.lastChordName && timeMs - state.lastChordTimeMs <= opts.repeatCooldownMs) {
+      return { emitted: null };
+    }
+    state.lastChordName = chord;
+    state.lastChordTimeMs = timeMs;
+    return { emitted: chord };
   }
 
   // src/audio/yin.ts
