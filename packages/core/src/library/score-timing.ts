@@ -300,3 +300,55 @@ export function parseScoreTimingFromXml(
     return null;
   }
 }
+
+/**
+ * Per-measure leading quarter-BPM — the tempo carried INTO each
+ * measure (before any of that measure's own tempo events fire).
+ * measureBpms[0] is always `scoreTiming.leadingQuarterBpm`; subsequent
+ * entries are the LAST segBpm from the previous measure.
+ *
+ * The note extractor uses this as a carry-in tempo when walking
+ * intra-measure positions via `timeAtInBarQuarters` — that helper
+ * needs the measure-start tempo separately from any mid-bar events.
+ */
+export function computeLeadingMeasureBpms(scoreTiming: ScoreTiming): number[] {
+  const bpms = new Array<number>(scoreTiming.measures.length).fill(0);
+  let cur = scoreTiming.leadingQuarterBpm;
+  for (let i = 0; i < scoreTiming.measures.length; i++) {
+    bpms[i] = cur;
+    for (const ev of scoreTiming.measures[i].tempoEvents) cur = ev.qBpm;
+  }
+  return bpms;
+}
+
+/**
+ * Given a position within a measure (in quarter-note units) and the
+ * tempo carried into that measure, walk the measure's tempo events to
+ * find both the elapsed seconds from bar-start and the local quarter-
+ * BPM at that position.
+ *
+ * Used by the note extractor to time notes precisely across mid-bar
+ * tempo changes — a note at inBarQuarters=2.5 in a bar with a tempo
+ * jump at inBarQuarters=1 needs the SECOND segment's bpm, not the
+ * carried-in one.
+ */
+export function timeAtInBarQuarters(
+  measure: MeasureTiming,
+  leadingMeasureBpm: number,
+  inBarQuarters: number
+): { offsetSec: number; localQBpm: number } {
+  const inBarDiv = inBarQuarters * measure.divisions;
+  let segBpm = leadingMeasureBpm;
+  let prevDiv = 0;
+  let acc = 0;
+  for (const ev of measure.tempoEvents) {
+    if (ev.inBarDiv > inBarDiv) break;
+    const segDiv = Math.max(0, ev.inBarDiv - prevDiv);
+    if (segDiv > 0) acc += ((segDiv / measure.divisions) * 60) / segBpm;
+    segBpm = ev.qBpm;
+    prevDiv = ev.inBarDiv;
+  }
+  const tailDiv = Math.max(0, inBarDiv - prevDiv);
+  if (tailDiv > 0) acc += ((tailDiv / measure.divisions) * 60) / segBpm;
+  return { offsetSec: acc, localQBpm: segBpm };
+}

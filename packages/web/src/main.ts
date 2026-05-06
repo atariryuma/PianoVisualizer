@@ -27,6 +27,7 @@ import * as opensheetmusicdisplay from 'opensheetmusicdisplay';
 import JSZip from 'jszip';
 import * as PianoCore from '@piano/core';
 import * as AudioScheduler from './audio-scheduler';
+import * as NoteExtractor from './note-extractor';
 
 declare global {
   interface Window {
@@ -35,6 +36,7 @@ declare global {
     JSZip: typeof JSZip;
     PianoCore: typeof PianoCore;
     AudioScheduler: typeof AudioScheduler;
+    NoteExtractor: typeof NoteExtractor;
   }
 }
 
@@ -43,6 +45,7 @@ declare global {
 (globalThis as unknown as Window).JSZip = JSZip;
 (globalThis as unknown as Window).PianoCore = PianoCore;
 (globalThis as unknown as Window).AudioScheduler = AudioScheduler;
+(globalThis as unknown as Window).NoteExtractor = NoteExtractor;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

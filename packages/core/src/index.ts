@@ -268,7 +268,11 @@ export { parseMusicXmlMetadata } from './library/musicxml-meta';
 export type { MusicXmlMetadata, MetaParseOptions } from './library/musicxml-meta';
 
 // === Library: MusicXML score-timing (per-measure tempo + divisions) ===
-export { parseScoreTimingFromXml } from './library/score-timing';
+export {
+  parseScoreTimingFromXml,
+  computeLeadingMeasureBpms,
+  timeAtInBarQuarters,
+} from './library/score-timing';
 export type {
   ScoreTiming,
   MeasureTiming,

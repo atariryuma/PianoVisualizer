@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { parseScoreTimingFromXml } from '../src/library/score-timing';
+import {
+  computeLeadingMeasureBpms,
+  parseScoreTimingFromXml,
+  timeAtInBarQuarters,
+} from '../src/library/score-timing';
+import type { MeasureTiming } from '../src/library/score-timing';
 
 let parser: { parseFromString(text: string, type: string): Document };
 
@@ -304,5 +309,92 @@ describe('parseScoreTimingFromXml — bar-boundary tempo snap', () => {
 describe('parseScoreTimingFromXml — robustness', () => {
   it('returns null on completely unparseable input (no part-list)', () => {
     expect(parseScoreTimingFromXml('not xml at all', { parser })).toBeNull();
+  });
+});
+
+const meas = (over: Partial<MeasureTiming> = {}): MeasureTiming => ({
+  tempoEvents: [],
+  timeSig: { beats: 4, beatType: 4 },
+  divisions: 4,
+  implicit: false,
+  durationDiv: 16,
+  actualDiv: 16,
+  ...over,
+});
+
+describe('computeLeadingMeasureBpms', () => {
+  it('all bars at the leading bpm when there are no tempo events', () => {
+    const r = computeLeadingMeasureBpms({
+      measures: [meas(), meas(), meas()],
+      leadingQuarterBpm: 60,
+      leadingSource: 'test',
+    });
+    expect(r).toEqual([60, 60, 60]);
+  });
+
+  it('a tempo event in measure 0 carries forward to measure 1', () => {
+    const r = computeLeadingMeasureBpms({
+      measures: [meas({ tempoEvents: [{ inBarDiv: 8, qBpm: 120, src: 't' }] }), meas(), meas()],
+      leadingQuarterBpm: 60,
+      leadingSource: 'test',
+    });
+    // Bar 0 carries in 60; bar 1 picks up 120 from bar 0's last segment.
+    expect(r).toEqual([60, 120, 120]);
+  });
+
+  it("bar 0's leading bpm is always scoreTiming.leadingQuarterBpm", () => {
+    // Even with an inBarDiv=0 tempo event in measure 0, the leading
+    // quarter-bpm should still be reported as the carry-in (matches
+    // what the legacy walker produces).
+    const r = computeLeadingMeasureBpms({
+      measures: [meas({ tempoEvents: [{ inBarDiv: 0, qBpm: 200, src: 't' }] })],
+      leadingQuarterBpm: 72,
+      leadingSource: 'test',
+    });
+    expect(r[0]).toBe(72);
+  });
+});
+
+describe('timeAtInBarQuarters', () => {
+  it('constant tempo: offsetSec = inBarQuarters * 60 / bpm', () => {
+    const r = timeAtInBarQuarters(meas(), 60, 2);
+    expect(r.offsetSec).toBeCloseTo(2, 6);
+    expect(r.localQBpm).toBe(60);
+  });
+
+  it('mid-bar tempo change shifts both offsetSec and localQBpm', () => {
+    // Bar with event at inBarDiv=8 (= inBarQuarters=2) changing 60→120.
+    // For inBarQuarters=3 (inBarDiv=12):
+    //   first 8 div (= 2 quarters) at 60 = 2 sec
+    //   next 4 div (= 1 quarter) at 120 = 0.5 sec
+    //   total = 2.5 sec, local bpm = 120
+    const r = timeAtInBarQuarters(
+      meas({ tempoEvents: [{ inBarDiv: 8, qBpm: 120, src: 't' }] }),
+      60,
+      3
+    );
+    expect(r.offsetSec).toBeCloseTo(2.5, 6);
+    expect(r.localQBpm).toBe(120);
+  });
+
+  it('inBarQuarters=0 returns 0 sec at the carried-in bpm', () => {
+    const r = timeAtInBarQuarters(
+      meas({ tempoEvents: [{ inBarDiv: 4, qBpm: 200, src: 't' }] }),
+      60,
+      0
+    );
+    expect(r.offsetSec).toBe(0);
+    expect(r.localQBpm).toBe(60); // still at the carry-in (event hasn't fired)
+  });
+
+  it('event at inBarDiv=0 immediately overrides the carried-in bpm', () => {
+    const r = timeAtInBarQuarters(
+      meas({ tempoEvents: [{ inBarDiv: 0, qBpm: 120, src: 't' }] }),
+      60,
+      2
+    );
+    // Whole 2 quarters at 120 → 1 sec
+    expect(r.offsetSec).toBeCloseTo(1, 6);
+    expect(r.localQBpm).toBe(120);
   });
 });
