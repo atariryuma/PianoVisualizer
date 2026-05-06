@@ -4751,6 +4751,12 @@
     function positionCustomCursor(x, y, h) {
       const el = DOM.osmdCustomCursor;
       if (!el || !Number.isFinite(x) || !Number.isFinite(y)) return;
+      // Defensive re-attach: an OSMD reload, a failing render() retry, or any
+      // future container.innerHTML='' would detach the cursor and freeze it
+      // in space invisibly. isConnected is a single property read.
+      if (!el.isConnected && DOM.osmdContainer) {
+        DOM.osmdContainer.appendChild(el);
+      }
       el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
       el.style.height = (h || 50) + 'px';
       _lastCursorY = y;
@@ -7343,6 +7349,12 @@
           osmd = null;
         }
         DOM.osmdContainer.innerHTML = '';
+        // innerHTML='' detaches our #osmdCustomCursor (it's a child of the
+        // container so it scrolls with the score SVG). Put it back — the JS
+        // reference is still valid; only the DOM connection was severed.
+        if (DOM.osmdCustomCursor) {
+          DOM.osmdContainer.appendChild(DOM.osmdCustomCursor);
+        }
       }
       DOM.songTitle.textContent = t(song.titleKey);
       DOM.songComposer.textContent = t(song.composerKey);

@@ -24,8 +24,13 @@
 // 2026-05-06: bumped to v7 — removed the legacy piano-visualizer.html
 // redirect stub. Old shell entries cached under v6 are flushed on activate
 // so a stale redirect can't shadow the canonical index.html navigation.
+// 2026-05-06: bumped to v8 — fix #osmdCustomCursor disappearing after song
+// switch. selectSong()'s `osmdContainer.innerHTML = ''` was wiping our
+// cursor element along with the previous score. v7 clients see a frozen
+// detached cursor; v8 re-attaches after the wipe and defensively in
+// positionCustomCursor (isConnected guard).
 
-const CACHE = 'piano-viz-v7';
+const CACHE = 'piano-viz-v8';
 const APP_SHELL = [
   './',
   './index.html',
