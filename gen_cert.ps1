@@ -21,6 +21,11 @@
 #   .\gen_cert.ps1                       # auto-detect LAN IPs
 #   .\gen_cert.ps1 -IPs 192.168.1.50     # override LAN IPs
 
+[Diagnostics.CodeAnalysis.SuppressMessage(
+    'PSAvoidUsingPlainTextForPassword',
+    'Password',
+    Justification = 'Dev-only PFX password (default "piano123"). https_server.ps1 reads the same value as plain text from $env:PIANO_CERT_PASS, so SecureString here would just be re-exposed there. Not a production credential.'
+)]
 param(
     [string[]]$IPs = @(),
     [string]$Password = ""
@@ -70,7 +75,19 @@ Write-Host "Subject Alt Names: $($sanList -join ', ')" -ForegroundColor Cyan
 # `-install` is idempotent: it returns quickly if the root is already in the
 # OS trust stores. On first run it creates the root in `mkcert -CAROOT` and
 # may prompt for elevation to add it to the system store.
-Write-Host "Verifying mkcert root CA is installed..." -ForegroundColor Cyan
+#
+# Why scope to `system,nss`: by default mkcert also tries to install into
+# Java's cacerts when it detects a JDK on PATH (e.g. Eclipse Adoptium). The
+# cacerts file under `C:\Program Files\...\jdk-*\lib\security\` requires
+# admin to write, so a non-elevated `gen_cert.ps1` aborts with
+#   `keytool エラー: ... cacerts (アクセスが拒否されました)`
+# even though the Windows store install just succeeded. We don't access this
+# dev server from any Java process, so scoping to `system` (Windows trust
+# store) + `nss` (Firefox/NSS, no admin needed) covers every browser path
+# we actually use without requiring elevation.
+$env:TRUST_STORES = "system,nss"
+
+Write-Host "Verifying mkcert root CA is installed (TRUST_STORES=$env:TRUST_STORES)..." -ForegroundColor Cyan
 & mkcert -install
 if ($LASTEXITCODE -ne 0) { throw "mkcert -install failed (exit $LASTEXITCODE)" }
 
