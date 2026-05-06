@@ -358,7 +358,7 @@
      * @property {SectionDef[]=} sectionDefs
      * @property {OsmdLikeNote[]|null} notes
      * @property {number} totalSec
-     * @property {Array<{id:string, nameKey:string, descKey?:string, startMeasure?:number, startSec?:number, endSec?:number, isBoss?:boolean}>} sections
+     * @property {Array<{id:string, nameKey:string, descKey?:string, startMeasure?:number, startSec:number, endSec:number, isBoss?:boolean}>} sections
      * @property {Array<{measure:number, repeat?:number}>} playbackOrder
      * @property {boolean} _loaded
      * @property {Promise<unknown>|null} _loadingPromise
@@ -929,12 +929,12 @@
     let onsetAnalyser = /** @type {AnalyserNode} */ (/** @type {unknown} */ (null));
     /** @type {GainNode} */
     let gainNode = /** @type {GainNode} */ (/** @type {unknown} */ (null));
-    /** @type {Uint8Array} */
-    let dataArray = /** @type {Uint8Array} */ (/** @type {unknown} */ (null));
-    /** @type {Float32Array} */
-    let freqArray = /** @type {Float32Array} */ (/** @type {unknown} */ (null));
-    /** @type {Uint8Array} */
-    let onsetDataArray = /** @type {Uint8Array} */ (/** @type {unknown} */ (null));
+    /** @type {Uint8Array<ArrayBuffer>} */
+    let dataArray = /** @type {Uint8Array<ArrayBuffer>} */ (/** @type {unknown} */ (null));
+    /** @type {Float32Array<ArrayBuffer>} */
+    let freqArray = /** @type {Float32Array<ArrayBuffer>} */ (/** @type {unknown} */ (null));
+    /** @type {Uint8Array<ArrayBuffer>} */
+    let onsetDataArray = /** @type {Uint8Array<ArrayBuffer>} */ (/** @type {unknown} */ (null));
     /** @type {MediaStream | null} v13: keep ref so we can stop tracks when MIDI takes over */
     let micStream = null;
     /** @type {MediaStreamAudioSourceNode | null} v13: rewireable source between gainNode and the live mic */
@@ -1265,13 +1265,14 @@
     // ========================================
     // Theme switching + persisted user preferences
     // ========================================
-    const prefs = {
+    /** @type {PrefsShape} */
+    const prefs = /** @type {any} */ ({
       theme: 0,
       synesthesia: false,
       audioOffsetMs: null,   // null = auto-detect from AudioContext.outputLatency
       debug: false,
       lang: 'en'             // 'en' | 'jp' — practice-flow UI language
-    };
+    });
     /** @template T @param {string} key @param {T} fallback @returns {T} */
     function loadJSON(key, fallback) {
       try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
@@ -1875,9 +1876,9 @@
       if (!Number.isFinite(v)) return;
       prefs.audioOffsetMs = v;
       if (typeof practice !== 'undefined') practice.audioOffsetMs = v;
-      DOM.audioOffsetVal.textContent = v;
+      DOM.audioOffsetVal.textContent = String(v);
       DOM.audioOffsetAuto.textContent = '';
-      clearTimeout(_audioOffsetSaveTimer);
+      if (_audioOffsetSaveTimer) clearTimeout(_audioOffsetSaveTimer);
       _audioOffsetSaveTimer = setTimeout(savePrefs, 250);
     });
     DOM.audioOffsetReset.addEventListener('click', () => {
@@ -2443,6 +2444,7 @@
       // A quest just completed \u2014 fire the celebration UI
       if (result.completedThisTick) {
         const quest = CONFIG.QUESTS.find((q) => q.id === result.completedThisTick);
+        if (!quest) return; // unknown quest id \u2014 defensive, shouldn't happen
         console.log('Quest Completed: ' + t(quest.nameKey));
         DOM.toastTitle.textContent = '\u2728 ' + t(quest.nameKey) + ' \u2728';
         DOM.toastSub.textContent =
@@ -3201,7 +3203,7 @@
     function renderSessionSummaryText(animate) {
       const s = state._lastSummary;
       if (!s) return;
-      DOM.sumCombo.textContent = s.bestCombo;
+      DOM.sumCombo.textContent = String(s.bestCombo);
       DOM.sumStage.textContent = stageLabel(CONFIG.STAGES[s.stageIdx]) || '-';
       DOM.sumTime.textContent = formatTime(s.elapsed);
 
