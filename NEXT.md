@@ -26,8 +26,14 @@ helpers (60+ functions across `updatePractice`, `loop`, `onMidiNoteOn`, the
 PianoCore adapter arrows, the WebMIDI port handlers, the OSMD cursor walker, the
 user-songs catalog, …) carry per-function `@param` JSDoc.
 `useUnknownInCatchVariables: false` cleared the `catch (e)` → `e.message`
-strict-mode pile in one stroke. **`@ts-check` residual count: 1,041 → 207**
-(-834, -80%). SW takeover hardened. 786 vitest cases, `pnpm verify` clean.)
+strict-mode pile in one stroke. Audio-graph singletons (`audioCtx`, `gainNode`,
+`analyser`, `dataArray`, …) are pinned non-null at declaration via a `null`-cast
+and `Uint8Array<ArrayBuffer>` generic; the canvas 2D context, the `ctx`-shadow
+draw helpers, the `pendingHolds` map, the `UserSongRecord.xmlText` field, and
+the `bleMidi._disconnectHandler` slot all type-check at every read site.
+**`@ts-check` residual count: 1,041 → 91** (-950, -91%). SW takeover hardened;
+mkcert migration cleared Chromium's SW SSL validator on the LAN dev server. 786
+vitest cases, `pnpm verify` clean.)
 
 ---
 
@@ -92,15 +98,37 @@ no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
 ## 1. Whole-file `// @ts-check` — once the residual count is manageable
 
 **What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
-errors. Current residual is **207** (down from 629 after shape typedefs +
-`@param` sweep + null-pinning + catch-strict relaxation). The remaining mix is
-TS2339 (~60, mostly HTMLElement-cast sites where call sites read `.value` /
-`.disabled` / `.style` / `.files` on the generic DOM bag entries — fix by
-typed-element casts at access points, ~30 sites), TS18047 (~27, mostly `port` /
-`e.port` / `input` / `rec` from MIDI / catch / IDB result paths), TS2322 (~24,
-return-type mismatches at the @piano/core boundary), and TS2345 (~24, arg-type
-mismatches when shell objects are handed to typed core functions). Each pile is
-well under 35 — push to ~50 then flip the ratchet.
+errors. Current residual is **91** (down from 629 after shape typedefs +
+`@param` sweep + null-pinning + catch-strict relaxation + DOM cast sweep +
+boundary type fixes + mkcert migration). The remaining mix is largely genuine
+boundary engineering — each error is its own per-site analysis, not a pattern
+that sweeps clear:
+
+- TS2345 (~17): arg-type mismatches at `@piano/core` boundaries. Several are
+  `SectionDef[] | undefined` vs `BuildSectionsInputDef[]`, `string | null` vs
+  `string | undefined`, `MIDIPort` vs `MIDIInput` (the inputs map iteration),
+  and the legacy shell's mxlBlob+xmlText literal-type narrowing. Fix mostly by
+  `?? undefined` coercion or inline `/** @type {...} */` casts at the call site.
+- TS2322 (~17): assignment mismatches. Includes the legacy
+  `_xmlText: string | null` field on SongRec vs the @piano/core
+  `xmlText?: string`, the `setupHiDPICanvas` return inferred from
+  `getContext('2d')` (CanvasRenderingContext2D|null vs strict
+  CanvasRenderingContext2D), and a few "number → string textContent" pin-ups
+  still hiding in the result/section panels.
+- TS2339 (~11): scattered DOM property reads on Element/HTMLElement where the
+  call site needs HTMLInputElement / HTMLButtonElement / HTMLLabelElement, plus
+  the `_xmlText`/`titleOverride` field set fixed in this commit but with a few
+  remaining echoes.
+- TS7005 (~12) + TS7034 (~6): a handful of `let X` decls that still need a
+  `@type` annotation — closure-captured arrays / Promises in the user-songs /
+  settings panel scope.
+
+The remaining errors don't share a single root-cause that sweeps them all out —
+the typedefs / shape work is done. From here, every fix is "read the call site,
+decide whether to widen the typedef in @piano/core or cast at the shell call
+site." Budget ~3-4h of careful per-error work to drive to zero, or accept ~91 as
+the floor and flip the ratchet with `// @ts-check` set on a region-by-region
+basis as new modules carve out.
 
 **Acceptance**:
 
