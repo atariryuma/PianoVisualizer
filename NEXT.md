@@ -55,45 +55,47 @@ seeded at the top of `legacy-app.js`. 688 vitest cases.)
 | 33  | `state/wake-up-flash.ts`      | 14    | `packages/core/src/state/wake-up-flash.ts`      |
 | 34  | `state/streak.ts`             | 19    | `packages/core/src/state/streak.ts`             |
 | 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
+| 36  | `library/score-timing.ts`     | 16    | `packages/core/src/library/score-timing.ts`     |
 
-**Status: 688/688 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 704/704 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
-The OSMD adapter (interface in core + thin wrapper in legacy-app.js) and the
-Phase 0c kickoff (allowJs, ES-module conversion via `export {}`,
-`@ts-expect-error` shim removed, boundary `@typedef`s) both landed in this
-session.
+This session also added:
+
+- `OsmdAdapter` interface in `packages/core/src/adapters/` (8 type-shape
+  tests) + thin implementation in `legacy-app.js`.
+- Phase 0c kickoff: `allowJs: true`, `legacy-app.js` is a real ES module
+  (`export {}`), `@ts-expect-error` shim removed, boundary `@typedef`s for the
+  long-lived shapes (Note / PracticeState / MidiState / Prefs).
+- First Phase-0c-style typed module extraction: `score-timing.ts` — the MusicXML
+  per-measure tempo / divisions / actualDiv parser, with injectable DOMParser so
+  it tests cleanly in node. legacy-app.js shrank by ~190 lines.
 
 ---
 
 ## ⏳ In queue
 
-## 1. Phase 0c — extract first typed module from `legacy-app.js`
+## 1. Extract `library/measure-timing.ts` (the second pure parser)
 
-**What**: Pick a small, self-contained chunk of `legacy-app.js` and convert it
-to a `.ts` module under `packages/web/src/`. Candidate chunks (each is mostly
-free-standing, leaf-level):
+**What**: Move `buildMeasureTimingFromXml` from `legacy-app.js` into
+`@piano/core/library/measure-timing.ts`. It consumes the `ScoreTiming` output of
+`parseScoreTimingFromXml` (already extracted) and produces per-measure
+`(startSec, durationSec)` accounting for mid-bar tempo changes — the audio
+scheduler's source of truth.
 
-- `loadCurrentSong` + `practice.progress` save/load (persistence layer)
-- The XML measure-timing parser (`parseScoreTimingFromXml` — already pure-ish,
-  reads MusicXML strings, returns plain objects)
-- The auto-section UI helpers (`openSectionEditor`, `renderSectionList`)
-- The result / summary card rendering helpers
-
-**Why**: Now that allowJs is on and `OsmdAdapter` exists, a typed module CAN
-talk back to the still-legacy file via the boundary @typedefs. This is the first
-of probably 8–12 typed modules that will collectively shrink `legacy-app.js` to
-a thin entry-shaped glue.
+**Why**: Companion to `score-timing.ts`. Pure (string in, plain objects out),
+already tested via OSMD A/B on real scores. Same extraction shape as
+score-timing, ~80 lines.
 
 **Acceptance**:
 
-- [ ] One chunk picked + carved into `packages/web/src/<name>.ts`
-- [ ] Old function deleted from `legacy-app.js`; call sites import from the new
-      module
-- [ ] Vitest cases for the new module if it has pure parts
-- [ ] `pnpm verify` clean
+- [ ] `parseScoreTiming` output is consumed via the existing `ScoreTiming` type
+      from core
+- [ ] Vitest cases: constant tempo, mid-bar ramp, anacrusis, partial measure
+      (`actualDiv < durationDiv`)
+- [ ] legacy-app.js shrinks by ~80 lines
 
-**Est**: ~300 lines / ~100 tests, depending on chunk choice.
+**Est**: ~120 lines core + ~150 lines tests.
 
 ## 2. Enable `checkJs` per-region in `legacy-app.js`
 
