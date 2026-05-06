@@ -3892,10 +3892,10 @@
     // and partial-measure exporters (la Campanella m=5 case).
     const buildMeasureTimingFromXml = PianoCore.buildMeasureTimingFromXml;
 
-    // Parse the raw MusicXML to derive the actual playback order.
-    // OSMD doesn't surface <repeat>/<ending> markers via its public API
-    // (still true in 1.9.9), so we read them ourselves and build a sequence of
-    // measure indices in the order they should sound.
+    // Playback-order + note re-timer — Phase 0c: delegated to
+    // @piano/core/library/playback-order. The legacy shell keeps the
+    // fetch + xmlText caching dance (handles blob: URLs from just-
+    // imported user songs and races against a rapid selectSong).
     //
     // `forSong` is captured by `loadCurrentScore` (the song record at the
     // time loading started). Reading the global `currentSong` here would
@@ -3904,152 +3904,28 @@
     // a foreign repeat structure into the in-flight song's note timeline.
     async function fetchPlaybackOrder(forSong) {
       const targetSong = forSong || currentSong;
-      // Prefer the pre-decoded xmlText cached on the song record (set by
-      // addUserSongFromBlob). Avoids a second fetch which on Android Chrome
-      // can hang against blob: URLs of just-imported songs.
       let text = targetSong._xmlText;
       if (!text) {
         const res = await fetch(targetSong.xmlUrl);
         if (!res.ok) throw new Error('XML fetch failed: ' + res.status);
         text = await res.text();
       }
-      const dom = new DOMParser().parseFromString(text, 'text/xml');
-      // Use first part only; both staves of a piano grand staff usually share repeats.
-      const partEls = dom.querySelectorAll('part');
-      if (!partEls.length) return [];
-      const measureEls = partEls[0].querySelectorAll('measure');
-
-      const info = [];
-      measureEls.forEach((m) => {
-        const startsEnding = {};
-        const stopsEnding = {};
-        for (const e of m.querySelectorAll('ending')) {
-          const num = e.getAttribute('number');
-          const type = e.getAttribute('type');
-          if (type === 'start') startsEnding[num] = true;
-          if (type === 'stop' || type === 'discontinue') stopsEnding[num] = true;
-        }
-        let fwdRepeat = false, bwdRepeat = false;
-        for (const r of m.querySelectorAll('barline repeat')) {
-          const dir = r.getAttribute('direction');
-          if (dir === 'forward') fwdRepeat = true;
-          if (dir === 'backward') bwdRepeat = true;
-        }
-        // D.C. / D.S. / Coda / Fine markers. MusicXML places these on
-        // <direction><sound dacapo|dalsegno|tocoda|coda|segno|fine="..."/>;
-        // some engravers omit the <sound> and use <words> only, so check
-        // both. The current jump model handles the most common case
-        // (D.C. al Fine, simple D.C., D.S. al Coda); jumps fire at most
-        // once each so safety can't loop.
-        let dacapo = false, fine = false, tocoda = false;
-        let coda = false, segno = false, dalsegno = false;
-        for (const s of m.querySelectorAll('direction sound')) {
-          if (s.getAttribute('dacapo') === 'yes') dacapo = true;
-          if (s.getAttribute('fine') === 'yes') fine = true;
-          if (s.getAttribute('tocoda')) tocoda = true;
-          if (s.getAttribute('coda')) coda = true;
-          if (s.getAttribute('segno')) segno = true;
-          if (s.getAttribute('dalsegno')) dalsegno = true;
-        }
-        for (const w of m.querySelectorAll('direction words')) {
-          const text = (w.textContent || '').trim();
-          if (/^D\.?C\./i.test(text) || /Da\s*Capo/i.test(text)) dacapo = true;
-          if (/^Fine\b/i.test(text)) fine = true;
-          if (/^To\s*Coda/i.test(text)) tocoda = true;
-          if (/^D\.?S\./i.test(text) || /Dal\s*Segno/i.test(text)) dalsegno = true;
-        }
-        info.push({
-          startsEnding, stopsEnding, fwdRepeat, bwdRepeat,
-          dacapo, fine, tocoda, coda, segno, dalsegno
-        });
-      });
-
-      // Pre-scan for segno / coda landing positions (used by D.S. and
-      // To Coda jumps). First occurrence wins — multi-segno scores are
-      // rare and we'd need name matching for those.
-      let segnoIdx = -1, codaIdx = -1;
-      for (let k = 0; k < info.length; k++) {
-        if (info[k].segno && segnoIdx < 0) segnoIdx = k;
-        if (info[k].coda && codaIdx < 0) codaIdx = k;
-      }
-
-      const order = [];
-      const repeatTaken = new Set();   // forward-repeat positions already done
-      let i = 0;
-      let repeatStartIdx = 0;
-      let dcFired = false;             // D.C. already taken
-      let dsFired = false;             // D.S. already taken
-      let safety = 0;
-      while (i < info.length && safety < info.length * 8) {
-        safety++;
-        const m = info[i];
-        // Skip 1st-ending volta on the second pass (jump forward to 2nd ending or out)
-        if (m.startsEnding['1'] && repeatTaken.has(repeatStartIdx)) {
-          let j = i + 1;
-          while (j < info.length
-            && !info[j].startsEnding['2']
-            && !info[j].startsEnding['3']) j++;
-          i = j;
-          continue;
-        }
-        if (m.fwdRepeat) repeatStartIdx = i;
-        order.push(i);
-        // Fine — only stops the piece on the post-D.C./D.S. pass.
-        if ((dcFired || dsFired) && m.fine) break;
-        // To Coda — only on the post-D.C./D.S. pass; jump to the coda marker.
-        if ((dcFired || dsFired) && m.tocoda && codaIdx >= 0) {
-          i = codaIdx;
-          continue;
-        }
-        if (m.bwdRepeat && !repeatTaken.has(repeatStartIdx)) {
-          repeatTaken.add(repeatStartIdx);
-          i = repeatStartIdx;
-          continue;
-        }
-        // D.C. — back to the very beginning. Reset volta state so the
-        // second pass plays the 1st-ending volta as written (the kid
-        // hears the original phrasing again before we hit Fine / Coda).
-        if (m.dacapo && !dcFired) {
-          dcFired = true;
-          repeatTaken.clear();
-          repeatStartIdx = 0;
-          i = 0;
-          continue;
-        }
-        // D.S. — back to segno marker. Same volta-state reset.
-        if (m.dalsegno && !dsFired && segnoIdx >= 0) {
-          dsFired = true;
-          repeatTaken.clear();
-          repeatStartIdx = segnoIdx;
-          i = segnoIdx;
-          continue;
-        }
-        i++;
-      }
-      return order;
+      return PianoCore.parsePlaybackOrderFromXml(text);
     }
 
-    // Re-time the per-measure notes following the playback order, returning a flat
-    // monotonic sequence ready for the lane / Tone.js / cursor sync.
-    // Each playback note is tagged with cursorJump = measureIdx whenever the playback
-    // moves non-sequentially in the written score (back-jump or forward-skip).
+    // Re-time per-measure notes following the playback order. The core
+    // module wants explicit measureStartSec + measureDurSec arrays —
+    // compute durSec from the cumulative startSec diff (with an OSMD-
+    // shaped fallback for the last bar when the caller didn't pre-build
+    // a full timing table).
     function expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec) {
-      const byMeasure = new Map();
-      for (const n of baseNotes) {
-        let arr = byMeasure.get(n.measureIdx);
-        if (!arr) { arr = []; byMeasure.set(n.measureIdx, arr); }
-        arr.push(n);
-      }
-      // Reuse the cumulative-sum measureStartSec from extract step if provided
-      // (handles tempo changes correctly). Fall back to inline compute when
-      // called from a context that can't supply it (legacy / tests).
-      let measureStartSec, measureDurSec;
+      let measureStartSec;
+      let measureDurSec;
       if (sourceMeasureStartSec && sourceMeasureStartSec.length === measures.length) {
         measureStartSec = sourceMeasureStartSec;
         measureDurSec = new Array(measures.length).fill(0);
         for (let i = 0; i < measures.length; i++) {
           const m = measures[i];
-          // Use cumulative diff for dur — only the last bar needs its own bpm.
           if (i + 1 < measures.length) {
             measureDurSec[i] = measureStartSec[i + 1] - measureStartSec[i];
           } else {
@@ -4058,9 +3934,9 @@
           }
         }
       } else {
-        // Fallback path: cumulative sum of per-bar durations (each bar uses
-        // its own bpm). Same algorithm as extractNotesFromOsmd above; kept
-        // local so legacy callers still get tempo-correct timing.
+        // Fallback path: cumulative sum of per-bar durations from OSMD
+        // shapes. Used by legacy callers that don't pre-build a full
+        // XML timing table.
         measureStartSec = new Array(measures.length).fill(0);
         measureDurSec = new Array(measures.length).fill(0);
         let prevBpm = 72;
@@ -4072,30 +3948,10 @@
           prevBpm = bpm;
         }
       }
-      const expanded = [];
-      let cumTime = 0;
-      let prevMIdx = -1;
-      for (const mIdx of order) {
-        const measureNotes = byMeasure.get(mIdx) || [];
-        const mStart = measureStartSec[mIdx] || 0;
-        const isJump = prevMIdx >= 0 && mIdx !== prevMIdx + 1;
-        for (let j = 0; j < measureNotes.length; j++) {
-          const n = measureNotes[j];
-          expanded.push({
-            hand: n.hand,
-            midi: n.midi,
-            timeSec: cumTime + (n.timeSec - mStart),
-            durSec: n.durSec,
-            measureIdx: mIdx,
-            inBarQuarters: n.inBarQuarters,
-            cursorJump: (j === 0 && isJump) ? mIdx : null
-          });
-        }
-        cumTime += measureDurSec[mIdx] || 0.5;
-        prevMIdx = mIdx;
-      }
-      expanded.sort((a, b) => a.timeSec - b.timeSec || a.midi - b.midi);
-      return expanded;
+      return PianoCore.expandNotesByPlaybackOrder(baseNotes, order, {
+        startSec: measureStartSec,
+        durSec: measureDurSec,
+      });
     }
 
     // ============================================================
