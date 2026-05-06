@@ -3,7 +3,7 @@
   "short_name": "PianoViz",
   "description": "iPadでピアノを弾くと画面がきれいに光るアプリ",
   "lang": "ja",
-  "id": "/",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

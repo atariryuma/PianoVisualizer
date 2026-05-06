@@ -193,6 +193,13 @@ export interface SectionBuildSourceNote {
   timeSec: number;
 }
 
+/** Optional per-source-measure start time array (length = source measure
+ *  count). When provided, section starts align to the MEASURE BOUNDARY
+ *  rather than the first note's onset — this preserves leading rests
+ *  (anacrusis padding, mid-section opening rests) so the lane and the
+ *  score's rest symbols stay visually aligned. */
+export type MeasureStartSec = ReadonlyArray<number>;
+
 export interface BuiltSection<TDef extends { id: string }> {
   id: TDef['id'];
   nameKey: string;
@@ -214,9 +221,12 @@ export interface BuildSectionsInputDef {
 
 /**
  * Build per-section play windows from start-measure defs + the song's note
- * timeline. For each def, the section starts at the time of the first note
- * whose `measureIdx >= def.startMeasure`. The end is the next def's start
- * (or just past the last note for the final section).
+ * timeline. The section starts at its first measure's BOUNDARY when a
+ * measureStartSec table is supplied — this preserves leading rests
+ * (anacrusis padding / opening silence) so the lane's empty space at the
+ * top of a section visually matches the score's leading rest. Without the
+ * table we fall back to "first note's timeSec", which crops leading rests
+ * (the legacy behavior — kept so older callers still work).
  *
  * Pure: no DOM, no globals — both the bundled-song path and the user-song
  * importer call this; previously each had its own inline copy.
@@ -224,9 +234,13 @@ export interface BuildSectionsInputDef {
 export function buildSectionsFromDefs<TDef extends BuildSectionsInputDef>(
   notes: ReadonlyArray<SectionBuildSourceNote>,
   totalSec: number,
-  defs: ReadonlyArray<TDef>
+  defs: ReadonlyArray<TDef>,
+  measureStartSec?: MeasureStartSec
 ): BuiltSection<TDef>[] {
   const startSecs = defs.map((d) => {
+    if (measureStartSec && d.startMeasure >= 0 && d.startMeasure < measureStartSec.length) {
+      return measureStartSec[d.startMeasure];
+    }
     const first = notes.find((n) => n.measureIdx >= d.startMeasure);
     return first ? first.timeSec : totalSec;
   });

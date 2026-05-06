@@ -122,6 +122,10 @@ export function buildAudioGraph(ctx: AudioContextLike, opts: AudioGraphOptions):
   gain.connect(onsetAnalyser);
 
   const dataArray = new Uint8Array(mainAnalyser.frequencyBinCount);
+  // Misnamed — `freqArray` is consumed by getFloatTimeDomainData (time
+  // domain, sized by fftSize), not getFloatFrequencyData (sized by
+  // frequencyBinCount = fftSize/2). The name is preserved as the public
+  // contract because legacy app.js destructures it by this exact key.
   const freqArray = new Float32Array(mainAnalyser.fftSize);
   const onsetDataArray = new Uint8Array(onsetAnalyser.frequencyBinCount);
 
@@ -153,11 +157,20 @@ export function buildAudioGraph(ctx: AudioContextLike, opts: AudioGraphOptions):
  * Order:
  *   1. User override (slider in ⚙ settings) wins outright.
  *   2. Sum of `outputLatency` + `baseLatency` from the AudioContext when
- *      both populate (Chrome / Edge / Steam Deck reliably do; Firefox
- *      often returns 0; older Safari undefined). Clamp to `maxClampMs`
- *      so a Bluetooth headset's 250 ms tail doesn't shove the hit window
- *      out of usable range.
+ *      `outputLatency` is actually populated (Chrome on Mac / Edge / Steam Deck
+ *      reliably do; Firefox often returns 0; Chrome on Windows often returns 0
+ *      too). Clamp to `maxClampMs` so a Bluetooth headset's 250 ms tail doesn't
+ *      shove the hit window out of usable range.
  *   3. Otherwise the platform default (caller passes DEFAULT_AUDIO_OFFSET_MS).
+ *
+ * Why we require `reportedOutMs > 0` specifically (not just the sum):
+ *   `baseLatency` alone is just the audio block-processing time (~5–10 ms);
+ *   it does NOT include the speaker / driver buffer delay, which on Windows
+ *   is typically 30–80 ms. Trusting only baseLatency gave the kid a cursor
+ *   that visually led the audio by ~30 ms — exactly the "ノーツと合わない"
+ *   complaint we saw in the field. When the browser doesn't report
+ *   outputLatency we have no signal, so the platform default is the safer
+ *   bet than a partial reading that always under-reports.
  *
  * Pure: no DOM, no AudioContext access — caller reads the latency figures
  * and passes them in. That keeps test setup trivial.
@@ -173,19 +186,25 @@ export interface PickAudioOffsetInput {
   defaultMs: number;
   /** Cap on auto-detected total. Default 200 ms. */
   maxClampMs?: number;
-  /** Below this combined value the reading is considered "not populated"
-   *  and the default is used instead. Default 5 ms. */
-  minReportedMs?: number;
+  /** Minimum required `reportedOutMs` to trust the reading. Below this we
+   *  consider the speaker-side latency "not reported" and fall back to
+   *  the default. Default 5 ms. */
+  minReportedOutMs?: number;
 }
 
 export function pickAudioOffsetMs(input: PickAudioOffsetInput): number {
   if (input.userOverrideMs != null && Number.isFinite(input.userOverrideMs)) {
     return input.userOverrideMs;
   }
-  const reported = input.reportedOutMs + input.reportedBaseMs;
-  const min = input.minReportedMs ?? 5;
+  const minOut = input.minReportedOutMs ?? 5;
   const max = input.maxClampMs ?? 200;
-  if (reported > min) return Math.min(reported, max);
+  // Only trust the auto-detect when the SPEAKER-side latency is reported.
+  // baseLatency alone (block size, ~5-10 ms) under-represents true output
+  // latency on Windows / Chrome (where outputLatency often = 0).
+  if (input.reportedOutMs > minOut) {
+    const total = input.reportedOutMs + input.reportedBaseMs;
+    return Math.min(total, max);
+  }
   return input.defaultMs;
 }
 

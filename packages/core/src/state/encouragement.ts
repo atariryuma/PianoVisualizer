@@ -18,14 +18,14 @@ export interface EncouragementTier {
 /** Default 8-tier ladder. Mirrors the legacy CONFIG.ENCOURAGEMENT_TIERS shape
  *  exactly so callers can drop this in without re-tuning thresholds. */
 export const DEFAULT_ENCOURAGEMENT_TIERS: readonly EncouragementTier[] = Object.freeze([
-  { minCombo: 3, messageKey: 'enc1', effect: 'glowPulse' },
-  { minCombo: 8, messageKey: 'enc2', effect: 'glowParticles' },
-  { minCombo: 15, messageKey: 'enc3', effect: 'colorWave' },
-  { minCombo: 25, messageKey: 'enc4', effect: 'starShower' },
-  { minCombo: 40, messageKey: 'enc5', effect: 'flowerBurst' },
-  { minCombo: 60, messageKey: 'enc6', effect: 'shimmer' },
-  { minCombo: 80, messageKey: 'enc7', effect: 'radiance' },
-  { minCombo: 100, messageKey: 'enc8', effect: 'goldenBurst' },
+  Object.freeze({ minCombo: 3, messageKey: 'enc1', effect: 'glowPulse' }),
+  Object.freeze({ minCombo: 8, messageKey: 'enc2', effect: 'glowParticles' }),
+  Object.freeze({ minCombo: 15, messageKey: 'enc3', effect: 'colorWave' }),
+  Object.freeze({ minCombo: 25, messageKey: 'enc4', effect: 'starShower' }),
+  Object.freeze({ minCombo: 40, messageKey: 'enc5', effect: 'flowerBurst' }),
+  Object.freeze({ minCombo: 60, messageKey: 'enc6', effect: 'shimmer' }),
+  Object.freeze({ minCombo: 80, messageKey: 'enc7', effect: 'radiance' }),
+  Object.freeze({ minCombo: 100, messageKey: 'enc8', effect: 'goldenBurst' }),
 ]);
 
 export interface EncouragementState {

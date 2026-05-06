@@ -139,11 +139,17 @@ export function applyMidiNoteOff(s: MidiState, midi: number): MidiEvent[] {
  * Returns those midis in a `sustainReleased` event.
  */
 export function applyMidiCC(s: MidiState, cc: number, value: number): MidiEvent[] {
-  if (cc !== 64) return []; // only sustain for now
+  if (cc !== 64) return []; // CC 64 = sustain pedal; future CCs go here.
   const wasOn = s.sustainOn;
-  s.sustainOn = value >= 64;
-  const events: MidiEvent[] = [{ type: 'sustainPedal', on: s.sustainOn }];
-  if (wasOn && !s.sustainOn) {
+  const nowOn = value >= 64;
+  // Controllers commonly send the same CC value every frame while the pedal
+  // is held — without a transition guard, sustainedListeners would receive a
+  // 60Hz event spam saying "still on, still on, still on". Only emit the
+  // `sustainPedal` event when the boolean actually flips.
+  if (wasOn === nowOn) return [];
+  s.sustainOn = nowOn;
+  const events: MidiEvent[] = [{ type: 'sustainPedal', on: nowOn }];
+  if (wasOn && !nowOn) {
     const droppedMidis: number[] = [];
     s.sustainedNotes.forEach((midi) => {
       droppedMidis.push(midi);

@@ -51,5 +51,12 @@ packages/mobile/android/local.properties
 packages/mobile/android/.idea/
 packages/mobile/capacitor.config.json.bak
 
+# Plugin build artifacts (Gradle / Xcode caches inside the plugin tree)
+packages/plugins/*/android/.gradle/
+packages/plugins/*/android/build/
+packages/plugins/*/android/.idea/
+packages/plugins/*/ios/Pods/
+packages/plugins/*/ios/build/
+
 # Audit / scratch
 docs/LICENSES/_drafts/

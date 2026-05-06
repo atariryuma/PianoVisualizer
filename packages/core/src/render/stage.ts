@@ -23,13 +23,13 @@ export interface Stage {
  * `nameKey: null` on tier 0 hides the banner during the calm "Awakening" state.
  */
 export const STAGES: readonly Stage[] = Object.freeze([
-  { nameKey: null, prefix: '', minFlow: 0 },
-  { nameKey: 'stage1', prefix: '✦ ', minFlow: 15 },
-  { nameKey: 'stage2', prefix: '✦✦ ', minFlow: 35 },
-  { nameKey: 'stage3', prefix: '✦✦✦ ', minFlow: 55 },
-  { nameKey: 'stage4', prefix: '✦✦✦✦ ', minFlow: 75 },
-  { nameKey: 'stage5', prefix: '✦✦✦✦✦ ', minFlow: 90 },
-  { nameKey: 'stage6', prefix: '✦✦✦✦✦✦ ', minFlow: 98 },
+  Object.freeze({ nameKey: null, prefix: '', minFlow: 0 }),
+  Object.freeze({ nameKey: 'stage1', prefix: '✦ ', minFlow: 15 }),
+  Object.freeze({ nameKey: 'stage2', prefix: '✦✦ ', minFlow: 35 }),
+  Object.freeze({ nameKey: 'stage3', prefix: '✦✦✦ ', minFlow: 55 }),
+  Object.freeze({ nameKey: 'stage4', prefix: '✦✦✦✦ ', minFlow: 75 }),
+  Object.freeze({ nameKey: 'stage5', prefix: '✦✦✦✦✦ ', minFlow: 90 }),
+  Object.freeze({ nameKey: 'stage6', prefix: '✦✦✦✦✦✦ ', minFlow: 98 }),
 ]);
 
 /**

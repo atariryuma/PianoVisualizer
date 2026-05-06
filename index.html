@@ -37,16 +37,14 @@
       <div id="userSongList"></div>
       <button id="addSongBtn" class="mode-btn" data-i18n="addSongBtn">➕ Add a song</button>
     </div>
-    <!-- Bluetooth MIDI connection lives in the ⚙ settings panel. Element kept for legacy-code compatibility. -->
-    <button id="bleMidiBtn" data-i18n-title="connectBluetooth" data-i18n="connectBluetooth">🔵 Connect Bluetooth</button>
   </div>
-  <canvas id="canvas"></canvas>
+  <canvas id="canvas" role="img" aria-label="Piano visualizer animation"></canvas>
   <div id="hud">
-    <div id="encouragement"></div>
-    <div id="flowGauge">
+    <div id="encouragement" aria-live="polite" aria-atomic="true"></div>
+    <div id="flowGauge" role="progressbar" aria-label="Flow meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div id="flowFill"></div>
     </div>
-    <div id="stageLabel"></div>
+    <div id="stageLabel" aria-live="polite" aria-atomic="true"></div>
   </div>
   <div id="themeBar">
     <button id="settingsBtn" data-i18n-title="settings" title="Settings">⚙</button>
@@ -83,12 +81,13 @@
       <div class="settings-section">
         <div class="settings-section-label">🎚 <span data-i18n="timingCalibration">Timing Calibration</span></div>
         <div class="settings-slider-row">
-          <div class="settings-slider-label">
+          <div class="settings-slider-label" id="audioOffsetLabel">
             <span data-i18n="audioOffset">Audio offset</span>
             <span class="val"><span id="audioOffsetVal">40</span> ms</span>
           </div>
           <input type="range" id="audioOffsetSlider" class="settings-slider"
-                 min="-50" max="200" step="5" value="40">
+                 min="-50" max="200" step="5" value="40"
+                 aria-labelledby="audioOffsetLabel">
           <div class="settings-help">
             <span data-i18n="audioOffsetHelp">If you play on the beat but it's judged "late", raise the number. If your press is rejected as "early", lower it.</span><br>
             <span id="audioOffsetAuto" style="color:rgba(180,220,255,.8)"></span>
@@ -160,10 +159,6 @@
   <div id="debugOverlay"></div>
   <!-- Populated by refreshIntroHint() — only shown when noInputAvailable(). -->
   <div id="introHint"></div>
-  <!-- The "Later" dismiss button has been retired — the rescan button below
-       gives the user the only meaningful action (retry); doing nothing already
-       acts as an implicit dismiss. -->
-  <button id="midiRescanBtn">🔄 Scan for MIDI keyboard</button>
   <div id="micMeter"><div id="micMeterFill"></div></div>
   <div id="midiBadge"></div>
 
@@ -177,7 +172,9 @@
         <div class="streak-cal" id="streakCal"></div>
       </div>
 
-      <div class="song-section-label" data-i18n="tempo">Tempo</div>
+      <div class="song-section-label" data-i18n="tempo">Tempo
+        <span id="songBpmHint" class="song-bpm-hint"></span>
+      </div>
       <div class="tempo-row" id="tempoRow"></div>
 
       <div class="song-section-label" data-i18n="startFrom">Start from</div>
@@ -272,6 +269,8 @@
         <div class="settings-help" data-i18n="addSongLibraryHelp">Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.</div>
         <input type="search" id="addSongLibrarySearch" class="add-song-url-input"
                data-i18n-placeholder="addSongSearch"
+               data-i18n-aria-label="addSongSearch"
+               aria-label="Search composer / title"
                placeholder="Search composer / title…">
         <div id="addSongLibraryStatus" style="font-size:.75rem;color:rgba(255,255,255,.45);margin:4px 0 8px"></div>
         <div id="addSongLibraryList" style="max-height:42vh;overflow-y:auto"></div>
@@ -292,6 +291,8 @@
       <div class="add-song-tab-body" data-tab-body="url" hidden>
         <input type="url" id="addSongUrlInput" class="add-song-url-input"
                data-i18n-placeholder="addSongUrlPlaceholder"
+               data-i18n-aria-label="addSongUrlPlaceholder"
+               aria-label="Score URL"
                placeholder="https://cdn.jsdelivr.net/.../score.mxl">
         <button class="settings-btn primary" id="addSongFetchBtn" data-i18n="addSongFetch">⬇ Download</button>
         <div class="settings-help" data-i18n="addSongUrlHelp">Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).</div>
@@ -331,7 +332,7 @@
   <!-- Tone.js — audio synthesis, scheduling, single audio clock for visual sync -->
   <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
   <!-- OpenSheetMusicDisplay — single source of truth for notes + score rendering -->
-  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.7/build/opensheetmusicdisplay.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.9/build/opensheetmusicdisplay.min.js"></script>
   <!-- JSZip — needed to peek inside user-uploaded .mxl files for metadata
        (title/composer/measure count) BEFORE handing the blob to OSMD.
        OSMD bundles its own copy internally but doesn't reliably expose it as global. -->

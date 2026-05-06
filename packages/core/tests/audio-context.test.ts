@@ -201,7 +201,7 @@ describe('pickAudioOffsetMs', () => {
     ).toBe(0);
   });
 
-  it('falls back to default when reported latency is below the noise floor', () => {
+  it('falls back to default when neither out nor base populate', () => {
     expect(
       pickAudioOffsetMs({
         userOverrideMs: null,
@@ -220,7 +220,23 @@ describe('pickAudioOffsetMs', () => {
     ).toBe(40);
   });
 
-  it('uses out + base when both populate', () => {
+  it('falls back to default when only baseLatency reports (Windows Chrome case)', () => {
+    // The exact case from the field: Chrome on Windows reports
+    // outputLatency=0 (speaker-side not exposed) but baseLatency=10 (block
+    // size). The 10 ms is only the processing buffer, NOT the actual speaker
+    // driver delay (~30-80 ms on Windows). Trusting that 10 ms makes the
+    // cursor visually lead the audio.
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 0,
+        reportedBaseMs: 10,
+        defaultMs: 40,
+      })
+    ).toBe(40);
+  });
+
+  it('uses out + base when outputLatency is populated', () => {
     expect(
       pickAudioOffsetMs({
         userOverrideMs: null,
@@ -229,6 +245,17 @@ describe('pickAudioOffsetMs', () => {
         defaultMs: 40,
       })
     ).toBe(100);
+  });
+
+  it('uses outputLatency alone when baseLatency is 0 (Chrome on Mac sometimes)', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 60,
+        reportedBaseMs: 0,
+        defaultMs: 40,
+      })
+    ).toBe(60);
   });
 
   it('clamps to maxClampMs (default 200) so AirPods 250 ms tail is bounded', () => {
@@ -254,14 +281,14 @@ describe('pickAudioOffsetMs', () => {
     ).toBe(75);
   });
 
-  it('honors custom minReportedMs', () => {
+  it('honors custom minReportedOutMs', () => {
     expect(
       pickAudioOffsetMs({
         userOverrideMs: null,
         reportedOutMs: 8,
         reportedBaseMs: 0,
         defaultMs: 40,
-        minReportedMs: 10,
+        minReportedOutMs: 10,
       })
     ).toBe(40);
   });

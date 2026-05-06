@@ -384,11 +384,11 @@ export interface StarTier {
   dur: number;
 }
 
-export const STAR_TIERS: readonly StarTier[] = [
-  { stars: 3, acc: 90, timing: 70, dur: 70 },
-  { stars: 2, acc: 75, timing: 0, dur: 50 },
-  { stars: 1, acc: 50, timing: 0, dur: 0 },
-];
+export const STAR_TIERS: readonly StarTier[] = Object.freeze([
+  Object.freeze({ stars: 3, acc: 90, timing: 70, dur: 70 }),
+  Object.freeze({ stars: 2, acc: 75, timing: 0, dur: 50 }),
+  Object.freeze({ stars: 1, acc: 50, timing: 0, dur: 0 }),
+]);
 
 /**
  * Pick the highest tier where all percentages clear the threshold.
@@ -413,12 +413,12 @@ export function computeStars(
 /** i18n key pairs for the result-screen banner — index = star count (0..3).
  *  Listen mode bypasses these entirely; the caller renders 'listenedTitle'
  *  / 'listenedMsg' instead. */
-export const RESULT_TIER_KEYS: ReadonlyArray<{ titleKey: string; msgKey: string }> = [
-  { titleKey: 'tier0Title', msgKey: 'tier0Msg' },
-  { titleKey: 'tier1Title', msgKey: 'tier1Msg' },
-  { titleKey: 'tier2Title', msgKey: 'tier2Msg' },
-  { titleKey: 'tier3Title', msgKey: 'tier3Msg' },
-];
+export const RESULT_TIER_KEYS: ReadonlyArray<{ titleKey: string; msgKey: string }> = Object.freeze([
+  Object.freeze({ titleKey: 'tier0Title', msgKey: 'tier0Msg' }),
+  Object.freeze({ titleKey: 'tier1Title', msgKey: 'tier1Msg' }),
+  Object.freeze({ titleKey: 'tier2Title', msgKey: 'tier2Msg' }),
+  Object.freeze({ titleKey: 'tier3Title', msgKey: 'tier3Msg' }),
+]);
 
 /** Pick the title/msg keys for a given star count. Stars are clamped to
  *  0..3 (legacy callers used Math.max(0, Math.min(3, stars)) inline). */
@@ -429,7 +429,7 @@ export function resolveResultTier(stars: number): { titleKey: string; msgKey: st
 
 /** Tempo speeds the practice flow gates: a section cleared at one tempo
  *  unlocks the next one (gated on stars >= 2). */
-export const TEMPO_TIERS: readonly number[] = [60, 75, 90, 100];
+export const TEMPO_TIERS: readonly number[] = Object.freeze([60, 75, 90, 100]);
 
 export interface UnlockComputeInput {
   stars: number;
@@ -464,7 +464,7 @@ export interface UnlockComputeResult {
   streakDays: number | null;
 }
 
-const DEFAULT_STREAK_MILESTONES: readonly number[] = [3, 7];
+const DEFAULT_STREAK_MILESTONES: readonly number[] = Object.freeze([3, 7]);
 
 /**
  * Pure: given the result of a section, determine which gates fire.

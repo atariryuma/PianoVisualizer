@@ -207,8 +207,8 @@ export type {
   LibraryEntryFromGhOptions,
 } from './library/musetrainer-catalog';
 
-// === Util: tiny formatters used by both shells ===
-export { formatTime } from './util/format';
+// === Util: tiny formatters + math used by both shells ===
+export { formatTime, clamp } from './util/format';
 
 // === Library: user-song storage + parsing ===
 export {

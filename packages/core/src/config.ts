@@ -1,12 +1,18 @@
 // CONFIG — central tunable parameters for the engine.
 //
 // Convention: numeric thresholds and durations are in their natural units
-// (Hz, ms, ratio, count). Arrays for STAGES / ENCOURAGEMENT_TIERS / THEMES /
-// QUESTS are typed as `as const` so consumers can index by literal type.
+// (Hz, ms, ratio, count). The STAGES / ENCOURAGEMENT_TIERS / THEMES tables
+// live in their dedicated modules (render/stage.ts, state/encouragement.ts,
+// render/theme.ts) — re-exported through `CONFIG` here so legacy app.js
+// callers keep working without re-tuning.
 //
 // Values mirror what's in legacy app.js. The QUESTS conditions reference a
 // `QuestStateView` shape — the engine state needs to expose those fields by
 // name for the QUESTS to evaluate. See the QuestStateView type below.
+
+import { STAGES as STAGES_TABLE } from './render/stage';
+import { THEMES as THEMES_TABLE } from './render/theme';
+import { DEFAULT_ENCOURAGEMENT_TIERS } from './state/encouragement';
 
 // =====================================================================
 // Tunable parameters (numbers, arrays, objects).
@@ -83,11 +89,11 @@ export const CONFIG = {
   FLUX_FREQ_MIN_HZ: 20,
   FLUX_FREQ_MAX_HZ: 4200,
 
-  // Harmonicity gate
+  // Harmonicity gate. Partial-count + tolerance live in audio/harmonicity.ts
+  // (DEFAULTS); the legacy CONFIG.HARMONICITY_PARTIALS / BIN_TOLERANCE were
+  // never wired through, so deleted to stop future tunings being silent no-ops.
   HARMONICITY_MIN: 0.0, // free-play: lenient so chords aren't rejected
   HARMONICITY_MIN_PRACTICE: 0.12, // practice: light filter for voice/key clatter
-  HARMONICITY_PARTIALS: 6,
-  HARMONICITY_BIN_TOLERANCE: 2,
 
   // Session confidence
   SESSION_WINDOW_MS: 4000,
@@ -146,60 +152,22 @@ export const CONFIG = {
   AMBIENT_PARTICLE_CHANCE: 0.03,
   BAR_COUNT: 64,
 
-  // Stages — `nameKey` is resolved via t() so labels follow prefs.lang.
-  STAGES: [
-    { nameKey: null, prefix: '', minFlow: 0 },
-    { nameKey: 'stage1', prefix: '✦ ', minFlow: 15 },
-    { nameKey: 'stage2', prefix: '✦✦ ', minFlow: 35 },
-    { nameKey: 'stage3', prefix: '✦✦✦ ', minFlow: 55 },
-    { nameKey: 'stage4', prefix: '✦✦✦✦ ', minFlow: 75 },
-    { nameKey: 'stage5', prefix: '✦✦✦✦✦ ', minFlow: 90 },
-    { nameKey: 'stage6', prefix: '✦✦✦✦✦✦ ', minFlow: 98 },
-  ],
+  // Stages, encouragement tiers, and themes are defined in their dedicated
+  // modules; re-exposed here for legacy callers that read CONFIG.STAGES etc.
+  STAGES: STAGES_TABLE,
 
-  // Encouragement tiers — replaces combo number display
-  ENCOURAGEMENT_TIERS: [
-    { minCombo: 3, messageKey: 'enc1', effect: 'glowPulse' },
-    { minCombo: 8, messageKey: 'enc2', effect: 'glowParticles' },
-    { minCombo: 15, messageKey: 'enc3', effect: 'colorWave' },
-    { minCombo: 25, messageKey: 'enc4', effect: 'starShower' },
-    { minCombo: 40, messageKey: 'enc5', effect: 'flowerBurst' },
-    { minCombo: 60, messageKey: 'enc6', effect: 'shimmer' },
-    { minCombo: 80, messageKey: 'enc7', effect: 'radiance' },
-    { minCombo: 100, messageKey: 'enc8', effect: 'goldenBurst' },
-  ],
+  ENCOURAGEMENT_TIERS: DEFAULT_ENCOURAGEMENT_TIERS,
   ENCOURAGEMENT_COOLDOWN_MS: 8000,
   ENCOURAGEMENT_DISPLAY_MS: 2500,
 
-  // Note mapping — kept here for legacy convenience; @piano/core/i18n
-  // exposes NOTE_NAMES_EN/JP separately for localized rendering.
-  NOTE_NAMES: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+  // Note mapping — single source of truth lives in i18n/index.ts as
+  // NOTE_NAMES_EN; CONFIG.NOTE_NAMES is the legacy alias kept so the
+  // 100+ call sites in app.js keep resolving without an i18n dependency.
+  NOTE_NAMES: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const,
   PIANO_KEY_MIN: 21,
   PIANO_KEY_COUNT: 88,
 
-  // Themes
-  THEMES: [
-    {
-      bg: [10, 10, 20] as readonly [number, number, number],
-      colors: ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#6366f1', '#818cf8'],
-      glow: 'rgba(139,92,246,',
-    },
-    {
-      bg: [8, 18, 20] as readonly [number, number, number],
-      colors: ['#06b6d4', '#22d3ee', '#34d399', '#10b981', '#14b8a6', '#67e8f9'],
-      glow: 'rgba(6,182,212,',
-    },
-    {
-      bg: [20, 12, 8] as readonly [number, number, number],
-      colors: ['#f97316', '#fb923c', '#ef4444', '#f43f5e', '#eab308', '#fbbf24'],
-      glow: 'rgba(249,115,22,',
-    },
-    {
-      bg: [12, 12, 18] as readonly [number, number, number],
-      colors: ['#e0e7ff', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#f0f0ff', '#ffffff'],
-      glow: 'rgba(200,200,255,',
-    },
-  ],
+  THEMES: THEMES_TABLE,
 } as const;
 
 export type Config = typeof CONFIG;

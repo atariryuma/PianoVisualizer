@@ -15,6 +15,11 @@
       "Bash(git push:*)",
       "Bash(powershell -Command:*)",
       "Bash(powershell -File:*)",
+      "Bash(powershell -ExecutionPolicy:*)",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(powershell.exe -File:*)",
+      "Bash(powershell.exe -ExecutionPolicy:*)",
+      "Bash(pwsh:*)",
       "Bash(ipconfig:*)"
     ]
   }

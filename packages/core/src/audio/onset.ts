@@ -96,8 +96,10 @@ export interface OnsetResult {
   isOnset: boolean;
   /** True if we're inside the post-onset gate window. */
   gateOpen: boolean;
-  /** Per-frame debug telemetry. Cheap to compute, useful in the overlay. */
-  debug: {
+  /** Per-frame debug telemetry. Cheap to compute, useful in the overlay.
+   *  Treated as read-only — non-onset frames share a frozen sentinel, so
+   *  consumers must not mutate this object. */
+  debug: Readonly<{
     flux: number;
     spread: number;
     flatness: number;
@@ -107,10 +109,13 @@ export interface OnsetResult {
     harmonicity: number;
     threshold: number;
     onsetReason: string;
-  };
+  }>;
 }
 
-const EMPTY_DEBUG = {
+// Frozen so a stray `result.debug.flux = ...` from a caller can't poison the
+// next early-return — every non-onset frame returns the same shared object,
+// and any in-place mutation would silently corrupt subsequent reads.
+const EMPTY_DEBUG = Object.freeze({
   flux: 0,
   spread: 0,
   flatness: 0,
@@ -120,7 +125,7 @@ const EMPTY_DEBUG = {
   harmonicity: 0,
   threshold: 0,
   onsetReason: '',
-};
+});
 
 export function initOnsetState(): OnsetState {
   return {

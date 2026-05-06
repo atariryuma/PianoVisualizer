@@ -8,6 +8,19 @@
 // `view.laneDrawFromIdx` is an amortized cursor — the draw call mutates it
 // forward as notes scroll past so subsequent frames don't re-scan the prefix.
 
+// Module-scope gradient cache. The lane's L/R fills + center divider share
+// the same vertical extent every frame and only change on resize / score
+// panel toggle, but the previous code re-allocated all three CanvasGradient
+// objects 60×/s. Cache keyed by the dimension triple; ctx is also captured
+// because gradients are bound to a specific 2D context.
+let _laneGradCtx: CanvasRenderingContext2D | null = null;
+let _laneGradTop = -1;
+let _laneGradHeight = -1;
+let _laneGradHitLine = -1;
+let _lhGradCached: CanvasGradient | null = null;
+let _rhGradCached: CanvasGradient | null = null;
+let _divGradCached: CanvasGradient | null = null;
+
 export interface LaneNoteView {
   /** Section-relative time in ms (already includes count-in offset). */
   timeMs: number;
@@ -120,17 +133,34 @@ export function drawPracticeLane(
   ctx.shadowColor = 'transparent';
 
   // Lane backgrounds — vertical gradient so the bottom (hit zone) feels
-  // grounded and the top fades into the score area. Replaces the flat
-  // rgba(...,0.55) fills which read as "blocky 2010s game lane".
-  const lhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
-  lhGrad.addColorStop(0, 'rgba(40, 60, 130, 0.25)');
-  lhGrad.addColorStop(1, 'rgba(60, 80, 150, 0.55)');
-  ctx.fillStyle = lhGrad;
+  // grounded and the top fades into the score area.
+  if (
+    _laneGradCtx !== ctx ||
+    _laneGradTop !== laneTop ||
+    _laneGradHeight !== laneHeight ||
+    _laneGradHitLine !== hitLineY
+  ) {
+    const lh = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+    lh.addColorStop(0, 'rgba(40, 60, 130, 0.25)');
+    lh.addColorStop(1, 'rgba(60, 80, 150, 0.55)');
+    const rh = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+    rh.addColorStop(0, 'rgba(110, 50, 110, 0.25)');
+    rh.addColorStop(1, 'rgba(140, 60, 130, 0.55)');
+    const div = ctx.createLinearGradient(0, laneTop, 0, hitLineY + 50);
+    div.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
+    div.addColorStop(0.6, 'rgba(255, 255, 255, 0.28)');
+    div.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
+    _lhGradCached = lh;
+    _rhGradCached = rh;
+    _divGradCached = div;
+    _laneGradCtx = ctx;
+    _laneGradTop = laneTop;
+    _laneGradHeight = laneHeight;
+    _laneGradHitLine = hitLineY;
+  }
+  ctx.fillStyle = _lhGradCached!;
   ctx.fillRect(padX, laneTop, halfW, laneHeight);
-  const rhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
-  rhGrad.addColorStop(0, 'rgba(110, 50, 110, 0.25)');
-  rhGrad.addColorStop(1, 'rgba(140, 60, 130, 0.55)');
-  ctx.fillStyle = rhGrad;
+  ctx.fillStyle = _rhGradCached!;
   ctx.fillRect(midX, laneTop, halfW, laneHeight);
 
   // Outer outline: subtle, rounded.
@@ -162,13 +192,9 @@ export function drawPracticeLane(
   );
   ctx.textBaseline = 'alphabetic';
 
-  // Center divider — vertical gradient so it fades at the top into the
-  // score panel and reads strong near the hit zone where it matters.
-  const divGrad = ctx.createLinearGradient(0, laneTop, 0, hitLineY + 50);
-  divGrad.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
-  divGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.28)');
-  divGrad.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
-  ctx.strokeStyle = divGrad;
+  // Center divider — same cache as the lane backgrounds (all three
+  // gradients invalidate on resize together).
+  ctx.strokeStyle = _divGradCached!;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(midX, laneTop);
@@ -272,10 +298,19 @@ export function drawPracticeLane(
     ctx.textAlign = 'center';
     ctx.fillText(n.hand, x, y - noteH - 4);
 
-    if (!n.hit && !n.missed && noteH > 18) {
+    // Pitch label — kana name (ド/レ/ミ/...) inside the tile so the kid
+    // knows what to play. Was hidden on noteH ≤ 18 px (short 16-note
+    // passages like Liszt's La Campanella all hit the floor 14 px and
+    // dropped pitch labels). Now: show it scaled down so even 14 px
+    // tiles get a label, just smaller. Below ~10 px it's illegible
+    // anyway so we still skip.
+    if (!n.hit && !n.missed && noteH >= 10 && noteW >= 22) {
+      const labelPx = Math.max(9, Math.min(13, Math.round(noteH * 0.7)));
       ctx.fillStyle = 'rgba(20, 10, 35, 0.92)';
-      ctx.font = 'bold 13px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
-      ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2 + 5);
+      ctx.font = 'bold ' + labelPx + 'px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2);
+      ctx.textBaseline = 'alphabetic';
     }
   }
 

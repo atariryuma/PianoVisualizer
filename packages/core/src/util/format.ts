@@ -1,6 +1,6 @@
-// Tiny formatting helpers shared between the legacy app and any future shell.
-// Kept dependency-free so they can be imported from any layer without pulling
-// in the rest of @piano/core.
+// Tiny formatting + math helpers shared between the legacy app and any future
+// shell. Kept dependency-free so they can be imported from any layer without
+// pulling in the rest of @piano/core.
 
 /**
  * Format a duration in milliseconds as `M:SS` (zero-padded seconds).
@@ -16,4 +16,11 @@ export function formatTime(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+/** Clamp `v` into `[lo, hi]`. Replaces the `Math.max(lo, Math.min(hi, v))`
+ *  idiom that appeared at a dozen call sites. NaN propagates (callers
+ *  validate input first if they need a finite default). */
+export function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
 }

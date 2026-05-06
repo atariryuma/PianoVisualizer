@@ -26,26 +26,26 @@ export interface Theme {
  *   0: purple/pink, 1: cyan/green, 2: orange/red, 3: white/lavender.
  */
 export const THEMES: readonly Theme[] = Object.freeze([
-  {
-    bg: [10, 10, 20],
-    colors: ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#6366f1', '#818cf8'],
+  Object.freeze({
+    bg: Object.freeze([10, 10, 20]) as readonly [number, number, number],
+    colors: Object.freeze(['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#6366f1', '#818cf8']),
     glow: 'rgba(139,92,246,',
-  },
-  {
-    bg: [8, 18, 20],
-    colors: ['#06b6d4', '#22d3ee', '#34d399', '#10b981', '#14b8a6', '#67e8f9'],
+  }),
+  Object.freeze({
+    bg: Object.freeze([8, 18, 20]) as readonly [number, number, number],
+    colors: Object.freeze(['#06b6d4', '#22d3ee', '#34d399', '#10b981', '#14b8a6', '#67e8f9']),
     glow: 'rgba(6,182,212,',
-  },
-  {
-    bg: [20, 12, 8],
-    colors: ['#f97316', '#fb923c', '#ef4444', '#f43f5e', '#eab308', '#fbbf24'],
+  }),
+  Object.freeze({
+    bg: Object.freeze([20, 12, 8]) as readonly [number, number, number],
+    colors: Object.freeze(['#f97316', '#fb923c', '#ef4444', '#f43f5e', '#eab308', '#fbbf24']),
     glow: 'rgba(249,115,22,',
-  },
-  {
-    bg: [12, 12, 18],
-    colors: ['#e0e7ff', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#f0f0ff', '#ffffff'],
+  }),
+  Object.freeze({
+    bg: Object.freeze([12, 12, 18]) as readonly [number, number, number],
+    colors: Object.freeze(['#e0e7ff', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#f0f0ff', '#ffffff']),
     glow: 'rgba(200,200,255,',
-  },
+  }),
 ]);
 
 /**

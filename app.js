@@ -28,15 +28,30 @@
         (h === 'localhost' || h === '127.0.0.1' || /^192\.168\./.test(h) || /^10\./.test(h));
     })();
 
-    const remoteLog = REMOTE_LOG_ENABLED
-      ? (msg) => {
-          fetch('/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: (typeof msg === 'string') ? msg : JSON.stringify(msg)
-          }).catch(() => {});
-        }
-      : () => {};
+    // Sequential POST queue — without it, concurrent fetch()es arrive at the
+    // server in whatever order they happen to complete, scrambling diagnostic
+    // dumps that depend on insertion order (e.g. per-measure walks).
+    // Backpressure: drop messages once the in-flight queue passes ~50 so a
+    // sleeping/lossy LAN doesn't grow microtasks unboundedly during a single
+    // song's DIAG dump (200+ lines per load).
+    const remoteLog = (() => {
+      if (!REMOTE_LOG_ENABLED) return () => {};
+      let chain = Promise.resolve();
+      let pending = 0;
+      return (msg) => {
+        if (pending > 50) return;
+        pending++;
+        const body = (typeof msg === 'string') ? msg : JSON.stringify(msg);
+        // Each fetch swallows its own rejection (`.catch(() => {})`) so the
+        // chain itself never enters a rejected state — `pending--` only ever
+        // runs from the single `.finally`, no double-decrement risk.
+        chain = chain.then(() => fetch('/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body,
+        }).catch(() => {}).finally(() => { pending--; }));
+      };
+    })();
 
     if (REMOTE_LOG_ENABLED) {
       const _log = console.log;
@@ -134,8 +149,9 @@
       HARMONICITY_MIN_PRACTICE: 0.12,     // practice: light filter for voice/key clatter.
       //   iPad mic on acoustic piano typically yields 0.10–0.30 harmonicity, so 0.12
       //   keeps real notes through while still catching pure-noise events.
-      HARMONICITY_PARTIALS: 6,            // number of harmonics to check (2x..7x)
-      HARMONICITY_BIN_TOLERANCE: 2,       // ±bins around each harmonic peak
+      // Partial-count + bin tolerance live in @piano/core/audio/harmonicity.ts
+      // DEFAULTS — they were never read by the call site below, so removing
+      // them here removes a tuning landmine.
 
       // =============================================
       // Session Confidence Layer (v7+)
@@ -279,8 +295,6 @@
       questToast: document.getElementById('questToast'),
       toastTitle: document.getElementById('toastTitle'),
       toastSub: document.getElementById('toastSub'),
-      // v11: Reset & Summary
-      resetBtn: document.getElementById('resetBtn'),
       homeBtn: document.getElementById('homeBtn'),
       sessionSummary: document.getElementById('sessionSummary'),
       sumCombo: document.getElementById('sumCombo'),
@@ -299,6 +313,7 @@
       streakCount: document.getElementById('streakCount'),
       streakCal: document.getElementById('streakCal'),
       tempoRow: document.getElementById('tempoRow'),
+      songBpmHint: document.getElementById('songBpmHint'),
       sectionList: document.getElementById('sectionList'),
       ghostToggle: document.getElementById('ghostToggle'),
       ghostRow: document.getElementById('ghostRow'),
@@ -308,7 +323,6 @@
       songStart: document.getElementById('songStart'),
       practiceHud: document.getElementById('practiceHud'),
       practiceTopBar: document.getElementById('practiceTopBar'),
-      themeBar: document.getElementById('themeBar'),
       ptbSection: document.getElementById('ptbSection'),
       ptbTempo: document.getElementById('ptbTempo'),
       ptbProgress: document.getElementById('ptbProgress'),
@@ -338,9 +352,7 @@
       introHint: document.getElementById('introHint'),
       micMeter: document.getElementById('micMeter'),
       micMeterFill: document.getElementById('micMeterFill'),
-      bleMidiBtn: document.getElementById('bleMidiBtn'),
       midiBadge: document.getElementById('midiBadge'),
-      midiRescanBtn: document.getElementById('midiRescanBtn'),
       // Settings panel
       settingsBtn: document.getElementById('settingsBtn'),
       settingsPanel: document.getElementById('settingsPanel'),
@@ -1188,13 +1200,15 @@
     }
 
     function applyI18n() {
-      document.querySelectorAll('[data-i18n], [data-i18n-title], [data-i18n-placeholder]').forEach(el => {
+      document.querySelectorAll('[data-i18n], [data-i18n-title], [data-i18n-placeholder], [data-i18n-aria-label]').forEach(el => {
         const k = el.getAttribute('data-i18n');
         const tk = el.getAttribute('data-i18n-title');
         const pk = el.getAttribute('data-i18n-placeholder');
+        const ak = el.getAttribute('data-i18n-aria-label');
         if (k) el.textContent = t(k);
         if (tk) el.title = t(tk);
         if (pk) el.placeholder = t(pk);
+        if (ak) el.setAttribute('aria-label', t(ak));
       });
       // Notify code paths that re-render their own text (song panel, result screen, etc.).
       window.dispatchEvent(new CustomEvent('langchange'));
@@ -1203,6 +1217,10 @@
     function setLang(lang) {
       prefs.lang = lang === 'jp' ? 'jp' : 'en';
       savePrefs();
+      // Keep <html lang> in sync so screen readers announce the right voice.
+      // The HTML default is 'ja'; without this the en-flipped UI would still
+      // be read by a Japanese voice on iOS VoiceOver / NVDA.
+      document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
       applyI18n();
     }
 
@@ -1329,10 +1347,12 @@
 
     function refreshAudioOffsetUI() {
       const isAuto = prefs.audioOffsetMs == null;
-      const value = Math.round(
-        isAuto ? (typeof practice !== 'undefined' && practice.audioOffsetMs)
-                 || DEFAULT_AUDIO_OFFSET_MS
-               : prefs.audioOffsetMs);
+      // `(true && 0) || DEFAULT` collapses 0 to DEFAULT — use ?? so a
+      // legitimate 0ms override (Linux desktop with negligible buffering)
+      // displays correctly instead of jumping to the 40ms fallback.
+      const autoValue = (typeof practice !== 'undefined' ? practice.audioOffsetMs : null)
+                        ?? DEFAULT_AUDIO_OFFSET_MS;
+      const value = Math.round(isAuto ? autoValue : prefs.audioOffsetMs);
       DOM.audioOffsetSlider.value = value;
       DOM.audioOffsetVal.textContent = value;
       DOM.audioOffsetAuto.textContent = isAuto ? t('autoDetectedFmt', { v: value }) : '';
@@ -1369,9 +1389,11 @@
     // (clears the field) instead of nuking the modal mid-edit.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      const t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
-        if (t.value && t.value.length > 0) return;
+      // Don't shadow the t() translator; ESC inside an input clears the
+      // browser's native field — let it run instead of nuking the modal.
+      const tgt = e.target;
+      if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) {
+        if (tgt.value && tgt.value.length > 0) return;
       }
       // sectionEditModal sits above addSongModal in z; settingsPanel above
       // both; sectionResult / sessionSummary / songPanel close to title.
@@ -1398,13 +1420,21 @@
       }
     });
 
+    // Debounce localStorage writes — slider drag fires `input` per pixel
+    // (~50 events end-to-end) and each was hitting JSON.stringify + setItem.
+    let _audioOffsetSaveTimer = null;
     DOM.audioOffsetSlider.addEventListener('input', () => {
       const v = parseInt(DOM.audioOffsetSlider.value, 10);
+      // Bail on NaN — `practiceRealElapsedMs` would propagate NaN through
+      // every `elapsed - audioOffsetMs` subtraction for the rest of the
+      // session, breaking lane + cursor + scoring.
+      if (!Number.isFinite(v)) return;
       prefs.audioOffsetMs = v;
       if (typeof practice !== 'undefined') practice.audioOffsetMs = v;
       DOM.audioOffsetVal.textContent = v;
       DOM.audioOffsetAuto.textContent = '';
-      savePrefs();
+      clearTimeout(_audioOffsetSaveTimer);
+      _audioOffsetSaveTimer = setTimeout(savePrefs, 250);
     });
     DOM.audioOffsetReset.addEventListener('click', () => {
       prefs.audioOffsetMs = null;
@@ -1422,7 +1452,6 @@
     DOM.settingsBleBtn.addEventListener('click', () => {
       if (typeof connectBleMidi === 'function') {
         connectBleMidi().finally(() => {
-          if (typeof refreshBleMidiButton === 'function') refreshBleMidiButton();
           refreshSettingsPanel();
         });
       }
@@ -1463,6 +1492,7 @@
     });
     // Apply persisted language at startup. The langchange event lets song
     // panel / result screen re-render their dynamic text if they're visible.
+    document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
     applyI18n();
     refreshLangToggle();
     // Page loads on the title screen — body class drives the home-button hide
@@ -2342,6 +2372,10 @@
         const hue = flowPct * 1.2 + 200;
         DOM.flowFill.style.background = 'linear-gradient(to top,hsl(' + hue + ',70%,40%),hsl(' + (hue + 40) + ',80%,60%))';
         DOM.flowFill.style.boxShadow = '0 0 ' + (flowPct * 0.3) + 'px hsl(' + hue + ',70%,60%)';
+        // Mirror the visual fill into the wrapper's aria-valuenow so screen
+        // readers report the meter's actual value (was stuck at 0/100).
+        const gauge = DOM.flowFill.parentElement;
+        if (gauge) gauge.setAttribute('aria-valuenow', String(flowPct));
       }
     }
     let _lastFlowPctWritten = -1;
@@ -2939,7 +2973,14 @@
       midiState.recentOnsets.length = 0;
       midiState.sustainOn = false;
       midiState.lastChordName = '';
+      midiState.lastChordTimeMs = 0;
       state.lastMidiNoteForStability = null;
+      // Drop the BLE-redelivery dedupe cache too; otherwise a long mic-only
+      // session that included a stray MIDI note can theoretically swallow
+      // the first MIDI note after a reconnect (same `(midi<<8)|velocity`
+      // happening to fall inside the 30 ms window).
+      _lastMidiNoteOnKey = -1;
+      _lastMidiNoteOnTime = 0;
       remoteLog('[RESET] Session reset by user');
     }
 
@@ -3101,6 +3142,11 @@
         // The few branches that key off "is this a user .mxl?" use _isUser instead now.
         mxlUrl: null,
         xmlUrl: url,
+        // Propagate the unzipped xmlText so loadCurrentScore's parseScore
+        // pass + fetchPlaybackOrder both reuse it instead of re-fetching the
+        // blob: URL — Android Chrome was occasionally hanging on the second
+        // blob fetch of a just-imported user song.
+        _xmlText: xmlText || null,
         sectionDefs: record.sectionDefs,
         notes: null, totalSec: 0, sections: [], playbackOrder: [],
         measureToCursorStep: [], _loaded: false, _loadingPromise: null,
@@ -3400,9 +3446,9 @@
           drawComposer: false,
           drawCredits: false,
           drawPartNames: false,
-          // OSMD 1.8.7 throws "Can't call GetWidth on an unformatted note"
-          // for some print-object="no" notes in dense scores. Skipping
-          // hidden notes at the renderer level avoids the layout-cache miss.
+          // OSMD throws "Can't call GetWidth on an unformatted note" for some
+          // print-object="no" notes in dense scores (still reproduces in 1.9.9).
+          // Skipping hidden notes at the renderer level avoids the layout-cache miss.
           drawHiddenNotes: false,
           // autoResize:true wires a window-resize handler that re-runs
           // render() OUTSIDE our retry try/catch. La Campanella throws
@@ -3411,18 +3457,29 @@
           // has fixed positioning so CSS handles viewport changes for kid use.
           autoResize: false,
           backend: 'svg',
-          cursorsOptions: [{ type: 0, color: '#FFD700', alpha: 0.5, follow: true }]
+          // type=0 (Standard) — wide yellow highlight rectangle. Covers the
+          // area between the previous beat boundary and the current note.
+          // Visually heavier than ThinLine but much easier to spot for a
+          // child reading along. The "cursor sits to the left of the first
+          // note" perception (covering the time signature) is unavoidable
+          // with OSMD's discrete cursor model — accepted as a tradeoff for
+          // legibility during the rest of the score.
+          cursorsOptions: [{ type: 0, color: '#FFD700', alpha: 0.45, follow: true }]
         });
-        // Disable pedal rendering — OSMD 1.8.7's calculatePedals path is the
-        // direct source of the UnformattedNote throw on Liszt / Chopin scores
-        // that mark every chord with sustain (full stack:
-        // calculatePedalSkyBottomLine → calculateSinglePedal → calculatePedals
-        // → calculateMusicSystems → calculate → reCalculate → render). We
-        // don't visually need pedals for the practice flow (lane/cursor
-        // handle timing). Wrapped in try/catch since EngravingRules access
-        // could change name in a future OSMD bump.
+        // Disable pedal rendering — OSMD's calculatePedals path used to throw
+        // UnformattedNote on Liszt / Chopin scores that mark every chord with
+        // sustain. We don't visually need pedals for the practice flow.
         try { inst.EngravingRules.RenderPedals = false; }
         catch (e) { console.warn('[OSMD] could not disable pedal render: ' + e.message); }
+        // OSMD 1.9.6+ made cursor.next() follow repetitions (e.g. play through
+        // |: ... :| twice via the iterator). Our own fetchPlaybackOrder() +
+        // expandNotesByPlaybackOrder() pipeline already unfolds repeats by
+        // re-parsing the raw XML, so we ASK OSMD to keep the legacy 1.8.x
+        // behavior (one linear walk through the score). Without this, the
+        // iterator would visit the same measure twice and stepToMeasure[]
+        // would have duplicate entries, breaking setOsmdCursorStep().
+        try { inst.EngravingRules.CursorIgnoreRepetitions = true; }
+        catch (_) { /* older OSMD: option doesn't exist, behavior is the same */ }
         // OSMD's load() accepts both .mxl URLs (zipped) and plain MusicXML URLs.
         // User-added songs may carry either; fall back to whichever is present.
         await inst.load(currentSong.mxlUrl || currentSong.xmlUrl);
@@ -3481,31 +3538,195 @@
       finally { _osmdInitPromise = null; }
     }
 
+    // Coalesce tied note sequences into a single sustained event so the kid
+    // doesn't have to re-strike a tied pitch. Modifies `notes` in place.
+    // Algorithm: for each note flagged tieStart, find the chain of subsequent
+    // notes (same midi, same hand) flagged tieEnd that immediately follow in
+    // time. Extend the first note's durSec to cover the whole chain and remove
+    // the continuation entries.
+    function mergeTiedNotes(notes) {
+      if (!notes || notes.length < 2) return { merged: 0, samples: [] };
+      // We expect the array to be sorted by timeSec already.
+      const removeMask = new Array(notes.length).fill(false);
+      // Per-merge sample objects are only consumed by the load-time DIAG
+      // dump, so skip the toFixed coercions + push when telemetry is off.
+      const samples = REMOTE_LOG_ENABLED ? [] : null;
+      let mergedCount = 0;
+      for (let i = 0; i < notes.length; i++) {
+        const a = notes[i];
+        if (!a.tieStart || removeMask[i]) continue;
+        // Walk forward looking for the matching tieEnd of the same midi/hand.
+        // Allow some chord-internal jitter — match within a small window.
+        let endIdx = -1;
+        for (let j = i + 1; j < notes.length; j++) {
+          if (removeMask[j]) continue;
+          const b = notes[j];
+          // Stop the search if we've gone way past the expected end of the tie
+          // (no tied note should start more than 30s after its predecessor).
+          if (b.timeSec - a.timeSec > 30) break;
+          if (b.tieEnd && b.midi === a.midi && b.hand === a.hand) {
+            endIdx = j;
+            // If b is also a tieStart (mid-chain), keep going.
+            if (!b.tieStart) break;
+          }
+        }
+        if (endIdx > i) {
+          const tail = notes[endIdx];
+          const oldDur = a.durSec;
+          a.durSec = Math.max(a.durSec, (tail.timeSec + tail.durSec) - a.timeSec);
+          // Mark all intermediate same-pitch tieEnd notes for removal.
+          let chainLen = 1;
+          for (let j = i + 1; j <= endIdx; j++) {
+            const b = notes[j];
+            if (b.tieEnd && b.midi === a.midi && b.hand === a.hand) {
+              removeMask[j] = true;
+              chainLen++;
+            }
+          }
+          mergedCount += (chainLen - 1);
+          if (samples && samples.length < 5) {
+            samples.push({
+              midi: a.midi, hand: a.hand,
+              t0: +a.timeSec.toFixed(3),
+              chain: chainLen,
+              durBefore: +oldDur.toFixed(3),
+              durAfter: +a.durSec.toFixed(3),
+              m: a.measureIdx,
+            });
+          }
+        }
+      }
+      if (removeMask.some(Boolean)) {
+        let w = 0;
+        for (let r = 0; r < notes.length; r++) {
+          if (!removeMask[r]) notes[w++] = notes[r];
+        }
+        notes.length = w;
+      }
+      return { merged: mergedCount, samples: samples || [] };
+    }
+
     // Walk the OSMD iterator once, extracting one event per voice-entry note AND
     // recording (cursor step → measure index) so we can later jump the cursor to a
     // specific measure on repeat passes. Each note carries its source measureIdx.
-    function extractNotesFromOsmd() {
-      if (!osmd || !osmd.cursor) return { notes: [], stepToMeasure: [] };
+    //
+    // === Timing model ===
+    // We use the XML-derived measure timing (xmlMeasureTiming) as the source of
+    // truth when available — that's the only way to handle <metronome beat-unit>
+    // correctly and to honor mid-measure tempo changes. OSMD is only consulted
+    // for the iterator state (cursor step → measure mapping, in-bar offset).
+    //
+    // The OSMD `length.realValue` for each note is in WHOLE-NOTE units; that's a
+    // pure score-relative quantity (how many quarter notes the note occupies),
+    // independent of tempo. We multiply by the local quarter-BPM (from the XML
+    // tempo segment that contains this note) to get duration in seconds.
+    //
+    // When XML parsing fails entirely we fall back to OSMD's TempoInBPM.
+    function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
+      if (!osmd || !osmd.cursor) return { notes: [], stepToMeasure: [], measureStartSec: [], measureBpm: [] };
       const notes = [];
       const stepToMeasure = [];
+
+      const sourceMeasures = osmd.Sheet?.SourceMeasures || [];
+      const measureCount = sourceMeasures.length;
+      const measureStartSec = new Array(measureCount).fill(0);
+      const measureBpm = new Array(measureCount).fill(72);
+      const haveXml = xmlMeasureTiming
+        && xmlMeasureTiming.startSec.length === measureCount
+        && scoreTiming
+        && scoreTiming.measures.length === measureCount;
+
+      // Compute measureBpm[i] = leading quarter-BPM at start of measure i.
+      // From XML: walk tempo events of each measure; the tempo carried into
+      // measure i is the last segBpm from measure i-1 (or leadingQuarterBpm).
+      if (haveXml) {
+        let curQBpm = scoreTiming.leadingQuarterBpm;
+        for (let i = 0; i < measureCount; i++) {
+          measureBpm[i] = curQBpm;
+          measureStartSec[i] = xmlMeasureTiming.startSec[i];
+          // Advance curQBpm by walking this measure's tempo events.
+          for (const ev of scoreTiming.measures[i].tempoEvents) curQBpm = ev.qBpm;
+        }
+      } else {
+        for (let i = 0; i < measureCount; i++) {
+          const m = sourceMeasures[i];
+          const bpm = m?.TempoInBPM || measureBpm[i - 1] || 72;
+          measureBpm[i] = bpm;
+          if (i > 0) {
+            const prev = sourceMeasures[i - 1];
+            const prevDurWhole = prev?.Duration?.realValue || 0.25;
+            const prevDurSec = prevDurWhole * 4 * 60 / measureBpm[i - 1];
+            measureStartSec[i] = measureStartSec[i - 1] + prevDurSec;
+          }
+        }
+      }
+
+      // Helper: given a measureIdx and an in-bar QUARTER-NOTE offset, find the
+      // tempo segment that's in effect there and return both seconds-from-bar-
+      // start and the local qBpm (so the caller can compute durSec correctly).
+      // Returns { offsetSec, localQBpm }.
+      function timeAtInBar(measureIdx, inBarQuarters) {
+        if (!haveXml) {
+          const bpm = measureBpm[measureIdx];
+          return { offsetSec: inBarQuarters * 60 / bpm, localQBpm: bpm };
+        }
+        const sm = scoreTiming.measures[measureIdx];
+        const inBarDiv = inBarQuarters * sm.divisions;
+        // Walk segments in order
+        let segBpm = (measureIdx === 0)
+          ? scoreTiming.leadingQuarterBpm
+          : measureBpm[measureIdx];
+        // For measure 0, measureBpm[0] is the leading qBpm too — same value.
+        let prevDiv = 0;
+        let acc = 0;
+        for (const ev of sm.tempoEvents) {
+          if (ev.inBarDiv > inBarDiv) break;
+          const segDiv = Math.max(0, ev.inBarDiv - prevDiv);
+          if (segDiv > 0) acc += (segDiv / sm.divisions) * 60 / segBpm;
+          segBpm = ev.qBpm;
+          prevDiv = ev.inBarDiv;
+        }
+        const tailDiv = Math.max(0, inBarDiv - prevDiv);
+        if (tailDiv > 0) acc += (tailDiv / sm.divisions) * 60 / segBpm;
+        return { offsetSec: acc, localQBpm: segBpm };
+      }
+
+      // DIAG: per-cursor-step trace, first 20 steps + every step where the
+      // measure changes. Lets us verify OSMD's iterator visits each
+      // expected note position.
+      const cursorTrace = [];
+
       osmd.cursor.reset();
       const it = osmd.cursor.iterator;
       let cursorStep = 0;
       let skippedNotes = 0;
+      let prevMeasureForTrace = -1;
       while (!it.endReached && cursorStep < 20000) {
-        // Per-step try/catch — OSMD 1.8.7 throws "Can't call GetWidth on an
-        // unformatted note" on some grace notes / cadenza passages in dense
-        // scores (La Campanella reproduces it). Skipping the offending step
-        // loses a beat or two but lets the rest of the score load instead of
-        // failing the whole song.
         try {
           const measureIdx = it.CurrentMeasureIndex;
           stepToMeasure.push(measureIdx);
-          const measure = osmd.Sheet?.SourceMeasures?.[measureIdx];
-          const bpm = measure?.TempoInBPM || 72;
+          const measure = sourceMeasures[measureIdx];
           const tsFrac = it.currentTimeStamp;
-          const timeSec = tsFrac.realValue * 4 * 60 / bpm;
+          const measureStartTs = measure?.AbsoluteTimestamp?.realValue || 0;
+          // OSMD timestamps are in WHOLE-NOTE units. Convert to quarter notes.
+          const inBarQuarters = Math.max(0, tsFrac.realValue - measureStartTs) * 4;
+          const { offsetSec, localQBpm } = timeAtInBar(measureIdx, inBarQuarters);
+          const timeSec = measureStartSec[measureIdx] + offsetSec;
           const voiceEntries = it.CurrentVoiceEntries;
+          // DIAG: snapshot this step (notes added below)
+          // Capture ALL steps in early measures (covers m=0..7 fully even
+          // for dense scores like La Campanella) PLUS first step of every
+          // measure beyond. Lets us audit the iterator state at granularity
+          // matching the score's actual event density.
+          // Skip the per-step trace allocation entirely in production (no
+          // remote-log endpoint to consume it) — saves 80+ objects with nested
+          // notes[] arrays per song-load on long pieces.
+          const stepDiag = REMOTE_LOG_ENABLED
+            && (cursorStep < 80 || measureIdx !== prevMeasureForTrace)
+            ? { step: cursorStep, m: measureIdx, q: +inBarQuarters.toFixed(3),
+                t: +timeSec.toFixed(3), bpm: localQBpm, notes: [], rests: 0 }
+            : null;
+          prevMeasureForTrace = measureIdx;
           if (voiceEntries) {
             for (const ve of voiceEntries) {
               let hand;
@@ -3516,25 +3737,67 @@
               const noteList = ve.Notes || ve.notes || [];
               for (const note of noteList) {
                 try {
-                  if (!note || (note.isRest && note.isRest()) || note.halfTone == null) continue;
+                  if (!note) continue;
+                  if (note.isRest && note.isRest()) {
+                    if (stepDiag) stepDiag.rests++;
+                    continue;
+                  }
+                  if (note.halfTone == null) continue;
                   const midi = note.halfTone + 12;
                   if (!hand) hand = midi >= 60 ? 'R' : 'L';
-                  const lengthVal = note.length?.realValue ?? 0.25;
-                  const durSec = Math.max(0.05, lengthVal * 4 * 60 / bpm);
-                  notes.push({ hand, midi, timeSec, durSec, measureIdx });
+                  // length.realValue = whole notes; ×4 → quarter notes.
+                  const lengthQuarters = (note.length?.realValue ?? 0.25) * 4;
+                  // Duration uses the LOCAL bpm at the note's onset. For very
+                  // long notes that span a tempo change this is approximate but
+                  // notes rarely cross mid-bar tempo events in practice.
+                  const durSec = Math.max(0.05, lengthQuarters * 60 / localQBpm);
+                  const noteTimeSec = timeSec;
+                  // sourceStep = OSMD iterator step at extract time. Used at
+                  // playback to absolute-jump the cursor (no relative-advance
+                  // drift across repeats / voltas / D.C.). Notes in the same
+                  // chord share the same step.
+                  // tieStart/tieEnd: detected via OSMD's note.NoteTie or the
+                  // `Tie` getter (varies by OSMD version) so we can later merge
+                  // tied notes into a single sustained event.
+                  let tieStart = false, tieEnd = false;
+                  try {
+                    const tie = note.NoteTie || note.Tie || note.notetie;
+                    if (tie) {
+                      const isStartNote = tie.StartNote === note || tie.startNote === note;
+                      const isEndNote = tie.EndNote === note || tie.endNote === note;
+                      // Mid-chain ties (3+ links) flag both — mergeTiedNotes
+                      // would otherwise misclassify the middle as end-only
+                      // and break the chain walk.
+                      if (isStartNote && !isEndNote) tieStart = true;
+                      else if (isEndNote && !isStartNote) tieEnd = true;
+                      else { tieStart = true; tieEnd = true; }
+                    }
+                  } catch (_) { /* OSMD version differences */ }
+                  notes.push({
+                    hand, midi,
+                    timeSec: noteTimeSec,
+                    durSec, measureIdx,
+                    sourceStep: cursorStep, tieStart, tieEnd,
+                  });
+                  if (stepDiag) {
+                    stepDiag.notes.push({
+                      midi, hand,
+                      qLen: +lengthQuarters.toFixed(3),
+                      tie: tieStart ? 'S' : tieEnd ? 'E' : '',
+                    });
+                  }
                 } catch (_) {
                   skippedNotes++;
                 }
               }
             }
           }
+          if (stepDiag) cursorTrace.push(stepDiag);
         } catch (_) {
-          // Whole-step failure (very rare). Just advance and hope the next
-          // step is recoverable. Counted into skippedNotes for the log.
           skippedNotes++;
         }
         try { it.moveToNext(); }
-        catch (_) { break; } // iterator-level failure → bail; we have what we have
+        catch (_) { break; }
         cursorStep++;
       }
       try { osmd.cursor.reset(); } catch (_) { /* ignore */ }
@@ -3542,16 +3805,290 @@
       if (skippedNotes > 0) {
         console.warn('[OSMD] skipped ' + skippedNotes + ' unformattable note(s)');
       }
-      return { notes, stepToMeasure };
+      // Tie merging: when two notes of the same midi+hand are tied, the second
+      // is a continuation rather than a re-attack. The kid shouldn't have to
+      // re-strike a tied note. Coalesce by extending the first note's durSec
+      // and removing the continuation entries.
+      const tieReport = mergeTiedNotes(notes);
+      // Surface the cursor trace + tie report only when telemetry is on so
+      // production builds don't allocate the wrapper object every load.
+      const _diag = REMOTE_LOG_ENABLED ? {
+        totalSteps: cursorStep,
+        skippedNotes,
+        cursorTrace,
+        tieReport,
+      } : null;
+      return {
+        notes, stepToMeasure, measureStartSec, measureBpm, _diag,
+      };
+    }
+
+    // Parse the raw MusicXML for everything that affects playback timing:
+    // per-measure tempo (correctly normalized via beat-unit), time signature,
+    // divisions, anacrusis, and mid-measure tempo events.
+    //
+    // OSMD's TempoInBPM does NOT normalize <metronome beat-unit>: confirmed by
+    // reading ExpressionReader.ts — it computes
+    //   currentMeasure.TempoInBPM = this.soundTempo * (dotted?1.5:1)
+    // and ignores the beat-unit type. So <metronome beat-unit="eighth" per-minute="120"/>
+    // is stored as 120 by OSMD when it should be 60. We re-parse the XML
+    // ourselves so we have the canonical quarter BPM per measure (and per
+    // intra-measure event for pieces with mid-bar tempo changes).
+    //
+    // Also catches: time signature changes, divisions changes, anacrusis,
+    // and the bare-words case (e.g. <words>D.C. al Fine</words> with no <sound>).
+    //
+    // Returns:
+    //   {
+    //     measures: [{ tempoEvents, timeSig, divisions, implicit, durationDiv,
+    //                  actualDiv }, ...],
+    //     leadingQuarterBpm: number,
+    //     leadingSource: string | null,
+    //   }
+    //   tempoEvents = [{ inBarDiv, qBpm, src }, ...]  // first one applies from start of measure
+    //   inBarDiv is in DIVISIONS units (0 = bar start)
+    //   actualDiv = max forward-extent reached by any voice in the measure
+    //               (used to compute the bar's true played duration when an
+    //               exporter writes a partial measure — la Campanella's m=5).
+    function parseScoreTimingFromXml(xmlText) {
+      try {
+        const dom = new DOMParser().parseFromString(xmlText, 'text/xml');
+        const partEls = dom.querySelectorAll('part');
+        if (!partEls.length) return null;
+        const measureEls = partEls[0].querySelectorAll('measure');
+        // beat-unit name → fraction-of-quarter-note
+        // (eighth = 0.5 quarters → eighth=120 means quarter=60)
+        const beatUnitQ = {
+          'long': 16, 'breve': 8, 'whole': 4, 'half': 2, 'quarter': 1,
+          'eighth': 0.5, '16th': 0.25, '32nd': 0.125, '64th': 0.0625,
+          '128th': 0.03125, '256th': 0.015625,
+        };
+        function dotMul(d) { return d === 1 ? 1.5 : d === 2 ? 1.75 : d === 3 ? 1.875 : 1; }
+        function metronomeToQBpm(met) {
+          const buEl = met.querySelector('beat-unit');
+          const bu = (buEl?.textContent || 'quarter').trim();
+          const pmEl = met.querySelector('per-minute');
+          const pm = parseFloat(pmEl?.textContent || '');
+          if (!isFinite(pm) || pm <= 0) return null;
+          const dotted = met.querySelectorAll('beat-unit-dot').length;
+          const factor = (beatUnitQ[bu] != null ? beatUnitQ[bu] : 1) * dotMul(dotted);
+          return {
+            qBpm: pm * factor,
+            src: 'metronome ' + bu + (dotted ? '·'.repeat(dotted) : '') + '=' + pm,
+          };
+        }
+        // Walk measures and record events in document order.
+        const out = [];
+        let curDivisions = 1;        // divisions per quarter (inherits across measures)
+        let curBeats = 4, curBeatType = 4;  // time signature (inherits)
+        let leadingQuarterBpm = null;
+        let leadingSource = null;
+        measureEls.forEach((m, i) => {
+          const implicit = m.getAttribute('implicit') === 'yes';
+          const tempoEvents = [];
+          // Track division offset within the measure as we walk children in order.
+          let inBarDiv = 0;
+          // Maximum forward extent reached by any voice in this measure. With
+          // multi-voice + <backup>, `inBarDiv` is the last voice's endpoint,
+          // not the measure's content length — e.g. voice 1 fills 720 ticks
+          // then backup 720, voice 2 fills 480: final inBarDiv=480 but the
+          // measure actually has 720 ticks of content. We track the max so
+          // `actualDiv` reflects how much time the measure consumes.
+          let maxExtent = 0;
+          // measure children appear in score order; we need that order so a
+          // <direction> placed mid-measure can be positioned correctly.
+          for (const ch of Array.from(m.children)) {
+            const name = ch.tagName.toLowerCase();
+            if (name === 'attributes') {
+              const div = ch.querySelector(':scope > divisions');
+              if (div) {
+                const v = parseInt(div.textContent, 10);
+                if (Number.isFinite(v) && v > 0) curDivisions = v;
+              }
+              const tm = ch.querySelector(':scope > time');
+              if (tm) {
+                const b = parseInt(tm.querySelector(':scope > beats')?.textContent || '', 10);
+                const bt = parseInt(tm.querySelector(':scope > beat-type')?.textContent || '', 10);
+                if (Number.isFinite(b) && b > 0) curBeats = b;
+                if (Number.isFinite(bt) && bt > 0) curBeatType = bt;
+              }
+            } else if (name === 'direction') {
+              // <metronome> takes precedence (explicit beat-unit). Fall through
+              // to <sound tempo> when no metronome is present in this direction.
+              const met = ch.querySelector('direction-type metronome');
+              if (met) {
+                const r = metronomeToQBpm(met);
+                if (r) {
+                  tempoEvents.push({ inBarDiv, qBpm: r.qBpm, src: r.src });
+                  if (leadingQuarterBpm == null) {
+                    leadingQuarterBpm = r.qBpm;
+                    leadingSource = r.src;
+                  }
+                }
+              } else {
+                const sn = ch.querySelector(':scope > sound[tempo]');
+                if (sn) {
+                  const tempoVal = parseFloat(sn.getAttribute('tempo') || '');
+                  if (isFinite(tempoVal) && tempoVal > 0) {
+                    tempoEvents.push({ inBarDiv, qBpm: tempoVal, src: 'sound tempo=' + tempoVal });
+                    if (leadingQuarterBpm == null) {
+                      leadingQuarterBpm = tempoVal;
+                      leadingSource = 'sound tempo=' + tempoVal;
+                    }
+                  }
+                }
+              }
+            } else if (name === 'sound') {
+              // Score-level <sound> outside <direction>
+              const tempoVal = parseFloat(ch.getAttribute('tempo') || '');
+              if (isFinite(tempoVal) && tempoVal > 0) {
+                tempoEvents.push({ inBarDiv, qBpm: tempoVal, src: 'sound tempo=' + tempoVal });
+                if (leadingQuarterBpm == null) {
+                  leadingQuarterBpm = tempoVal;
+                  leadingSource = 'sound tempo=' + tempoVal;
+                }
+              }
+            } else if (name === 'note') {
+              // Advance inBarDiv for non-grace, non-chord notes.
+              const isGrace = ch.querySelector(':scope > grace') != null;
+              const isChord = ch.querySelector(':scope > chord') != null;
+              if (!isGrace && !isChord) {
+                const dEl = ch.querySelector(':scope > duration');
+                if (dEl) {
+                  const dv = parseInt(dEl.textContent, 10);
+                  if (Number.isFinite(dv) && dv > 0) {
+                    inBarDiv += dv;
+                    if (inBarDiv > maxExtent) maxExtent = inBarDiv;
+                  }
+                }
+              }
+            } else if (name === 'backup') {
+              const dEl = ch.querySelector(':scope > duration');
+              if (dEl) {
+                const dv = parseInt(dEl.textContent, 10);
+                if (Number.isFinite(dv) && dv > 0) inBarDiv -= dv;
+              }
+            } else if (name === 'forward') {
+              const dEl = ch.querySelector(':scope > duration');
+              if (dEl) {
+                const dv = parseInt(dEl.textContent, 10);
+                if (Number.isFinite(dv) && dv > 0) {
+                  inBarDiv += dv;
+                  if (inBarDiv > maxExtent) maxExtent = inBarDiv;
+                }
+              }
+            }
+          }
+          // The total nominal bar duration is beats × (4 / beat-type) quarters,
+          // converted to divisions: durationDiv = beats × divisions × 4 / beat-type.
+          // For anacrusis / partial measures the actual played duration is
+          // shorter — we'll let the note timeline drive that.
+          const durationDiv = Math.round(curBeats * curDivisions * 4 / curBeatType);
+          out.push({
+            tempoEvents,
+            timeSig: { beats: curBeats, beatType: curBeatType },
+            divisions: curDivisions,
+            implicit,
+            durationDiv,
+            // Actual measured content length, in DIVISIONS — the maximum
+            // forward extent reached by any voice in document order. With
+            // multi-voice scores like la Campanella's m=5 (8 sixteenths in
+            // voice 1 + 4 eighths in voice 2 + half-rest in voice 5, all
+            // separated by <backup>), this captures the bar's true content
+            // length. Falls back to durationDiv when measure is fully empty.
+            actualDiv: maxExtent,
+          });
+        });
+        // Default leading tempo if score has no markings at all.
+        if (leadingQuarterBpm == null) {
+          leadingQuarterBpm = 72;
+          leadingSource = 'default (no marking)';
+        }
+        return { measures: out, leadingQuarterBpm, leadingSource };
+      } catch (e) {
+        console.warn('[parseScoreTimingFromXml] failed:', e);
+        return null;
+      }
+    }
+
+    // Compute per-measure (start time, duration) seconds from XML timing data.
+    // Handles tempo changes mid-measure correctly: each measure's elapsed time
+    // is the sum over its tempo segments of (segmentDuration / segmentBpm).
+    function buildMeasureTimingFromXml(scoreTiming) {
+      if (!scoreTiming) return null;
+      const measures = scoreTiming.measures;
+      const startSec = new Array(measures.length).fill(0);
+      const durSec = new Array(measures.length).fill(0);
+      // The tempo at the very start: leadingQuarterBpm. Each subsequent measure
+      // inherits the last tempo from the previous measure.
+      let curQBpm = scoreTiming.leadingQuarterBpm;
+      for (let i = 0; i < measures.length; i++) {
+        const m = measures[i];
+        // Effective bar duration in DIVISIONS = the SUM of explicit content
+        // (notes + rests) when present. Match OSMD's `SourceMeasure.Duration`
+        // semantics — OSMD's getter literally says "can be 1/1 in a 4/4
+        // measure", i.e. it tracks actual content, not the nominal time
+        // signature. Without this, exporters that emit a partial measure
+        // (e.g. MuseScore's la Campanella m=5 has 8/12 sixteenths followed
+        // by no trailing rest, so actualDiv=480 but durationDiv=720) pin
+        // the next measure 240 ticks later in our XML clock than OSMD
+        // visits it, manifesting as a phantom rest gap in the lane right
+        // before the next bar's first note.
+        // We still honour durationDiv as a floor: if the measure has no
+        // notes at all (empty actualDiv), fall back to the nominal length
+        // so silent bars don't collapse to zero-time.
+        const usedDiv = m.actualDiv > 0 ? m.actualDiv : m.durationDiv;
+        // Walk tempo events within the measure, accumulating seconds.
+        // Events are pre-sorted by inBarDiv (document order = score order).
+        // The "current tempo at measure start" is curQBpm; an event at inBarDiv=0
+        // overrides it for this measure (and subsequent measures).
+        let acc = 0;            // seconds accumulated in this measure
+        let prevDiv = 0;        // div offset of the last segment boundary
+        let segBpm = curQBpm;   // bpm in effect for the segment starting at prevDiv
+        for (const ev of m.tempoEvents) {
+          const segDiv = Math.max(0, ev.inBarDiv - prevDiv);
+          if (segDiv > 0) {
+            const segQuarters = segDiv / m.divisions;
+            acc += segQuarters * 60 / segBpm;
+          }
+          segBpm = ev.qBpm;
+          prevDiv = ev.inBarDiv;
+        }
+        // Final segment from last event to the end of the bar
+        const tailDiv = Math.max(0, usedDiv - prevDiv);
+        if (tailDiv > 0) {
+          const tailQuarters = tailDiv / m.divisions;
+          acc += tailQuarters * 60 / segBpm;
+        }
+        durSec[i] = acc;
+        if (i + 1 < measures.length) startSec[i + 1] = startSec[i] + acc;
+        // Tempo carried forward to the next measure
+        curQBpm = segBpm;
+      }
+      return { startSec, durSec };
     }
 
     // Parse the raw MusicXML to derive the actual playback order.
-    // OSMD 1.8.7 doesn't surface <repeat>/<ending> markers, so we read them ourselves
-    // and build a sequence of measure indices in the order they should sound.
-    async function fetchPlaybackOrder() {
-      const res = await fetch(currentSong.xmlUrl);
-      if (!res.ok) throw new Error('XML fetch failed: ' + res.status);
-      const text = await res.text();
+    // OSMD doesn't surface <repeat>/<ending> markers via its public API
+    // (still true in 1.9.9), so we read them ourselves and build a sequence of
+    // measure indices in the order they should sound.
+    //
+    // `forSong` is captured by `loadCurrentScore` (the song record at the
+    // time loading started). Reading the global `currentSong` here would
+    // race against a rapid `selectSong()` that changes `currentSong`
+    // mid-load — the IIFE would then fetch the wrong song's XML and feed
+    // a foreign repeat structure into the in-flight song's note timeline.
+    async function fetchPlaybackOrder(forSong) {
+      const targetSong = forSong || currentSong;
+      // Prefer the pre-decoded xmlText cached on the song record (set by
+      // addUserSongFromBlob). Avoids a second fetch which on Android Chrome
+      // can hang against blob: URLs of just-imported songs.
+      let text = targetSong._xmlText;
+      if (!text) {
+        const res = await fetch(targetSong.xmlUrl);
+        if (!res.ok) throw new Error('XML fetch failed: ' + res.status);
+        text = await res.text();
+      }
       const dom = new DOMParser().parseFromString(text, 'text/xml');
       // Use first part only; both staves of a piano grand staff usually share repeats.
       const partEls = dom.querySelectorAll('part');
@@ -3574,13 +4111,50 @@
           if (dir === 'forward') fwdRepeat = true;
           if (dir === 'backward') bwdRepeat = true;
         }
-        info.push({ startsEnding, stopsEnding, fwdRepeat, bwdRepeat });
+        // D.C. / D.S. / Coda / Fine markers. MusicXML places these on
+        // <direction><sound dacapo|dalsegno|tocoda|coda|segno|fine="..."/>;
+        // some engravers omit the <sound> and use <words> only, so check
+        // both. The current jump model handles the most common case
+        // (D.C. al Fine, simple D.C., D.S. al Coda); jumps fire at most
+        // once each so safety can't loop.
+        let dacapo = false, fine = false, tocoda = false;
+        let coda = false, segno = false, dalsegno = false;
+        for (const s of m.querySelectorAll('direction sound')) {
+          if (s.getAttribute('dacapo') === 'yes') dacapo = true;
+          if (s.getAttribute('fine') === 'yes') fine = true;
+          if (s.getAttribute('tocoda')) tocoda = true;
+          if (s.getAttribute('coda')) coda = true;
+          if (s.getAttribute('segno')) segno = true;
+          if (s.getAttribute('dalsegno')) dalsegno = true;
+        }
+        for (const w of m.querySelectorAll('direction words')) {
+          const text = (w.textContent || '').trim();
+          if (/^D\.?C\./i.test(text) || /Da\s*Capo/i.test(text)) dacapo = true;
+          if (/^Fine\b/i.test(text)) fine = true;
+          if (/^To\s*Coda/i.test(text)) tocoda = true;
+          if (/^D\.?S\./i.test(text) || /Dal\s*Segno/i.test(text)) dalsegno = true;
+        }
+        info.push({
+          startsEnding, stopsEnding, fwdRepeat, bwdRepeat,
+          dacapo, fine, tocoda, coda, segno, dalsegno
+        });
       });
+
+      // Pre-scan for segno / coda landing positions (used by D.S. and
+      // To Coda jumps). First occurrence wins — multi-segno scores are
+      // rare and we'd need name matching for those.
+      let segnoIdx = -1, codaIdx = -1;
+      for (let k = 0; k < info.length; k++) {
+        if (info[k].segno && segnoIdx < 0) segnoIdx = k;
+        if (info[k].coda && codaIdx < 0) codaIdx = k;
+      }
 
       const order = [];
       const repeatTaken = new Set();   // forward-repeat positions already done
       let i = 0;
       let repeatStartIdx = 0;
+      let dcFired = false;             // D.C. already taken
+      let dsFired = false;             // D.S. already taken
       let safety = 0;
       while (i < info.length && safety < info.length * 8) {
         safety++;
@@ -3596,9 +4170,34 @@
         }
         if (m.fwdRepeat) repeatStartIdx = i;
         order.push(i);
+        // Fine — only stops the piece on the post-D.C./D.S. pass.
+        if ((dcFired || dsFired) && m.fine) break;
+        // To Coda — only on the post-D.C./D.S. pass; jump to the coda marker.
+        if ((dcFired || dsFired) && m.tocoda && codaIdx >= 0) {
+          i = codaIdx;
+          continue;
+        }
         if (m.bwdRepeat && !repeatTaken.has(repeatStartIdx)) {
           repeatTaken.add(repeatStartIdx);
           i = repeatStartIdx;
+          continue;
+        }
+        // D.C. — back to the very beginning. Reset volta state so the
+        // second pass plays the 1st-ending volta as written (the kid
+        // hears the original phrasing again before we hit Fine / Coda).
+        if (m.dacapo && !dcFired) {
+          dcFired = true;
+          repeatTaken.clear();
+          repeatStartIdx = 0;
+          i = 0;
+          continue;
+        }
+        // D.S. — back to segno marker. Same volta-state reset.
+        if (m.dalsegno && !dsFired && segnoIdx >= 0) {
+          dsFired = true;
+          repeatTaken.clear();
+          repeatStartIdx = segnoIdx;
+          i = segnoIdx;
           continue;
         }
         i++;
@@ -3610,20 +4209,44 @@
     // monotonic sequence ready for the lane / Tone.js / cursor sync.
     // Each playback note is tagged with cursorJump = measureIdx whenever the playback
     // moves non-sequentially in the written score (back-jump or forward-skip).
-    function expandNotesByPlaybackOrder(baseNotes, order, measures) {
+    function expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec) {
       const byMeasure = new Map();
       for (const n of baseNotes) {
         let arr = byMeasure.get(n.measureIdx);
         if (!arr) { arr = []; byMeasure.set(n.measureIdx, arr); }
         arr.push(n);
       }
-      const measureStartSec = [];
-      const measureDurSec = [];
-      for (let i = 0; i < measures.length; i++) {
-        const m = measures[i];
-        const bpm = m?.TempoInBPM || 72;
-        measureStartSec[i] = (m?.AbsoluteTimestamp?.realValue || 0) * 4 * 60 / bpm;
-        measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
+      // Reuse the cumulative-sum measureStartSec from extract step if provided
+      // (handles tempo changes correctly). Fall back to inline compute when
+      // called from a context that can't supply it (legacy / tests).
+      let measureStartSec, measureDurSec;
+      if (sourceMeasureStartSec && sourceMeasureStartSec.length === measures.length) {
+        measureStartSec = sourceMeasureStartSec;
+        measureDurSec = new Array(measures.length).fill(0);
+        for (let i = 0; i < measures.length; i++) {
+          const m = measures[i];
+          // Use cumulative diff for dur — only the last bar needs its own bpm.
+          if (i + 1 < measures.length) {
+            measureDurSec[i] = measureStartSec[i + 1] - measureStartSec[i];
+          } else {
+            const bpm = m?.TempoInBPM || 72;
+            measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
+          }
+        }
+      } else {
+        // Fallback path: cumulative sum of per-bar durations (each bar uses
+        // its own bpm). Same algorithm as extractNotesFromOsmd above; kept
+        // local so legacy callers still get tempo-correct timing.
+        measureStartSec = new Array(measures.length).fill(0);
+        measureDurSec = new Array(measures.length).fill(0);
+        let prevBpm = 72;
+        for (let i = 0; i < measures.length; i++) {
+          const m = measures[i];
+          const bpm = m?.TempoInBPM || prevBpm;
+          measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
+          if (i > 0) measureStartSec[i] = measureStartSec[i - 1] + measureDurSec[i - 1];
+          prevBpm = bpm;
+        }
       }
       const expanded = [];
       let cumTime = 0;
@@ -3640,6 +4263,7 @@
             timeSec: cumTime + (n.timeSec - mStart),
             durSec: n.durSec,
             measureIdx: mIdx,
+            sourceStep: n.sourceStep,
             cursorJump: (j === 0 && isJump) ? mIdx : null
           });
         }
@@ -3650,6 +4274,236 @@
       return expanded;
     }
 
+    // ============================================================
+    // Comprehensive load-time DIAG dump.
+    //
+    // Pipeline visibility at every layer of the file → notes chain:
+    //
+    //   MusicXML
+    //     → parseScoreTimingFromXml() — raw XML model
+    //     → buildMeasureTimingFromXml() — per-measure (start, dur) sec
+    //     → extractNotesFromOsmd() — OSMD-iterator-driven note extract
+    //     → mergeTiedNotes() — tie coalesce
+    //     → fetchPlaybackOrder() — repeat / D.C. / volta unfold
+    //     → expandNotesByPlaybackOrder() — final note timeline
+    //     → buildSectionsFromDefs() — section windows
+    //
+    // Each transformation gets its own DIAG line so we can pinpoint
+    // exactly where a note is dropped, mis-timed, or hand-mis-assigned.
+    // ============================================================
+    function dumpLoadDiagnostics(p) {
+      const log = remoteLog;
+      const song = p.song;
+      const ext = p.extractRet?._diag || {};
+      const scoreTiming = p.scoreTiming;
+      const measures = p.measures;
+      const expanded = p.expanded;
+      const baseNotes = p.baseNotes;
+      const measureStartSec = p.measureStartSec;
+      const measureBpm = p.measureBpm;
+      // Wrap each section so a throw in (e.g.) the cursor trace can't
+      // suppress the per-note + per-section dumps that follow. Was a real
+      // regression: a malformed cursorTrace entry silently killed the
+      // last 4 sections of the load DIAG, leaving us blind to the parts
+      // we cared most about.
+      const safeSection = (label, fn) => {
+        try { fn(); }
+        catch (e) { log('[DIAG/' + label + '] EXCEPTION: ' + (e && e.message || e)); }
+      };
+
+      // ---------- 1. song-level summary ----------
+      const tieReport = ext.tieReport || { merged: 0, samples: [] };
+      safeSection('song', () => {
+        const handCounts = expanded.reduce((c, n) => {
+          c[n.hand] = (c[n.hand] || 0) + 1; return c;
+        }, {});
+        const midiRange = expanded.reduce((r, n) => {
+          if (n.midi < r.lo) r.lo = n.midi;
+          if (n.midi > r.hi) r.hi = n.midi;
+          return r;
+        }, { lo: 200, hi: 0 });
+        const repeatDelta = p.order.length - measures.length;
+        log('[DIAG/song] id=' + song.id +
+          ' src=' + (song._isUser ? 'user' : 'bundled') +
+          ' measures=' + measures.length +
+          ' osmdSteps=' + ext.totalSteps +
+          ' baseNotes=' + baseNotes.length +
+          ' expanded=' + expanded.length +
+          ' R=' + (handCounts.R || 0) +
+          ' L=' + (handCounts.L || 0) +
+          ' midi=' + midiRange.lo + '..' + midiRange.hi +
+          ' totalSec=' + p.totalSec.toFixed(2) +
+          ' bpm=' + (song.bpm || 0).toFixed(2) +
+          ' bpmSrc=' + (scoreTiming?.leadingSource || 'osmd') +
+          ' bpmRescaled=' + (song._bpmRescaled === true) +
+          ' repeats=' + (repeatDelta > 0 ? '+' + repeatDelta : repeatDelta) +
+          ' tied=' + tieReport.merged +
+          ' skipped=' + (ext.skippedNotes || 0));
+      });
+
+      // ---------- 2. per-measure layout ----------
+      // First 8 measures + every measure with a tempo change + last measure.
+      safeSection('measure', () => {
+        const tempoChanges = new Set();
+        if (scoreTiming) {
+          let prevQ = scoreTiming.leadingQuarterBpm;
+          for (let i = 0; i < scoreTiming.measures.length; i++) {
+            const evs = scoreTiming.measures[i].tempoEvents || [];
+            for (const ev of evs) {
+              if (Math.abs(ev.qBpm - prevQ) > 0.01) tempoChanges.add(i);
+              prevQ = ev.qBpm;
+            }
+          }
+        }
+        const measureSamples = new Set();
+        for (let i = 0; i < Math.min(8, measures.length); i++) measureSamples.add(i);
+        tempoChanges.forEach((i) => measureSamples.add(i));
+        if (measures.length > 0) measureSamples.add(measures.length - 1);
+        const sortedMeasures = Array.from(measureSamples).sort((a, b) => a - b);
+        // Pre-tally note counts per measure once: previous code did
+        // `expanded.filter(n => n.measureIdx === i).length` inside the loop,
+        // which is O(measures × notes) — for la Campanella that's
+        // 168 × 3000 = 500k iterations on every song-load.
+        const notesByMeasure = new Map();
+        for (const n of expanded) {
+          notesByMeasure.set(n.measureIdx, (notesByMeasure.get(n.measureIdx) || 0) + 1);
+        }
+        for (const i of sortedMeasures) {
+          const sm = scoreTiming?.measures?.[i];
+          const evs = sm?.tempoEvents?.length
+            ? ' tempo=[' + sm.tempoEvents.map((e) => Number(e.qBpm).toFixed(1)).join(',') + ']'
+            : '';
+          const notesInM = notesByMeasure.get(i) || 0;
+          log('[DIAG/measure] m=' + i +
+            ' start=' + (measureStartSec[i] || 0).toFixed(3) + 's' +
+            ' bpm=' + (measureBpm[i] || 0).toFixed(1) +
+            (sm ? ' div=' + sm.divisions +
+                  ' time=' + sm.timeSig.beats + '/' + sm.timeSig.beatType +
+                  (sm.implicit ? ' impl' : '') +
+                  ' nominalDiv=' + sm.durationDiv +
+                  ' actualDiv=' + sm.actualDiv : '') +
+            ' notes=' + notesInM +
+            evs);
+        }
+      });
+
+      // ---------- 3. cursor trace (every OSMD step in measures 0..7) ----------
+      // First 8 measures get FULL step-by-step trace so we can see exactly
+      // what notes / rests are at every iterator position. Crucial for
+      // diagnosing "the score shows N notes but the lane only has N-2"
+      // type issues at measure granularity. Beyond m=7 we keep only the
+      // measure-boundary entries (first step of each new measure) so the
+      // log doesn't blow up on long pieces.
+      safeSection('cursor', () => {
+        if (!ext.cursorTrace) return;
+        // Pre-index "first cursor step per measure" so the m>7 filter below
+        // is O(1) per check instead of doing a linear find() inside the loop
+        // (would be O(N²) on long pieces — la Campanella's trace runs into
+        // the hundreds of entries).
+        const firstStepByMeasure = new Map();
+        for (const c of ext.cursorTrace) {
+          if (!firstStepByMeasure.has(c.m)) firstStepByMeasure.set(c.m, c.step);
+        }
+        for (const c of ext.cursorTrace) {
+          if (c.m > 7 && c.step !== firstStepByMeasure.get(c.m)) continue;
+          const noteList = c.notes && c.notes.length
+            ? c.notes.map((n) => n.midi + n.hand +
+                (n.tie ? '/t' + n.tie : '') +
+                '*' + n.qLen + 'q').join(',')
+            : '(none)';
+          // Coerce all numeric fields through Number() so a stray undefined
+          // / NaN entry doesn't blow up the whole trace dump.
+          log('[DIAG/cursor] step=' + c.step +
+            ' m=' + c.m +
+            ' inBarQ=' + c.q +
+            ' t=' + c.t + 's' +
+            ' bpm=' + Number(c.bpm || 0).toFixed(1) +
+            ' rests=' + (c.rests || 0) +
+            ' notes=' + noteList);
+        }
+      });
+
+      // ---------- 4. note timeline (first 12 + last 4) ----------
+      safeSection('note', () => {
+        const fmtNote = (n, i) => 'idx=' + i +
+          ' t=' + n.timeSec.toFixed(3) +
+          ' dur=' + n.durSec.toFixed(3) +
+          ' midi=' + n.midi +
+          ' ' + n.hand +
+          ' m=' + n.measureIdx +
+          ' step=' + n.sourceStep +
+          (n.cursorJump != null ? ' jump→m=' + n.cursorJump : '');
+        const head = Math.min(12, expanded.length);
+        for (let i = 0; i < head; i++) {
+          log('[DIAG/note] ' + fmtNote(expanded[i], i));
+        }
+        if (expanded.length > head + 4) {
+          log('[DIAG/note] ... (' + (expanded.length - head - 4) + ' notes elided) ...');
+        }
+        for (let i = Math.max(head, expanded.length - 4); i < expanded.length; i++) {
+          log('[DIAG/note] ' + fmtNote(expanded[i], i));
+        }
+      });
+
+      // ---------- 5. tie merge report ----------
+      safeSection('tie', () => {
+        if (!tieReport.samples || !tieReport.samples.length) return;
+        for (const s of tieReport.samples) {
+          log('[DIAG/tie] midi=' + s.midi + ' ' + s.hand +
+            ' m=' + s.m +
+            ' t=' + s.t0 +
+            ' chain=' + s.chain +
+            ' dur=' + s.durBefore + '->' + s.durAfter + 's');
+        }
+        if (tieReport.merged > tieReport.samples.length) {
+          log('[DIAG/tie] ... (' + (tieReport.merged - tieReport.samples.length) +
+            ' more ties merged, not shown)');
+        }
+      });
+
+      // ---------- 6. sections ----------
+      // expanded is already sorted by timeSec, so a single linear sweep with
+      // a section cursor classifies every note in O(N + S) total — vs the
+      // earlier per-section filter() (O(S × N)) and even the per-note
+      // section scan (O(N × S)). Sections are also sorted by startSec by
+      // construction in buildSectionsFromDefs.
+      safeSection('section', () => {
+      const sectionBuckets = song.sections.map(() => ({ count: 0, first: null, last: null }));
+      let secIdx = 0;
+      for (const n of expanded) {
+        // Advance the section cursor past any sections this note has overshot
+        // (sparse sections / boss tail can skip empty buckets in one step).
+        while (secIdx < song.sections.length && n.timeSec >= song.sections[secIdx].endSec) {
+          secIdx++;
+        }
+        if (secIdx >= song.sections.length) break;
+        const sec = song.sections[secIdx];
+        if (n.timeSec < sec.startSec) continue; // gap between sections
+        const b = sectionBuckets[secIdx];
+        b.count++;
+        if (!b.first) b.first = n;
+        b.last = n;
+      }
+      for (let i = 0; i < song.sections.length; i++) {
+        const sec = song.sections[i];
+        const b = sectionBuckets[i];
+        log('[DIAG/section] i=' + i +
+          ' id=' + sec.id +
+          ' start=' + sec.startSec.toFixed(3) +
+          ' end=' + sec.endSec.toFixed(3) +
+          ' span=' + (sec.endSec - sec.startSec).toFixed(2) + 's' +
+          ' notes=' + b.count +
+          (b.first ? ' first{m=' + b.first.measureIdx +
+            ' t=' + b.first.timeSec.toFixed(3) +
+            ' midi=' + b.first.midi + '}' : ' (empty)') +
+          (b.last && b.last !== b.first ? ' last{m=' + b.last.measureIdx +
+            ' t=' + b.last.timeSec.toFixed(3) +
+            ' midi=' + b.last.midi + '}' : '') +
+          (sec.isBoss ? ' BOSS' : ''));
+      }
+      });  // safeSection('section')
+    }
+
     async function loadCurrentScore() {
       // Data is loaded but the OSMD instance was nulled (right after a song switch).
       // Re-run initOsmd only to redraw the score; note/section extraction is unnecessary.
@@ -3658,11 +4512,60 @@
         return;
       }
       if (currentSong._loadingPromise) return currentSong._loadingPromise;
-      currentSong._loadingPromise = (async () => {
+      // Capture `currentSong` so a rapid second `selectSong()` mid-load can't
+      // make the IIFE write its results into the wrong song's record (would
+      // null another in-flight song's _loadingPromise, allowing concurrent
+      // duplicate loads).
+      const song = currentSong;
+      // Bail-out helper: a rapid `selectSong()` swap mid-load means the
+      // global OSMD instance + measure data now belong to a different song.
+      // Reading it past that point produces cross-song data corruption
+      // (foreign repeat structure into our note timeline, foreign measures
+      // into our cursor map). Returning false abandons the load gracefully.
+      const stillCurrent = () => currentSong === song;
+      song._loadingPromise = (async () => {
         await initOsmd();
+        if (!stillCurrent()) return;
 
-        const { notes: baseNotes, stepToMeasure } = extractNotesFromOsmd();
+        // Parse the raw XML for the authoritative timing model: per-measure
+        // tempo events (correctly normalized via beat-unit), time signatures,
+        // divisions, and anacrusis. We use this for ALL timing decisions —
+        // OSMD is consulted only for pitch/staff/cursor.
+        let scoreTiming = null;
+        try {
+          let text = song._xmlText;
+          if (!text && song.xmlUrl) {
+            const res = await fetch(song.xmlUrl);
+            if (!stillCurrent()) return;
+            if (res.ok) text = await res.text();
+          }
+          if (text) {
+            // Cache so fetchPlaybackOrder() reuses it instead of re-downloading
+            // (Android Chrome was occasionally hanging on the second blob: fetch).
+            song._xmlText = text;
+            scoreTiming = parseScoreTimingFromXml(text);
+          }
+        } catch (_) { /* non-fatal — extractNotesFromOsmd will fall back */ }
+        if (!stillCurrent()) return;
+        const xmlMeasureTiming = buildMeasureTimingFromXml(scoreTiming);
+
+        const extractRet = extractNotesFromOsmd(xmlMeasureTiming, scoreTiming);
+        const baseNotes = extractRet.notes;
+        const stepToMeasure = extractRet.stepToMeasure;
+        const srcMeasureStartSec = extractRet.measureStartSec;
+        const osmdMeasureBpm = extractRet.measureBpm;
         if (baseNotes.length === 0) throw new Error('No notes extracted from MusicXML');
+
+        // BPM divergence flag — true when OSMD's reading of <metronome
+        // beat-unit="eighth"> disagrees with the XML-canonical quarter BPM
+        // (OSMD's known limitation). Used by renderSongPanel to show the
+        // "✓" marker on the BPM hint, signaling that we corrected the score.
+        song._bpmRescaled = false;
+        if (scoreTiming && xmlMeasureTiming) {
+          const osmdBpm0 = osmdMeasureBpm[0] || 72;
+          const xmlBpm0 = scoreTiming.leadingQuarterBpm;
+          song._bpmRescaled = Math.abs(osmdBpm0 / xmlBpm0 - 1) > 0.05;
+        }
 
         // Build measure → first-cursor-step lookup for cursor jump-on-pass-start.
         const measures = osmd.Sheet?.SourceMeasures || [];
@@ -3672,27 +4575,19 @@
           if (measureToCursorStep[mi] < 0) measureToCursorStep[mi] = s;
         }
 
-        // Parse the raw XML to discover the actual playback order, then rebuild the
-        // note timeline so repeats are unfolded. User-added songs ALWAYS play
-        // linearly — most kid-friendly pieces don't have D.C./voltas anyway,
-        // a wrong unfold is worse than none, AND user songs now carry an
-        // xmlUrl pointing at a blob: URL whose fetch can hang on Android
-        // Chrome. The previous gate (`!currentSong.xmlUrl`) was rendered
-        // useless by the PR #19 unzip-on-register change which sets xmlUrl
-        // for every user song.
+        // Parse the raw XML to discover the actual playback order. Reads the
+        // pre-decoded xmlText cached on the song record (avoids a re-fetch
+        // that could hang on blob: URLs of just-imported user songs).
         let order;
-        if (currentSong._isUser) {
+        try {
+          order = await fetchPlaybackOrder(song);
+          if (!stillCurrent()) return;
+          if (!order.length) order = measures.map((_, i) => i);
+        } catch (e) {
+          console.warn('Playback order parse failed, falling back to linear', e);
           order = measures.map((_, i) => i);
-        } else {
-          try {
-            order = await fetchPlaybackOrder();
-            if (!order.length) order = measures.map((_, i) => i);
-          } catch (e) {
-            console.warn('Playback order parse failed, falling back to linear', e);
-            order = measures.map((_, i) => i);
-          }
         }
-        const expanded = expandNotesByPlaybackOrder(baseNotes, order, measures);
+        const expanded = expandNotesByPlaybackOrder(baseNotes, order, measures, srcMeasureStartSec);
 
         let totalSec = 0;
         for (const n of expanded) {
@@ -3700,28 +4595,69 @@
           if (end > totalSec) totalSec = end;
         }
 
-        currentSong.notes = expanded;
-        currentSong.totalSec = totalSec;
-        currentSong.playbackOrder = order;
-        currentSong.measureToCursorStep = measureToCursorStep;
-        currentSong.sections = buildSectionsFromDefs(expanded, totalSec, currentSong.sectionDefs);
+        song.notes = expanded;
+        song.totalSec = totalSec;
+        song.playbackOrder = order;
+        song.measureToCursorStep = measureToCursorStep;
+        // Pass the per-source-measure start times so sections begin at the
+        // measure boundary (preserving any leading rest visually) instead of
+        // cropping to the first note's onset.
+        song.sections = buildSectionsFromDefs(
+          expanded, totalSec, song.sectionDefs, srcMeasureStartSec
+        );
         // Capture the leading tempo so the count-in clicks match the song.
-        // OSMD exposes per-measure TempoInBPM; the first one with a value wins.
+        // Prefer the XML-parsed quarter BPM (authoritative — handles
+        // <metronome beat-unit="eighth"> correctly). Fall back to OSMD's
+        // per-measure TempoInBPM when XML parsing didn't yield a value.
         let songBpm = 0;
-        for (const m of measures) {
-          const v = m && m.TempoInBPM;
-          if (v && v > 0) { songBpm = v; break; }
+        if (scoreTiming && scoreTiming.leadingQuarterBpm) {
+          songBpm = scoreTiming.leadingQuarterBpm;
         }
-        currentSong.bpm = songBpm || 72;
-        currentSong._loaded = true;
-        console.log('[' + currentSong.id + '] base=' + baseNotes.length
+        if (!songBpm) {
+          for (const m of measures) {
+            const v = m && m.TempoInBPM;
+            if (v && v > 0) { songBpm = v; break; }
+          }
+        }
+        song.bpm = songBpm || 72;
+        song._loaded = true;
+        console.log('[' + song.id + '] base=' + baseNotes.length
           + ' expanded=' + expanded.length
           + ' measures=' + measures.length
           + ' playbackOrder=' + order.length
           + ' total=' + totalSec.toFixed(1) + 's');
+
+        // ============================================================
+        // === Comprehensive load-time DIAG dump ======================
+        // ============================================================
+        // Verbose by design — only fires once per song-load. Use to
+        // verify file → notes pipeline at every stage. Levels:
+        //   [DIAG/song]    one-line song-level summary
+        //   [DIAG/measure] per-measure layout (first 8 + tempo changes)
+        //   [DIAG/cursor]  per-OSMD-step trace (first 20 + measure boundaries)
+        //   [DIAG/note]    first 12 + last 4 notes with full detail
+        //   [DIAG/tie]     tie-merge events (if any)
+        //   [DIAG/section] section construction details
+        if (REMOTE_LOG_ENABLED) {
+          dumpLoadDiagnostics({
+            song,
+            scoreTiming, xmlMeasureTiming,
+            extractRet,
+            baseNotes, expanded,
+            measures, order, totalSec,
+            measureStartSec: srcMeasureStartSec,
+            measureBpm: osmdMeasureBpm,
+          });
+        }
+        // Drop the cached xmlText now that notes/sections/cursor tables are
+        // built. For user songs the canonical text still lives on the
+        // IndexedDB record (record.xmlText) and the blob URL resolves;
+        // dropping the per-song JS-heap copy avoids piling up >5MB strings
+        // when several large user songs sit in SONGS at once.
+        song._xmlText = null;
       })();
-      try { await currentSong._loadingPromise; }
-      finally { currentSong._loadingPromise = null; }
+      try { await song._loadingPromise; }
+      finally { song._loadingPromise = null; }
     }
 
     // Manual scroll to keep the OSMD cursor visible inside its container.
@@ -3747,17 +4683,8 @@
     function osmdResetToStart() {
       if (!osmd || !osmd.cursor) return;
       osmd.cursor.reset();
+      resetOsmdStepCursor();
       DOM.osmdContainer.scrollTop = 0;
-    }
-
-    // Walk the cursor forward `n` steps. Used to position cursor at section start.
-    function osmdAdvanceSteps(n) {
-      if (!osmd || !osmd.cursor) return;
-      while (n > 0 && !osmd.cursor.iterator.endReached) {
-        osmd.cursor.next();
-        n--;
-      }
-      osmdScrollToCursor();
     }
 
     // Jump the OSMD cursor to the first step of a specific written-score measure.
@@ -3767,20 +4694,61 @@
       if (!osmd || !osmd.cursor) return;
       const target = currentSong.measureToCursorStep[measureIdx];
       if (typeof target !== 'number' || target < 0) return;
-      osmd.cursor.reset();
-      for (let s = 0; s < target; s++) {
-        if (osmd.cursor.iterator.endReached) break;
-        osmd.cursor.next();
-      }
+      // Delegate to the absolute-step setter so the internal counter
+      // (_osmdStepCursor) stays in sync — otherwise the next setOsmdCursorStep
+      // call would think it's at step 0 and reset+walk again.
+      setOsmdCursorStep(target);
     }
 
-    // Advance the OSMD cursor one playback step. If cursorJump is set, the next
-    // playback note belongs to a non-sequential measure (repeat back-jump or
-    // 1st-ending skip) — reposition rather than step.
+    // Advance the OSMD cursor one playback step. cursorJump != null = next
+    // playback note is in a non-sequential measure (repeat back-jump / 1st-
+    // ending skip) — reposition rather than step. _osmdStepCursor must
+    // stay in lockstep with the iterator or the per-frame cursor sync
+    // sees a stale counter and double-advances.
     function advanceOsmdCursor(cursorJump) {
       if (!osmd || !osmd.cursor) return;
       if (cursorJump != null) jumpCursorToMeasure(cursorJump);
-      else if (!osmd.cursor.iterator.endReached) osmd.cursor.next();
+      else if (!osmd.cursor.iterator.endReached) {
+        // OSMD's grace-note bug throws but the iterator still advances —
+        // increment regardless; setOsmdCursorStep resyncs on any drift.
+        try { osmd.cursor.next(); } catch (_) {}
+        _osmdStepCursor++;
+      }
+    }
+
+    // === Absolute cursor positioning by source-iterator step ===
+    // Replaces the relative .next()-per-onset model that drifted on repeats
+    // / voltas / grace notes / D.C.: every playback note carries the OSMD
+    // step it came from, so we always JUMP to the truth instead of
+    // accumulating .next() calls and hoping the count matches OSMD's
+    // iterator. Forward jumps walk N × cursor.next(); backward jumps reset
+    // and re-walk because cursor.previous() is unreliable in 1.9.x (see
+    // setOsmdCursorStep below for the reproduction notes).
+    let _osmdStepCursor = 0;
+    function resetOsmdStepCursor() {
+      _osmdStepCursor = 0;
+    }
+    function setOsmdCursorStep(targetStep) {
+      if (!osmd || !osmd.cursor) return;
+      if (typeof targetStep !== 'number' || targetStep < 0) return;
+      const it = osmd.cursor.iterator;
+      // Backward: ALWAYS reset() then walk forward. We tried using
+      // cursor.previous() for short back-jumps (faster) but OSMD 1.9.x has
+      // been observed leaving the visual cursor at its previous position
+      // while the iterator state moves backward — the result is a "ghost"
+      // cursor that visually lags by however many measures we tried to
+      // rewind. reset() always works, so we accept the O(N) walk forward.
+      if (targetStep < _osmdStepCursor) {
+        try { osmd.cursor.reset(); } catch (_) {}
+        _osmdStepCursor = 0;
+      }
+      // Forward (or remaining distance after reset).
+      while (_osmdStepCursor < targetStep) {
+        if (it.endReached) break;
+        // Same grace-note throw as advanceOsmdCursor — swallow + keep counter aligned.
+        try { osmd.cursor.next(); } catch (_) {}
+        _osmdStepCursor++;
+      }
     }
 
     // ========================================
@@ -3805,9 +4773,13 @@
       );
     }
     function recomputePracticeTimings() {
-      const t = PianoCore.computePracticeTimings(practiceBeatMs());
-      COUNT_IN_MS = t.countInMs;
-      LANE_LOOKAHEAD_MS = t.laneLookaheadMs;
+      const timings = PianoCore.computePracticeTimings(practiceBeatMs());
+      COUNT_IN_MS = timings.countInMs;
+      LANE_LOOKAHEAD_MS = timings.laneLookaheadMs;
+      // _laneOpts is a hot-path singleton — refresh in lockstep so the first
+      // frame's countdown + descent rate match the new section's tempo.
+      _laneOpts.laneLookaheadMs = LANE_LOOKAHEAD_MS;
+      _laneOpts.countInMs = COUNT_IN_MS;
     }
     // Asymmetric hit windows: early presses are punished much harder than late
     // ones. Pedagogical reason — kids should learn to *wait for the beat*, not
@@ -3931,6 +4903,12 @@
     // the handler has been re-bound; false if it's gone (caller should rescan).
     async function verifyMidiAlive() {
       if (!midiInput.enabled || !midiInput.port || !_midiAccess) return false;
+      // BLE-MIDI installs a synthetic `midiInput.port` (just a `{ name }`
+      // marker) that is NOT a member of `_midiAccess.inputs`. Looking it up
+      // in the WebMIDI port list would always miss → detach the live BLE
+      // session as collateral on every visibility-resume. Health for BLE is
+      // tracked by the GATT `gattserverdisconnected` listener in connectBleMidi.
+      if (bleMidi && bleMidi.connected) return true;
       const ports = gatherMidiInputs(_midiAccess);
       const stillThere = ports.find(p => p === midiInput.port && p.state === 'connected');
       if (!stillThere) {
@@ -3998,6 +4976,25 @@
             try { await audioCtx.resume(); } catch (_) {}
           }
           rebuildAudioGraph(prevStream);
+          // We deliberately do NOT touch Tone.js here. A previous attempt
+          // to call `Tone.setContext(audioCtx)` and null tonePiano /
+          // toneMetronome looked clean, but in Tone 14.8.x the swap leaves
+          // `Tone.context.currentTime` reading the *page-lifetime* clock
+          // rather than the new AudioContext's freshly-created clock.
+          // Once the user starts a new practice section after recovery,
+          // `practice.startAudioTime = Tone.now()` resolves to a small
+          // lead, but every subsequent `Tone.context.currentTime` read in
+          // `practiceRealElapsedMs` returns 30–60 s — elapsed jumps that
+          // far ahead and listen mode auto-fires hundreds of notes at
+          // section start.
+          // iOS WKWebView contract: post-background the audio engine is
+          // dead until the page reloads. Stop the active section so the
+          // lane stops scrolling against a stale clock; the kid still
+          // sees the visual pipeline (mic + canvas) come back to life.
+          if (practice.enabled) {
+            practice.enabled = false;
+            try { stopPracticeAudio(); } catch (_) {}
+          }
           console.log('[AUDIO] context recreated @' + audioCtx.sampleRate + 'Hz');
         } finally {
           _audioRecovering = null;
@@ -4347,10 +5344,9 @@
     // か再スキャンの明示的な操作までは再表示しない。
     function setIntroHintDiagnostic(line1, line2) {
       if (!DOM.introHint) return;
-            const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
+      const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
       DOM.introHint.innerHTML = line1 + sub;
       DOM.introHint.classList.add('visible');
-      DOM.midiRescanBtn?.classList.add('visible');
     }
     // Each callsite that produces a diagnostic with localized strings should
     // wrap its call in showIntroDiag(() => setIntroHintDiagnostic(t(...), ...))
@@ -4480,7 +5476,6 @@
           midiInput.port = null;
           setInputIndicator();
           if (audioCtx && state.micSuspended) resumeMic();
-          if (typeof refreshBleMidiButton === 'function') refreshBleMidiButton();
           if (bleMidi._disconnectHandler && bleMidi.device) {
             try { bleMidi.device.removeEventListener('gattserverdisconnected', bleMidi._disconnectHandler); }
             catch (_) {}
@@ -4573,9 +5568,16 @@
 
       // Drive flow/combo from MIDI directly so silent (headphone) practice still scores.
       state.flow = Math.min(100, state.flow + 1.0 + v * 1.8);
-      state.combo += 1;
-      if (state.combo > state.bestCombo) state.bestCombo = state.combo;
+      // Reset combo on idle gap, mirroring the mic path at line ~2224. Without
+      // this, a kid who plays one note then walks away for 5 minutes returns
+      // to find the combo still climbing on the next press.
       const now = performance.now();
+      if (state.lastGoodNoteTimeMs > 0 && (now - state.lastGoodNoteTimeMs) >= CONFIG.COMBO_WINDOW_MS) {
+        state.combo = 1;
+      } else {
+        state.combo += 1;
+      }
+      if (state.combo > state.bestCombo) state.bestCombo = state.combo;
       state.lastGoodNoteTimeMs = now;
       state.lastNoteTimeMs = now;
 
@@ -4628,7 +5630,7 @@
         state.lastMidiNoteForStability = midiNum;
         // Seed lastPitch so legacy mic logic stays self-consistent when the user
         // later switches sources mid-session.
-        state.lastPitch = 440 * Math.pow(2, (midiNum - 69) / 12);
+        state.lastPitch = midiToFreq(midiNum);
         state.lastSilenceStartMs = -1;
       }
 
@@ -4929,7 +5931,7 @@
       // hears it `outputLatency` later.
       const raw = (typeof Tone !== 'undefined' && Tone.context)
         ? (Tone.context.currentTime - practice.startAudioTime) * 1000
-        : performance.now() - practice.startAudioTime * 1000;
+        : performance.now() - (practice.startAudioTime * 1000);
       // audioOffsetMs ≈ outputLatency: shifts the visual clock back so it
       // matches what the kid actually hears (which is delayed by speaker
       // buffering). Applied to both judging (so an on-the-beat press scores
@@ -5058,6 +6060,12 @@
 
     function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
     function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+    // DIAG helper — short note state suffix for tick logs.
+    function n_state(n) {
+      if (n.hit) return ' HIT';
+      if (n.missed) return ' MISS';
+      return '';
+    }
     // Japanese-mode note names. Kids in JP music ed read ド/レ/ミ on the staff,
     // so when prefs.lang === 'jp' we surface those instead of C/D/E. Octave
     // numbers stay as digits — a Japanese kid's textbook also uses C4-style
@@ -5090,6 +6098,7 @@
             timeMs: relSec * 1000 * speedFactor + COUNT_IN_MS,
             durMs: n.durSec * 1000 * speedFactor,
             measureIdx: n.measureIdx,
+            sourceStep: n.sourceStep,
             cursorJump: n.cursorJump,
             hit: filtered,
             missed: false,
@@ -5100,9 +6109,6 @@
       out.sort((a, b) => a.timeMs - b.timeMs);
       return out;
     }
-
-    // (osmdStepsBeforeTime removed — superseded by jumpCursorToMeasure, which uses the
-    //  measureToCursorStep map and works correctly through repeat passes.)
 
     // Per-hand MIDI range used by the lane drawer to map pitch → x-position.
     // Computed once per section so the hot path doesn't re-scan every frame.
@@ -5144,6 +6150,52 @@
       practice.enabled = true;
       practice.sectionIdx = sectionIdx;
       practice.sectionNotes = buildSectionNotes(sectionIdx);
+      // ---------- DIAG: section playback notes ----------
+      // Verifies that the per-section playback timeline (timeMs values that
+      // drive the lane + the cursor sync) was built from the song notes
+      // correctly. Shows count, span, count-in offset, hand split, and the
+      // first 8 + last 4 entries.
+      if (REMOTE_LOG_ENABLED && practice.sectionNotes.length) {
+        const psn = practice.sectionNotes;
+        // Single pass: hand counts AND filtered count. Previous code did a
+        // reduce + a separate filter, walking the array twice.
+        let rCnt = 0, lCnt = 0, filteredCnt = 0;
+        for (const n of psn) {
+          if (n._filtered) filteredCnt++;
+          else if (n.hand === 'R') rCnt++;
+          else if (n.hand === 'L') lCnt++;
+        }
+        remoteLog('[DIAG/play.section] sec=' + sec.id +
+          ' src=[' + sec.startSec.toFixed(3) + '..' + sec.endSec.toFixed(3) + ']s' +
+          ' tempoPct=' + practice.tempoPct + '%' +
+          ' speedFactor=' + (100 / practice.tempoPct).toFixed(3) +
+          ' countIn=' + COUNT_IN_MS + 'ms' +
+          ' notes=' + psn.length +
+          ' R=' + rCnt +
+          ' L=' + lCnt +
+          ' filtered=' + filteredCnt +
+          ' span=' + (psn[psn.length - 1].timeMs - psn[0].timeMs).toFixed(0) + 'ms' +
+          ' first.t=' + psn[0].timeMs.toFixed(0) +
+          ' last.t=' + psn[psn.length - 1].timeMs.toFixed(0));
+        const fmtPsn = (n, i) => 'i=' + i +
+          ' t=' + n.timeMs.toFixed(0) +
+          ' dur=' + n.durMs.toFixed(0) +
+          ' midi=' + n.midi +
+          ' ' + n.hand +
+          ' m=' + n.measureIdx +
+          ' step=' + n.sourceStep +
+          (n._filtered ? ' (filtered)' : '');
+        const head = Math.min(8, psn.length);
+        for (let i = 0; i < head; i++) {
+          remoteLog('[DIAG/play.note] ' + fmtPsn(psn[i], i));
+        }
+        if (psn.length > head + 4) {
+          remoteLog('[DIAG/play.note] ... ' + (psn.length - head - 4) + ' notes elided ...');
+        }
+        for (let i = Math.max(head, psn.length - 4); i < psn.length; i++) {
+          remoteLog('[DIAG/play.note] ' + fmtPsn(psn[i], i));
+        }
+      }
       practice.handRanges = computeHandRanges(practice.sectionNotes);
       practice.laneDrawFromIdx = 0;        // amortized cursor for lane culling
       practice.currentNoteIdx = 0;
@@ -5174,14 +6226,31 @@
       // Section banner — flies in to celebrate the start
       showSectionBanner(sec);
 
-      // Position OSMD cursor at the first note's source measure. Hide during count-in;
-      // it appears at the first onset so visual + audio start together.
+      // Position OSMD cursor at the section's first note. reset()-first is
+      // load-bearing — see setOsmdCursorStep for the cursor.previous() bug
+      // that motivates always walking forward.
+      try { osmd.cursor.reset(); } catch (_) {}
+      _osmdStepCursor = 0;
       const firstNote = practice.sectionNotes[0];
-      if (firstNote && typeof firstNote.measureIdx === 'number') {
+      if (firstNote && typeof firstNote.sourceStep === 'number') {
+        setOsmdCursorStep(firstNote.sourceStep);
+      } else if (firstNote && typeof firstNote.measureIdx === 'number') {
         jumpCursorToMeasure(firstNote.measureIdx);
-      } else {
-        osmdResetToStart();
       }
+      // Sections that start past the first system need a scroll so the
+      // cursor is visible from frame one — without this the kid stares at
+      // the top of the score during count-in (the per-frame scroll only
+      // fires on STEP CHANGES, and the step doesn't change in count-in).
+      // The cursor must be SHOWN before scroll because hide() sets
+      // display:none which zeroes offsetTop.
+      if (osmd && osmd.cursor) {
+        try { osmd.cursor.show(); } catch (_) { /* ignore */ }
+      }
+      _lastOsmdScrollMs = 0;
+      osmdScrollToCursor();
+      // Reset the per-frame scan cursor so the lane drawer's elapsed →
+      // step lookup starts from index 0 for the new section.
+      practice._cursorScanIdx = 0;
       if (osmd && osmd.cursor) osmd.cursor.hide();
 
       // Audio setup — guided mode skips ALL transport scheduling because the score
@@ -5224,25 +6293,9 @@
               }, t / 1000);
             }
           }
-          let onsetIndex = 0;
-          let lastT = -Infinity;
-          for (const n of practice.sectionNotes) {
-            const t = n.timeMs / 1000;
-            if (t - lastT > 0.005) {
-              const isFirst = onsetIndex === 0;
-              const jumpTo = n.cursorJump;
-              Tone.Transport.schedule((time) => {
-                Tone.Draw.schedule(() => {
-                  if (!osmd || !osmd.cursor) return;
-                  if (isFirst) osmd.cursor.show();
-                  else advanceOsmdCursor(jumpTo);
-                  osmdScrollToCursor();
-                }, time);
-              }, t);
-              onsetIndex++;
-              lastT = t;
-            }
-          }
+          // Cursor sync runs per-frame from drawPracticeLane, NOT from
+          // Tone.Draw.schedule (Tone.Draw inherits Transport's ~100 ms
+          // lookAhead — audio plays on time but cursor crawls behind).
           practice.startAudioTime = Tone.now() + audioStartLead;
           scheduleCountInBeeps(practice.startAudioTime);
           // CRITICAL: pass startAudioTime as an ABSOLUTE audio time so
@@ -5252,6 +6305,9 @@
           // resulting `lookAhead` (≈100 ms) gap is what made the GO! beep
           // land after the first note in rhythm mode.
           Tone.Transport.start(practice.startAudioTime);
+          // Cursor visible during count-in too — kid can see "this is where
+          // we'll start" instead of an empty score with notes about to fall.
+          if (osmd && osmd.cursor) osmd.cursor.show();
         }
         // Diagnostic: log device audio output latency. AudioContext.outputLatency
         // is the speaker-side buffer delay; baseLatency is the processing block.
@@ -5283,6 +6339,11 @@
       } catch (e) {
         console.error('Tone start failed', e);
         practice.startAudioTime = (performance.now() / 1000) + audioStartLead;
+        // Tone failure short-circuits the audio-latency probe above, leaving
+        // practice.audioOffsetMs at whatever the previous section set. Reset
+        // it so the lane uses a sane compensation rather than stale state.
+        practice.audioOffsetMs = prefs.audioOffsetMs != null
+          ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS;
       }
     }
 
@@ -5303,6 +6364,52 @@
       const elapsed = practiceElapsedMs();
       const notes = practice.sectionNotes;
       const len = notes.length;
+
+      // ---------- DIAG: live playback tick (1 / sec) ----------
+      // Compact snapshot — just enough to verify cursor/note alignment in
+      // real time. Heavy load-time DIAGs are in dumpLoadDiagnostics().
+      if (REMOTE_LOG_ENABLED && len > 0) {
+        if (!practice._dbgNextLog || timeMs >= practice._dbgNextLog) {
+          practice._dbgNextLog = timeMs + 1000;
+          let expIdx = -1;
+          for (let i = 0; i < len; i++) {
+            if (notes[i].timeMs > elapsed) break;
+            expIdx = i;
+          }
+          const exp = expIdx >= 0 ? notes[expIdx] : null;
+          const next = expIdx + 1 < len ? notes[expIdx + 1] : null;
+          let hit = 0, miss = 0, pend = 0;
+          for (const n of notes) {
+            if (n._filtered) continue;
+            if (n.hit) hit++; else if (n.missed) miss++; else pend++;
+          }
+          // Find current measure from cursor step (measureToCursorStep is
+          // sorted by measure index; the largest entry ≤ osmdStep wins).
+          let curM = -1;
+          const m2c = currentSong.measureToCursorStep;
+          if (m2c) {
+            for (let i = 0; i < m2c.length; i++) {
+              if (m2c[i] >= 0 && m2c[i] <= _osmdStepCursor) curM = i;
+              else if (m2c[i] > _osmdStepCursor) break;
+            }
+          }
+          remoteLog('[DIAG/play.tick] t=' + elapsed.toFixed(0) + 'ms' +
+            ' mode=' + practice.mode +
+            ' | progress hit=' + hit + ' miss=' + miss + ' pend=' + pend + '/' + len +
+            ' curIdx=' + practice.currentNoteIdx +
+            ' | exp=' + (exp
+              ? '{i=' + expIdx + ' t=' + exp.timeMs.toFixed(0) +
+                ' m=' + exp.measureIdx + ' step=' + exp.sourceStep +
+                ' midi=' + exp.midi + n_state(exp) + ' dt=' + (elapsed - exp.timeMs).toFixed(0) + '}'
+              : 'none') +
+            ' next=' + (next
+              ? '{i=' + (expIdx + 1) + ' t=' + next.timeMs.toFixed(0) +
+                ' m=' + next.measureIdx + ' step=' + next.sourceStep +
+                ' midi=' + next.midi + ' in=' + (next.timeMs - elapsed).toFixed(0) + '}'
+              : 'none') +
+            ' | cursor osmdStep=' + _osmdStepCursor + ' m=' + curM);
+        }
+      }
 
       // 1. Mark missed notes (hit window expired) — RHYTHM MODE ONLY.
       //    Guided waits for the kid; Listen plays itself, so neither auto-misses.
@@ -5368,8 +6475,11 @@
         osmdScrollToCursor();
       }
 
-      // 4. (OSMD cursor advance is driven by per-onset Tone.Draw events scheduled in
-      //     startPracticeSection — keeps cursor locked to played audio, no drift.)
+      // 4. (OSMD cursor advance is driven by the per-frame sync in
+      //     drawPracticeLane (step-timeline lookup based on practiceElapsedMs).
+      //     In guided mode advanceOsmdCursor above also fires per resolved
+      //     note; both must keep _osmdStepCursor in lockstep with the actual
+      //     OSMD cursor — see the comment on advanceOsmdCursor.)
 
       // 5. Progress UI (rate-limited) — exclude the other hand in one-hand mode
       if (timeMs - practice._lastProgUpdate > 100) {
@@ -5409,6 +6519,30 @@
       if (!practice.enabled) return;
       const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
       const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
+
+      // === Per-frame OSMD cursor sync ===
+      // Cursor follows note onsets only — it sits at the last played note
+      // during rests, then jumps to the next note exactly when that note's
+      // audio fires. This matches the kid's mental model: "the cursor moves
+      // when I hear a note", and the wait between notes IS the rest duration.
+      //
+      // Replaces the old Tone.Draw.schedule path which inherited
+      // Tone.Transport's ~100ms lookAhead — per-frame sync has no audio lag.
+      if (osmdVisible && practice.sectionNotes.length > 0) {
+        const elapsed = practiceElapsedMs();
+        const notes = practice.sectionNotes;
+        let pIdx = practice._cursorScanIdx | 0;
+        if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
+        while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
+        practice._cursorScanIdx = pIdx;
+        const target = notes[pIdx];
+        if (target && typeof target.sourceStep === 'number' &&
+            target.sourceStep !== _osmdStepCursor) {
+          setOsmdCursorStep(target.sourceStep);
+          osmdScrollToCursor();
+        }
+      }
+
       // Lane region. cachedOsmdRect is refreshed by syncLayout +
       // ResizeObserver, so this loop avoids a per-frame
       // getBoundingClientRect() (which would force synchronous layout).
@@ -5454,8 +6588,15 @@
     }
     // Hoisted lane-draw scaffolding (see drawPracticeLane). Persistent objects
     // avoid 60 fps allocations + give the JIT stable hidden classes.
-    const _laneNoteRestingColor = (m) =>
-      CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff';
+    // Honour the synesthesia toggle: when off, fall back to the active theme's
+    // cyclic palette so the lane tiles match the keyboard's resting colors
+    // (rainbow lane while synesthesia is OFF was a leak from before).
+    const _laneNoteRestingColor = (m) => {
+      if (state.useSynesthesiaMode) {
+        return CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff';
+      }
+      return noteThemeColor(m);
+    };
     const _laneView = {
       enabled: true,
       sectionNotes: null,
@@ -5778,6 +6919,13 @@
     function renderSongPanel() {
       const top = practice.progress;            // shared (streak)
       const sp  = songProg();                   // per-song (sections, tempos, unlocks)
+      // Refresh title/composer too — selectSong sets them once but a langchange
+      // while the song panel is visible would otherwise leave the heading in
+      // the previous language until reselect.
+      if (currentSong) {
+        DOM.songTitle.textContent = t(currentSong.titleKey);
+        DOM.songComposer.textContent = t(currentSong.composerKey);
+      }
       DOM.streakCount.textContent = top.streakCount || 0;
       DOM.streakCal.innerHTML = '';
       const days = [];
@@ -5791,6 +6939,20 @@
         cell.className = 'streak-day' + (top.streakDays.includes(k) ? ' done' : '');
         cell.title = k;
         DOM.streakCal.appendChild(cell);
+      }
+
+      // Show the score's source BPM so the user knows why two versions of the
+      // same piece can feel different at the same tempo% (e.g. one Für Elise
+      // encoded at ♩=72, another at ♩=120 → "60%" means very different speeds).
+      if (DOM.songBpmHint) {
+        if (currentSong._loaded && currentSong.bpm) {
+          const bpm = Math.round(currentSong.bpm);
+          const effective = Math.round(bpm * (practice.tempoPct || 100) / 100);
+          DOM.songBpmHint.textContent = '♩ = ' + bpm + ' → ' + effective;
+          DOM.songBpmHint.classList.toggle('rescaled', !!currentSong._bpmRescaled);
+        } else {
+          DOM.songBpmHint.textContent = '';
+        }
       }
 
       DOM.tempoRow.innerHTML = '';
@@ -5918,13 +7080,11 @@
       const show = noInputAvailable();
       DOM.introHint.classList.toggle('visible', show);
       if (show) DOM.introHint.innerHTML = t('introNeedMidi');
-      DOM.midiRescanBtn?.classList.toggle('visible', show);
     }
 
     function showRunningUI() {
       DOM.startScreen.style.display = 'none';
       document.body.classList.remove('title-screen');
-      DOM.themeBar.classList.add('visible');
       DOM.hud.style.display = 'block';
       // Hold the screen awake whenever audio is alive — was practice-only
       // before, but iOS will suspend the page (and silently break the MIDI
@@ -5949,18 +7109,11 @@
     function hideIntroHint() {
       if (DOM.introHint) DOM.introHint.classList.remove('visible');
       clearIntroDiagCache();
-      DOM.midiRescanBtn?.classList.remove('visible');
     }
 
     function alertAudioInitError(e) {
       alert(t('audioInitFailedFmt', { v: (e && e.message) || e }));
     }
-
-    DOM.midiRescanBtn?.addEventListener('click', () => {
-      // 明示的な再スキャン要求 = dismiss を解除してエンゲージし直す
-      rescanMidi();
-    });
-
 
     DOM.songBack.addEventListener('click', () => {
       // selectSong is only ever wired from the title screen (the practice-song
@@ -5974,11 +7127,14 @@
 
     DOM.songStart.addEventListener('click', async () => {
       if (state.starting) return;
-      DOM.songPanel.classList.remove('visible');
+      // Defer hiding the song panel until initAudio resolves — otherwise an
+      // initAudio failure leaves the user on a bare canvas (the previous
+      // selectSong has already hidden the title screen).
       try {
         if (!state.running) {
           state.starting = true;
           await initAudio();
+          DOM.songPanel.classList.remove('visible');
           showRunningUI();
           initBgStars();
           state.running = true;
@@ -5986,6 +7142,7 @@
           state.sessionStartTimeMs = performance.now();
           requestAnimationFrame(loop);
         } else {
+          DOM.songPanel.classList.remove('visible');
           // Re-entry while audio is already alive — make sure HUD/theme bar are
           // shown again in case we got here via returnToTitle.
           showRunningUI();
@@ -5993,6 +7150,9 @@
         await startPracticeSection(practice.sectionIdx);
       } catch (e) {
         alertAudioInitError(e);
+        // Restore the song panel so the user has a path back; without this
+        // a partial-failure path strands them on a blank canvas.
+        DOM.songPanel.classList.add('visible');
       } finally {
         state.starting = false;
       }
@@ -6028,13 +7188,15 @@
       song._loadError = null;
       renderSongPanel();
       initWebMIDI();
+      // Capture `song` in the closures so a rapid second selectSong() can't
+      // pollute the new song's _loadError with the previous song's failure.
       loadCurrentScore().then(() => {
-        currentSong._loadError = null;
-        if (DOM.songPanel.classList.contains('visible')) renderSongPanel();
+        song._loadError = null;
+        if (currentSong === song && DOM.songPanel.classList.contains('visible')) renderSongPanel();
       }).catch((e) => {
         console.error('preload', e);
-        currentSong._loadError = (e && (e.message || String(e))) || 'Score load failed';
-        if (DOM.songPanel.classList.contains('visible')) renderSongPanel();
+        song._loadError = (e && (e.message || String(e))) || 'Score load failed';
+        if (currentSong === song && DOM.songPanel.classList.contains('visible')) renderSongPanel();
       });
     }
 
@@ -6619,13 +7781,8 @@
       }).catch(() => {});
     }
 
-    function refreshBleMidiButton() {
-      if (!DOM.bleMidiBtn) return;
-      const show = !!navigator.bluetooth && !bleMidi.connected;
-      DOM.bleMidiBtn.classList.toggle('visible', show);
-    }
-    DOM.bleMidiBtn?.addEventListener('click', () => { connectBleMidi().finally(refreshBleMidiButton); });
-    refreshBleMidiButton();
+    // The legacy floating BLE button is gone — Bluetooth pairing now lives
+    // exclusively in the ⚙ settings panel (settingsBleBtn).
 
     DOM.ptbQuit.addEventListener('click', () => {
       if (!practice.enabled && !practice._completing) return;
@@ -6660,23 +7817,35 @@
       DOM.songPanel.classList.add('visible');
       renderSongPanel();
     });
-    DOM.resRetry.addEventListener('click', async () => {
+    // `_practiceTransitioning` debounces double-tap on the result-card
+    // buttons. Without it, mashing Retry on a slow iPad enters
+    // `startPracticeSection` twice; the second call runs after the first's
+    // `await Tone.start()` resolves and re-enters the Tone.Transport
+    // cancel/stop/schedule block on top of incomplete cleanup.
+    let _practiceTransitioning = false;
+    async function transitionToSection(idx) {
+      if (_practiceTransitioning) return;
+      _practiceTransitioning = true;
+      try { await startPracticeSection(idx); }
+      finally { _practiceTransitioning = false; }
+    }
+    DOM.resRetry.addEventListener('click', () => {
       DOM.sectionResult.classList.remove('visible');
-      await startPracticeSection(practice.sectionIdx);
+      transitionToSection(practice.sectionIdx);
     });
     // Listen-mode → "Try playing" shortcut: same section, but switch to Guided.
-    document.getElementById('resTryPlay')?.addEventListener('click', async () => {
+    document.getElementById('resTryPlay')?.addEventListener('click', () => {
       DOM.sectionResult.classList.remove('visible');
       practice.mode = 'guided';
-      await startPracticeSection(practice.sectionIdx);
+      transitionToSection(practice.sectionIdx);
     });
-    DOM.resNext.addEventListener('click', async () => {
+    DOM.resNext.addEventListener('click', () => {
       const nextIdx = Math.min(practice.sectionIdx + 1, currentSong.sections.length - 1);
       const nextId = currentSong.sections[nextIdx].id;
       if (!songProg().unlockedSections[nextId]) return;
       practice.sectionIdx = nextIdx;
       DOM.sectionResult.classList.remove('visible');
-      await startPracticeSection(nextIdx);
+      transitionToSection(nextIdx);
     });
 
     // Initialize progress on load (so panel works without audio start)
@@ -6722,13 +7891,7 @@
       }
     });
 
-    // v11: Reset button listener
-    DOM.resetBtn?.addEventListener('click', () => {
-      if (!state.running) return;
-      showSessionSummary();
-    });
-
-    // v11: Summary close button listener
+    // Summary close button listener
     DOM.sumClose.addEventListener('click', () => {
       DOM.sessionSummary.classList.remove('visible');
       resetSession();
@@ -6753,7 +7916,6 @@
       DOM.sectionResult.classList.remove('visible');
       DOM.practiceHud.classList.remove('visible');
       DOM.osmdContainer.classList.remove('visible');
-      DOM.themeBar.classList.remove('visible');
       DOM.hud.style.display = 'none';
       DOM.questDisplay.classList.remove('visible'); // wipe stale free-play quest UI
       hideIntroHint();
@@ -6763,7 +7925,6 @@
       if (state.running) resetSession();
       DOM.startScreen.style.display = 'flex';
       document.body.classList.add('title-screen');
-      refreshBleMidiButton();
     }
 
     DOM.homeBtn.addEventListener('click', returnToTitle);

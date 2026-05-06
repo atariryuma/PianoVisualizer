@@ -63,6 +63,7 @@ var PianoCore = (() => {
     buildCoachingFeedback: () => buildCoachingFeedback,
     buildSectionNotes: () => buildSectionNotes,
     buildSectionsFromDefs: () => buildSectionsFromDefs,
+    clamp: () => clamp,
     clamp01: () => clamp01,
     classifyStageTransition: () => classifyStageTransition,
     coefficientOfVariation: () => coefficientOfVariation,
@@ -740,6 +741,13 @@ var PianoCore = (() => {
   }
 
   // src/render/lane.ts
+  var _laneGradCtx = null;
+  var _laneGradTop = -1;
+  var _laneGradHeight = -1;
+  var _laneGradHitLine = -1;
+  var _lhGradCached = null;
+  var _rhGradCached = null;
+  var _divGradCached = null;
   function drawPracticeLane(ctx, view, timing, opts) {
     if (!view.enabled) return;
     const W = opts.screenW;
@@ -757,15 +765,28 @@ var PianoCore = (() => {
     ctx.globalCompositeOperation = "source-over";
     ctx.shadowBlur = 0;
     ctx.shadowColor = "transparent";
-    const lhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
-    lhGrad.addColorStop(0, "rgba(40, 60, 130, 0.25)");
-    lhGrad.addColorStop(1, "rgba(60, 80, 150, 0.55)");
-    ctx.fillStyle = lhGrad;
+    if (_laneGradCtx !== ctx || _laneGradTop !== laneTop || _laneGradHeight !== laneHeight || _laneGradHitLine !== hitLineY) {
+      const lh = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+      lh.addColorStop(0, "rgba(40, 60, 130, 0.25)");
+      lh.addColorStop(1, "rgba(60, 80, 150, 0.55)");
+      const rh = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
+      rh.addColorStop(0, "rgba(110, 50, 110, 0.25)");
+      rh.addColorStop(1, "rgba(140, 60, 130, 0.55)");
+      const div = ctx.createLinearGradient(0, laneTop, 0, hitLineY + 50);
+      div.addColorStop(0, "rgba(255, 255, 255, 0.04)");
+      div.addColorStop(0.6, "rgba(255, 255, 255, 0.28)");
+      div.addColorStop(1, "rgba(255, 255, 255, 0.4)");
+      _lhGradCached = lh;
+      _rhGradCached = rh;
+      _divGradCached = div;
+      _laneGradCtx = ctx;
+      _laneGradTop = laneTop;
+      _laneGradHeight = laneHeight;
+      _laneGradHitLine = hitLineY;
+    }
+    ctx.fillStyle = _lhGradCached;
     ctx.fillRect(padX, laneTop, halfW, laneHeight);
-    const rhGrad = ctx.createLinearGradient(0, laneTop, 0, laneTop + laneHeight);
-    rhGrad.addColorStop(0, "rgba(110, 50, 110, 0.25)");
-    rhGrad.addColorStop(1, "rgba(140, 60, 130, 0.55)");
-    ctx.fillStyle = rhGrad;
+    ctx.fillStyle = _rhGradCached;
     ctx.fillRect(midX, laneTop, halfW, laneHeight);
     ctx.strokeStyle = "rgba(255, 220, 230, 0.5)";
     ctx.lineWidth = 1.5;
@@ -791,11 +812,7 @@ var PianoCore = (() => {
       "rgba(110, 50, 110, 0.9)"
     );
     ctx.textBaseline = "alphabetic";
-    const divGrad = ctx.createLinearGradient(0, laneTop, 0, hitLineY + 50);
-    divGrad.addColorStop(0, "rgba(255, 255, 255, 0.04)");
-    divGrad.addColorStop(0.6, "rgba(255, 255, 255, 0.28)");
-    divGrad.addColorStop(1, "rgba(255, 255, 255, 0.4)");
-    ctx.strokeStyle = divGrad;
+    ctx.strokeStyle = _divGradCached;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(midX, laneTop);
@@ -873,10 +890,13 @@ var PianoCore = (() => {
       ctx.font = 'bold 10px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
       ctx.textAlign = "center";
       ctx.fillText(n.hand, x, y - noteH - 4);
-      if (!n.hit && !n.missed && noteH > 18) {
+      if (!n.hit && !n.missed && noteH >= 10 && noteW >= 22) {
+        const labelPx = Math.max(9, Math.min(13, Math.round(noteH * 0.7)));
         ctx.fillStyle = "rgba(20, 10, 35, 0.92)";
-        ctx.font = 'bold 13px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
-        ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2 + 5);
+        ctx.font = "bold " + labelPx + 'px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+        ctx.textBaseline = "middle";
+        ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2);
+        ctx.textBaseline = "alphabetic";
       }
     }
     const cur = notes[view.currentNoteIdx];
@@ -895,7 +915,7 @@ var PianoCore = (() => {
       ctx.fillRect(padX, laneTop, usableW, laneHeight);
     }
     const ctElapsed = timing.realElapsedMs;
-    if (ctElapsed < opts.countInMs + 400) {
+    if (ctElapsed >= 0 && ctElapsed < opts.countInMs + 400) {
       const totalBeats = 4;
       const beatMs = opts.countInMs / totalBeats;
       const beatIdx = Math.min(totalBeats - 1, Math.max(0, Math.floor(ctElapsed / beatMs)));
@@ -1034,26 +1054,26 @@ var PianoCore = (() => {
 
   // src/render/theme.ts
   var THEMES = Object.freeze([
-    {
-      bg: [10, 10, 20],
-      colors: ["#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#6366f1", "#818cf8"],
+    Object.freeze({
+      bg: Object.freeze([10, 10, 20]),
+      colors: Object.freeze(["#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#6366f1", "#818cf8"]),
       glow: "rgba(139,92,246,"
-    },
-    {
-      bg: [8, 18, 20],
-      colors: ["#06b6d4", "#22d3ee", "#34d399", "#10b981", "#14b8a6", "#67e8f9"],
+    }),
+    Object.freeze({
+      bg: Object.freeze([8, 18, 20]),
+      colors: Object.freeze(["#06b6d4", "#22d3ee", "#34d399", "#10b981", "#14b8a6", "#67e8f9"]),
       glow: "rgba(6,182,212,"
-    },
-    {
-      bg: [20, 12, 8],
-      colors: ["#f97316", "#fb923c", "#ef4444", "#f43f5e", "#eab308", "#fbbf24"],
+    }),
+    Object.freeze({
+      bg: Object.freeze([20, 12, 8]),
+      colors: Object.freeze(["#f97316", "#fb923c", "#ef4444", "#f43f5e", "#eab308", "#fbbf24"]),
       glow: "rgba(249,115,22,"
-    },
-    {
-      bg: [12, 12, 18],
-      colors: ["#e0e7ff", "#c7d2fe", "#a5b4fc", "#ddd6fe", "#f0f0ff", "#ffffff"],
+    }),
+    Object.freeze({
+      bg: Object.freeze([12, 12, 18]),
+      colors: Object.freeze(["#e0e7ff", "#c7d2fe", "#a5b4fc", "#ddd6fe", "#f0f0ff", "#ffffff"]),
       glow: "rgba(200,200,255,"
-    }
+    })
   ]);
   function noteThemeColor(midi, theme) {
     const cols = theme.colors;
@@ -1129,13 +1149,13 @@ var PianoCore = (() => {
 
   // src/render/stage.ts
   var STAGES = Object.freeze([
-    { nameKey: null, prefix: "", minFlow: 0 },
-    { nameKey: "stage1", prefix: "\u2726 ", minFlow: 15 },
-    { nameKey: "stage2", prefix: "\u2726\u2726 ", minFlow: 35 },
-    { nameKey: "stage3", prefix: "\u2726\u2726\u2726 ", minFlow: 55 },
-    { nameKey: "stage4", prefix: "\u2726\u2726\u2726\u2726 ", minFlow: 75 },
-    { nameKey: "stage5", prefix: "\u2726\u2726\u2726\u2726\u2726 ", minFlow: 90 },
-    { nameKey: "stage6", prefix: "\u2726\u2726\u2726\u2726\u2726\u2726 ", minFlow: 98 }
+    Object.freeze({ nameKey: null, prefix: "", minFlow: 0 }),
+    Object.freeze({ nameKey: "stage1", prefix: "\u2726 ", minFlow: 15 }),
+    Object.freeze({ nameKey: "stage2", prefix: "\u2726\u2726 ", minFlow: 35 }),
+    Object.freeze({ nameKey: "stage3", prefix: "\u2726\u2726\u2726 ", minFlow: 55 }),
+    Object.freeze({ nameKey: "stage4", prefix: "\u2726\u2726\u2726\u2726 ", minFlow: 75 }),
+    Object.freeze({ nameKey: "stage5", prefix: "\u2726\u2726\u2726\u2726\u2726 ", minFlow: 90 }),
+    Object.freeze({ nameKey: "stage6", prefix: "\u2726\u2726\u2726\u2726\u2726\u2726 ", minFlow: 98 })
   ]);
   function stageForFlow(flow, stages = STAGES) {
     for (let i = stages.length - 1; i >= 0; i--) {
@@ -1245,14 +1265,14 @@ var PianoCore = (() => {
 
   // src/state/encouragement.ts
   var DEFAULT_ENCOURAGEMENT_TIERS = Object.freeze([
-    { minCombo: 3, messageKey: "enc1", effect: "glowPulse" },
-    { minCombo: 8, messageKey: "enc2", effect: "glowParticles" },
-    { minCombo: 15, messageKey: "enc3", effect: "colorWave" },
-    { minCombo: 25, messageKey: "enc4", effect: "starShower" },
-    { minCombo: 40, messageKey: "enc5", effect: "flowerBurst" },
-    { minCombo: 60, messageKey: "enc6", effect: "shimmer" },
-    { minCombo: 80, messageKey: "enc7", effect: "radiance" },
-    { minCombo: 100, messageKey: "enc8", effect: "goldenBurst" }
+    Object.freeze({ minCombo: 3, messageKey: "enc1", effect: "glowPulse" }),
+    Object.freeze({ minCombo: 8, messageKey: "enc2", effect: "glowParticles" }),
+    Object.freeze({ minCombo: 15, messageKey: "enc3", effect: "colorWave" }),
+    Object.freeze({ minCombo: 25, messageKey: "enc4", effect: "starShower" }),
+    Object.freeze({ minCombo: 40, messageKey: "enc5", effect: "flowerBurst" }),
+    Object.freeze({ minCombo: 60, messageKey: "enc6", effect: "shimmer" }),
+    Object.freeze({ minCombo: 80, messageKey: "enc7", effect: "radiance" }),
+    Object.freeze({ minCombo: 100, messageKey: "enc8", effect: "goldenBurst" })
   ]);
   function initEncouragementState() {
     return {
@@ -1596,7 +1616,7 @@ var PianoCore = (() => {
   }
 
   // src/audio/onset.ts
-  var EMPTY_DEBUG = {
+  var EMPTY_DEBUG = Object.freeze({
     flux: 0,
     spread: 0,
     flatness: 0,
@@ -1606,7 +1626,7 @@ var PianoCore = (() => {
     harmonicity: 0,
     threshold: 0,
     onsetReason: ""
-  };
+  });
   function initOnsetState() {
     return {
       prevSpectrum: null,
@@ -1796,10 +1816,12 @@ var PianoCore = (() => {
     if (input.userOverrideMs != null && Number.isFinite(input.userOverrideMs)) {
       return input.userOverrideMs;
     }
-    const reported = input.reportedOutMs + input.reportedBaseMs;
-    const min = input.minReportedMs ?? 5;
+    const minOut = input.minReportedOutMs ?? 5;
     const max = input.maxClampMs ?? 200;
-    if (reported > min) return Math.min(reported, max);
+    if (input.reportedOutMs > minOut) {
+      const total = input.reportedOutMs + input.reportedBaseMs;
+      return Math.min(total, max);
+    }
     return input.defaultMs;
   }
   async function recoverAudioContext(prev, opts, Ctor) {
@@ -1945,8 +1967,11 @@ var PianoCore = (() => {
       { id: "A2", nameKey: "userSecA2", descKey: "userSecA2desc", startMeasure: b2, isBoss: true }
     ];
   }
-  function buildSectionsFromDefs(notes, totalSec, defs) {
+  function buildSectionsFromDefs(notes, totalSec, defs, measureStartSec) {
     const startSecs = defs.map((d) => {
+      if (measureStartSec && d.startMeasure >= 0 && d.startMeasure < measureStartSec.length) {
+        return measureStartSec[d.startMeasure];
+      }
       const first = notes.find((n) => n.measureIdx >= d.startMeasure);
       return first ? first.timeSec : totalSec;
     });
@@ -1989,6 +2014,9 @@ var PianoCore = (() => {
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  function clamp(v, lo, hi) {
+    return v < lo ? lo : v > hi ? hi : v;
   }
 
   // src/library/user-songs.ts
@@ -2311,9 +2339,11 @@ var PianoCore = (() => {
   function applyMidiCC(s, cc, value) {
     if (cc !== 64) return [];
     const wasOn = s.sustainOn;
-    s.sustainOn = value >= 64;
-    const events = [{ type: "sustainPedal", on: s.sustainOn }];
-    if (wasOn && !s.sustainOn) {
+    const nowOn = value >= 64;
+    if (wasOn === nowOn) return [];
+    s.sustainOn = nowOn;
+    const events = [{ type: "sustainPedal", on: nowOn }];
+    if (wasOn && !nowOn) {
       const droppedMidis = [];
       s.sustainedNotes.forEach((midi) => {
         droppedMidis.push(midi);
@@ -2502,29 +2532,29 @@ var PianoCore = (() => {
     s.durationScoredCount++;
     return { type: "scored", score, heldMs, expectedMs: expected, tooShort: heldMs < expected };
   }
-  var STAR_TIERS = [
-    { stars: 3, acc: 90, timing: 70, dur: 70 },
-    { stars: 2, acc: 75, timing: 0, dur: 50 },
-    { stars: 1, acc: 50, timing: 0, dur: 0 }
-  ];
+  var STAR_TIERS = Object.freeze([
+    Object.freeze({ stars: 3, acc: 90, timing: 70, dur: 70 }),
+    Object.freeze({ stars: 2, acc: 75, timing: 0, dur: 50 }),
+    Object.freeze({ stars: 1, acc: 50, timing: 0, dur: 0 })
+  ]);
   function computeStars(accPct, timingPct, durPct, tiers = STAR_TIERS) {
     const tier = tiers.find(
       (t) => accPct >= t.acc && timingPct >= t.timing && (durPct == null || durPct >= t.dur)
     );
     return tier ? tier.stars : 0;
   }
-  var RESULT_TIER_KEYS = [
-    { titleKey: "tier0Title", msgKey: "tier0Msg" },
-    { titleKey: "tier1Title", msgKey: "tier1Msg" },
-    { titleKey: "tier2Title", msgKey: "tier2Msg" },
-    { titleKey: "tier3Title", msgKey: "tier3Msg" }
-  ];
+  var RESULT_TIER_KEYS = Object.freeze([
+    Object.freeze({ titleKey: "tier0Title", msgKey: "tier0Msg" }),
+    Object.freeze({ titleKey: "tier1Title", msgKey: "tier1Msg" }),
+    Object.freeze({ titleKey: "tier2Title", msgKey: "tier2Msg" }),
+    Object.freeze({ titleKey: "tier3Title", msgKey: "tier3Msg" })
+  ]);
   function resolveResultTier(stars) {
     const idx = Math.max(0, Math.min(RESULT_TIER_KEYS.length - 1, stars | 0));
     return RESULT_TIER_KEYS[idx];
   }
-  var TEMPO_TIERS = [60, 75, 90, 100];
-  var DEFAULT_STREAK_MILESTONES = [3, 7];
+  var TEMPO_TIERS = Object.freeze([60, 75, 90, 100]);
+  var DEFAULT_STREAK_MILESTONES = Object.freeze([3, 7]);
   function computeUnlocks(input) {
     let unlockedTempo = null;
     let unlockedSecKey = null;
@@ -3112,13 +3142,13 @@ var PianoCore = (() => {
     ONSET_COOLDOWN_MS: 60,
     FLUX_FREQ_MIN_HZ: 20,
     FLUX_FREQ_MAX_HZ: 4200,
-    // Harmonicity gate
+    // Harmonicity gate. Partial-count + tolerance live in audio/harmonicity.ts
+    // (DEFAULTS); the legacy CONFIG.HARMONICITY_PARTIALS / BIN_TOLERANCE were
+    // never wired through, so deleted to stop future tunings being silent no-ops.
     HARMONICITY_MIN: 0,
     // free-play: lenient so chords aren't rejected
     HARMONICITY_MIN_PRACTICE: 0.12,
     // practice: light filter for voice/key clatter
-    HARMONICITY_PARTIALS: 6,
-    HARMONICITY_BIN_TOLERANCE: 2,
     // Session confidence
     SESSION_WINDOW_MS: 4e3,
     SESSION_CONFIRM_THRESHOLD: 0.35,
@@ -3169,57 +3199,19 @@ var PianoCore = (() => {
     SHADOW_BLUR_ENABLED: true,
     AMBIENT_PARTICLE_CHANCE: 0.03,
     BAR_COUNT: 64,
-    // Stages — `nameKey` is resolved via t() so labels follow prefs.lang.
-    STAGES: [
-      { nameKey: null, prefix: "", minFlow: 0 },
-      { nameKey: "stage1", prefix: "\u2726 ", minFlow: 15 },
-      { nameKey: "stage2", prefix: "\u2726\u2726 ", minFlow: 35 },
-      { nameKey: "stage3", prefix: "\u2726\u2726\u2726 ", minFlow: 55 },
-      { nameKey: "stage4", prefix: "\u2726\u2726\u2726\u2726 ", minFlow: 75 },
-      { nameKey: "stage5", prefix: "\u2726\u2726\u2726\u2726\u2726 ", minFlow: 90 },
-      { nameKey: "stage6", prefix: "\u2726\u2726\u2726\u2726\u2726\u2726 ", minFlow: 98 }
-    ],
-    // Encouragement tiers — replaces combo number display
-    ENCOURAGEMENT_TIERS: [
-      { minCombo: 3, messageKey: "enc1", effect: "glowPulse" },
-      { minCombo: 8, messageKey: "enc2", effect: "glowParticles" },
-      { minCombo: 15, messageKey: "enc3", effect: "colorWave" },
-      { minCombo: 25, messageKey: "enc4", effect: "starShower" },
-      { minCombo: 40, messageKey: "enc5", effect: "flowerBurst" },
-      { minCombo: 60, messageKey: "enc6", effect: "shimmer" },
-      { minCombo: 80, messageKey: "enc7", effect: "radiance" },
-      { minCombo: 100, messageKey: "enc8", effect: "goldenBurst" }
-    ],
+    // Stages, encouragement tiers, and themes are defined in their dedicated
+    // modules; re-exposed here for legacy callers that read CONFIG.STAGES etc.
+    STAGES,
+    ENCOURAGEMENT_TIERS: DEFAULT_ENCOURAGEMENT_TIERS,
     ENCOURAGEMENT_COOLDOWN_MS: 8e3,
     ENCOURAGEMENT_DISPLAY_MS: 2500,
-    // Note mapping — kept here for legacy convenience; @piano/core/i18n
-    // exposes NOTE_NAMES_EN/JP separately for localized rendering.
+    // Note mapping — single source of truth lives in i18n/index.ts as
+    // NOTE_NAMES_EN; CONFIG.NOTE_NAMES is the legacy alias kept so the
+    // 100+ call sites in app.js keep resolving without an i18n dependency.
     NOTE_NAMES: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
     PIANO_KEY_MIN: 21,
     PIANO_KEY_COUNT: 88,
-    // Themes
-    THEMES: [
-      {
-        bg: [10, 10, 20],
-        colors: ["#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#6366f1", "#818cf8"],
-        glow: "rgba(139,92,246,"
-      },
-      {
-        bg: [8, 18, 20],
-        colors: ["#06b6d4", "#22d3ee", "#34d399", "#10b981", "#14b8a6", "#67e8f9"],
-        glow: "rgba(6,182,212,"
-      },
-      {
-        bg: [20, 12, 8],
-        colors: ["#f97316", "#fb923c", "#ef4444", "#f43f5e", "#eab308", "#fbbf24"],
-        glow: "rgba(249,115,22,"
-      },
-      {
-        bg: [12, 12, 18],
-        colors: ["#e0e7ff", "#c7d2fe", "#a5b4fc", "#ddd6fe", "#f0f0ff", "#ffffff"],
-        glow: "rgba(200,200,255,"
-      }
-    ]
+    THEMES
   };
   var QUESTS = [
     {

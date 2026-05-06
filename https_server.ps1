@@ -6,7 +6,16 @@ $port = 8443
 $certPath = Join-Path $serverDir "cert.pfx"
 $certPass = if ([string]::IsNullOrWhiteSpace($env:PIANO_CERT_PASS)) { "piano123" } else { $env:PIANO_CERT_PASS }
 $logPath = Join-Path $serverDir "server.log"
-$blockedFiles = @("cert.pfx", "https_server.ps1")
+# Block server-only files from being served to LAN clients:
+#   - cert.pfx          : private key + cert
+#   - cert.cer          : also private (export marker; intentionally NOT blocked
+#                         here because the iPad install path needs it — see
+#                         CLAUDE.md "iPad / strict-cert browser setup")
+#   - https_server.ps1  : exposing the server source itself adds nothing
+#   - gen_cert.ps1      : leaks the default cert password literal "piano123"
+#   - server.log        : contains every client's UA + every /log POST body
+#                         (debug dumps that may include score data, device info)
+$blockedFiles = @("cert.pfx", "https_server.ps1", "gen_cert.ps1", "server.log")
 
 function Write-Log([string]$message) {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -134,9 +143,11 @@ while ($true) {
                 # Fix: Use [string]::new constructor to avoid array unrolling issues
                 $bodyStr = [string]::new($buffer)
                 $now = Get-Date -Format "HH:mm:ss"
-                $client = Get-ClientTag $headers
-                Write-Host "[$now $client Log] $bodyStr" -ForegroundColor Cyan
-                Write-Log "[$client] $bodyStr"
+                # NOTE: Don't overwrite $client — it's the TcpClient handle from
+                # line 81 and the per-iteration cleanup needs it intact.
+                $clientTag = Get-ClientTag $headers
+                Write-Host "[$now $clientTag Log] $bodyStr" -ForegroundColor Cyan
+                Write-Log "[$clientTag] $bodyStr"
             }
             Send-Response -stream $sslStream -statusCode 200 -reason "OK" -body ([System.Text.Encoding]::UTF8.GetBytes("Logged")) -contentType "text/plain; charset=utf-8"
             continue
@@ -147,14 +158,15 @@ while ($true) {
             continue
         }
 
+        # Default to index.html (the canonical entry as of 2026-05-05).
         if ($requestPath -eq "/" -or [string]::IsNullOrWhiteSpace($requestPath)) {
-            $requestPath = "/piano-visualizer.html"
+            $requestPath = "/index.html"
         }
 
         $decodedPath = [System.Uri]::UnescapeDataString($requestPath)
         $relativePath = $decodedPath.TrimStart("/").Replace("/", [System.IO.Path]::DirectorySeparatorChar)
         if ([string]::IsNullOrWhiteSpace($relativePath)) {
-            $relativePath = "piano-visualizer.html"
+            $relativePath = "index.html"
         }
 
         $candidatePath = [System.IO.Path]::GetFullPath((Join-Path $serverDir $relativePath))

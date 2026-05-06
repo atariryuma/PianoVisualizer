@@ -78,6 +78,6 @@ See [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) for the submission checklist.
 
 ## License
 
-Code: MIT. See [`LICENSE`](LICENSE) (TBA — currently MIT by default).
+Code: MIT — see [`LICENSE`](LICENSE).
 
 Bundled music: public domain. See [`docs/LICENSES/`](docs/LICENSES/).
