@@ -356,7 +356,11 @@
     // ========================================
     // DOM references
     // ========================================
-    const DOM = {
+    // Type assertion: every ID below exists in index.html. The shell
+    // crashes immediately on first DOM access if any are missing, so
+    // typing as non-null HTMLElement is correct in practice.
+    /** @type {Record<string, HTMLElement>} */
+    const DOM = /** @type {any} */ ({
       canvas: document.getElementById('canvas'),
       startScreen: document.getElementById('startScreen'),
       startBtn: document.getElementById('startBtn'),
@@ -446,9 +450,9 @@
       settingsBleBtn: document.getElementById('settingsBleBtn'),
       settingsResetBtn: document.getElementById('settingsResetBtn'),
       settingsInputStatus: document.getElementById('settingsInputStatus'),
-      settingsDebugToggle: document.getElementById('settingsDebugToggle')
-    };
-    const ctx = DOM.canvas.getContext('2d');
+      settingsDebugToggle: document.getElementById('settingsDebugToggle'),
+    });
+    const ctx = /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d');
 
     // ========================================
     // Game State
