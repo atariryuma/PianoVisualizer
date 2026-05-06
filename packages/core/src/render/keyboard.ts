@@ -96,8 +96,12 @@ export interface KeyboardHintNote {
 /** Snapshot of midiState that the keyboard renderer reads. Lets the caller
  *  inject a fresh shape (or a snapshot from a different source) for tests. */
 export interface KeyboardMidiView {
-  /** midi → { synColor: string | null, ... }. Renderer reads `synColor` only. */
-  activeNotes: Map<number, { synColor: string | null }>;
+  /** midi → { synColor, ... }. Renderer reads `synColor` only.
+   *  Accepts both `string | null` (core test fixtures) and
+   *  `string | undefined` (shell midiState shape — see legacy-app.js
+   *  `MidiStateShape.activeNotes`). The renderer's truthiness check
+   *  handles either. */
+  activeNotes: Map<number, { synColor?: string | null }>;
   /** Pedal-held released keys. */
   sustainedNotes: Set<number>;
   /** Sustain pedal state (drives the "SUSTAIN" label). */

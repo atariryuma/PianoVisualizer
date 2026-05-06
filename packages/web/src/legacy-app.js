@@ -82,7 +82,7 @@
      * @property {number} [_sectionTargetCount]       Total scoreable notes in active section.
      * @property {{mode:string, secId:string, stars:number, unlockedTempo:number|null, unlockedSecKey:string|null, streakDays:number|null}|null} [_lastResult]
      * @property {number} [laneDrawFromIdx]           Amortized cursor for lane-render culling.
-     * @property {{rMin:number, rMax:number, lMin:number, lMax:number}} [handRanges]
+     * @property {{lhMin:number, lhMax:number, rhMin:number, rhMax:number}} [handRanges]
      */
 
     /**
@@ -353,7 +353,7 @@
      * @property {string} titleKey
      * @property {string} composerKey
      * @property {string=} icon
-     * @property {string} mxlUrl
+     * @property {string} mxlUrl   Empty for user songs (use _isUser check instead).
      * @property {string} xmlUrl
      * @property {SectionDef[]=} sectionDefs
      * @property {OsmdLikeNote[]|null} notes
@@ -1796,7 +1796,7 @@
       // displays correctly instead of jumping to the 40ms fallback.
       const autoValue = (typeof practice !== 'undefined' ? practice.audioOffsetMs : null)
                         ?? DEFAULT_AUDIO_OFFSET_MS;
-      const value = Math.round(isAuto ? autoValue : prefs.audioOffsetMs);
+      const value = Math.round(isAuto ? autoValue : (prefs.audioOffsetMs ?? autoValue));
       /** @type {HTMLInputElement} */ (DOM.audioOffsetSlider).value = String(value);
       DOM.audioOffsetVal.textContent = String(value);
       DOM.audioOffsetAuto.textContent = isAuto ? t('autoDetectedFmt', { v: value }) : '';
@@ -3627,27 +3627,28 @@
       } else {
         url = URL.createObjectURL(record.mxlBlob);
       }
-      const song = {
+      /** @type {SongRec} */
+      const song = /** @type {any} */ ({
         id: record.id,
         titleKey: '__userTitle:' + record.id,   // resolved by t() override below
         composerKey: '__userComposer:' + record.id,
         icon: '🎵',
         // After unzip, the song carries an xml URL whether the source was .mxl or .xml.
         // The few branches that key off "is this a user .mxl?" use _isUser instead now.
-        mxlUrl: null,
+        mxlUrl: '',  // user songs have no .mxl URL — checked via _isUser
         xmlUrl: url,
         // Propagate the unzipped xmlText so loadCurrentScore's parseScore
         // pass + fetchPlaybackOrder both reuse it instead of re-fetching the
         // blob: URL — Android Chrome was occasionally hanging on the second
         // blob fetch of a just-imported user song.
-        _xmlText: xmlText || null,
+        _xmlText: xmlText || undefined,
         sectionDefs: record.sectionDefs,
         notes: null, totalSec: 0, sections: [], playbackOrder: [],
         _loaded: false, _loadingPromise: null,
         _isUser: true,
         _userTitle: record.title || record.id,
         _userComposer: record.composer || ''
-      };
+      });
       SONGS[record.id] = song;
       return song;
     }
@@ -4244,7 +4245,7 @@
         // measure boundary (preserving any leading rest visually) instead of
         // cropping to the first note's onset.
         song.sections = buildSectionsFromDefs(
-          expanded, totalSec, song.sectionDefs, srcMeasureStartSec
+          expanded, totalSec, song.sectionDefs ?? [], srcMeasureStartSec
         );
         // Capture the leading tempo so the count-in clicks match the song.
         // Prefer the XML-parsed quarter BPM (authoritative — handles
@@ -5337,7 +5338,7 @@
     function onMidiNoteOn(midiNum, velocity) {
       if (!state.running) return;
       const now = performance.now();
-      const synColor = synColorFor(midiNum);
+      const synColor = synColorFor(midiNum) ?? undefined;
       midiState.activeNotes.set(midiNum, { velocity, onTimeMs: now, synColor });
       midiState.sustainedNotes.delete(midiNum);
 
@@ -5663,8 +5664,13 @@
     }
     function savePracticeProgress() { saveJSON('pianoViz_practice_v1', practice.progress); }
     // Always returns the per-song state, lazily creating it on first access.
+    // Practice progress is loaded synchronously at startup so `practice.progress`
+    // is non-null whenever this is called; the bang-cast captures that invariant.
     function songProg() {
-      return PianoCore.getSongProgress(practice.progress, currentSong.id);
+      return PianoCore.getSongProgress(
+        /** @type {import('@piano/core').PracticeProgress} */ (practice.progress),
+        currentSong.id
+      );
     }
     // Daily-streak math — Phase 0b.3: delegated to @piano/core/state/streak.
     // The reducer mutates practice.progress in place (it has the same shape
@@ -5674,6 +5680,7 @@
     const todayKey = () => PianoCore.formatDateKey(new Date());
     const STREAK_OPTS = { maxDays: 60 };
     function recordPracticeDay() {
+      if (!practice.progress) return;
       PianoCore.recordPracticeDay(practice.progress, todayKey(), STREAK_OPTS);
       savePracticeProgress();
     }
@@ -6196,8 +6203,8 @@
       // lane.ts flows back through the persistent reference. Hoisted instead
       // of re-allocated per frame.
       _laneView.sectionNotes = practice.sectionNotes;
-      _laneView.handRanges = practice.handRanges;
-      _laneView.laneDrawFromIdx = practice.laneDrawFromIdx;
+      if (practice.handRanges) _laneView.handRanges = practice.handRanges;
+      _laneView.laneDrawFromIdx = practice.laneDrawFromIdx ?? 0;
       _laneView.currentNoteIdx = practice.currentNoteIdx;
       _laneView.isBoss = !!currentSong.sections[practice.sectionIdx].isBoss;
       _laneTiming.elapsedMs = practiceElapsedMs();
@@ -6230,14 +6237,20 @@
       }
       return noteThemeColor(m);
     };
-    const _laneView = {
+    // Persistent _laneView reference — drawPracticeLane mutates
+    // laneDrawFromIdx in place each frame, so the legacy code re-uses one
+    // object instead of re-allocating. sectionNotes / handRanges start
+    // null and get populated at section build (line ~6205); the cast pins
+    // the type to LaneViewState for the call site.
+    /** @type {import('@piano/core').LaneViewState} */
+    const _laneView = /** @type {any} */ ({
       enabled: true,
-      sectionNotes: null,
-      handRanges: null,
+      sectionNotes: [],
+      handRanges: { lhMin: 48, lhMax: 60, rhMin: 60, rhMax: 72 },
       laneDrawFromIdx: 0,
       currentNoteIdx: 0,
       isBoss: false,
-    };
+    });
     const _laneTiming = { elapsedMs: 0, realElapsedMs: 0, nowMs: 0 };
     // Localized strings are refreshed on `langchange` (see refreshLaneOptsI18n)
     // so the per-frame draw doesn't pay for t() lookups.
