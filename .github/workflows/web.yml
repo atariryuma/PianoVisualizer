@@ -48,8 +48,8 @@ jobs:
       - name: Typecheck (all packages)
         run: pnpm typecheck
 
-      - name: Test (@piano/core)
-        run: pnpm --filter @piano/core test -- --run
+      - name: Test (all packages)
+        run: pnpm test
 
       - name: Build web
         run: pnpm --filter @piano/web build

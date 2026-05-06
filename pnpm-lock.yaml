@@ -187,6 +187,9 @@ importers:
       vite-plugin-pwa:
         specifier: ^0.21.0
         version: 0.21.2(@vite-pwa/assets-generator@0.2.6)(vite@5.4.21(@types/node@22.19.17)(terser@5.46.2))(workbox-build@7.4.1)(workbox-window@7.4.1)
+      vitest:
+        specifier: ^2.1.5
+        version: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
 
 packages:
 
