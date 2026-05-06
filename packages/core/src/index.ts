@@ -276,6 +276,15 @@ export type {
   SourceMeasureTiming,
 } from './library/playback-order';
 
+// === Library: tied-note coalescer ===
+export { mergeTiedNotes } from './library/merge-tied-notes';
+export type {
+  TiedNote,
+  MergeTiedSample,
+  MergeTiedOptions,
+  MergeTiedResult,
+} from './library/merge-tied-notes';
+
 export {
   autoSectionDefs,
   collectSectionCandidates,

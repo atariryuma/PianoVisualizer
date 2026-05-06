@@ -3628,72 +3628,14 @@
       finally { _osmdInitPromise = null; }
     }
 
-    // Coalesce tied note sequences into a single sustained event so the kid
-    // doesn't have to re-strike a tied pitch. Modifies `notes` in place.
-    // Algorithm: for each note flagged tieStart, find the chain of subsequent
-    // notes (same midi, same hand) flagged tieEnd that immediately follow in
-    // time. Extend the first note's durSec to cover the whole chain and remove
-    // the continuation entries.
+    // Tied-note coalescer — Phase 0c: delegated to
+    // @piano/core/library/merge-tied-notes. The legacy shim toggles
+    // sample collection off when REMOTE_LOG_ENABLED is false so the
+    // production hot path doesn't pay for the per-merge toFixed + push.
     function mergeTiedNotes(notes) {
-      if (!notes || notes.length < 2) return { merged: 0, samples: [] };
-      // We expect the array to be sorted by timeSec already.
-      const removeMask = new Array(notes.length).fill(false);
-      // Per-merge sample objects are only consumed by the load-time DIAG
-      // dump, so skip the toFixed coercions + push when telemetry is off.
-      const samples = REMOTE_LOG_ENABLED ? [] : null;
-      let mergedCount = 0;
-      for (let i = 0; i < notes.length; i++) {
-        const a = notes[i];
-        if (!a.tieStart || removeMask[i]) continue;
-        // Walk forward looking for the matching tieEnd of the same midi/hand.
-        // Allow some chord-internal jitter — match within a small window.
-        let endIdx = -1;
-        for (let j = i + 1; j < notes.length; j++) {
-          if (removeMask[j]) continue;
-          const b = notes[j];
-          // Stop the search if we've gone way past the expected end of the tie
-          // (no tied note should start more than 30s after its predecessor).
-          if (b.timeSec - a.timeSec > 30) break;
-          if (b.tieEnd && b.midi === a.midi && b.hand === a.hand) {
-            endIdx = j;
-            // If b is also a tieStart (mid-chain), keep going.
-            if (!b.tieStart) break;
-          }
-        }
-        if (endIdx > i) {
-          const tail = notes[endIdx];
-          const oldDur = a.durSec;
-          a.durSec = Math.max(a.durSec, (tail.timeSec + tail.durSec) - a.timeSec);
-          // Mark all intermediate same-pitch tieEnd notes for removal.
-          let chainLen = 1;
-          for (let j = i + 1; j <= endIdx; j++) {
-            const b = notes[j];
-            if (b.tieEnd && b.midi === a.midi && b.hand === a.hand) {
-              removeMask[j] = true;
-              chainLen++;
-            }
-          }
-          mergedCount += (chainLen - 1);
-          if (samples && samples.length < 5) {
-            samples.push({
-              midi: a.midi, hand: a.hand,
-              t0: +a.timeSec.toFixed(3),
-              chain: chainLen,
-              durBefore: +oldDur.toFixed(3),
-              durAfter: +a.durSec.toFixed(3),
-              m: a.measureIdx,
-            });
-          }
-        }
-      }
-      if (removeMask.some(Boolean)) {
-        let w = 0;
-        for (let r = 0; r < notes.length; r++) {
-          if (!removeMask[r]) notes[w++] = notes[r];
-        }
-        notes.length = w;
-      }
-      return { merged: mergedCount, samples: samples || [] };
+      return PianoCore.mergeTiedNotes(notes, {
+        collectSamples: REMOTE_LOG_ENABLED,
+      });
     }
 
     // Walk the OSMD iterator once, extracting one event per voice-entry note AND
