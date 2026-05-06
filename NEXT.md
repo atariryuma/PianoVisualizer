@@ -105,11 +105,11 @@ across maybe 80 functions. The hot ones (`updatePractice`, `drawPracticeLane`,
 **Strategy**: annotate the top 20 by error-count first; that knocks out maybe
 half the TS7006s.
 
-## 3. Whole-file `@ts-check` — once the residual count is manageable
+## 3. Whole-file `// @ts-check` — once the residual count is manageable
 
 **What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
-errors. The 902-error count is too many for one session; but each upstream
-extraction or scaffolding pass drops it monotonically.
+errors. Current residual is 629; #1 + #2 above should bring it under 200 if both
+land cleanly.
 
 **Acceptance**:
 
@@ -119,25 +119,22 @@ extraction or scaffolding pass drops it monotonically.
 **Est**: budget depends on the residual count when scheduling — re- probe via
 `// @ts-check` + `tsconfig.probe.json` to gauge.
 
-## 3. More leaf extractions — pick from the remaining chunks
+## 4. More leaf extractions — when worth it
 
 Each extraction reduces the `@ts-check` surface by 50-200 errors. Candidates
-that haven't been tackled:
+that haven't been tackled (ordered hardest-last):
 
-- **DOM bag setup** — `const DOM = { foo: document.getElementById(…), … }` ~100
-  lines of getElementById calls. Could move to a typed
-  `packages/web/src/dom-bag.ts` with explicit field types.
 - **The big `loop()` render frame composer** — ~500 lines of canvas draw
   orchestration, mostly already calling `PianoCore.draw*` / `osmdAdapter.*`.
   Hard target — many fragile lookahead reads of the `state` object.
 - **Per-frame practice tick (`updatePractice`)** — ~250 lines, the hot-path
   note-onset → flow / combo / quality pipeline. Already delegates most reducers
   to `PianoCore.*`; the remaining glue is state.X mutation that would type-check
-  well once `state` has a named shape.
+  well once `state` has a named shape (item #1).
 - **DOM event handlers** — ~1500 lines of `DOM.btn.addEventListener` blocks.
   Could move to a typed `packages/web/src/event-wiring.ts`.
 
-**Est**: per-chunk between 30 minutes (DOM bag) and a half-day (updatePractice).
+**Est**: per-chunk between half-day and a day.
 
 ---
 
