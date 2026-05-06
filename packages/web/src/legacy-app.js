@@ -1032,6 +1032,7 @@
       }
     }
 
+    /** @type {Promise<unknown>|null} */
     let _micAcquiring = null;
     async function acquireMic() {
       if (micStream) return;
@@ -1313,6 +1314,7 @@
     // Entries without a `jp` field are reserved for true loanwords that read
     // identically in JP context (Perfect, Nice, GO!, SUSTAIN, URL). `t()`
     // falls back to `en` for those. Everything else has a real translation.
+    /** @type {Record<string, {en:string, jp?:string}>} */
     const T_STRINGS = {
       // Settings panel
       settings:           { en: 'Settings',                  jp: '設定' },
@@ -1861,6 +1863,7 @@
 
     // Debounce localStorage writes — slider drag fires `input` per pixel
     // (~50 events end-to-end) and each was hitting JSON.stringify + setItem.
+    /** @type {ReturnType<typeof setTimeout>|null} */
     let _audioOffsetSaveTimer = null;
     DOM.audioOffsetSlider.addEventListener('input', () => {
       const v = parseInt(/** @type {HTMLInputElement} */ (DOM.audioOffsetSlider).value, 10);
@@ -2103,6 +2106,7 @@
     // Background composites — Phase 0b.3: delegated to @piano/core.
     // Star field stored as { stars: [...] } via initBackground; drawBgStars
     // mutates the twinkle phase in-place. Aurora + flowers are pure draws.
+    /** @type {ReturnType<typeof PianoCore.initBackground>|null} */
     let _bg = null;
     function initBgStars() {
       _bg = PianoCore.initBackground({
@@ -3498,6 +3502,7 @@
         _loadingPromise: null
       }));
     }
+    /** @type {Record<string, SongRec>} */
     const SONGS = {
       // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
       // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
@@ -3537,6 +3542,7 @@
     //   identical to the deleted legacy implementation.
     const USER_DB_NAME = PianoCore.USER_DB_NAME;
     const USER_DB_STORE = PianoCore.USER_DB_STORE;
+    /** @type {Promise<IDBDatabase>|null} */
     let _userDbPromise = null;
     function openUserDb() {
       if (_userDbPromise) return _userDbPromise;
@@ -4329,6 +4335,7 @@
     // pick up the parent <g>'s color), and blanket-clearing style.fill would
     // wipe any user-applied per-note colors that happened to live inline.
     const HIGHLIGHT_FILL = '#ff3b6b';   // pink — contrasts with gold cursor + black notes
+    /** @type {SVGPathElement[]} */
     let _highlightedPaths = [];
     function clearNoteHighlights() {
       for (const p of _highlightedPaths) {
