@@ -5720,16 +5720,16 @@
     // Beat spacing follows the song's quarter-note duration so the count-in
     // *feels* like the piece — a 60 BPM lullaby gets slow ticks, a brisk étude
     // gets quick ones, and the kid arrives on tempo.
+    // Count-in beeps — Phase 0c: delegated to packages/web/src/audio-scheduler.
+    // The scheduler module owns the Tone.Transport calls; this shim
+    // assembles the deps + options bag from the legacy globals.
     function scheduleCountInBeeps(startAudioTime) {
-      if (typeof Tone === 'undefined' || !toneMetronome) return;
-      const beats = 4;
-      const beatSec = (COUNT_IN_MS / beats) / 1000;
-      try {
-        for (let i = 0; i < beats; i++) {
-          toneMetronome.triggerAttackRelease(660, 0.05, startAudioTime + i * beatSec);
-        }
-        toneMetronome.triggerAttackRelease(990, 0.08, startAudioTime + COUNT_IN_MS / 1000);
-      } catch (e) {}
+      if (typeof Tone === 'undefined') return;
+      AudioScheduler.scheduleCountInBeeps(
+        { metronome: toneMetronome, piano: tonePiano },
+        startAudioTime,
+        { countInMs: COUNT_IN_MS, beats: 4 }
+      );
     }
 
     function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
@@ -5931,28 +5931,19 @@
           practice.startAudioTime = Tone.now();
           scheduleCountInBeeps(practice.startAudioTime);
         } else {
-          // Rhythm / Listen — full timeline scheduling. Listen forces ghost on
-          // so the kid hears the song; rhythm respects the user's ghost toggle.
+          // Rhythm / Listen — full timeline scheduling delegated to the typed
+          // audio-scheduler module. Listen forces ghost on so the kid hears the
+          // song; rhythm respects the user's ghost toggle.
           const ghostActive = practice.mode === 'listen' || practice.ghostOn;
-          if (ghostActive && tonePiano) {
-            for (const n of practice.sectionNotes) {
-              const dur = Math.max(0.1, n.durMs / 1000 * 0.85);
-              Tone.Transport.schedule((time) => {
-                tonePiano.triggerAttackRelease(midiToFreq(n.midi), dur, time);
-              }, n.timeMs / 1000);
+          AudioScheduler.scheduleSectionPlayback(
+            { metronome: toneMetronome, piano: ghostActive ? tonePiano : null },
+            {
+              notes: practice.sectionNotes,
+              metronomeOn: practice.metronomeOn,
+              beatMs: practiceBeatMs(),
+              countInMs: COUNT_IN_MS,
             }
-          }
-          if (practice.metronomeOn && toneMetronome && practice.sectionNotes.length > 0) {
-            const last = practice.sectionNotes[practice.sectionNotes.length - 1];
-            const totalMs = last.timeMs + last.durMs + 1000;
-            const beatMs = practiceBeatMs();
-            for (let t = COUNT_IN_MS, beat = 0; t < totalMs; t += beatMs, beat++) {
-              const freq = (beat % 3 === 0) ? 880 : 660;
-              Tone.Transport.schedule((time) => {
-                toneMetronome.triggerAttackRelease(freq, 0.04, time);
-              }, t / 1000);
-            }
-          }
+          );
           // Cursor sync runs per-frame from drawPracticeLane, NOT from
           // Tone.Draw.schedule (Tone.Draw inherits Transport's ~100 ms
           // lookAhead — audio plays on time but cursor crawls behind).
