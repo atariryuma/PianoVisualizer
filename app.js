@@ -382,7 +382,9 @@
       lastGoodNoteTimeMs: 0,
       lastSilenceStartMs: -1,
       lastNoisePenaltyMs: 0,
-      lastPitch: -1,
+      // Continuous-MIDI semitones of the most recent onset (mic or MIDI).
+      // Replaces legacy lastPitch (Hz) + lastMidiNoteForStability (int).
+      lastPitchSemitones: null,
 
       // v10: Synesthesia Mode
       useSynesthesiaMode: false,
@@ -2066,6 +2068,21 @@
     };
     const QH_OPTS_MIDI = { ...QH_OPTS_MIC, debounceMs: 30 };
 
+    // Pitch stability — Phase 0b.3: delegated to @piano/core/state/pitch-stability.
+    // Mic onsets feed pitchHzToSemitones(pitchHz); MIDI feeds midiNum directly.
+    // Both produce continuous-MIDI semitones, so source-switching mid-session
+    // keeps the prior-pitch comparison meaningful (legacy used two parallel
+    // trackers — `state.lastPitch` in Hz and `state.lastMidiNoteForStability`
+    // in MIDI int — and kept them weakly synchronized).
+    const PS_OPTS = {
+      semitoneThreshold: CONFIG.STABILITY_SEMITONE_THRESHOLD,
+      growth: CONFIG.STABILITY_GROWTH,
+      decayOnJump: CONFIG.STABILITY_DECAY_GOOD,
+      idleHalfLifeSec: 5.0,
+      activePlayRate: 0.005,
+      activePlayFloor: 0.2,
+    };
+
     function updateGrowthTrend(timeMs) {
       const result = PianoCore.updateGrowthTrend(
         state.qualityHistory,
@@ -2215,15 +2232,7 @@
       const isWarmup = state.sessionState === 'warmup';
 
       if (isOnsetNote && !midiDrivingHistories) {
-        if (state.lastPitch > 0) {
-          const semitones = Math.abs(12 * Math.log2(pitch / state.lastPitch));
-          if (semitones < CONFIG.STABILITY_SEMITONE_THRESHOLD) {
-            state.pitchStability = Math.min(1, state.pitchStability + CONFIG.STABILITY_GROWTH);
-          } else {
-            state.pitchStability *= CONFIG.STABILITY_DECAY_GOOD;
-          }
-        }
-        state.lastPitch = pitch;
+        PianoCore.applyOnsetPitch(state, PianoCore.pitchHzToSemitones(pitch), PS_OPTS);
         state.lastSilenceStartMs = -1;
 
         if (isPerforming || isWarmup) {
@@ -2239,15 +2248,10 @@
         state.lastGoodNoteTimeMs = timeMs;
       } else if (isActivePlay) {
         state.lastSilenceStartMs = -1;
-        state.pitchStability = Math.max(0, Math.min(1, state.pitchStability * 0.995 + 0.001));
+        PianoCore.applyActivePlay(state, PS_OPTS);
       } else {
-        // v10: Time-based decay for consistency
-        // Was: state.pitchStability *= CONFIG.STABILITY_DECAY_IDLE;
-        // Now: decay based on dtSec
-        // Formula: New = Old * (Base ^ dt)
-        // If Base is 0.5 per 5 seconds -> (0.5)^(1/5) ~= 0.87 per sec
-        const decayFactor = Math.pow(0.5, dtSec / 5.0); // ~50% per 5 seconds
-        state.pitchStability = Math.max(0, state.pitchStability * decayFactor);
+        // Idle exponential decay (frame-rate independent via dtSec).
+        PianoCore.decayStability(state, dtSec, PS_OPTS);
 
         if (state.lastSilenceStartMs < 0) {
           state.lastSilenceStartMs = timeMs;
@@ -2920,7 +2924,7 @@
       _mirrorEncStateToLegacy();
       state.lastGoodNoteTimeMs = 0;
       state.lastSilenceStartMs = -1;
-      state.lastPitch = -1;
+      state.lastPitchSemitones = null;
       state.peakFlow = 0;
       state.sessionStartTimeMs = performance.now();
       state.lastNoteTimeMs = 0;
@@ -2967,7 +2971,6 @@
       midiState.sustainOn = false;
       midiState.lastChordName = '';
       midiState.lastChordTimeMs = 0;
-      state.lastMidiNoteForStability = null;
       // Drop the BLE-redelivery dedupe cache too; otherwise a long mic-only
       // session that included a stray MIDI note can theoretically swallow
       // the first MIDI note after a reconnect (same `(midi<<8)|velocity`
@@ -5593,18 +5596,7 @@
         // scale-invariant, so velocity/127 in [0,1] is comparable to mic RMS.
         PianoCore.applyOnsetToHistory(state, now, velocity / 127, QH_OPTS_MIDI);
 
-        if (state.lastMidiNoteForStability != null) {
-          const semis = Math.abs(midiNum - state.lastMidiNoteForStability);
-          if (semis < CONFIG.STABILITY_SEMITONE_THRESHOLD) {
-            state.pitchStability = Math.min(1, state.pitchStability + CONFIG.STABILITY_GROWTH);
-          } else {
-            state.pitchStability *= CONFIG.STABILITY_DECAY_GOOD;
-          }
-        }
-        state.lastMidiNoteForStability = midiNum;
-        // Seed lastPitch so legacy mic logic stays self-consistent when the user
-        // later switches sources mid-session.
-        state.lastPitch = midiToFreq(midiNum);
+        PianoCore.applyOnsetPitch(state, midiNum, PS_OPTS);
         state.lastSilenceStartMs = -1;
       }
 

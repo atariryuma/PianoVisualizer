@@ -52,11 +52,13 @@ var PianoCore = (() => {
     T_STRINGS: () => T_STRINGS,
     USER_DB_NAME: () => USER_DB_NAME,
     USER_DB_STORE: () => USER_DB_STORE,
+    applyActivePlay: () => applyActivePlay,
     applyEncouragementEvent: () => applyEncouragementEvent,
     applyFlowEvent: () => applyFlowEvent,
     applyMidiCC: () => applyMidiCC,
     applyMidiNoteOff: () => applyMidiNoteOff,
     applyMidiNoteOn: () => applyMidiNoteOn,
+    applyOnsetPitch: () => applyOnsetPitch,
     applyOnsetToHistory: () => applyOnsetToHistory,
     applyQuestTick: () => applyQuestTick,
     autoSectionDefs: () => autoSectionDefs,
@@ -83,6 +85,7 @@ var PianoCore = (() => {
     computeUnlocks: () => computeUnlocks,
     createAudioContext: () => createAudioContext,
     createT: () => createT,
+    decayStability: () => decayStability,
     deriveSessionUIHint: () => deriveSessionUIHint,
     detectChord: () => detectChord,
     detectPerfTier: () => detectPerfTier,
@@ -116,6 +119,7 @@ var PianoCore = (() => {
     initFlowState: () => initFlowState,
     initMidiState: () => initMidiState,
     initOnsetState: () => initOnsetState,
+    initPitchStabilityState: () => initPitchStabilityState,
     initPracticeState: () => initPracticeState,
     initQualityHistoryState: () => initQualityHistoryState,
     initQuestTrackerState: () => initQuestTrackerState,
@@ -131,6 +135,7 @@ var PianoCore = (() => {
     parseUserSongFromBlob: () => parseUserSongFromBlob,
     pickAudioOffsetMs: () => pickAudioOffsetMs,
     pickTier: () => pickTier,
+    pitchHzToSemitones: () => pitchHzToSemitones,
     practiceBeatMs: () => practiceBeatMs,
     practiceElapsedMs: () => practiceElapsedMs,
     project3D: () => project3D,
@@ -138,6 +143,7 @@ var PianoCore = (() => {
     resetEncouragementState: () => resetEncouragementState,
     resetFlowState: () => resetFlowState,
     resetMidiState: () => resetMidiState,
+    resetPitchStabilityState: () => resetPitchStabilityState,
     resetPracticeState: () => resetPracticeState,
     resetQualityHistoryState: () => resetQualityHistoryState,
     resetQuestTrackerState: () => resetQuestTrackerState,
@@ -1399,6 +1405,43 @@ var PianoCore = (() => {
       }
     }
     return { recorded: true, ioi };
+  }
+
+  // src/state/pitch-stability.ts
+  function pitchHzToSemitones(hz) {
+    if (!Number.isFinite(hz) || hz <= 0) return null;
+    return 12 * Math.log2(hz / 440) + 69;
+  }
+  function initPitchStabilityState() {
+    return {
+      pitchStability: 0,
+      lastPitchSemitones: null
+    };
+  }
+  function resetPitchStabilityState(state) {
+    state.pitchStability = 0;
+    state.lastPitchSemitones = null;
+  }
+  function applyOnsetPitch(state, semitones, opts) {
+    if (semitones == null || !Number.isFinite(semitones)) return;
+    if (state.lastPitchSemitones != null) {
+      const delta = Math.abs(semitones - state.lastPitchSemitones);
+      if (delta < opts.semitoneThreshold) {
+        state.pitchStability = Math.min(1, state.pitchStability + opts.growth);
+      } else {
+        state.pitchStability *= opts.decayOnJump;
+      }
+    }
+    state.lastPitchSemitones = semitones;
+  }
+  function applyActivePlay(state, opts) {
+    const next = state.pitchStability * (1 - opts.activePlayRate) + opts.activePlayRate * opts.activePlayFloor;
+    state.pitchStability = Math.max(0, Math.min(1, next));
+  }
+  function decayStability(state, dtSec, opts) {
+    if (!Number.isFinite(dtSec) || dtSec <= 0) return;
+    const factor = Math.pow(0.5, dtSec / opts.idleHalfLifeSec);
+    state.pitchStability = Math.max(0, state.pitchStability * factor);
   }
 
   // src/audio/chord.ts

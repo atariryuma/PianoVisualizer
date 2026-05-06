@@ -145,6 +145,17 @@ export type {
   OnsetPushResult,
 } from './state/quality-history';
 
+// === State: pitch stability (semitone-deviation tracker, mic + MIDI unified) ===
+export {
+  initPitchStabilityState,
+  resetPitchStabilityState,
+  applyOnsetPitch,
+  applyActivePlay,
+  decayStability,
+  pitchHzToSemitones,
+} from './state/pitch-stability';
+export type { PitchStabilityState, PitchStabilityOptions } from './state/pitch-stability';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 
