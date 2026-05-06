@@ -11,11 +11,11 @@ Last refreshed: **2026-05-06** (Phase 0b done; Phase 0c well under way.
 all route through it. `legacy-app.js` is a real ES module (`export {}`),
 `allowJs: true` is on, the `@ts-expect-error` shim is gone, boundary `@typedef`s
 for Note / PracticeState / MidiState / Prefs are seeded at the top of the file.
-Two typed modules already extracted (`library/score-timing.ts`,
-`library/measure-timing.ts`), shrinking `legacy-app.js` by ~240 lines. SW
-takeover hardened (`skipWaiting + clientsClaim + cleanupOutdatedCaches` + a
-one-shot legacy-cache cleanup in `main.ts`). 717 vitest cases, `pnpm verify`
-clean.)
+Three typed modules already extracted (`library/score-timing.ts`,
+`library/measure-timing.ts`, `library/playback-order.ts`), shrinking
+`legacy-app.js` by ~440 lines. SW takeover hardened
+(`skipWaiting + clientsClaim + cleanupOutdatedCaches` + a one-shot legacy-cache
+cleanup in `main.ts`). 734 vitest cases, `pnpm verify` clean.)
 
 ---
 
@@ -60,8 +60,9 @@ clean.)
 | 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
 | 36  | `library/score-timing.ts`     | 16    | `packages/core/src/library/score-timing.ts`     |
 | 37  | `library/measure-timing.ts`   | 13    | `packages/core/src/library/measure-timing.ts`   |
+| 38  | `library/playback-order.ts`   | 17    | `packages/core/src/library/playback-order.ts`   |
 
-**Status: 717/717 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+**Status: 734/734 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.**
 
 This session also added:
@@ -79,32 +80,7 @@ This session also added:
 
 ## ⏳ In queue
 
-## 1. Extract `library/playback-order.ts` (XML repeat / ending parser)
-
-**What**: Move `fetchPlaybackOrder` and `expandNotesByPlaybackOrder` from
-`legacy-app.js` into `@piano/core/library/playback-order.ts`. Reads the raw
-MusicXML for `<repeat>` / `<ending>` markers and emits the linear sequence of
-measure indices in the order they should sound (OSMD's API doesn't surface these
-in 1.9.9).
-
-**Why**: Same shape as score-timing.ts / measure-timing.ts — a string- in,
-plain-objects-out parser. Currently the only piece of repeat-aware playback
-logic still in the legacy file. Once extracted, the audio scheduler can move to
-a typed module against a stable contract.
-
-**Acceptance**:
-
-- [ ] `fetchPlaybackOrder(xmlText)` returns a flat array of measure indices in
-      playback order
-- [ ] `expandNotesByPlaybackOrder(notes, order)` shape stays compatible with the
-      practice-state engine's `sectionNotes`
-- [ ] Vitest cases: no repeats (passthrough), simple `|: ... :|`, first / second
-      endings, nested repeats, D.C. al Fine bare-words
-- [ ] legacy-app.js shrinks by ~150 lines
-
-**Est**: ~250 lines core + ~250 lines tests.
-
-## 2. Carve a typed entry point off the audio scheduler
+## 1. Carve a typed entry point off the audio scheduler
 
 **What**: Move `scheduleCountInBeeps` + the rhythm-mode `Tone.Transport`
 scheduling block from `legacy-app.js` into `packages/web/src/audio-scheduler.ts`
@@ -128,7 +104,7 @@ it needs from the legacy `practice` object.
 
 **Est**: ~150 lines move + ~50 lines wiring.
 
-## 3. Enable `checkJs` per-region in `legacy-app.js`
+## 2. Enable `checkJs` per-region in `legacy-app.js`
 
 **What**: Add `// @ts-check` to `legacy-app.js` and ratchet through the
 resulting type errors, fixing them in place via JSDoc annotations or opting out
