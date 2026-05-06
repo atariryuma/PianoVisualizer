@@ -75,6 +75,21 @@ export default defineConfig(({ mode }) => ({
               globPatterns: ['**/*.{js,css,html,svg,mxl,xml,json}'],
               // Bump the per-file cache cap for the OSMD chunk (~1.2 MB).
               maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+              // Phase 0b.3 follow-up: takeover semantics for users still
+              // running the retired pre-Vite legacy sw.js.
+              //   - skipWaiting    : new SW activates without waiting for
+              //                      every tab to close.
+              //   - clientsClaim   : the active SW immediately controls
+              //                      open tabs (so the next request goes
+              //                      through the new fetch handler).
+              //   - cleanupOutdatedCaches: drop Workbox precache versions
+              //                      from previous builds; pairs with
+              //                      main.ts's legacy-cache cleanup that
+              //                      handles the hand-rolled pianoViz_*
+              //                      caches the old sw.js created.
+              skipWaiting: true,
+              clientsClaim: true,
+              cleanupOutdatedCaches: true,
               runtimeCaching: [
                 {
                   urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*$/,

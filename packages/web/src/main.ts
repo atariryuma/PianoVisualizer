@@ -41,4 +41,21 @@ declare global {
 (globalThis as unknown as Window).JSZip = JSZip;
 (globalThis as unknown as Window).PianoCore = PianoCore;
 
+// Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
+// retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`
+// only cleans up its own previous precache versions — the old SW
+// named its caches `pianoViz_v2` / `_v3` / `_v4`, which would just
+// orphan-leak storage forever otherwise. One-shot, runs in the
+// background; failures are silent (private mode, embedded WebViews
+// without Cache API, etc. — none of which prevent the app booting).
+if (typeof caches !== 'undefined') {
+  void caches
+    .keys()
+    .then((names) => {
+      const stale = names.filter((n) => n.startsWith('pianoViz_') || n.startsWith('piano-viz_'));
+      return Promise.all(stale.map((n) => caches.delete(n)));
+    })
+    .catch(() => {});
+}
+
 await import('./legacy-app.js');
