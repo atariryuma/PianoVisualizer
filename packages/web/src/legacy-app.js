@@ -4606,36 +4606,12 @@
       DOM.sectionBanner.classList.add('show');
     }
 
-    // ========================================
-    // Screen Wake Lock — keep the device awake during practice. Browsers may release
-    // the lock when the page is hidden or backgrounded, so we re-acquire on visibility
-    // change. Steam Deck / iPad Safari 16.4+ / Chrome / Edge all support this.
-    // (Note: this only prevents *screen* sleep. Full system suspend still depends on
-    //  the OS's power-management settings.)
-    // ========================================
-    let wakeLockSentinel = null;
-
-    async function requestWakeLock() {
-      if (!('wakeLock' in navigator)) return;
-      if (wakeLockSentinel) return;
-      try {
-        wakeLockSentinel = await navigator.wakeLock.request('screen');
-        wakeLockSentinel.addEventListener('release', () => {
-          wakeLockSentinel = null;
-        });
-        console.log('[WakeLock] acquired');
-      } catch (e) {
-        console.warn('[WakeLock] request failed:', e.message);
-      }
-    }
-
-    function releaseWakeLock() {
-      if (wakeLockSentinel) {
-        wakeLockSentinel.release().catch(() => {});
-        wakeLockSentinel = null;
-        console.log('[WakeLock] released');
-      }
-    }
+    // Screen Wake Lock — Phase 0d: extracted to packages/web/src/wakelock.ts.
+    // The shell calls requestWakeLock() at start-of-session / page-resume and
+    // releaseWakeLock() at end-of-session / page-hide. Module is pinned as
+    // PianoWakeLock (not "WakeLock" — that's the lib.dom WakeLock interface).
+    const requestWakeLock = PianoWakeLock.requestWakeLock;
+    const releaseWakeLock = PianoWakeLock.releaseWakeLock;
 
     // Single source of truth for the port-message handler. attachMidiPort and
     // verifyMidiAlive both use this so re-binding after a suspend produces
