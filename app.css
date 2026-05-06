@@ -1964,33 +1964,6 @@
       height: auto !important;
     }
 
-    /* Custom playhead cursor — replaces OSMD's built-in cursor with a
-       per-frame interpolated overlay. Position is set by JS via transform
-       (translate3d for GPU-accelerated movement); CSS provides a 60ms
-       linear transition as a safety net so the cursor is visibly smooth
-       even on frames where the JS update is skipped. The thin gold line
-       sits LEFT of the current note (matching OSMD's CursorType.ThinLeft
-       semantics) so it doesn't occlude the noteheads. */
-    #osmdCustomCursor {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 3px;
-      height: 60px;
-      background: linear-gradient(to bottom,
-        rgba(255, 200, 0, 0.95),
-        rgba(255, 170, 0, 0.85));
-      border-radius: 2px;
-      box-shadow: 0 0 8px rgba(255, 200, 0, 0.55);
-      pointer-events: none;
-      opacity: 0;
-      transform: translate3d(-1000px, 0, 0);
-      transition: transform 60ms linear, opacity 200ms;
-      will-change: transform;
-      z-index: 2;
-    }
-    #osmdCustomCursor.visible { opacity: 1; }
-
     /* Section-start banner — flies in at the start of each section to celebrate */
     #sectionBanner {
       position: fixed;

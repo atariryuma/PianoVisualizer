@@ -29,8 +29,14 @@
 // cursor element along with the previous score. v7 clients see a frozen
 // detached cursor; v8 re-attaches after the wipe and defensively in
 // positionCustomCursor (isConnected guard).
+// 2026-05-06: bumped to v9 — drop the custom-cursor overlay entirely.
+// User feedback: the OSMD built-in wide-yellow-block + per-step jump look
+// was preferred to the thin interpolated overlay. Keep the per-step
+// stepTimeline (which lets OSMD's cursor advance through rests instead of
+// freezing on the last note onset) but drive OSMD's own cursor directly
+// — no overlay element, no interpolation, no rect capture.
 
-const CACHE = 'piano-viz-v8';
+const CACHE = 'piano-viz-v9';
 const APP_SHELL = [
   './',
   './index.html',

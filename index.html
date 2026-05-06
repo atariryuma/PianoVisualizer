@@ -223,11 +223,8 @@
   </div>
   <!-- OSMD container lives at body level so it's always rendered (even before practice
        starts). Visibility is controlled via opacity/visibility classes only.
-       #osmdCustomCursor is overlaid inside the container, replacing OSMD's
-       built-in (acknowledged-jerky) cursor with a per-frame interpolated
-       playhead. JS positions it via transform; CSS handles the smooth
-       transition between steps. -->
-  <div id="osmdContainer"><div id="osmdCustomCursor" aria-hidden="true"></div></div>
+       OSMD draws its own SVG (notes + the wide yellow highlight cursor) here. -->
+  <div id="osmdContainer"></div>
   <!-- Section-start banner that flies in at the start of each section -->
   <div id="sectionBanner"></div>
 
