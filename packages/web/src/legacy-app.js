@@ -3887,62 +3887,10 @@
     // working unchanged.
     const parseScoreTimingFromXml = PianoCore.parseScoreTimingFromXml;
 
-    // Compute per-measure (start time, duration) seconds from XML timing data.
-    // Handles tempo changes mid-measure correctly: each measure's elapsed time
-    // is the sum over its tempo segments of (segmentDuration / segmentBpm).
-    function buildMeasureTimingFromXml(scoreTiming) {
-      if (!scoreTiming) return null;
-      const measures = scoreTiming.measures;
-      const startSec = new Array(measures.length).fill(0);
-      const durSec = new Array(measures.length).fill(0);
-      // The tempo at the very start: leadingQuarterBpm. Each subsequent measure
-      // inherits the last tempo from the previous measure.
-      let curQBpm = scoreTiming.leadingQuarterBpm;
-      for (let i = 0; i < measures.length; i++) {
-        const m = measures[i];
-        // Effective bar duration in DIVISIONS = the SUM of explicit content
-        // (notes + rests) when present. Match OSMD's `SourceMeasure.Duration`
-        // semantics — OSMD's getter literally says "can be 1/1 in a 4/4
-        // measure", i.e. it tracks actual content, not the nominal time
-        // signature. Without this, exporters that emit a partial measure
-        // (e.g. MuseScore's la Campanella m=5 has 8/12 sixteenths followed
-        // by no trailing rest, so actualDiv=480 but durationDiv=720) pin
-        // the next measure 240 ticks later in our XML clock than OSMD
-        // visits it, manifesting as a phantom rest gap in the lane right
-        // before the next bar's first note.
-        // We still honour durationDiv as a floor: if the measure has no
-        // notes at all (empty actualDiv), fall back to the nominal length
-        // so silent bars don't collapse to zero-time.
-        const usedDiv = m.actualDiv > 0 ? m.actualDiv : m.durationDiv;
-        // Walk tempo events within the measure, accumulating seconds.
-        // Events are pre-sorted by inBarDiv (document order = score order).
-        // The "current tempo at measure start" is curQBpm; an event at inBarDiv=0
-        // overrides it for this measure (and subsequent measures).
-        let acc = 0;            // seconds accumulated in this measure
-        let prevDiv = 0;        // div offset of the last segment boundary
-        let segBpm = curQBpm;   // bpm in effect for the segment starting at prevDiv
-        for (const ev of m.tempoEvents) {
-          const segDiv = Math.max(0, ev.inBarDiv - prevDiv);
-          if (segDiv > 0) {
-            const segQuarters = segDiv / m.divisions;
-            acc += segQuarters * 60 / segBpm;
-          }
-          segBpm = ev.qBpm;
-          prevDiv = ev.inBarDiv;
-        }
-        // Final segment from last event to the end of the bar
-        const tailDiv = Math.max(0, usedDiv - prevDiv);
-        if (tailDiv > 0) {
-          const tailQuarters = tailDiv / m.divisions;
-          acc += tailQuarters * 60 / segBpm;
-        }
-        durSec[i] = acc;
-        if (i + 1 < measures.length) startSec[i + 1] = startSec[i] + acc;
-        // Tempo carried forward to the next measure
-        curQBpm = segBpm;
-      }
-      return { startSec, durSec };
-    }
+    // Per-measure (start, dur) seconds — Phase 0c: delegated to
+    // @piano/core/library/measure-timing. Handles mid-bar tempo events
+    // and partial-measure exporters (la Campanella m=5 case).
+    const buildMeasureTimingFromXml = PianoCore.buildMeasureTimingFromXml;
 
     // Parse the raw MusicXML to derive the actual playback order.
     // OSMD doesn't surface <repeat>/<ending> markers via its public API

@@ -262,6 +262,10 @@ export type {
   ScoreTimingOptions,
 } from './library/score-timing';
 
+// === Library: per-measure (start, duration) seconds from ScoreTiming ===
+export { buildMeasureTimingFromXml } from './library/measure-timing';
+export type { MeasureTimingResult } from './library/measure-timing';
+
 export {
   autoSectionDefs,
   collectSectionCandidates,
