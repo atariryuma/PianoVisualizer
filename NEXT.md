@@ -6,15 +6,18 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0b done; Phase 0c well under way. Four
-typed modules extracted (`library/score-timing.ts`, `library/measure-timing.ts`,
-`library/playback-order.ts`, `web/audio-scheduler.ts`), shrinking
-`legacy-app.js` by ~470 lines. `OsmdAdapter` interface in `@piano/core` + thin
-impl + all cursor / highlight call sites routed through it. `legacy-app.js` is a
-real ES module (`export {}`), `allowJs: true` is on, boundary `@typedef`s for
-Note / PracticeState / MidiState / Prefs are seeded. SW takeover hardened
-(`skipWaiting + clientsClaim + cleanupOutdatedCaches` + one-shot legacy-cache
-cleanup in `main.ts`). 734 vitest cases, `pnpm verify` clean.)
+Last refreshed: **2026-05-07** (Phase 0b done; Phase 0c deep dive. Eight typed
+modules extracted (`library/score-timing.ts`, `library/measure-timing.ts`,
+`library/playback-order.ts`, `library/merge-tied-notes.ts`,
+`library/diag-load.ts`, `state/practice-progress.ts`, `web/audio-scheduler.ts`,
+`web/note-extractor.ts`), shrinking `legacy-app.js` by ~1,000 lines
+cumulatively. `OsmdAdapter` interface in `@piano/core` + impl + all cursor /
+highlight call sites routed through it. `legacy-app.js` is a real ES module
+(`export {}`), `allowJs: true` is on, boundary `@typedef`s for Note /
+PracticeState / MidiState / Prefs are seeded, and bare-identifier globals (Tone
+/ OSMD / JSZip / PianoCore / AudioScheduler / NoteExtractor / osmdAdapter) are
+`declare global { var }`- typed in `main.ts` so a future `@ts-check` doesn't see
+TS2304s for them. SW takeover hardened. 786 vitest cases, `pnpm verify` clean.)
 
 ---
 
@@ -61,70 +64,75 @@ cleanup in `main.ts`). 734 vitest cases, `pnpm verify` clean.)
 | 37  | `library/measure-timing.ts`   | 13    | `packages/core/src/library/measure-timing.ts`   |
 | 38  | `library/playback-order.ts`   | 17    | `packages/core/src/library/playback-order.ts`   |
 | 39  | `web/audio-scheduler.ts`      | —     | `packages/web/src/audio-scheduler.ts`           |
+| 40  | `library/merge-tied-notes.ts` | 15    | `packages/core/src/library/merge-tied-notes.ts` |
+| 41  | `library/diag-load.ts`        | 15    | `packages/core/src/library/diag-load.ts`        |
+| 42  | `state/practice-progress.ts`  | 15    | `packages/core/src/state/practice-progress.ts`  |
+| 43  | `web/note-extractor.ts`       | —     | `packages/web/src/note-extractor.ts`            |
 
-**Status: 734/734 tests green, 0 lint errors, 0 type errors. `pnpm verify`
-clean.** (audio-scheduler.ts is a web-shell typed module — no @piano/core unit
-tests; runtime-verified via the iPad practice-mode A/B.)
-
-This session also added:
-
-- `OsmdAdapter` interface in `packages/core/src/adapters/` (8 type-shape
-  tests) + thin implementation in `legacy-app.js`.
-- Phase 0c kickoff: `allowJs: true`, `legacy-app.js` is a real ES module
-  (`export {}`), `@ts-expect-error` shim removed, boundary `@typedef`s for the
-  long-lived shapes (Note / PracticeState / MidiState / Prefs).
-- First Phase-0c-style typed module extraction: `score-timing.ts` — the MusicXML
-  per-measure tempo / divisions / actualDiv parser, with injectable DOMParser so
-  it tests cleanly in node. legacy-app.js shrank by ~190 lines.
+**Status: 786/786 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+clean.** (audio-scheduler.ts and note-extractor.ts are web-shell typed modules —
+no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
 
 ---
 
 ## ⏳ In queue
 
-## 1. Continue Phase 0c extractions — pick the next leaf
+## 1. Type the long-lived globals (`H`, `W`, `audioCtx`, `osmd`, `state`, `DOM`, `CONFIG`)
 
-Probed 2026-05-07: enabling `// @ts-check` on the whole `legacy-app.js` yields
-**1,041 errors** under `checkJs:true`. That's a 1-week grind, not a 1-day one —
-most of it is `DOM.x is possibly null` (TypeScript's strict-null-checks on
-`getElementById` results) and similar systematic issues. **Better strategy**:
-keep extracting leaf-level chunks into typed modules; each extraction shrinks
-the surface that `@ts-check` would have to grade.
+The next-cheapest scaffolding win. Re-probe (2026-05-07): with the
+`declare global { var X }` block already covering library globals, the remaining
+`// @ts-check + checkJs` count is **902** errors. The top categories are:
 
-Candidate next chunks (each is mostly free-standing, leaf-level):
+- TS7005
+  `Variable 'H'/'W'/'audioCtx'/'osmd'/'particles'/'gainNode' implicitly has any type`
+  — ~120 errors. Fixed by JSDoc-typing the module-scoped `let`/`const`
+  declarations.
+- TS18047 `'DOM.X' is possibly 'null'` — ~248 errors. Fixed by typing
+  `const DOM = { ... }` as `Record<string, HTMLElement>` (with a defensive `!`
+  cast or as-pattern, since the legacy assumes the IDs exist in index.html).
+- TS7006 `Parameter 's' implicitly has any` — ~206 errors. Fixed per-function
+  via JSDoc `@param {Type} s`.
 
-- **`mergeTiedNotes`** — pure note-array transform, ~60 lines. Tied-note
-  coalescing into single sustained events. Easy first target.
-- **`extractNotesFromOsmd`** — the OSMD-iterator-driven note extractor, ~250
-  lines. OSMD-coupled but pure data transformation. Would naturally consume the
-  `OsmdAdapter` interface that's already in core.
-- **Practice progress persistence** — `loadPracticeProgress` /
-  `savePracticeProgress` / unlock-tier resolution, ~150 lines. Currently inline;
-  pure state-machine + localStorage I/O.
-- **DIAG / remoteLog plumbing** — `dumpLoadDiagnostics`, ~100 lines. Pure
-  logging; clean candidate for a typed shell module.
+**Strategy**: type the few wide identifiers (~10 declarations) for the biggest
+leverage, then enable `@ts-check` at the file top and use the remaining errors
+as a TODO list.
 
-**Acceptance**: pick one, follow the established score-timing / measure-timing /
-playback-order pattern (typed module + Vitest cases + legacy delegation +
-`pnpm verify` clean).
+**Est**: ~2-3 hours for the scaffolding pass; another full day to ratchet down
+the per-function annotations.
 
-**Est**: per-chunk between 30 minutes (`mergeTiedNotes`) and a half-day
-(`extractNotesFromOsmd`).
+## 2. Whole-file `@ts-check` — once the residual count is manageable
 
-## 2. Whole-file `@ts-check` — sequenced once the file is < 4000 lines
-
-**What**: Once leaf extractions have shrunk `legacy-app.js` enough that the
-residual error count under `checkJs` is manageable (<200), enable `// @ts-check`
-at the top and fix the remaining errors in one pass.
-
-**Why**: 1,041 errors is too many to fix in a session, but the count goes down
-monotonically with each extraction. Defer until the budget fits.
+**What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
+errors. The 902-error count is too many for one session; but each upstream
+extraction or scaffolding pass drops it monotonically.
 
 **Acceptance**:
 
 - [ ] `// @ts-check` at the top of `legacy-app.js`
 - [ ] `pnpm typecheck` clean
 
-**Est**: depends on remaining surface — gauge by re-probing periodically.
+**Est**: budget depends on the residual count when scheduling — re- probe via
+`// @ts-check` + `tsconfig.probe.json` to gauge.
+
+## 3. More leaf extractions — pick from the remaining chunks
+
+Each extraction reduces the `@ts-check` surface by 50-200 errors. Candidates
+that haven't been tackled:
+
+- **DOM bag setup** — `const DOM = { foo: document.getElementById(…), … }` ~100
+  lines of getElementById calls. Could move to a typed
+  `packages/web/src/dom-bag.ts` with explicit field types.
+- **The big `loop()` render frame composer** — ~500 lines of canvas draw
+  orchestration, mostly already calling `PianoCore.draw*` / `osmdAdapter.*`.
+  Hard target — many fragile lookahead reads of the `state` object.
+- **Per-frame practice tick (`updatePractice`)** — ~250 lines, the hot-path
+  note-onset → flow / combo / quality pipeline. Already delegates most reducers
+  to `PianoCore.*`; the remaining glue is state.X mutation that would type-check
+  well once `state` has a named shape.
+- **DOM event handlers** — ~1500 lines of `DOM.btn.addEventListener` blocks.
+  Could move to a typed `packages/web/src/event-wiring.ts`.
+
+**Est**: per-chunk between 30 minutes (DOM bag) and a half-day (updatePractice).
 
 ---
 

@@ -42,22 +42,22 @@ declare global {
   // ratchets up further) can reference these without `window.` prefix.
   // Phase 0c: each is seeded onto globalThis below before legacy-app.js
   // is dynamically imported.
-   
+
   var Tone: typeof import('tone');
-   
+
   var opensheetmusicdisplay: typeof import('opensheetmusicdisplay');
-   
+
   var JSZip: typeof JSZipImpl;
-   
+
   var PianoCore: typeof import('@piano/core');
-   
+
   var AudioScheduler: typeof import('./audio-scheduler');
-   
+
   var NoteExtractor: typeof import('./note-extractor');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
-   
+
   var osmdAdapter: import('@piano/core').OsmdAdapter;
 }
 
