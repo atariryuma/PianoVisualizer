@@ -5689,35 +5689,17 @@
       return out;
     }
 
+    // MIDI sustained-note beams — Phase 0b.3: delegated to
+    // @piano/core/render/midi-beams. The pure draw function takes the canvas
+    // ctx, midiState (duck-typed as MidiBeamsView), and the layout / color
+    // adapters from the legacy shell.
     function drawMidiBeams(timeMs) {
-      if (midiState.activeNotes.size === 0 && midiState.sustainedNotes.size === 0) return;
-      const kbTop = H - kbHeight - kbSafeBottom;
-
-      ctx.save();
-      ctx.globalCompositeOperation = 'screen';
-
-      const paintBeam = (x, color, beamW, alpha, midStop) => {
-        const grad = ctx.createLinearGradient(x, kbTop, x, 0);
-        grad.addColorStop(0, color);
-        if (midStop != null) grad.addColorStop(midStop, color);
-        grad.addColorStop(1, 'transparent');
-        ctx.fillStyle = grad;
-        ctx.globalAlpha = alpha;
-        ctx.fillRect(x - beamW / 2, 0, beamW, kbTop);
-      };
-
-      midiState.activeNotes.forEach((note, midiNum) => {
-        const v = note.velocity / 127;
-        const pulse = 0.5 + 0.5 * Math.sin((timeMs - note.onTimeMs) * 0.005);
-        const beamW = (4 + v * 14) * (0.85 + pulse * 0.3);
-        const color = note.synColor || noteThemeColor(midiNum);
-        paintBeam(midiToScreenX(midiNum), color, beamW, 0.18 + v * 0.32, 0.35);
+      PianoCore.drawMidiBeams(ctx, midiState, {
+        kbTop: H - kbHeight - kbSafeBottom,
+        timeMs,
+        midiToScreenX,
+        noteThemeColor,
       });
-      midiState.sustainedNotes.forEach(midiNum => {
-        if (midiState.activeNotes.has(midiNum)) return;
-        paintBeam(midiToScreenX(midiNum), noteThemeColor(midiNum), 8, 0.12, null);
-      });
-      ctx.restore();
     }
 
     // Chord-name display. Free play celebrates with a big centered label;

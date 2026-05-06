@@ -100,6 +100,7 @@ var PianoCore = (() => {
     drawCenterGlow: () => drawCenterGlow,
     drawFlower: () => drawFlower,
     drawGroundFlowers: () => drawGroundFlowers,
+    drawMidiBeams: () => drawMidiBeams,
     drawMidiKeyboard: () => drawMidiKeyboard,
     drawPracticeLane: () => drawPracticeLane,
     drawSpectrumBars: () => drawSpectrumBars,
@@ -1192,6 +1193,35 @@ var PianoCore = (() => {
     if (next > prev) return "up";
     if (next < prev) return "down";
     return "none";
+  }
+
+  // src/render/midi-beams.ts
+  function drawMidiBeams(ctx, view, opts) {
+    if (view.activeNotes.size === 0 && view.sustainedNotes.size === 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const { kbTop, timeMs, midiToScreenX, noteThemeColor: noteThemeColor2 } = opts;
+    const paintBeam = (x, color, beamW, alpha, midStop) => {
+      const grad = ctx.createLinearGradient(x, kbTop, x, 0);
+      grad.addColorStop(0, color);
+      if (midStop != null) grad.addColorStop(midStop, color);
+      grad.addColorStop(1, "transparent");
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(x - beamW / 2, 0, beamW, kbTop);
+    };
+    view.activeNotes.forEach((note, midiNum) => {
+      const v = note.velocity / 127;
+      const pulse = 0.5 + 0.5 * Math.sin((timeMs - note.onTimeMs) * 5e-3);
+      const beamW = (4 + v * 14) * (0.85 + pulse * 0.3);
+      const color = note.synColor || noteThemeColor2(midiNum);
+      paintBeam(midiToScreenX(midiNum), color, beamW, 0.18 + v * 0.32, 0.35);
+    });
+    view.sustainedNotes.forEach((midiNum) => {
+      if (view.activeNotes.has(midiNum)) return;
+      paintBeam(midiToScreenX(midiNum), noteThemeColor2(midiNum), 8, 0.12, null);
+    });
+    ctx.restore();
   }
 
   // src/state/flow-meter.ts
