@@ -83,6 +83,7 @@ var PianoCore = (() => {
     computeSpectralFlatness: () => computeSpectralFlatness,
     computeStabilityScore: () => computeStabilityScore,
     computeStars: () => computeStars,
+    computeStreakCount: () => computeStreakCount,
     computeUnlocks: () => computeUnlocks,
     createAudioContext: () => createAudioContext,
     createT: () => createT,
@@ -112,6 +113,7 @@ var PianoCore = (() => {
     effectShimmer: () => effectShimmer,
     effectStarShower: () => effectStarShower,
     finalizeNoteHold: () => finalizeNoteHold,
+    formatDateKey: () => formatDateKey,
     formatTime: () => formatTime,
     freqToNote: () => freqToNote,
     getNoteColor: () => getNoteColor,
@@ -127,6 +129,7 @@ var PianoCore = (() => {
     initQualityHistoryState: () => initQualityHistoryState,
     initQuestTrackerState: () => initQuestTrackerState,
     initSessionConfidenceState: () => initSessionConfidenceState,
+    initStreakState: () => initStreakState,
     initWakeUpFlashState: () => initWakeUpFlashState,
     keyboardKeyCenterX: () => keyboardKeyCenterX,
     libraryEntryFromGhFile: () => libraryEntryFromGhFile,
@@ -143,6 +146,7 @@ var PianoCore = (() => {
     practiceBeatMs: () => practiceBeatMs,
     practiceElapsedMs: () => practiceElapsedMs,
     project3D: () => project3D,
+    recordPracticeDay: () => recordPracticeDay,
     recoverAudioContext: () => recoverAudioContext,
     resetChordWindowState: () => resetChordWindowState,
     resetEncouragementState: () => resetEncouragementState,
@@ -153,6 +157,7 @@ var PianoCore = (() => {
     resetQualityHistoryState: () => resetQualityHistoryState,
     resetQuestTrackerState: () => resetQuestTrackerState,
     resetSessionConfidence: () => resetSessionConfidence,
+    resetStreakState: () => resetStreakState,
     resetWakeUpFlashState: () => resetWakeUpFlashState,
     resolveResultTier: () => resolveResultTier,
     smoothQualityScore: () => smoothQualityScore,
@@ -1467,6 +1472,40 @@ var PianoCore = (() => {
     const factor = Math.pow(0.5, dtSec / opts.halfLifeSec);
     const next = state.inputFlash * factor;
     state.inputFlash = next < 1e-3 ? 0 : next;
+  }
+
+  // src/state/streak.ts
+  function initStreakState() {
+    return { streakDays: [], streakCount: 0 };
+  }
+  function resetStreakState(state) {
+    state.streakDays.length = 0;
+    state.streakCount = 0;
+  }
+  function formatDateKey(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function recordPracticeDay(state, todayKey, opts) {
+    const days = state.streakDays;
+    if (days.length > 0 && days[days.length - 1] === todayKey) return;
+    days.push(todayKey);
+    state.streakCount = computeStreakCount(state);
+    if (days.length > opts.maxDays) {
+      days.splice(0, days.length - opts.maxDays);
+    }
+  }
+  function computeStreakCount(state) {
+    const days = state.streakDays;
+    if (days.length === 0) return 0;
+    let streak = 1;
+    for (let i = days.length - 2; i >= 0; i--) {
+      const cur = /* @__PURE__ */ new Date(days[i + 1] + "T00:00:00");
+      const prev = /* @__PURE__ */ new Date(days[i] + "T00:00:00");
+      const diff = Math.round((cur.valueOf() - prev.valueOf()) / 864e5);
+      if (diff === 1) streak++;
+      else break;
+    }
+    return streak;
   }
 
   // src/audio/chord.ts

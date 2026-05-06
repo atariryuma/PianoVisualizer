@@ -165,6 +165,16 @@ export {
 } from './state/wake-up-flash';
 export type { WakeUpFlashState, WakeUpFlashOptions } from './state/wake-up-flash';
 
+// === State: daily-streak day list + count ===
+export {
+  initStreakState,
+  resetStreakState,
+  recordPracticeDay,
+  computeStreakCount,
+  formatDateKey,
+} from './state/streak';
+export type { StreakState, StreakOptions } from './state/streak';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

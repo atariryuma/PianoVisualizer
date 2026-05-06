@@ -5968,26 +5968,15 @@
       if (!s.history) s.history = {};   // Migration from older save format.
       return s;
     }
-    function dateKey(d) {
-      return d.getFullYear() + '-'
-        + String(d.getMonth() + 1).padStart(2, '0') + '-'
-        + String(d.getDate()).padStart(2, '0');
-    }
-    function todayKey() { return dateKey(new Date()); }
+    // Daily-streak math — Phase 0b.3: delegated to @piano/core/state/streak.
+    // The reducer mutates practice.progress in place (it has the same shape
+    // as StreakState — `streakDays` + `streakCount`), so the persistence
+    // layer keeps writing the same JSON blob.
+    const dateKey = PianoCore.formatDateKey;
+    const todayKey = () => PianoCore.formatDateKey(new Date());
+    const STREAK_OPTS = { maxDays: 60 };
     function recordPracticeDay() {
-      const key = todayKey();
-      const days = practice.progress.streakDays;
-      if (days[days.length - 1] === key) return;
-      days.push(key);
-      let streak = 1;
-      for (let i = days.length - 2; i >= 0; i--) {
-        const cur = new Date(days[i + 1] + 'T00:00:00');
-        const prev = new Date(days[i] + 'T00:00:00');
-        const diff = Math.round((cur - prev) / 86400000);
-        if (diff === 1) streak++; else break;
-      }
-      practice.progress.streakCount = streak;
-      if (days.length > 60) days.splice(0, days.length - 60);
+      PianoCore.recordPracticeDay(practice.progress, todayKey(), STREAK_OPTS);
       savePracticeProgress();
     }
 
