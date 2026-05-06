@@ -69,8 +69,15 @@
 // lookups, advanceOsmdCursor / jumpCursorToMeasure helpers, the
 // updatePractice guided-mode cursor-nudge path, and the
 // measureToCursorStep field on the user-songs interface in @piano/core.
+// 2026-05-06: bumped to v16 — drop the cursorTrace / stepDiag remote-
+// log machinery built for diagnosing the now-fixed cursor-skip bug.
+// Per-step trace allocations during extraction (80+ objects per song
+// load with nested notes[] arrays) and the consumer that dumped them
+// are gone. General DIAG dumps (song summary, per-measure layout,
+// note timeline, tie report, sections, play.tick) are kept since
+// they're still useful for unrelated future debugging.
 
-const CACHE = 'piano-viz-v15';
+const CACHE = 'piano-viz-v16';
 const APP_SHELL = [
   './',
   './index.html',

@@ -3686,15 +3686,10 @@
         return { offsetSec: acc, localQBpm: segBpm };
       }
 
-      // DIAG: per-cursor-step trace, first 20 steps + every step where the
-      // measure changes. Lets us verify OSMD's iterator visits each
-      // expected note position.
-      const cursorTrace = [];
       osmd.cursor.reset();
       const it = osmd.cursor.iterator;
       let cursorStep = 0;
       let skippedNotes = 0;
-      let prevMeasureForTrace = -1;
       while (!it.endReached && cursorStep < 20000) {
         try {
           const measureIdx = it.CurrentMeasureIndex;
@@ -3706,20 +3701,6 @@
           const { offsetSec, localQBpm } = timeAtInBar(measureIdx, inBarQuarters);
           const timeSec = measureStartSec[measureIdx] + offsetSec;
           const voiceEntries = it.CurrentVoiceEntries;
-          // DIAG: snapshot this step (notes added below)
-          // Capture ALL steps in early measures (covers m=0..7 fully even
-          // for dense scores like La Campanella) PLUS first step of every
-          // measure beyond. Lets us audit the iterator state at granularity
-          // matching the score's actual event density.
-          // Skip the per-step trace allocation entirely in production (no
-          // remote-log endpoint to consume it) — saves 80+ objects with nested
-          // notes[] arrays per song-load on long pieces.
-          const stepDiag = REMOTE_LOG_ENABLED
-            && (cursorStep < 80 || measureIdx !== prevMeasureForTrace)
-            ? { step: cursorStep, m: measureIdx, q: +inBarQuarters.toFixed(3),
-                t: +timeSec.toFixed(3), bpm: localQBpm, notes: [], rests: 0 }
-            : null;
-          prevMeasureForTrace = measureIdx;
           if (voiceEntries) {
             for (const ve of voiceEntries) {
               let hand;
@@ -3731,10 +3712,7 @@
               for (const note of noteList) {
                 try {
                   if (!note) continue;
-                  if (note.isRest && note.isRest()) {
-                    if (stepDiag) stepDiag.rests++;
-                    continue;
-                  }
+                  if (note.isRest && note.isRest()) continue;
                   if (note.halfTone == null) continue;
                   const midi = note.halfTone + 12;
                   if (!hand) hand = midi >= 60 ? 'R' : 'L';
@@ -3744,7 +3722,6 @@
                   // long notes that span a tempo change this is approximate but
                   // notes rarely cross mid-bar tempo events in practice.
                   const durSec = Math.max(0.05, lengthQuarters * 60 / localQBpm);
-                  const noteTimeSec = timeSec;
                   // tieStart/tieEnd: detected via OSMD's note.NoteTie or the
                   // `Tie` getter (varies by OSMD version) so we can later merge
                   // tied notes into a single sustained event.
@@ -3764,8 +3741,7 @@
                   } catch (_) { /* OSMD version differences */ }
                   notes.push({
                     hand, midi,
-                    timeSec: noteTimeSec,
-                    durSec, measureIdx,
+                    timeSec, durSec, measureIdx,
                     // inBarQuarters = position within the bar in quarter-note
                     // units. Drives cursor positioning via OSMD's iterator
                     // currentTimeStamp — robust against partial measures
@@ -3773,20 +3749,12 @@
                     inBarQuarters,
                     tieStart, tieEnd,
                   });
-                  if (stepDiag) {
-                    stepDiag.notes.push({
-                      midi, hand,
-                      qLen: +lengthQuarters.toFixed(3),
-                      tie: tieStart ? 'S' : tieEnd ? 'E' : '',
-                    });
-                  }
                 } catch (_) {
                   skippedNotes++;
                 }
               }
             }
           }
-          if (stepDiag) cursorTrace.push(stepDiag);
         } catch (_) {
           skippedNotes++;
         }
@@ -3807,12 +3775,11 @@
       // re-strike a tied note. Coalesce by extending the first note's durSec
       // and removing the continuation entries.
       const tieReport = mergeTiedNotes(notes);
-      // Surface the cursor trace + tie report only when telemetry is on so
-      // production builds don't allocate the wrapper object every load.
+      // Surface the tie report only when telemetry is on so production
+      // builds don't allocate the wrapper object every load.
       const _diag = REMOTE_LOG_ENABLED ? {
         totalSteps: cursorStep,
         skippedNotes,
-        cursorTrace,
         tieReport,
       } : null;
       return {
@@ -4327,11 +4294,9 @@
       const baseNotes = p.baseNotes;
       const measureStartSec = p.measureStartSec;
       const measureBpm = p.measureBpm;
-      // Wrap each section so a throw in (e.g.) the cursor trace can't
-      // suppress the per-note + per-section dumps that follow. Was a real
-      // regression: a malformed cursorTrace entry silently killed the
-      // last 4 sections of the load DIAG, leaving us blind to the parts
-      // we cared most about.
+      // Wrap each section so a throw in one block doesn't suppress the
+      // ones that follow — we want the per-note + per-section dumps to
+      // appear even when an upstream block throws.
       const safeSection = (label, fn) => {
         try { fn(); }
         catch (e) { log('[DIAG/' + label + '] EXCEPTION: ' + (e && e.message || e)); }
@@ -4413,43 +4378,7 @@
         }
       });
 
-      // ---------- 3. cursor trace (every OSMD step in measures 0..7) ----------
-      // First 8 measures get FULL step-by-step trace so we can see exactly
-      // what notes / rests are at every iterator position. Crucial for
-      // diagnosing "the score shows N notes but the lane only has N-2"
-      // type issues at measure granularity. Beyond m=7 we keep only the
-      // measure-boundary entries (first step of each new measure) so the
-      // log doesn't blow up on long pieces.
-      safeSection('cursor', () => {
-        if (!ext.cursorTrace) return;
-        // Pre-index "first cursor step per measure" so the m>7 filter below
-        // is O(1) per check instead of doing a linear find() inside the loop
-        // (would be O(N²) on long pieces — la Campanella's trace runs into
-        // the hundreds of entries).
-        const firstStepByMeasure = new Map();
-        for (const c of ext.cursorTrace) {
-          if (!firstStepByMeasure.has(c.m)) firstStepByMeasure.set(c.m, c.step);
-        }
-        for (const c of ext.cursorTrace) {
-          if (c.m > 7 && c.step !== firstStepByMeasure.get(c.m)) continue;
-          const noteList = c.notes && c.notes.length
-            ? c.notes.map((n) => n.midi + n.hand +
-                (n.tie ? '/t' + n.tie : '') +
-                '*' + n.qLen + 'q').join(',')
-            : '(none)';
-          // Coerce all numeric fields through Number() so a stray undefined
-          // / NaN entry doesn't blow up the whole trace dump.
-          log('[DIAG/cursor] step=' + c.step +
-            ' m=' + c.m +
-            ' inBarQ=' + c.q +
-            ' t=' + c.t + 's' +
-            ' bpm=' + Number(c.bpm || 0).toFixed(1) +
-            ' rests=' + (c.rests || 0) +
-            ' notes=' + noteList);
-        }
-      });
-
-      // ---------- 4. note timeline (first 12 + last 4) ----------
+      // ---------- 3. note timeline (first 12 + last 4) ----------
       safeSection('note', () => {
         const fmtNote = (n, i) => 'idx=' + i +
           ' t=' + n.timeSec.toFixed(3) +
@@ -4471,7 +4400,7 @@
         }
       });
 
-      // ---------- 5. tie merge report ----------
+      // ---------- 4. tie merge report ----------
       safeSection('tie', () => {
         if (!tieReport.samples || !tieReport.samples.length) return;
         for (const s of tieReport.samples) {
@@ -4487,7 +4416,7 @@
         }
       });
 
-      // ---------- 6. sections ----------
+      // ---------- 5. sections ----------
       // expanded is already sorted by timeSec, so a single linear sweep with
       // a section cursor classifies every note in O(N + S) total — vs the
       // earlier per-section filter() (O(S × N)) and even the per-note
