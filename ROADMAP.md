@@ -3,7 +3,7 @@
 The long arc — phase-by-phase. Each phase has a Definition of Done. AI agents
 should pick up `NEXT.md` for immediate-next tasks; this file is for orientation.
 
-Last updated: **2026-05-05**.
+Last updated: **2026-05-06**.
 
 ## Phase 0a — 3-file split ✅ DONE
 
@@ -13,10 +13,11 @@ Split monolithic `piano-visualizer.html` (~9000 lines) into:
 - [x] `app.css`
 - [x] `app.js`
 - [x] `sw.js` v2 with new cache list
-- [x] `piano-visualizer.html` becomes a redirect stub for back-compat
+- [x] `piano-visualizer.html` redirect stub (retired 2026-05-06 — see SW v7)
 
-**DoD met:** `node --check app.js && node --check sw.js` green; legacy URL still
-resolves; PWA install path unchanged.
+**DoD met:** `node --check app.js && node --check sw.js` green; PWA install path
+unchanged. The legacy-URL redirect was kept for a day post-split, then dropped
+once we confirmed `manifest.json#start_url` was always `./`.
 
 ## Phase 0b — monorepo scaffold + extraction 🟡 IN PROGRESS
 

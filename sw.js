@@ -17,8 +17,15 @@
 // subpath. Shell/log path checks now use endsWith() so the SW works on both
 // `https://atariryuma.github.io/PianoVisualizer/` and the LAN root path.
 // Navigation fallback added for offline launches.
+// 2026-05-06: bumped to v6 — sync OSMD CDN version with index.html (was
+// pre-caching @1.8.7 but the page actually loads @1.9.9, wasting bytes and
+// risking a stale fallback). Also bumps to invalidate caches that picked
+// up the la Campanella partial-measure timing fix in app.js.
+// 2026-05-06: bumped to v7 — removed the legacy piano-visualizer.html
+// redirect stub. Old shell entries cached under v6 are flushed on activate
+// so a stale redirect can't shadow the canonical index.html navigation.
 
-const CACHE = 'piano-viz-v5';
+const CACHE = 'piano-viz-v7';
 const APP_SHELL = [
   './',
   './index.html',
@@ -32,7 +39,7 @@ const APP_SHELL = [
   './assets/alla_turca.mxl',
   './assets/alla_turca.xml',
   'https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js',
-  'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.7/build/opensheetmusicdisplay.min.js',
+  'https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.9/build/opensheetmusicdisplay.min.js',
   'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
 ];
 
@@ -87,7 +94,6 @@ self.addEventListener('fetch', (e) => {
     (url.pathname === '/' ||
       url.pathname.endsWith('/') ||                  // GH Pages sub-path root
       url.pathname.endsWith('/index.html') ||
-      url.pathname.endsWith('/piano-visualizer.html') ||
       url.pathname.endsWith('/app.css') ||
       url.pathname.endsWith('/app.js') ||
       url.pathname.endsWith('/dist-legacy/core-bundle.js') ||

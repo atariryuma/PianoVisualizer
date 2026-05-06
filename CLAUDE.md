@@ -18,21 +18,19 @@ This repo is mid-migration from a single-file HTML build (legacy, still
 authoritative as of 2026-05-05) to a Vite + Capacitor monorepo (scaffold in
 place, extraction in progress).
 
-**Phase 0b extraction status (2026-05-05)**: 570+ tests across 33+ test files;
+**Phase 0b extraction status (2026-05-06)**: 580+ tests across 33+ test files;
 pure logic for audio detection, render layers, practice + free-play state
 machines, library catalog + section assembly, i18n, and result-tier / unlock
-gating now lives in `@piano/core`. Legacy `app.js` (~6400 lines) delegates each
-via `PianoCore.*`. Major remaining chunks: Vite shell at `packages/web` made a
-real entry, legacy `midiState` consolidation with
-`@piano/core/state/midi-state`, and OSMD adapter design for cursor / render
-wiring.
+gating now lives in `@piano/core`. Legacy `app.js` delegates each via
+`PianoCore.*`. Major remaining chunks: Vite shell at `packages/web` made a real
+entry, legacy `midiState` consolidation with `@piano/core/state/midi-state`, and
+OSMD adapter design for cursor / render wiring.
 
 ```text
 piano-visualizer/
 ├── index.html              # ★ Authoritative web app entry (LAN HTTPS server)
 ├── app.css                 # ★ Authoritative styles
-├── app.js                  # ★ Authoritative script (~9000 lines, vanilla JS)
-├── piano-visualizer.html   # Legacy URL — redirects to ./
+├── app.js                  # ★ Authoritative script (vanilla JS)
 ├── sw.js                   # Service worker (caches index/css/js + assets)
 ├── manifest.json           # PWA manifest
 ├── icon.svg                # PWA icon
@@ -74,8 +72,9 @@ When making changes, decide:
 - New abstraction or platform-specific code → edit `packages/*` and document
   what needs to flow back to `app.js`.
 
-The 3-file root build was split from a single 9000-line `piano-visualizer.html`
-on 2026-05-05.
+The 3-file root build was split from a single 9000-line monolith on 2026-05-05;
+the redirect stub for the old `piano-visualizer.html` URL was retired 2026-05-06
+once we'd confirmed no PWA installs depended on it.
 
 ## Running the Application (legacy / production)
 

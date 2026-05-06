@@ -17,7 +17,6 @@ packages/plugins/*/dist/
 app.js
 app.css
 index.html
-piano-visualizer.html
 
 # Lockfiles
 pnpm-lock.yaml

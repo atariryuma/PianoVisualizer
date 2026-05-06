@@ -103,7 +103,7 @@ jobs:
         # bundle so the published site mirrors the LAN dev experience.
         run: |
           mkdir -p _site/dist-legacy _site/assets
-          cp index.html app.css app.js sw.js manifest.json icon.svg piano-visualizer.html _site/
+          cp index.html app.css app.js sw.js manifest.json icon.svg _site/
           cp dist-legacy/core-bundle.js _site/dist-legacy/
           cp -r assets/. _site/assets/
 

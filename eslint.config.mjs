@@ -22,7 +22,6 @@ export default [
       'app.js',
       'app.css',
       'index.html',
-      'piano-visualizer.html',
       'sw.js',
     ],
   },
