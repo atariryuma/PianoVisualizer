@@ -1,21 +1,348 @@
-<!--
-  Phase 0b placeholder. Until the legacy app.js is fully extracted into
-  src/ modules, the actual app shell lives in /index.html at the repo root.
-
-  When extraction completes:
-  1. Move root index.html → here, dropping the standalone <link>/<script> tags.
-  2. Replace with a single <script type="module" src="/src/main.ts"></script>.
-  3. Delete the root index.html, app.css, app.js.
--->
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Piano Visualizer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Piano Visualizer</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#6a5acd">
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PianoViz">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="app.css">
 </head>
+
 <body>
-<noscript>This app requires JavaScript.</noscript>
-<script type="module" src="/src/main.ts"></script>
+  <div id="startScreen">
+    <h1>Piano Visualizer</h1>
+    <p data-i18n="tagline">Play the piano and watch the screen come alive</p>
+    <div id="modeButtons">
+      <button id="startBtn" class="mode-btn">
+        <span class="mode-btn-label">🎨 <span data-i18n="freePlay">Free Play</span></span>
+        <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+      </button>
+      <button class="mode-btn primary practice-song-btn" data-song="fur_elise">
+        <span class="mode-btn-label">🌸 <span data-i18n="furElise">Für Elise</span></span>
+        <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+      </button>
+      <button class="mode-btn primary practice-song-btn" data-song="alla_turca">
+        <span class="mode-btn-label">🥁 <span data-i18n="turkishMarch">Turkish March</span></span>
+        <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
+      </button>
+      <!-- User-added songs are injected here at runtime by renderUserSongButtons(). -->
+      <div id="userSongList"></div>
+      <button id="addSongBtn" class="mode-btn" data-i18n="addSongBtn">➕ Add a song</button>
+    </div>
+  </div>
+  <canvas id="canvas" role="img" aria-label="Piano visualizer animation"></canvas>
+  <div id="hud">
+    <div id="encouragement" aria-live="polite" aria-atomic="true"></div>
+    <div id="flowGauge" role="progressbar" aria-label="Flow meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="flowFill"></div>
+    </div>
+    <div id="stageLabel" aria-live="polite" aria-atomic="true"></div>
+  </div>
+  <div id="themeBar">
+    <button id="settingsBtn" data-i18n-title="settings" title="Settings">⚙</button>
+    <button id="homeBtn" data-i18n-title="backToTitle" title="Back to title">🏠</button>
+  </div>
+
+  <div id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsPanelTitle">
+    <div class="settings-card">
+      <div class="settings-header">
+        <div class="settings-title" id="settingsPanelTitle">⚙ <span data-i18n="settings">Settings</span></div>
+        <button class="settings-close" id="settingsCloseBtn" data-i18n-title="close" title="Close" aria-label="Close">✕</button>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🎨 <span data-i18n="display">Display</span></div>
+        <div class="settings-row">
+          <div class="settings-theme-row" role="radiogroup" aria-label="Theme">
+            <div class="theme-dot active" data-theme="0" title="Purple × Pink" role="radio" tabindex="0" aria-checked="true" aria-label="Purple × Pink"></div>
+            <div class="theme-dot" data-theme="1" title="Cyan × Green" role="radio" tabindex="0" aria-checked="false" aria-label="Cyan × Green"></div>
+            <div class="theme-dot" data-theme="2" title="Orange × Red" role="radio" tabindex="0" aria-checked="false" aria-label="Orange × Red"></div>
+            <div class="theme-dot" data-theme="3" title="White × Lavender" role="radio" tabindex="0" aria-checked="false" aria-label="White × Lavender"></div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div id="synesthesiaToggle" data-i18n-title="synesthesiaTitle" title="Synesthesia mode" role="switch" tabindex="0" aria-checked="false" aria-label="Synesthesia mode">🎨</div>
+          <span style="font-size:.85rem" data-i18n="synesthesia">Synesthesia mode (each note has its own color)</span>
+        </div>
+        <div class="settings-row">
+          <span style="font-size:.85rem" data-i18n="language">Language</span>
+          <button class="settings-btn" id="langToggleBtn">EN / 日本語</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🎚 <span data-i18n="timingCalibration">Timing Calibration</span></div>
+        <div class="settings-slider-row">
+          <div class="settings-slider-label" id="audioOffsetLabel">
+            <span data-i18n="audioOffset">Audio offset</span>
+            <span class="val"><span id="audioOffsetVal">40</span> ms</span>
+          </div>
+          <input type="range" id="audioOffsetSlider" class="settings-slider"
+                 min="-50" max="200" step="5" value="40"
+                 aria-labelledby="audioOffsetLabel">
+          <div class="settings-help">
+            <span data-i18n="audioOffsetHelp">If you play on the beat but it's judged "late", raise the number. If your press is rejected as "early", lower it.</span><br>
+            <span id="audioOffsetAuto" style="color:rgba(180,220,255,.8)"></span>
+          </div>
+          <div style="margin-top:6px">
+            <button class="settings-btn" id="audioOffsetReset" data-i18n="resetToAuto">Use auto-detected value</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🎹 <span data-i18n="input">Input</span></div>
+        <div class="settings-row">
+          <div class="settings-input-status" id="settingsInputStatus">Mic input</div>
+        </div>
+        <div class="settings-row">
+          <button class="settings-btn" id="settingsRescanBtn">🔄 <span data-i18n="scanMidi">Scan for MIDI keyboard</span></button>
+          <button class="settings-btn" id="settingsBleBtn" style="display:none">🔵 <span data-i18n="connectBluetooth">Connect Bluetooth</span></button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">🛠 <span data-i18n="other">Other</span></div>
+        <div class="settings-row">
+          <button class="settings-btn" id="settingsResetBtn">🔄 <span data-i18n="resetSession">Reset session</span></button>
+        </div>
+        <div class="settings-row">
+          <div id="settingsDebugToggle" class="opt-toggle"></div>
+          <span style="font-size:.85rem">🐞 <span data-i18n="debugOverlay">Debug overlay</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="playTime"></div>
+  <div id="sessionSummary" role="dialog" aria-modal="true" aria-labelledby="sumTitleHeading">
+    <div class="summary-card">
+      <h2 id="sumTitleHeading" data-i18n="sumTitle">🎹 Session Results</h2>
+      <div class="summary-stat"><span class="summary-label" data-i18n="sumBestCombo">🎵 Best Combo</span><span class="summary-value"
+          id="sumCombo">0</span></div>
+      <div class="summary-stat"><span class="summary-label" data-i18n="sumStageReached">🏔 Stage Reached</span><span class="summary-value"
+          id="sumStage">-</span></div>
+      <div class="summary-stat"><span class="summary-label" data-i18n="sumPlayTime">⏱ Play Time</span><span class="summary-value"
+          id="sumTime">0:00</span></div>
+      <div class="summary-radar">
+        <canvas id="radarChart" width="200" height="200"></canvas>
+      </div>
+      <div class="summary-quests">
+        <div class="summary-quests-title" data-i18n="sumQuests">⭐ Quests</div>
+        <div id="sumQuestList"></div>
+      </div>
+      <div class="summary-best" id="sumBest"></div>
+      <div class="summary-actions">
+        <button id="sumHome" data-i18n="sumTitleBtn">🏠 Title</button>
+        <button id="sumClose" class="primary" data-i18n="sumContinue">Continue →</button>
+      </div>
+    </div>
+  </div>
+  <div id="questDisplay">
+    <div class="quest-dots" id="questDots"></div>
+    <div class="quest-label" id="questLabel"></div>
+  </div>
+  <div id="questToast">
+    <div class="toast-title" id="toastTitle"></div>
+    <div class="toast-sub" id="toastSub"></div>
+  </div>
+  <div id="noteDisplay"></div>
+  <div id="sessionStatus"></div>
+  <div id="qualityScore"></div>
+  <div id="debugOverlay"></div>
+  <!-- Populated by refreshIntroHint() — only shown when noInputAvailable(). -->
+  <div id="introHint"></div>
+  <div id="micMeter"><div id="micMeterFill"></div></div>
+  <div id="midiBadge"></div>
+
+  <!-- ===== Practice Mode ===== -->
+  <div id="songPanel" role="dialog" aria-modal="true" aria-labelledby="songTitle">
+    <div class="song-card">
+      <div class="song-title" id="songTitle">Für Elise</div>
+      <div class="song-composer" id="songComposer">L. v. Beethoven</div>
+      <div class="song-streak">
+        🔥 <span id="streakCount">0</span><span data-i18n="dayStreak"> day streak</span>
+        <div class="streak-cal" id="streakCal"></div>
+      </div>
+
+      <div class="song-section-label" data-i18n="tempo">Tempo
+        <span id="songBpmHint" class="song-bpm-hint"></span>
+      </div>
+      <div class="tempo-row" id="tempoRow"></div>
+
+      <div class="song-section-label" data-i18n="startFrom">Start from</div>
+      <div id="sectionList"></div>
+
+      <div class="song-section-label" data-i18n="whichHand">Which hand?</div>
+      <div class="hand-row" id="handRow">
+        <button class="hand-btn" data-hand="L" data-i18n="leftOnly">👈 Left only</button>
+        <button class="hand-btn active" data-hand="both" data-i18n="bothHands">🤝 Both</button>
+        <button class="hand-btn" data-hand="R" data-i18n="rightOnly">Right only 👉</button>
+      </div>
+
+      <div class="song-section-label" data-i18n="modeLabel">Mode</div>
+      <div class="hand-row" id="modeRow">
+        <button class="hand-btn" data-mode="listen" data-i18n="modeListen">🎧 Listen</button>
+        <button class="hand-btn active" data-mode="guided" data-i18n="modeGuided">✨ Guided</button>
+        <button class="hand-btn" data-mode="rhythm" data-i18n="modeRhythm">🎵 Rhythm</button>
+      </div>
+      <div class="opt-row" id="ghostRow">
+        <div class="opt-toggle" id="ghostToggle"></div>
+        <div data-i18n="ghostPlayback">👻 Ghost playback (demo)</div>
+      </div>
+      <div class="opt-row" id="metronomeRow">
+        <div class="opt-toggle" id="metronomeToggle"></div>
+        <div data-i18n="metronome">🥁 Metronome</div>
+      </div>
+
+      <div class="song-actions">
+        <button id="songBack" data-i18n="back">Back</button>
+        <!-- Label is owned by renderSongPanel (mode-aware: Listen vs Guided/Rhythm).
+             No data-i18n here — that would race renderSongPanel on lang change. -->
+        <button id="songStart" class="primary">▶ Start practice</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="practiceHud">
+    <div id="practiceTopBar">
+      <span class="ptb-section" id="ptbSection">Part 1</span>
+      <span class="ptb-tempo" id="ptbTempo">100%</span>
+      <span class="ptb-progress" id="ptbProgress">0 / 0</span>
+      <span class="ptb-input" id="ptbInput" data-i18n-title="inputSource" title="Input source">🎙️</span>
+      <button id="ptbToggleOsmd" class="ptb-icon-btn" data-i18n-title="score" title="Score" aria-label="Score">📜</button>
+      <button id="ptbQuit" class="ptb-icon-btn" data-i18n-title="quit" title="Quit" aria-label="Quit">✕</button>
+    </div>
+  </div>
+  <!-- OSMD container lives at body level so it's always rendered (even before practice
+       starts). Visibility is controlled via opacity/visibility classes only.
+       OSMD draws its own SVG (notes + the wide yellow highlight cursor) here. -->
+  <div id="osmdContainer"></div>
+  <!-- Section-start banner that flies in at the start of each section -->
+  <div id="sectionBanner"></div>
+
+  <div id="sectionResult" role="dialog" aria-modal="true" aria-labelledby="resTitle">
+    <div class="result-card">
+      <div class="result-title" id="resTitle">Part Clear!</div>
+      <div class="result-section-name" id="resSectionName">Part 1</div>
+      <div class="result-stars" id="resStars">★★★</div>
+      <div class="result-stat"><span data-i18n="pitchAccuracy">Pitch accuracy</span><span id="resAcc">0%</span></div>
+      <div class="result-stat"><span data-i18n="timing">Timing</span><span id="resTiming">0%</span></div>
+      <div class="result-stat" id="resDurationRow"><span data-i18n="noteLength">Note length</span><span id="resDuration">0%</span></div>
+      <div class="result-stat"><span data-i18n="bestComboLabel">Best combo</span><span id="resCombo">0</span></div>
+      <div class="result-history hidden" id="resHistoryWrap">
+        <canvas id="resHistoryChart" width="280" height="80"></canvas>
+      </div>
+      <div class="result-msg" id="resMsg"></div>
+      <div class="result-unlock" id="resUnlock"></div>
+      <div class="result-actions">
+        <button id="resHome" data-i18n-title="backToTitle" title="Back to title">🏠</button>
+        <button id="resQuit" data-i18n="songSelect">Song select</button>
+        <button id="resRetry" data-i18n="tryAgainBtn">Try again</button>
+        <button id="resTryPlay" class="primary" data-i18n="tryPlayingNow" style="display:none">▶ Try playing</button>
+        <button id="resNext" class="primary" data-i18n="nextBtn">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Add-song modal ===== -->
+  <div id="addSongModal" role="dialog" aria-modal="true" aria-labelledby="addSongModalTitle">
+    <div class="settings-card add-song-card">
+      <div class="settings-header">
+        <div class="settings-title" id="addSongModalTitle">➕ <span data-i18n="addSongTitle">Add a song</span></div>
+        <button class="settings-close" id="addSongCloseBtn" data-i18n-title="close" title="Close" aria-label="Close">✕</button>
+      </div>
+
+      <div class="add-song-tabs">
+        <button class="add-song-tab active" data-tab="library" data-i18n="addSongTabLibrary">📚 Library</button>
+        <button class="add-song-tab" data-tab="file" data-i18n="addSongTabFile">📁 File</button>
+        <button class="add-song-tab" data-tab="url" data-i18n="addSongTabUrl">🔗 URL</button>
+      </div>
+
+      <div class="add-song-tab-body" data-tab-body="library">
+        <div class="settings-help" data-i18n="addSongLibraryHelp">Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.</div>
+        <input type="search" id="addSongLibrarySearch" class="add-song-url-input"
+               data-i18n-placeholder="addSongSearch"
+               data-i18n-aria-label="addSongSearch"
+               aria-label="Search composer / title"
+               placeholder="Search composer / title…">
+        <div id="addSongLibraryStatus" style="font-size:.75rem;color:rgba(255,255,255,.45);margin:4px 0 8px"></div>
+        <div id="addSongLibraryList" style="max-height:42vh;overflow-y:auto"></div>
+      </div>
+
+      <div class="add-song-tab-body" data-tab-body="file" hidden>
+        <label class="add-song-file-pick">
+          <input type="file" id="addSongFileInput" accept=".mxl,.musicxml,.xml" hidden>
+          <span data-i18n="addSongFilePick">Choose .mxl / .musicxml / .xml file</span>
+        </label>
+        <div class="settings-help" data-i18n="addSongFileHelp">Drop a MusicXML file. I confirm it is public domain or my own work.</div>
+        <label class="add-song-attest">
+          <input type="checkbox" id="addSongPdCheckbox">
+          <span data-i18n="addSongPdAttest">I confirm this score is public domain or my own work</span>
+        </label>
+      </div>
+
+      <div class="add-song-tab-body" data-tab-body="url" hidden>
+        <input type="url" id="addSongUrlInput" class="add-song-url-input"
+               data-i18n-placeholder="addSongUrlPlaceholder"
+               data-i18n-aria-label="addSongUrlPlaceholder"
+               aria-label="Score URL"
+               placeholder="https://cdn.jsdelivr.net/.../score.mxl">
+        <button class="settings-btn primary" id="addSongFetchBtn" data-i18n="addSongFetch">⬇ Download</button>
+        <div class="settings-help" data-i18n="addSongUrlHelp">Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).</div>
+      </div>
+
+      <div id="addSongStatus" class="add-song-status"></div>
+
+      <div class="add-song-mylib">
+        <div class="settings-section-label" data-i18n="myLibrary">My library</div>
+        <div id="addSongMyList"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="settings-btn" id="addSongExportBtn" data-i18n="addSongExport">⬇ Export library</button>
+          <button class="settings-btn" id="addSongImportBtn" data-i18n="addSongImport">⬆ Import</button>
+          <input type="file" id="addSongImportInput" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Section editor modal (sub-modal of addSongModal) ===== -->
+  <div id="sectionEditModal" role="dialog" aria-modal="true" aria-labelledby="sectionEditModalTitle">
+    <div class="settings-card">
+      <div class="settings-header">
+        <div class="settings-title" id="sectionEditModalTitle">✎ <span data-i18n="sectionEditTitle">Edit sections</span></div>
+        <button class="settings-close" id="sectionEditCloseBtn" data-i18n-title="close" title="Close" aria-label="Close">✕</button>
+      </div>
+      <div class="settings-help" id="sectionEditHelp"></div>
+      <div id="sectionEditRows" style="margin:10px 0"></div>
+      <div id="sectionEditError" class="add-song-status error" style="min-height:1em"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="settings-btn" id="sectionEditCancelBtn" data-i18n="sectionEditCancel">Cancel</button>
+        <button class="settings-btn primary" id="sectionEditSaveBtn" data-i18n="sectionEditSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tone.js — audio synthesis, scheduling, single audio clock for visual sync -->
+  
+  <!-- OpenSheetMusicDisplay — single source of truth for notes + score rendering -->
+  
+  <!-- JSZip — needed to peek inside user-uploaded .mxl files for metadata
+       (title/composer/measure count) BEFORE handing the blob to OSMD.
+       OSMD bundles its own copy internally but doesn't reliably expose it as global. -->
+  
+  <!-- @piano/core — IIFE bundle (Phase 0b.3): exposes window.PianoCore.
+       Must load before app.js so the shim assignments at the top of app.js
+       can reference PianoCore.* at parse time. -->
+  
+  <script type="module" src="/src/main.ts"></script>
 </body>
+
 </html>

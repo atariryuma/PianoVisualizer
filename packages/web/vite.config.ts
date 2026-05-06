@@ -1,26 +1,78 @@
-import { defineConfig } from 'vite';
+import { cpSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// `--mode mobile` strips the service worker registration for Capacitor builds —
-// SW lifecycle and WebView reload semantics don't mix well (vite-pwa FAQ).
-// Capacitor reads `webDir: "dist"` from packages/mobile/capacitor.config.ts.
+// Phase 0b.3 dual-build (Stage 1A): Vite is rooted at packages/web/. The
+// shell's index.html replaces the legacy CDN <script> tags + dist-legacy
+// IIFE bundle with a single <script type="module" src="/src/main.ts"> —
+// main.ts imports tone / opensheetmusicdisplay / jszip / @piano/core from
+// npm, seeds them as globals (so the still-vanilla app.js keeps working
+// unchanged), and dynamically imports the legacy app.js for side effects.
+//
+// The repo-root 3-file shell stays authoritative until iPad testing of
+// dist/ confirms behavior parity. Then Stage 1B retires the root files
+// and switches https_server.ps1 to serve packages/web/dist/.
+//
+// `--mode mobile` strips the service worker registration for Capacitor
+// builds — SW lifecycle + WebView reload semantics don't mix well. The
+// Capacitor wrapper reads `webDir: "dist"` from packages/mobile.
+const REPO_ROOT = path.resolve(__dirname, '../..');
+
+// Mirror the legacy shell's static files (app.css, manifest.json, icon.svg,
+// assets/) into dist/ at build time + serve them in dev. This keeps the
+// repo-root files as the single source of truth — no checked-in duplicates
+// under packages/web/public/ that would drift from root.
+const ROOT_STATIC_FILES = ['app.css', 'manifest.json', 'icon.svg'] as const;
+const ROOT_STATIC_DIRS = ['assets'] as const;
+
+const copyLegacyStatic = (): Plugin => ({
+  name: 'piano-copy-legacy-static',
+  apply: 'build',
+  closeBundle() {
+    const out = path.resolve(__dirname, 'dist');
+    for (const f of ROOT_STATIC_FILES) {
+      const src = path.resolve(REPO_ROOT, f);
+      if (existsSync(src)) cpSync(src, path.join(out, f));
+    }
+    for (const d of ROOT_STATIC_DIRS) {
+      const src = path.resolve(REPO_ROOT, d);
+      if (existsSync(src)) cpSync(src, path.join(out, d), { recursive: true });
+    }
+  },
+  // Dev-server static serving is intentionally skipped here; the
+  // primary use case for Stage 1A is the BUILD output served via
+  // https_server.ps1. `pnpm dev` would 404 on app.css / assets/* until
+  // Stage 1B; that's acceptable since dev iteration still happens
+  // against the legacy 3-file shell at the repo root.
+});
+
 export default defineConfig(({ mode }) => ({
   root: __dirname,
-  publicDir: 'public',
+  // No checked-in publicDir — copyLegacyStatic() handles dist/ population
+  // from the authoritative repo-root files.
+  publicDir: false,
+  resolve: {
+    alias: {
+      // The legacy app.js lives at the repo root during the transition.
+      // main.ts does `await import('@legacy/app.js')` so the Vite bundler
+      // can statically resolve it from anywhere in the dep graph.
+      '@legacy': REPO_ROOT,
+    },
+  },
   build: {
     outDir: 'dist',
+    emptyOutDir: true,
     target: 'es2022',
     sourcemap: mode !== 'production',
     rollupOptions: {
       output: {
-        // Cache-bust on web; harmless on Capacitor (capacitor:// has no HTTP cache).
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
         manualChunks: {
-          // Split heavy libs into their own chunk so the entry stays small.
-          // OSMD is the largest (~1.5MB minified) — keep it on a separate
-          // chunk so dynamic-import in practice mode actually loads it lazily.
+          // Heavy libs into their own chunks so the entry stays small and
+          // OSMD doesn't bloat first paint (it's only needed in practice mode).
           osmd: ['opensheetmusicdisplay'],
           tone: ['tone'],
         },
@@ -30,10 +82,17 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: true,
     port: 8443,
+    fs: {
+      // Allow vite dev to read the legacy app.js from the repo root.
+      allow: [REPO_ROOT],
+    },
   },
   plugins: [
-    // Skip SW entirely on Capacitor builds.
-    ...(mode === 'mobile'
+    copyLegacyStatic(),
+    // Skip SW entirely on Capacitor builds. For Stage 1A web builds we
+    // also skip — the legacy sw.js at repo root is the authoritative
+    // service worker until Stage 1B reconciles VitePWA's cache list.
+    ...(mode === 'mobile' || mode === 'production'
       ? []
       : [
           VitePWA({

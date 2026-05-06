@@ -1,11 +1,21 @@
+param(
+    # Directory to serve. Defaults to the script's own directory (legacy
+    # 3-file shell at the repo root). Pass -Root packages/web/dist to test
+    # the Phase 0b.3 Vite build in parallel; the cert lookup still happens
+    # from $PSScriptRoot so cert.pfx doesn't have to live inside dist/.
+    [string]$Root = $PSScriptRoot,
+    [int]$Port = 8443
+)
+
 Add-Type -AssemblyName System.Net
 Add-Type -AssemblyName System.Security
 
-$serverDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
-$port = 8443
-$certPath = Join-Path $serverDir "cert.pfx"
+$scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$serverDir = [System.IO.Path]::GetFullPath($Root)
+$port = $Port
+$certPath = Join-Path $scriptDir "cert.pfx"
 $certPass = if ([string]::IsNullOrWhiteSpace($env:PIANO_CERT_PASS)) { "piano123" } else { $env:PIANO_CERT_PASS }
-$logPath = Join-Path $serverDir "server.log"
+$logPath = Join-Path $scriptDir "server.log"
 # Block server-only files from being served to LAN clients:
 #   - cert.pfx          : private key + cert
 #   - cert.cer          : also private (export marker; intentionally NOT blocked
