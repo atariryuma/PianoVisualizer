@@ -2087,11 +2087,14 @@
     // @piano/core/audio/chord-window. Reducer mutates midiState's recentOnsets
     // / lastChordName / lastChordTimeMs in place; downstream renderers read
     // those fields off the same object so wiring is one call per onset.
+    // Note: pull detectChord straight off PianoCore (the local `const
+    // detectChord = PianoCore.detectChord` alias lives ~3000 lines below
+    // this point, which would put us in its TDZ at module-init time).
     const CW_OPTS = {
       windowMs: 80,
       minNotes: 3,
       repeatCooldownMs: 600,
-      detectChord,
+      detectChord: PianoCore.detectChord,
     };
 
     // Wake-up flash — Phase 0b.3: delegated to @piano/core/state/wake-up-flash.
