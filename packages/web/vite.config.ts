@@ -14,6 +14,14 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => ({
   root: __dirname,
   publicDir: 'public',
+  // Relative `./` so the same build artifact works under any base path:
+  //   - `/`                       (LAN dev via https_server.ps1, Capacitor wrapper)
+  //   - `/PianoVisualizer/`       (GitHub Pages project URL)
+  //   - `https://anything.com/x/` (any future custom-domain or CDN host)
+  // Vite emits `<script src="./assets/…">` instead of absolute `/assets/…`,
+  // and `start_url: './'` / `scope: './'` in the PWA manifest already use
+  // relative paths so this stays consistent across the whole shell.
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
