@@ -47,15 +47,79 @@ legacy 3-file shell at the repo root no longer exists; the only remaining
 "vanilla shell" file is `packages/web/src/legacy-app.js`, which Phase 0c will
 rewrite to TS.
 
-## Phase 0c — TypeScript migration ⏸ NOT STARTED
+## Phase 0c — TypeScript migration 🚧 IN PROGRESS (~91% done as of 2026-05-07)
 
-- [ ] Per-file `// @ts-check` opt-in across all `packages/`
-- [ ] JSDoc types for legacy `app.js` boundaries
-- [ ] Rename `.js` → `.ts` file by file, fix `noImplicitAny`
-- [ ] Enable `strictNullChecks` after rename phase
+The legacy 7,600-line `packages/web/src/legacy-app.js` is being rewritten as
+typed TS. Current residual: **91 errors** (down from 1,041 baseline). Eight
+modules already extracted into `@piano/core` (score-timing, measure-timing,
+playback-order, merge-tied-notes, diag-load, practice-progress) and two into
+`@piano/web` (audio-scheduler, note-extractor).
+
+Sub-phases below split the remaining work along clean diff boundaries.
+
+### Phase 0c.5 — Drive residual to 0, enable `// @ts-check` ratchet
+
+The remaining 91 errors are per-site boundary engineering (TS2345/TS2322 at
+`@piano/core` boundaries, scattered DOM-cast residuals, a handful of `let X`
+decls still needing `@type`). Once driven to zero, flip
+`packages/web/tsconfig.json: checkJs: true` and add `// @ts-check` to
+`legacy-app.js` so future regressions error at typecheck time.
+
+- [ ] Per-site fix the 91 residuals (estimated ~3-4h focused work)
+- [ ] `// @ts-check` at top of `legacy-app.js`
+- [ ] `checkJs: true` in `packages/web/tsconfig.json`
+- [ ] DELETE `packages/web/tsconfig.probe.json` (no longer needed)
+- [ ] Audit + replace `/** @type {any} */` casts with proper types (10-20 sites)
+
+**DoD:** `pnpm typecheck` clean across the whole repo with `legacy-app.js`
+included in the strict graph.
+
+### Phase 0d — Carve `legacy-app.js` into typed shell modules
+
+Each extraction reduces `legacy-app.js` and adds a focused `.ts` module under
+`packages/web/src/`. The shell becomes a thin glue layer that imports + wires
+typed modules. Rule: one extraction per PR, `pnpm verify` + iPad A/B between
+each.
+
+Target order (small / isolated first):
+
+- [ ] `web/wakelock.ts` + `web/visibility.ts` (~150 lines, low difficulty)
+- [ ] `web/section-editor.ts` (~300 lines, low difficulty)
+- [ ] `web/settings-panel.ts` (~500 lines, low difficulty)
+- [ ] `web/audio-init.ts` — getUserMedia + AudioContext seam (~200 lines, mid)
+- [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid)
+- [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical)
+- [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
+- [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
+
+**DoD:** `wc -l packages/web/src/legacy-app.js` ≤ 200 lines.
+
+### Phase 0e — Retire `legacy-app.js` entirely
+
+The remaining ≤200 lines move into `main.ts` (or focused new modules). The file
+gets deleted, `allowJs` gets flipped off, and every `legacy-app.js` mention in
+tooling / docs gets stripped.
+
+- [ ] Inline residual into `main.ts` / new modules
+- [ ] DELETE `packages/web/src/legacy-app.js`
+- [ ] `packages/web/tsconfig.json`: `allowJs: true` → `false`
+- [ ] DELETE `packages/web/dist-legacy/` (if any residue)
+- [ ] Strip `legacy-app.js` mentions from `.lintstagedrc.json`,
+      `.husky/pre-commit`, `CLAUDE.md`, `AGENTS.md`, `README.md`
+- [ ] `globalThis` pinning narrowed to Tone / OSMD / JSZip only (everything else
+      routes via static import)
+
+**DoD:** `git ls-files | grep -i legacy` returns 0 lines.
+`find packages -name "*.js" -not -path "*/node_modules/*" -not -path "*/dist/*"`
+returns 0 lines (config files like `eslint.config.mjs` excepted).
+
+**Tag at completion: `phase-0e-done`.**
+
+## Phase 0c (legacy DoD, retained for reference)
 
 **DoD:** `tsconfig.base.json` strict mode enabled, no `// @ts-ignore` at
-boundary points.
+boundary points. (Strict mode + no `@ts-ignore` already met as of 2026-05-07;
+the ratchet for Phase 0c is now codified as 0c.5 above.)
 
 ## Phase 1 — Capacitor first install ⏸ BLOCKED ON HUMAN
 
