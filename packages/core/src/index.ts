@@ -133,6 +133,18 @@ export type {
   QuestTickResult,
 } from './state/quest-tracker';
 
+// === State: quality history (per-onset ring buffers feeding quality.ts) ===
+export {
+  initQualityHistoryState,
+  resetQualityHistoryState,
+  applyOnsetToHistory,
+} from './state/quality-history';
+export type {
+  QualityHistoryState,
+  QualityHistoryOptions,
+  OnsetPushResult,
+} from './state/quality-history';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

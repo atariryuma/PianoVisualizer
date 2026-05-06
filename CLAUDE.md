@@ -22,9 +22,10 @@ place, extraction in progress).
 pure logic for audio detection, render layers, practice + free-play state
 machines, library catalog + section assembly, i18n, and result-tier / unlock
 gating now lives in `@piano/core`. Legacy `app.js` delegates each via
-`PianoCore.*`. Major remaining chunks: Vite shell at `packages/web` made a real
-entry, legacy `midiState` consolidation with `@piano/core/state/midi-state`, and
-OSMD adapter design for cursor / render wiring.
+`PianoCore.*`. Major remaining chunks: a few in-flight per-onset reducers
+(`quality-history`, `pitch-stability`, `chord-window` — see NEXT.md), the OSMD
+adapter design for cursor / render wiring, and the Phase 0b.3 dual-build wire-up
+where `packages/web` becomes the real entry instead of the legacy 3-file shell.
 
 ```text
 piano-visualizer/

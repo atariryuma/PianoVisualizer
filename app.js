@@ -2052,6 +2052,20 @@
     const computeStabilityScore = () =>
       PianoCore.computeStabilityScore(state.pitchStability, state.sessionConfidence);
 
+    // Per-onset ring-buffer maintenance — Phase 0b.3: delegated to
+    // @piano/core/state/quality-history. Mic onset detector and MIDI note-on
+    // both feed the same three buffers (noteOnsetTimes / ioiHistory /
+    // amplitudeHistory); centralizing here keeps debounce + IOI window
+    // identical aside from each path's own debounceMs preference.
+    const QH_OPTS_MIC = {
+      debounceMs: 80,
+      minIoiMs: 100,
+      maxIoiMs: 5000,
+      ioiHistorySize: CONFIG.IOI_HISTORY_SIZE,
+      amplitudeHistorySize: CONFIG.AMPLITUDE_HISTORY_SIZE,
+    };
+    const QH_OPTS_MIDI = { ...QH_OPTS_MIC, debounceMs: 30 };
+
     function updateGrowthTrend(timeMs) {
       const result = PianoCore.updateGrowthTrend(
         state.qualityHistory,
@@ -2191,28 +2205,7 @@
         && (timeMs - (midiInput.lastEventTime || 0)) < 2000;
 
       if (isOnsetNote && !midiDrivingHistories) {
-        const lastOnset = state.noteOnsetTimes.length > 0
-          ? state.noteOnsetTimes[state.noteOnsetTimes.length - 1] : 0;
-        if (timeMs - lastOnset > 80) {
-          state.noteOnsetTimes.push(timeMs);
-          if (state.noteOnsetTimes.length > CONFIG.IOI_HISTORY_SIZE + 1) {
-            state.noteOnsetTimes.shift();
-          }
-          if (state.noteOnsetTimes.length >= 2) {
-            const ioi = timeMs - state.noteOnsetTimes[state.noteOnsetTimes.length - 2];
-            if (ioi > 100 && ioi < 5000) {
-              state.ioiHistory.push(ioi);
-              if (state.ioiHistory.length > CONFIG.IOI_HISTORY_SIZE) {
-                state.ioiHistory.shift();
-              }
-            }
-          }
-        }
-
-        state.amplitudeHistory.push(rms);
-        if (state.amplitudeHistory.length > CONFIG.AMPLITUDE_HISTORY_SIZE) {
-          state.amplitudeHistory.shift();
-        }
+        PianoCore.applyOnsetToHistory(state, timeMs, rms, QH_OPTS_MIC);
       }
 
       updateQualityScores(timeMs);
@@ -2905,9 +2898,9 @@
       state.bestCombo = 0;
       state.currentStage = 0;
       state.pitchStability = 0;
-      state.noteOnsetTimes = [];
-      state.ioiHistory = [];
-      state.amplitudeHistory = [];
+      // Phase 0b.3: in-place buffer reset preserves array identity, so any
+      // ArrayLike consumers caching the ref (quality.ts) keep working.
+      PianoCore.resetQualityHistoryState(state);
       state.centroidHistory = [];
       state.rhythmScore = 0;
       state.dynamicsScore = 0;
@@ -3456,11 +3449,12 @@
           // has fixed positioning so CSS handles viewport changes for kid use.
           autoResize: false,
           backend: 'svg',
-          // OSMD's built-in cursor — wide yellow highlight block (Standard
-          // type, alpha 0.4). Positioned per frame by setOsmdCursorToNote
-          // (in drawPracticeLane) using the active note's measureIdx +
-          // inBarQuarters.
-          cursorsOptions: [{ type: 0, color: '#FFD700', alpha: 0.4, follow: false }]
+          // Thin playhead (type 1, ThinLeft). Type 0's wide block anchors to
+          // OSMD's time-slot edge, which slides around per-note depending on
+          // accidentals / voice-entry rules — kids couldn't tell which
+          // notehead was sounding. The active notehead is colored separately
+          // by highlightCurrentNotes().
+          cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: false }]
         });
         // Disable pedal rendering — OSMD's calculatePedals path used to throw
         // UnformattedNote on Liszt / Chopin scores that mark every chord with
@@ -4628,10 +4622,71 @@
 
     function osmdResetToStart() {
       if (!osmd || !osmd.cursor) return;
+      clearNoteHighlights();
       osmd.cursor.reset();
       DOM.osmdContainer.scrollTop = 0;
     }
 
+    // === Currently-playing notehead highlight ===
+    // The thin OSMD cursor (type 1) shows *where in time* we are; this lights
+    // up the actual note(s) sounding right now so the kid can spot "which
+    // ledger-line dot is it" without scanning the column. Called after every
+    // setOsmdCursorToNote() advance (post-walk, the iterator's
+    // NotesUnderCursor/GNotesUnderCursor returns the freshly-current notes).
+    //
+    // Approach: cache each touched <path>'s pre-highlight inline fill on a
+    // dataset attr so clear() can restore it exactly — OSMD doesn't always
+    // rely on inline style for noteheads (some are SVG `fill` attrs, some
+    // pick up the parent <g>'s color), and blanket-clearing style.fill would
+    // wipe any user-applied per-note colors that happened to live inline.
+    const HIGHLIGHT_FILL = '#ff3b6b';   // pink — contrasts with gold cursor + black notes
+    let _highlightedPaths = [];
+    function clearNoteHighlights() {
+      for (const p of _highlightedPaths) {
+        try {
+          if (p.dataset && '_origFill' in p.dataset) {
+            p.style.fill = p.dataset._origFill;
+            delete p.dataset._origFill;
+          } else {
+            p.style.fill = '';
+          }
+        } catch (_) { /* element may have been detached on song swap */ }
+      }
+      _highlightedPaths.length = 0;
+    }
+    function highlightCurrentNotes() {
+      clearNoteHighlights();
+      if (!osmd || !osmd.cursor) return;
+      // GNotesUnderCursor (graphical notes, has getSVGGElement) was added
+      // mid-1.x. Fall back to NotesUnderCursor + a property probe so older
+      // OSMD builds still work.
+      let list = [];
+      try {
+        if (typeof osmd.cursor.GNotesUnderCursor === 'function') {
+          list = osmd.cursor.GNotesUnderCursor() || [];
+        } else if (typeof osmd.cursor.NotesUnderCursor === 'function') {
+          list = osmd.cursor.NotesUnderCursor() || [];
+        }
+      } catch (_) { return; }
+      for (const n of list) {
+        if (!n || typeof n.getSVGGElement !== 'function') continue;
+        let g;
+        try { g = n.getSVGGElement(); } catch (_) { continue; }
+        if (!g) continue;
+        // Color every <path> inside the note's <g> (head + stem + accidental
+        // + ledger line if grouped). Coloring just the notehead would lose
+        // the stem, and a "pink notehead with black stem" reads less clearly
+        // than a fully-pink note for an upper-elementary kid.
+        const paths = g.querySelectorAll('path');
+        for (const p of paths) {
+          if (p.dataset && !('_origFill' in p.dataset)) {
+            p.dataset._origFill = p.style.fill || '';
+          }
+          p.style.fill = HIGHLIGHT_FILL;
+          _highlightedPaths.push(p);
+        }
+      }
+    }
 
     // === Cursor positioning by OSMD iterator's native state ===
     // Each note carries (measureIdx, inBarQuarters); OSMD's iterator
@@ -4677,6 +4732,11 @@
         if (m === targetM && inBarQ() >= targetQ - eps) break;
         try { osmd.cursor.next(); } catch (_) { /* grace-note throws — iterator still advances */ }
       }
+      // Light up the freshly-current notehead(s). highlightCurrentNotes is
+      // internally try/catched at every OSMD-touching call site, so no outer
+      // wrap here — letting unrelated bugs (e.g. push() on a frozen array)
+      // bubble is more useful than silently swallowing them.
+      highlightCurrentNotes();
     }
 
     // ========================================
@@ -5529,23 +5589,9 @@
         spawnMidiNoteVisuals(midiNum, velocity, synColor);
 
         // Feed MIDI into quality histories so radar/quest reflect the real
-        // performance — mic may be silent (headphones) or noisy.
-        const onsets = state.noteOnsetTimes;
-        const lastOnset = onsets.length > 0 ? onsets[onsets.length - 1] : 0;
-        if (now - lastOnset > 30) {
-          onsets.push(now);
-          if (onsets.length > CONFIG.IOI_HISTORY_SIZE + 1) onsets.shift();
-          if (onsets.length >= 2) {
-            const ioi = now - onsets[onsets.length - 2];
-            if (ioi > 100 && ioi < 5000) {
-              state.ioiHistory.push(ioi);
-              if (state.ioiHistory.length > CONFIG.IOI_HISTORY_SIZE) state.ioiHistory.shift();
-            }
-          }
-        }
-        // CV is scale-invariant, so velocity (0..127) works directly here.
-        state.amplitudeHistory.push(velocity / 127);
-        if (state.amplitudeHistory.length > CONFIG.AMPLITUDE_HISTORY_SIZE) state.amplitudeHistory.shift();
+        // performance — mic may be silent (headphones) or noisy. CV is
+        // scale-invariant, so velocity/127 in [0,1] is comparable to mic RMS.
+        PianoCore.applyOnsetToHistory(state, now, velocity / 127, QH_OPTS_MIDI);
 
         if (state.lastMidiNoteForStability != null) {
           const semis = Math.abs(midiNum - state.lastMidiNoteForStability);
@@ -6268,6 +6314,9 @@
         }
       } catch (e) {}
       try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {}
+      // Drop the active notehead pink so a paused/ended section doesn't
+      // leave a stale highlighted note glowing in the score.
+      try { clearNoteHighlights(); } catch (_) {}
     }
 
     // ========================================
@@ -7068,6 +7117,10 @@
           try { osmd.clear(); } catch (e) {}
           osmd = null;
         }
+        // Drop notehead-highlight refs before innerHTML='' detaches them —
+        // otherwise _highlightedPaths holds dangling elements that the next
+        // clearNoteHighlights() would still try to touch.
+        _highlightedPaths.length = 0;
         DOM.osmdContainer.innerHTML = '';
       }
       DOM.songTitle.textContent = t(song.titleKey);

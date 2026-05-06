@@ -57,6 +57,7 @@ var PianoCore = (() => {
     applyMidiCC: () => applyMidiCC,
     applyMidiNoteOff: () => applyMidiNoteOff,
     applyMidiNoteOn: () => applyMidiNoteOn,
+    applyOnsetToHistory: () => applyOnsetToHistory,
     applyQuestTick: () => applyQuestTick,
     autoSectionDefs: () => autoSectionDefs,
     buildAudioGraph: () => buildAudioGraph,
@@ -116,6 +117,7 @@ var PianoCore = (() => {
     initMidiState: () => initMidiState,
     initOnsetState: () => initOnsetState,
     initPracticeState: () => initPracticeState,
+    initQualityHistoryState: () => initQualityHistoryState,
     initQuestTrackerState: () => initQuestTrackerState,
     initSessionConfidenceState: () => initSessionConfidenceState,
     keyboardKeyCenterX: () => keyboardKeyCenterX,
@@ -137,6 +139,7 @@ var PianoCore = (() => {
     resetFlowState: () => resetFlowState,
     resetMidiState: () => resetMidiState,
     resetPracticeState: () => resetPracticeState,
+    resetQualityHistoryState: () => resetQualityHistoryState,
     resetQuestTrackerState: () => resetQuestTrackerState,
     resetSessionConfidence: () => resetSessionConfidence,
     resolveResultTier: () => resolveResultTier,
@@ -1355,6 +1358,47 @@ var PianoCore = (() => {
     }
     const allDone = firstUndone === null && quests.length > 0;
     return { completedThisTick, firstUndone, allDone };
+  }
+
+  // src/state/quality-history.ts
+  function initQualityHistoryState() {
+    return {
+      noteOnsetTimes: [],
+      ioiHistory: [],
+      amplitudeHistory: []
+    };
+  }
+  function resetQualityHistoryState(state) {
+    state.noteOnsetTimes.length = 0;
+    state.ioiHistory.length = 0;
+    state.amplitudeHistory.length = 0;
+  }
+  function applyOnsetToHistory(state, timeMs, amplitude, opts) {
+    state.amplitudeHistory.push(amplitude);
+    if (state.amplitudeHistory.length > opts.amplitudeHistorySize) {
+      state.amplitudeHistory.shift();
+    }
+    const onsets = state.noteOnsetTimes;
+    const lastOnset = onsets.length > 0 ? onsets[onsets.length - 1] : 0;
+    if (timeMs - lastOnset <= opts.debounceMs) {
+      return { recorded: false, ioi: null };
+    }
+    onsets.push(timeMs);
+    if (onsets.length > opts.ioiHistorySize + 1) {
+      onsets.shift();
+    }
+    let ioi = null;
+    if (onsets.length >= 2) {
+      const candidate = timeMs - onsets[onsets.length - 2];
+      if (candidate >= opts.minIoiMs && candidate < opts.maxIoiMs) {
+        state.ioiHistory.push(candidate);
+        if (state.ioiHistory.length > opts.ioiHistorySize) {
+          state.ioiHistory.shift();
+        }
+        ioi = candidate;
+      }
+    }
+    return { recorded: true, ioi };
   }
 
   // src/audio/chord.ts
