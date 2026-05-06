@@ -6,15 +6,14 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-06** (Phase 0b done; Phase 0c well under way.
-`OsmdAdapter` interface in `@piano/core`; legacy cursor / highlight call sites
-all route through it. `legacy-app.js` is a real ES module (`export {}`),
-`allowJs: true` is on, the `@ts-expect-error` shim is gone, boundary `@typedef`s
-for Note / PracticeState / MidiState / Prefs are seeded at the top of the file.
-Three typed modules already extracted (`library/score-timing.ts`,
-`library/measure-timing.ts`, `library/playback-order.ts`), shrinking
-`legacy-app.js` by ~440 lines. SW takeover hardened
-(`skipWaiting + clientsClaim + cleanupOutdatedCaches` + a one-shot legacy-cache
+Last refreshed: **2026-05-07** (Phase 0b done; Phase 0c well under way. Four
+typed modules extracted (`library/score-timing.ts`, `library/measure-timing.ts`,
+`library/playback-order.ts`, `web/audio-scheduler.ts`), shrinking
+`legacy-app.js` by ~470 lines. `OsmdAdapter` interface in `@piano/core` + thin
+impl + all cursor / highlight call sites routed through it. `legacy-app.js` is a
+real ES module (`export {}`), `allowJs: true` is on, boundary `@typedef`s for
+Note / PracticeState / MidiState / Prefs are seeded. SW takeover hardened
+(`skipWaiting + clientsClaim + cleanupOutdatedCaches` + one-shot legacy-cache
 cleanup in `main.ts`). 734 vitest cases, `pnpm verify` clean.)
 
 ---
@@ -61,9 +60,11 @@ cleanup in `main.ts`). 734 vitest cases, `pnpm verify` clean.)
 | 36  | `library/score-timing.ts`     | 16    | `packages/core/src/library/score-timing.ts`     |
 | 37  | `library/measure-timing.ts`   | 13    | `packages/core/src/library/measure-timing.ts`   |
 | 38  | `library/playback-order.ts`   | 17    | `packages/core/src/library/playback-order.ts`   |
+| 39  | `web/audio-scheduler.ts`      | —     | `packages/web/src/audio-scheduler.ts`           |
 
 **Status: 734/734 tests green, 0 lint errors, 0 type errors. `pnpm verify`
-clean.**
+clean.** (audio-scheduler.ts is a web-shell typed module — no @piano/core unit
+tests; runtime-verified via the iPad practice-mode A/B.)
 
 This session also added:
 
@@ -80,48 +81,50 @@ This session also added:
 
 ## ⏳ In queue
 
-## 1. Carve a typed entry point off the audio scheduler
+## 1. Continue Phase 0c extractions — pick the next leaf
 
-**What**: Move `scheduleCountInBeeps` + the rhythm-mode `Tone.Transport`
-scheduling block from `legacy-app.js` into `packages/web/src/audio-scheduler.ts`
-(a typed `.ts` shell module, not core — it directly touches Tone.js, which is a
-web-only dependency).
+Probed 2026-05-07: enabling `// @ts-check` on the whole `legacy-app.js` yields
+**1,041 errors** under `checkJs:true`. That's a 1-week grind, not a 1-day one —
+most of it is `DOM.x is possibly null` (TypeScript's strict-null-checks on
+`getElementById` results) and similar systematic issues. **Better strategy**:
+keep extracting leaf-level chunks into typed modules; each extraction shrinks
+the surface that `@ts-check` would have to grade.
 
-**Why**: The audio scheduler is the longest single chunk of Tone-coupled code in
-the legacy file (~120 lines). Moving it to a typed module is a natural Phase 0c
-milestone — the boundary `@typedef`s (`PracticeStateShape`) already cover what
-it needs from the legacy `practice` object.
+Candidate next chunks (each is mostly free-standing, leaf-level):
 
-**Acceptance**:
+- **`mergeTiedNotes`** — pure note-array transform, ~60 lines. Tied-note
+  coalescing into single sustained events. Easy first target.
+- **`extractNotesFromOsmd`** — the OSMD-iterator-driven note extractor, ~250
+  lines. OSMD-coupled but pure data transformation. Would naturally consume the
+  `OsmdAdapter` interface that's already in core.
+- **Practice progress persistence** — `loadPracticeProgress` /
+  `savePracticeProgress` / unlock-tier resolution, ~150 lines. Currently inline;
+  pure state-machine + localStorage I/O.
+- **DIAG / remoteLog plumbing** — `dumpLoadDiagnostics`, ~100 lines. Pure
+  logging; clean candidate for a typed shell module.
 
-- [ ] `audio-scheduler.ts` exports `scheduleCountInBeeps` +
-      `scheduleSectionPlayback`
-- [ ] Both functions are typed against `PracticeStateShape` from
-      `legacy-app.js`'s boundary @typedefs
-- [ ] legacy-app.js delegates via `import { scheduleCountInBeeps }`
-- [ ] No runtime change (manual A/B against a Für Elise practice session: same
-      count-in beep timing, same Listen-mode auto-play)
+**Acceptance**: pick one, follow the established score-timing / measure-timing /
+playback-order pattern (typed module + Vitest cases + legacy delegation +
+`pnpm verify` clean).
 
-**Est**: ~150 lines move + ~50 lines wiring.
+**Est**: per-chunk between 30 minutes (`mergeTiedNotes`) and a half-day
+(`extractNotesFromOsmd`).
 
-## 2. Enable `checkJs` per-region in `legacy-app.js`
+## 2. Whole-file `@ts-check` — sequenced once the file is < 4000 lines
 
-**What**: Add `// @ts-check` to `legacy-app.js` and ratchet through the
-resulting type errors, fixing them in place via JSDoc annotations or opting out
-via `// @ts-nocheck` for stubbornly-untyped regions until later extractions
-clean them up.
+**What**: Once leaf extractions have shrunk `legacy-app.js` enough that the
+residual error count under `checkJs` is manageable (<200), enable `// @ts-check`
+at the top and fix the remaining errors in one pass.
 
-**Why**: Once `@ts-check` is on, every function in the file is a typed function
-whether we like it or not. The rolling cleanup it forces makes each subsequent
-extraction cheaper.
+**Why**: 1,041 errors is too many to fix in a session, but the count goes down
+monotonically with each extraction. Defer until the budget fits.
 
 **Acceptance**:
 
 - [ ] `// @ts-check` at the top of `legacy-app.js`
-- [ ] `pnpm typecheck` clean (whatever it takes — typically a few hundred JSDoc
-      additions or `/** @type {any} */` casts at edge points)
+- [ ] `pnpm typecheck` clean
 
-**Est**: One-day grind, no behavior change.
+**Est**: depends on remaining surface — gauge by re-probing periodically.
 
 ---
 
