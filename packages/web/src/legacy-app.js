@@ -1763,8 +1763,9 @@
               const entry = stack[i];
               stack.splice(i, 1);
               entry.el.removeEventListener('keydown', entry.onKey);
-              if (entry.prev && typeof entry.prev.focus === 'function') {
-                try { entry.prev.focus(); } catch (_) {}
+              const prev = /** @type {HTMLElement|null} */ (entry.prev);
+              if (prev && typeof prev.focus === 'function') {
+                try { prev.focus(); } catch (_) {}
               }
               return;
             }
@@ -1791,8 +1792,8 @@
       const autoValue = (typeof practice !== 'undefined' ? practice.audioOffsetMs : null)
                         ?? DEFAULT_AUDIO_OFFSET_MS;
       const value = Math.round(isAuto ? autoValue : prefs.audioOffsetMs);
-      DOM.audioOffsetSlider.value = value;
-      DOM.audioOffsetVal.textContent = value;
+      /** @type {HTMLInputElement} */ (DOM.audioOffsetSlider).value = String(value);
+      DOM.audioOffsetVal.textContent = String(value);
       DOM.audioOffsetAuto.textContent = isAuto ? t('autoDetectedFmt', { v: value }) : '';
     }
 
@@ -1811,7 +1812,7 @@
       DOM.settingsBleBtn.style.display = bleSupported ? '' : 'none';
       // Reset session is only meaningful when audio is alive — disable on title.
       const running = !!(state && state.running);
-      DOM.settingsResetBtn.disabled = !running;
+      /** @type {HTMLButtonElement} */ (DOM.settingsResetBtn).disabled = !running;
       DOM.settingsResetBtn.style.opacity = running ? '' : '.45';
       DOM.settingsResetBtn.style.cursor = running ? 'pointer' : 'not-allowed';
     }
@@ -1829,7 +1830,7 @@
       if (e.key !== 'Escape') return;
       // Don't shadow the t() translator; ESC inside an input clears the
       // browser's native field — let it run instead of nuking the modal.
-      const tgt = e.target;
+      const tgt = /** @type {HTMLInputElement|null} */ (e.target);
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) {
         if (tgt.value && tgt.value.length > 0) return;
       }
@@ -1862,7 +1863,7 @@
     // (~50 events end-to-end) and each was hitting JSON.stringify + setItem.
     let _audioOffsetSaveTimer = null;
     DOM.audioOffsetSlider.addEventListener('input', () => {
-      const v = parseInt(DOM.audioOffsetSlider.value, 10);
+      const v = parseInt(/** @type {HTMLInputElement} */ (DOM.audioOffsetSlider).value, 10);
       // Bail on NaN — `practiceRealElapsedMs` would propagate NaN through
       // every `elapsed - audioOffsetMs` subtraction for the rest of the
       // session, breaking lane + cursor + scoring.
@@ -4830,6 +4831,7 @@
       }
     }
 
+    /** @type {ReturnType<typeof setTimeout>|number} */
     let _midiBadgePulseTimer = 0;
     function pulseMidiBadge() {
       if (!DOM.midiBadge || !DOM.midiBadge.classList.contains('visible')) return;
@@ -4904,7 +4906,7 @@
     // searching the port list.
     /** @param {MIDIInput|null} port */
     function attachMidiPort(port) {
-      if (midiInput.port === port) return true;
+      if (!port || midiInput.port === port) return true;
       if (isVirtualMidiPort(port)) {
         console.log('[MIDI] skip virtual/system port: ' + port.name);
         return false;
@@ -4931,8 +4933,8 @@
 
     /** @param {MIDIInput|{name:string}|null} port */
     function detachMidiPort(port) {
-      if (midiInput.port !== port) return;
-      port.onmidimessage = null;
+      if (!port || midiInput.port !== port) return;
+      if ('onmidimessage' in port) port.onmidimessage = null;
       midiInput.port = null;
       midiInput.enabled = false;
       setInputIndicator();
@@ -5017,10 +5019,11 @@
         }
       }
       _midiAccess.onstatechange = (e) => {
-        if (e.port.type !== 'input') return;
-        console.log('[MIDI] state change: "' + e.port.name + '" → ' + e.port.state);
-        if (e.port.state === 'connected' && !midiInput.enabled) attachMidiPort(e.port);
-        else if (e.port.state === 'disconnected') detachMidiPort(e.port);
+        const port = /** @type {MIDIInput|null} */ (e.port);
+        if (!port || port.type !== 'input') return;
+        console.log('[MIDI] state change: "' + port.name + '" → ' + port.state);
+        if (port.state === 'connected' && !midiInput.enabled) attachMidiPort(port);
+        else if (port.state === 'disconnected') detachMidiPort(port);
       };
       return _midiAccess;
     }
@@ -5107,6 +5110,7 @@
 
     // Polling: when MIDI is required but not connected, detect when the user
     // has paired in the WMB UI in the background and returns to the page.
+    /** @type {ReturnType<typeof setInterval>|number} */
     let _midiRescanInterval = 0;
     function startMidiAutoRescan() {
       if (_midiRescanInterval) return;
@@ -5756,7 +5760,7 @@
       const speedFactor = 100 / practice.tempoPct;
       const out = [];
       const handFilter = practice.handFilter;   // 'R' / 'L' / null
-      for (const n of currentSong.notes) {
+      for (const n of currentSong.notes ?? []) {
         if (n.timeSec >= sec.startSec && n.timeSec < sec.endSec) {
           const relSec = n.timeSec - sec.startSec;
           // One-hand mode: notes from the other hand are marked _filtered=true and pre-hit so
@@ -6331,7 +6335,7 @@
         DOM.resTitle.textContent = t('listenedTitle');
         DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
         DOM.resStars.style.display = 'none';
-        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = 'none'; });
+        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { /** @type {HTMLElement} */ (el).style.display = 'none'; });
         DOM.resMsg.textContent = t('listenedMsg');
         DOM.resUnlock.textContent = '';
         if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
@@ -6342,7 +6346,7 @@
 
       // Rhythm/guided result.
       DOM.resStars.style.display = '';
-      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { el.style.display = ''; });
+      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { /** @type {HTMLElement} */ (el).style.display = ''; });
       if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
       const tier = resolveResultTier(r.stars);
       DOM.resTitle.textContent = t(tier.titleKey);
@@ -6404,7 +6408,7 @@
         sectionNameKeys,
         unlockedTempos: sp.unlockedTempos,
         unlockedSections: sp.unlockedSections,
-        streakCount: practice.progress.streakCount,
+        streakCount: practice.progress?.streakCount ?? 0,
       });
       const { unlockedTempo, unlockedSecKey, streakDays } = unlocks;
       if (unlockedTempo != null) sp.unlockedTempos[unlockedTempo] = true;
@@ -6561,6 +6565,7 @@
     // ========================================
     function renderSongPanel() {
       const top = practice.progress;            // shared (streak)
+      if (!top) return;
       const sp  = songProg();                   // per-song (sections, tempos, unlocks)
       // Refresh title/composer too — selectSong sets them once but a langchange
       // while the song panel is visible would otherwise leave the heading in
@@ -6653,7 +6658,7 @@
           row.onclick = () => {
             practice.sectionIdx = i;
             // visually highlight selected
-            Array.from(DOM.sectionList.children).forEach(c => c.style.outline = '');
+            Array.from(DOM.sectionList.children).forEach(c => { /** @type {HTMLElement} */ (c).style.outline = ''; });
             row.style.outline = '2px solid rgba(255,200,230,.6)';
           };
         }
@@ -6928,7 +6933,7 @@
 
     function renderAddSongLibrary() {
       DOM_ADDSONG.libraryList.innerHTML = '';
-      const search = (document.getElementById('addSongLibrarySearch')?.value || '').toLowerCase();
+      const search = (/** @type {HTMLInputElement|null} */ (document.getElementById('addSongLibrarySearch'))?.value || '').toLowerCase();
       // Search matches both EN and JP labels so kids can type in either script.
       const filtered = search
         ? ONLINE_LIBRARY.filter(it =>
@@ -7119,11 +7124,12 @@
         const row = document.createElement('div');
         row.className = 'sec-edit-row';
         row.innerHTML = `<label></label><input type="number" min="1" step="1">`;
-        row.querySelector('label').textContent = t(labels[i]);
-        const input = row.querySelector('input');
-        input.value = (def.startMeasure || 0) + 1;   // 1-based for users
-        input.max = total;
-        if (i === 0) { input.disabled = true; input.value = 1; }   // first section always starts at measure 1
+        const label = /** @type {HTMLLabelElement} */ (row.querySelector('label'));
+        label.textContent = t(labels[i]);
+        const input = /** @type {HTMLInputElement} */ (row.querySelector('input'));
+        input.value = String((def.startMeasure || 0) + 1);   // 1-based for users
+        input.max = String(total);
+        if (i === 0) { input.disabled = true; input.value = '1'; }   // first section always starts at measure 1
         DOM_SECEDIT.rows.appendChild(row);
       }
       DOM_SECEDIT.error.textContent = '';
@@ -7141,7 +7147,7 @@
     async function saveSectionEditor() {
       const inputs = DOM_SECEDIT.rows.querySelectorAll('input[type=number]');
       const total = DOM_SECEDIT._totalMeasures;
-      const vals = Array.from(inputs).map(i => parseInt(i.value, 10) - 1);   // back to 0-based
+      const vals = Array.from(inputs).map(i => parseInt(/** @type {HTMLInputElement} */ (i).value, 10) - 1);   // back to 0-based
       if (vals.some(v => Number.isNaN(v) || v < 0 || v >= total)
           || vals[0] !== 0
           || vals[1] <= vals[0] || vals[2] <= vals[1]) {
@@ -7149,6 +7155,7 @@
         return;
       }
       const rec = DOM_SECEDIT._record;
+      if (!rec) return;
       rec.sectionDefs = [
         { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: vals[0], isBoss: false },
         { id: 'B',  nameKey: 'userSecB',  descKey: 'userSecBdesc',  startMeasure: vals[1], isBoss: false },
@@ -7228,9 +7235,10 @@
     });
 
     DOM_ADDSONG.fileInput?.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+      const target = /** @type {HTMLInputElement} */ (e.target);
+      const file = target.files?.[0];
       if (!file) return;
-      if (!DOM_ADDSONG.pdCheckbox.checked) {
+      if (!(/** @type {HTMLInputElement} */ (DOM_ADDSONG.pdCheckbox)).checked) {
         setAddSongStatus(t('addSongPdAttest'), true);
         return;
       }
@@ -7244,26 +7252,27 @@
       } catch (err) {
         setAddSongStatus(t('addSongFailed', { v: err.message }), true);
       } finally {
-        DOM_ADDSONG.fileInput.value = '';   // allow re-picking same filename
+        /** @type {HTMLInputElement} */ (DOM_ADDSONG.fileInput).value = '';   // allow re-picking same filename
       }
     });
 
     DOM_ADDSONG.fetchBtn?.addEventListener('click', async () => {
-      const url = (DOM_ADDSONG.urlInput.value || '').trim();
+      const urlInput = /** @type {HTMLInputElement} */ (DOM_ADDSONG.urlInput);
+      const url = (urlInput.value || '').trim();
       if (!url) return;
       setAddSongStatus(t('addSongFetch') + '…');
-      DOM_ADDSONG.fetchBtn.disabled = true;
+      /** @type {HTMLButtonElement} */ (DOM_ADDSONG.fetchBtn).disabled = true;
       try {
         const rec = await addUserSongFromUrl(url, { source: 'url' });
         setAddSongStatus(t('addSongAdded'));
-        DOM_ADDSONG.urlInput.value = '';
+        urlInput.value = '';
         renderAddSongMyList();
         renderUserSongButtons();
         setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
       } catch (err) {
         setAddSongStatus(t('addSongFailed', { v: err.message }), true);
       } finally {
-        DOM_ADDSONG.fetchBtn.disabled = false;
+        /** @type {HTMLButtonElement} */ (DOM_ADDSONG.fetchBtn).disabled = false;
       }
     });
 
@@ -7401,7 +7410,8 @@
       document.getElementById('addSongImportInput').click();
     });
     document.getElementById('addSongImportInput')?.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+      const target = /** @type {HTMLInputElement} */ (e.target);
+      const file = target.files?.[0];
       if (!file) return;
       try {
         const n = await importUserLibrary(file);
@@ -7411,7 +7421,7 @@
       } catch (err) {
         setAddSongStatus(t('addSongFailed', { v: err.message }), true);
       } finally {
-        e.target.value = '';
+        target.value = '';
       }
     });
 
