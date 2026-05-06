@@ -41,8 +41,4 @@ declare global {
 (globalThis as unknown as Window).JSZip = JSZip;
 (globalThis as unknown as Window).PianoCore = PianoCore;
 
-// @ts-expect-error legacy-app.js is plain JS with no exports; Vite still
-// bundles it for its IIFE-style side effects. The shim lives in
-// legacy.d.ts but TS skips ambient declarations when the file resolves.
-// Phase 0c rewrites this to TS, dropping the suppression.
 await import('./legacy-app.js');

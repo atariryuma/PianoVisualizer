@@ -6,11 +6,13 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-06** (Phase 0b.3 dual-build wire-up is **done**:
-`packages/web` is now the production entry, the legacy 3-file shell at the repo
-root has been retired, `legacy-app.js` lives under `packages/web/src/`. 35
-modules in `@piano/core` with 680 vitest cases. Next architectural milestone is
-Phase 0c — TypeScript conversion of `legacy-app.js` into proper modules.)
+Last refreshed: **2026-05-06** (Phase 0b done; Phase 0c started. `OsmdAdapter`
+interface lives in `@piano/core` and `legacy-app.js` implements it; external
+cursor / highlight call sites now route through the adapter. `legacy-app.js` is
+now a real ES module (`export {}` at the end), `packages/web/tsconfig.json` has
+`allowJs: true`, and the `@ts-expect-error` shim in `main.ts` is gone. Boundary
+`@typedef`s for the long-lived shapes (Note / PracticeState / MidiState / Prefs)
+seeded at the top of `legacy-app.js`. 688 vitest cases.)
 
 ---
 
@@ -54,66 +56,70 @@ Phase 0c — TypeScript conversion of `legacy-app.js` into proper modules.)
 | 34  | `state/streak.ts`             | 19    | `packages/core/src/state/streak.ts`             |
 | 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
 
-**Status: 680/680 tests green, 0 lint errors, 0 type errors. `pnpm verify`
-clean. Phase 0b.3 dual-build complete; legacy IIFE bundle smoke test removed (4
-cases) — the IIFE bundle is no longer produced.**
+**Status: 688/688 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+clean.**
+
+The OSMD adapter (interface in core + thin wrapper in legacy-app.js) and the
+Phase 0c kickoff (allowJs, ES-module conversion via `export {}`,
+`@ts-expect-error` shim removed, boundary `@typedef`s) both landed in this
+session.
 
 ---
 
 ## ⏳ In queue
 
-## 1. OSMD adapter design
+## 1. Phase 0c — extract first typed module from `legacy-app.js`
 
-**What**: Wrap the OpenSheetMusicDisplay touch points (cursor positioning,
-notehead highlight, score load, note extraction) behind a thin core interface.
-Phase 0c will split `legacy-app.js` into typed modules, and those modules will
-need to talk to OSMD without bringing the entire OSMD type surface into core.
+**What**: Pick a small, self-contained chunk of `legacy-app.js` and convert it
+to a `.ts` module under `packages/web/src/`. Candidate chunks (each is mostly
+free-standing, leaf-level):
 
-**Why**: The recent cursor / notehead-highlight work touched several
-legacy-shaped surfaces (DOM lookups, SVG mutation, OSMD object property reads).
-Designing the abstraction now means Phase 0c can split modules against a stable
-interface instead of mid-refactor reshaping it.
+- `loadCurrentSong` + `practice.progress` save/load (persistence layer)
+- The XML measure-timing parser (`parseScoreTimingFromXml` — already pure-ish,
+  reads MusicXML strings, returns plain objects)
+- The auto-section UI helpers (`openSectionEditor`, `renderSectionList`)
+- The result / summary card rendering helpers
 
-**Acceptance**:
-
-- [ ] `packages/core/src/adapters/osmd-adapter.ts` interface (no concrete
-      implementation; the OSMD library itself stays in `packages/web/`)
-- [ ] Methods cover: `loadScore`, `getCursorPositionAt`, `getCurrentNotes`,
-      `walkIteratorTo`, `highlightNotes`, `clearHighlights`
-- [ ] `legacy-app.js` implements the interface as a thin adapter over its
-      existing `osmd` instance
-- [ ] All cursor / highlight / scroll call sites go through the adapter
-
-**Est**: ~250 lines core + ~150 lines legacy adapter. ~half-day.
-
-## 2. Phase 0c kickoff — JSDoc-typed boundaries on `legacy-app.js`
-
-**What**: Add JSDoc `@type` annotations at the function-signature boundary of
-`legacy-app.js` (parameters + returns) so TypeScript can typecheck call sites
-without a full `.js → .ts` rename.
-
-**Why**: Renames are big-bang; JSDoc-first lets us land typing incrementally.
-Each typed function becomes a candidate for extraction into `@piano/core` — and
-the `// @ts-expect-error` shim in `packages/web/src/main.ts` for the dynamic
-legacy import disappears once `legacy-app.js` declares an `export {}` and gains
-real types.
+**Why**: Now that allowJs is on and `OsmdAdapter` exists, a typed module CAN
+talk back to the still-legacy file via the boundary @typedefs. This is the first
+of probably 8–12 typed modules that will collectively shrink `legacy-app.js` to
+a thin entry-shaped glue.
 
 **Acceptance**:
 
-- [ ] `packages/web/tsconfig.json` enables `allowJs` + `checkJs`
-- [ ] Top-level `legacy-app.js` symbols (`state`, `CONFIG`, `DOM`) gain JSDoc
-      types
-- [ ] `pnpm typecheck` reports zero errors with `legacy-app.js` checked (initial
-      baseline; ratchet TS strictness later)
-- [ ] `// @ts-expect-error` shim in `main.ts` removed
+- [ ] One chunk picked + carved into `packages/web/src/<name>.ts`
+- [ ] Old function deleted from `legacy-app.js`; call sites import from the new
+      module
+- [ ] Vitest cases for the new module if it has pure parts
+- [ ] `pnpm verify` clean
 
-**Est**: ~150 lines of JSDoc, no behavior change.
+**Est**: ~300 lines / ~100 tests, depending on chunk choice.
+
+## 2. Enable `checkJs` per-region in `legacy-app.js`
+
+**What**: Use TypeScript's `@ts-check` directive at the top of specific FUNCTION
+blocks in `legacy-app.js` to opt-in regions to type checking, without flipping
+the whole file's `checkJs` switch.
+
+**Why**: Once a region is `@ts-check`-clean, it's a clear extraction candidate
+(no implicit `any`s, no missing parameter types). It also gives the editor full
+IntelliSense for that region.
+
+**Acceptance**:
+
+- [ ] At least 3 regions marked `@ts-check`
+- [ ] `pnpm typecheck` clean with those regions checked
+- [ ] Bumps the boundary `@typedef`s where needed
+
+**Est**: ~50 lines of incremental annotation per region, no behavior change.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-(empty — the in-queue items are the architectural blockers for further work.)
+(empty — Phase 0c items dominate near-term planning. The next major non-Phase-0c
+work is Phase 1 Capacitor install, but that needs Mac + Xcode + Android Studio,
+so it's blocked on human hardware.)
 
 ---
 

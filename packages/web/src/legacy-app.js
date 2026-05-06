@@ -1,5 +1,86 @@
     'use strict';
 
+    // ============================================================
+    // Phase 0c boundary types (JSDoc).
+    //
+    // These typedefs document the long-lived shapes that get passed
+    // around between most functions in this file. They're not enforced
+    // (checkJs is off; this file is too large to flip on without a
+    // major refactor pass), but:
+    //
+    //   * Editors respect them — IntelliSense gets meaningfully better.
+    //   * As Phase 0c extracts focused modules into TS, those modules
+    //     can reference these via `import('./legacy-app.js').StateShape`
+    //     so the boundary stays typed even before the legacy file
+    //     itself is converted.
+    //   * Future agents reading the file get a structured map of the
+    //     "what IS state.X, practice.X, midiState.X" question that
+    //     used to require grepping 7000+ lines.
+    //
+    // Add fields here as they become relevant to extraction. Don't
+    // try to mirror every field — these are BOUNDARY types, intended
+    // for cross-module communication.
+    // ============================================================
+
+    /**
+     * @typedef {Object} OsmdLikeNote
+     *   The per-note record used by the practice lane, OSMD cursor
+     *   walker, and scoring. Wider than @piano/core's `OsmdNote` —
+     *   carries lane-render fields and per-section copies.
+     * @property {number} midi               MIDI note (0–127).
+     * @property {'L'|'R'} hand              Hand assignment.
+     * @property {number} timeSec            Onset (s) at authored tempo.
+     * @property {number} durSec             Duration (s) at authored tempo.
+     * @property {number} timeMs             Onset at the kid's chosen tempoPct.
+     * @property {number} durMs              Duration at the kid's chosen tempoPct.
+     * @property {number} measureIdx         0-based MusicXML measure index.
+     * @property {number} inBarQuarters      Position in the bar (quarter-note units).
+     * @property {boolean=} tieStart
+     * @property {boolean=} tieEnd
+     * @property {boolean=} hit              Set by the practice tick when matched.
+     * @property {boolean=} missed           Set when the hit window closes unmatched.
+     */
+
+    /**
+     * @typedef {Object} PracticeStateShape
+     *   The cross-section practice transport state. Lives at module
+     *   scope as `practice`. Mode-specific fields (e.g. `ghostOn`)
+     *   are read by both the audio scheduler and the lane renderer.
+     * @property {boolean} enabled
+     * @property {'guided'|'rhythm'|'listen'} mode
+     * @property {OsmdLikeNote[]} sectionNotes        Active section's note list.
+     * @property {number} currentNoteIdx              Next-to-resolve idx in sectionNotes.
+     * @property {number} startAudioTime              Tone.now() at section start.
+     * @property {number} _cursorScanIdx              Per-frame note-scan position.
+     * @property {number} _lastCursorNoteIdx          Last cursor-walked target.
+     * @property {boolean} _completing
+     * @property {ReturnType<typeof setTimeout>|null} _completionTimer
+     * @property {boolean} ghostOn
+     * @property {boolean} metronomeOn
+     * @property {Object} progress                    Persisted progress (streak / songs).
+     */
+
+    /**
+     * @typedef {Object} MidiStateShape
+     *   Live MIDI runtime state. Held under `midiState`.
+     * @property {Map<number, {velocity:number, onTimeMs:number, synColor?:string}>} activeNotes
+     * @property {boolean} sustainOn
+     * @property {Set<number>} sustainedNotes
+     * @property {{midi:number, timeMs:number}[]} recentOnsets   Chord-window deque.
+     * @property {string} lastChordName
+     * @property {number} lastChordTimeMs
+     */
+
+    /**
+     * @typedef {Object} PrefsShape
+     *   Persisted user preferences (localStorage `pianoViz_prefs`).
+     * @property {number} theme               0..3
+     * @property {boolean} synesthesia
+     * @property {number|null} audioOffsetMs  null = auto-detect.
+     * @property {boolean} debug
+     * @property {'en'|'jp'} lang
+     */
+
     // PWA registration — failure is non-fatal (HTTPS required, self-signed certs may reject).
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -7908,3 +7989,9 @@
     DOM.homeBtn.addEventListener('click', returnToTitle);
     DOM.sumHome.addEventListener('click', returnToTitle);
     DOM.resHome.addEventListener('click', returnToTitle);
+
+// Phase 0c kickoff (2026-05-06): make this file a real ES module so
+// main.ts can import it without a `.d.ts` shim. Enables `allowJs: true`
+// in packages/web/tsconfig.json to bring it into the typecheck graph
+// (checkJs stays off — that's the next ratchet, file by file).
+export {};

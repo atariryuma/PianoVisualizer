@@ -4,7 +4,13 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "types": ["vite/client", "vite-plugin-pwa/client"]
+    "types": ["vite/client", "vite-plugin-pwa/client"],
+    // Phase 0c kickoff: bring legacy-app.js into the typecheck graph so
+    // main.ts can import it as a real module. `checkJs` stays off — the
+    // file is 7800 lines of vanilla JS; we'll opt-in regions to type
+    // checking as they're carved out into focused modules.
+    "allowJs": true,
+    "checkJs": false
   },
   "include": ["src/**/*", "index.html"],
   "exclude": ["dist", "node_modules"]
