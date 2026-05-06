@@ -335,6 +335,46 @@
      */
 
     /**
+     * @typedef SectionDef
+     *   Per-section quest layout in a song's sectionDefs array.
+     * @property {string} id
+     * @property {string} nameKey
+     * @property {string=} descKey
+     * @property {number=} startMeasure
+     * @property {boolean=} isBoss
+     */
+
+    /**
+     * @typedef SongRec
+     *   Library song record — both built-in (fur_elise, alla_turca) and
+     *   user-added entries share this shape. Fields prefixed `_` are
+     *   load-time scratch / late-bound (XML cache, OSMD-derived BPM).
+     * @property {string} id
+     * @property {string} titleKey
+     * @property {string} composerKey
+     * @property {string=} icon
+     * @property {string} mxlUrl
+     * @property {string} xmlUrl
+     * @property {SectionDef[]=} sectionDefs
+     * @property {OsmdLikeNote[]|null} notes
+     * @property {number} totalSec
+     * @property {Array<{id:string, nameKey:string, descKey?:string, startMeasure?:number, startSec?:number, endSec?:number, isBoss?:boolean}>} sections
+     * @property {Array<{measure:number, repeat?:number}>} playbackOrder
+     * @property {boolean} _loaded
+     * @property {Promise<unknown>|null} _loadingPromise
+     * @property {string=} _xmlText
+     * @property {boolean=} _bpmRescaled
+     * @property {number=} bpm
+     * @property {string=} _userTitle
+     * @property {string=} _userComposer
+     * @property {boolean=} _isUser
+     * @property {string=} titleJp
+     * @property {string=} composerJp
+     * @property {Error|string=} _loadError
+     * @property {{accuracy:number, timing:number, stars:number}=} _lastResult
+     */
+
+    /**
      * @typedef PrefsShape
      *   Persisted user preferences (localStorage `pianoViz_prefs`).
      * @property {number} theme               0..3
@@ -382,6 +422,7 @@
       if (!REMOTE_LOG_ENABLED) return () => {};
       let chain = Promise.resolve();
       let pending = 0;
+      /** @param {string|object} msg */
       return (msg) => {
         if (pending > 50) return;
         pending++;
@@ -601,20 +642,28 @@
       ],
 
       // v10: Magic Quests — name/desc are i18n keys, resolved via t() at use.
-      QUESTS: [
-        { id: 'q1',  nameKey: 'qst1Name',  descKey: 'qst1Desc',  condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
-        { id: 'q2',  nameKey: 'qst2Name',  descKey: 'qst2Desc',  condition: s => s.flow >= 50, reward: 'Good Flow!' },
-        { id: 'q3',  nameKey: 'qst3Name',  descKey: 'qst3Desc',  condition: s => s.combo >= 30, reward: 'Combo Master!' },
-        { id: 'q4',  nameKey: 'qst4Name',  descKey: 'qst4Desc',  condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
-        { id: 'q5',  nameKey: 'qst5Name',  descKey: 'qst5Desc',  condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
-        { id: 'q6',  nameKey: 'qst6Name',  descKey: 'qst6Desc',  condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
-        { id: 'q7',  nameKey: 'qst7Name',  descKey: 'qst7Desc',  condition: s => s.flow >= 95, reward: 'Peak Flow!' },
-        { id: 'q8',  nameKey: 'qst8Name',  descKey: 'qst8Desc',  condition: s => s.combo >= 100, reward: 'Century Combo!' },
-        { id: 'q9',  nameKey: 'qst9Name',  descKey: 'qst9Desc',  condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
-        { id: 'q10', nameKey: 'qst10Name', descKey: 'qst10Desc', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
-        { id: 'q11', nameKey: 'qst11Name', descKey: 'qst11Desc', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
-      ]
+      // Predicates accept the live state. Using `Object.assign` to attach the
+      // typed array means each `s => ...` lambda gets contextual typing from
+      // QUESTS_DEFS rather than relying on the post-cast ConfigShape, which
+      // doesn't propagate back into the literal element types.
+      QUESTS: /** @type {ConfigShape['QUESTS']} */ ([])
     }));
+
+    /** @type {ConfigShape['QUESTS']} */
+    const QUESTS_DEFS = [
+      { id: 'q1',  nameKey: 'qst1Name',  descKey: 'qst1Desc',  condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
+      { id: 'q2',  nameKey: 'qst2Name',  descKey: 'qst2Desc',  condition: s => s.flow >= 50, reward: 'Good Flow!' },
+      { id: 'q3',  nameKey: 'qst3Name',  descKey: 'qst3Desc',  condition: s => s.combo >= 30, reward: 'Combo Master!' },
+      { id: 'q4',  nameKey: 'qst4Name',  descKey: 'qst4Desc',  condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
+      { id: 'q5',  nameKey: 'qst5Name',  descKey: 'qst5Desc',  condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
+      { id: 'q6',  nameKey: 'qst6Name',  descKey: 'qst6Desc',  condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
+      { id: 'q7',  nameKey: 'qst7Name',  descKey: 'qst7Desc',  condition: s => s.flow >= 95, reward: 'Peak Flow!' },
+      { id: 'q8',  nameKey: 'qst8Name',  descKey: 'qst8Desc',  condition: s => s.combo >= 100, reward: 'Century Combo!' },
+      { id: 'q9',  nameKey: 'qst9Name',  descKey: 'qst9Desc',  condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
+      { id: 'q10', nameKey: 'qst10Name', descKey: 'qst10Desc', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
+      { id: 'q11', nameKey: 'qst11Name', descKey: 'qst11Desc', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
+    ];
+    CONFIG.QUESTS = QUESTS_DEFS;
 
     // ========================================
     // DOM references
@@ -1070,6 +1119,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // Cached so the per-frame draw can skip getComputedStyle / Math.min/max.
       const cs = getComputedStyle(document.documentElement);
+      /** @param {string} name */
       const readPx = (name) => parseFloat(cs.getPropertyValue(name)) || 0;
       kbSafeBottom = readPx('--safe-bottom') + 4;
       safeLeft = readPx('--safe-left');
@@ -1079,6 +1129,7 @@
       _bgStarsPrevW = W;
       _bgStarsPrevH = H;
     }
+    /** @param {number} prevW @param {number} prevH */
     function maybeReinitBgStars(prevW, prevH) {
       // Only re-randomize when the viewport changes by more than ~25 % on
       // either axis. Smaller deltas (iOS URL-bar collapse, soft-keyboard
@@ -1135,6 +1186,7 @@
       if (w > h && h <= 520 && w < 1024) return 'phone-landscape';
       return 'phone-portrait';
     }
+    /** @param {Element|null} el */
     function measureBottom(el) {
       if (!el) return 0;
       const r = el.getBoundingClientRect();
@@ -1210,11 +1262,13 @@
       debug: false,
       lang: 'en'             // 'en' | 'jp' — practice-flow UI language
     };
+    /** @template T @param {string} key @param {T} fallback @returns {T} */
     function loadJSON(key, fallback) {
       try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
       catch (e) { return fallback; }
     }
     let _localStorageQuotaWarned = false;
+    /** @param {string} key @param {unknown} val */
     function saveJSON(key, val) {
       try { localStorage.setItem(key, JSON.stringify(val)); }
       catch (e) {
@@ -1222,13 +1276,14 @@
         // Without this, settings appear to apply but vanish on reload.
         if (!_localStorageQuotaWarned) {
           _localStorageQuotaWarned = true;
-          console.warn('[PREFS] localStorage write failed (' + (e?.name || 'Err') + '). Settings will not persist.');
+          console.warn('[PREFS] localStorage write failed (' + (/** @type {Error} */ (e)?.name || 'Err') + '). Settings will not persist.');
         }
       }
     }
     // Sanitize loaded prefs: an out-of-range theme/lang from a tampered
     // localStorage payload would otherwise silently break the UI (no active
     // theme dot, mis-rendered text). Drop unknown keys; clamp known ones.
+    /** @param {any} raw @returns {Partial<PrefsShape>} */
     function sanitizePrefs(raw) {
       if (!raw || typeof raw !== 'object') return {};
       const out = {};
@@ -1540,6 +1595,7 @@
       userSecA2desc:      { en: 'Final section',                 jp: 'おわりの部分' }
     };
 
+    /** @param {string} key @param {Record<string, string|number>} [vars] */
     function t(key, vars) {
       // User-added songs use synthetic key prefixes to avoid polluting T_STRINGS:
       //   __userTitle:<id>     → song title from IndexedDB record
@@ -1578,6 +1634,7 @@
       window.dispatchEvent(new CustomEvent('langchange'));
     }
 
+    /** @param {string} lang */
     function setLang(lang) {
       prefs.lang = lang === 'jp' ? 'jp' : 'en';
       savePrefs();
@@ -1589,13 +1646,15 @@
     }
 
     // Stage label — Phase 0b.3: delegated to @piano/core.
+    /** @param {ConfigShape['STAGES'][number]} stage */
     const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
 
+    /** @param {number} idx */
     function applyTheme(idx) {
       prefs.theme = idx;
       state.currentTheme = idx;
       document.querySelectorAll('.theme-dot').forEach(d => {
-        const isActive = parseInt(d.dataset.theme) === idx;
+        const isActive = parseInt(/** @type {HTMLElement} */ (d).dataset.theme || '') === idx;
         d.classList.toggle('active', isActive);
         d.setAttribute('aria-checked', isActive ? 'true' : 'false');
       });
@@ -1603,21 +1662,23 @@
     applyTheme(prefs.theme);
     // Theme dots are role="radio" — accept Enter/Space too so a keyboard /
     // assistive-tech user can pick a theme without a pointer.
+    /** @param {HTMLElement} d */
     const onThemeDotActivate = (d) => {
-      applyTheme(parseInt(d.dataset.theme));
+      applyTheme(parseInt(d.dataset.theme || ''));
       savePrefs();
     };
     document.querySelectorAll('.theme-dot').forEach(d => {
-      d.addEventListener('click', () => onThemeDotActivate(d));
+      d.addEventListener('click', () => onThemeDotActivate(/** @type {HTMLElement} */ (d)));
       d.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (/** @type {KeyboardEvent} */ (e).key === 'Enter' || /** @type {KeyboardEvent} */ (e).key === ' ') {
           e.preventDefault();
-          onThemeDotActivate(d);
+          onThemeDotActivate(/** @type {HTMLElement} */ (d));
         }
       });
     });
 
-    const synToggle = document.getElementById('synesthesiaToggle');
+    const synToggle = /** @type {HTMLElement} */ (document.getElementById('synesthesiaToggle'));
+    /** @param {boolean} on */
     function applySynesthesia(on) {
       prefs.synesthesia = on;
       state.useSynesthesiaMode = on;
@@ -1648,14 +1709,17 @@
     // and never tab into the (visually obscured) page beneath.
     const modalFocus = (() => {
       const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-      const stack = [];  // { el, prev, onKey }
+      /** @type {Array<{el:HTMLElement, prev:Element|null, onKey:(e:KeyboardEvent)=>void}>} */
+      const stack = [];
+      /** @param {HTMLElement} modalEl */
       function trapHandler(modalEl) {
+        /** @param {KeyboardEvent} e */
         return (e) => {
           if (e.key !== 'Tab') return;
           const items = modalEl.querySelectorAll(FOCUSABLE);
           if (items.length === 0) return;
-          const first = items[0];
-          const last = items[items.length - 1];
+          const first = /** @type {HTMLElement} */ (items[0]);
+          const last = /** @type {HTMLElement} */ (items[items.length - 1]);
           if (e.shiftKey && document.activeElement === first) {
             e.preventDefault();
             last.focus();
@@ -1666,19 +1730,21 @@
         };
       }
       return {
+        /** @param {HTMLElement|null} modalEl */
         open(modalEl) {
           if (!modalEl) return;
           const prev = document.activeElement;
           const onKey = trapHandler(modalEl);
-          modalEl.addEventListener('keydown', onKey);
+          modalEl.addEventListener('keydown', /** @type {EventListener} */ (onKey));
           stack.push({ el: modalEl, prev, onKey });
           // Defer focus until the modal is laid out (display flips happen
           // synchronously but querySelector inside a hidden tree is fine).
           requestAnimationFrame(() => {
-            const first = modalEl.querySelector(FOCUSABLE);
+            const first = /** @type {HTMLElement|null} */ (modalEl.querySelector(FOCUSABLE));
             if (first) first.focus();
           });
         },
+        /** @param {HTMLElement|null} modalEl */
         close(modalEl) {
           // Pop the topmost matching entry — modals don't always close in
           // strict LIFO (e.g. a section-edit modal can spawn from add-song)
@@ -1828,6 +1894,7 @@
 
     // updateDebugOverlay() reads state.debugMode each frame, so applyDebug
     // must keep prefs.debug and state.debugMode in lockstep.
+    /** @param {boolean} on */
     function applyDebug(on) {
       prefs.debug = on;
       state.debugMode = on;
@@ -1894,6 +1961,7 @@
     // Adapter passes the closure W/H so call sites stay positional.
     const FOCAL_LENGTH = PianoCore.FOCAL_LENGTH;
     const NEAR_CLIPPING = PianoCore.NEAR_CLIPPING;
+    /** @param {number} x @param {number} y @param {number} z @param {number} size */
     const project3D = (x, y, z, size) => PianoCore.project3D(x, y, z, size, { screenW: W, screenH: H });
 
     // Particle system (3D) \u2014 Phase 0b.3: delegated to @piano/core.
@@ -1903,7 +1971,7 @@
     /** @type {InstanceType<typeof PianoCore.Particle>[]} */
     let particles = [];
     const _coreParticleDraw = PianoCore.Particle.prototype.draw;
-    PianoCore.Particle.prototype.draw = function (c) {
+    PianoCore.Particle.prototype.draw = function (/** @type {CanvasRenderingContext2D} */ c) {
       return _coreParticleDraw.call(this, c, {
         screenW: W,
         screenH: H,
@@ -1934,11 +2002,13 @@
     const QUEST_ALL_DONE = 'ALL_DONE';
 
     // getNoteColor — Phase 0b.3: adapter passes legacy CONFIG.NOTE_COLORS.
+    /** @param {string} noteName */
     const getNoteColor = (noteName) => PianoCore.getNoteColor(noteName, CONFIG.NOTE_COLORS);
 
     // spawnBurst / spawnStream — Phase 0b.3: adapter passes legacy closure
     // state (W/H/themeColors/flow/MAX_PARTICLES_3D) via opts so call sites
     // stay positional.
+    /** @param {string=} overrideColor */
     const _spawnOpts = (overrideColor) => ({
       screenW: W,
       screenH: H,
@@ -1947,8 +2017,10 @@
       maxParticles: MAX_PARTICLES_3D,
       overrideColor,
     });
+    /** @param {number} screenX @param {number} screenY @param {number} count @param {number} energy @param {string=} overrideColor */
     const spawnBurst = (screenX, screenY, count, energy, overrideColor) =>
       PianoCore.spawnBurst(particles, screenX, screenY, count, energy, _spawnOpts(overrideColor));
+    /** @param {number} screenX @param {number} screenY @param {number} energy @param {string=} overrideColor */
     const spawnStream = (screenX, screenY, energy, overrideColor) =>
       PianoCore.spawnStream(particles, screenX, screenY, energy, _spawnOpts(overrideColor));
 
@@ -1966,11 +2038,13 @@
     const effectGlowPulse = () => PianoCore.effectGlowPulse(_effectDeps());
     const effectGlowParticles = () => PianoCore.effectGlowParticles(_effectDeps());
     const effectColorWave = () => PianoCore.effectColorWave(_effectDeps());
+    /** @param {number=} count */
     const effectStarShower = (count) => PianoCore.effectStarShower(_effectDeps(), count);
     const effectFlowerBurst = () => PianoCore.effectFlowerBurst(_effectDeps());
     const effectShimmer = () => PianoCore.effectShimmer(_effectDeps());
     const effectRadiance = () => PianoCore.effectRadiance(_effectDeps());
     const effectGoldenBurst = () => PianoCore.effectGoldenBurst(_effectDeps());
+    /** @param {string} name */
     const triggerEffect = (name) => PianoCore.triggerEffect(name, _effectDeps());
 
     // Encouragement tier escalator — Phase 0b.3: state machine in @piano/core.
@@ -1980,6 +2054,7 @@
     // working unchanged.
     const _encState = PianoCore.initEncouragementState();
     const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
+    /** @param {ReturnType<typeof PianoCore.tickEncouragement>} out */
     function _showEncouragementUI(out) {
       if (out.kind !== 'show') return;
       DOM.encouragement.textContent = t(out.messageKey);
@@ -2007,7 +2082,7 @@
       return _coreRippleUpdate.call(this, { flow: state.flow });
     };
     const _coreRippleDraw = PianoCore.Ripple.prototype.draw;
-    PianoCore.Ripple.prototype.draw = function (c) {
+    PianoCore.Ripple.prototype.draw = function (/** @type {CanvasRenderingContext2D} */ c) {
       return _coreRippleDraw.call(this, c, {
         flow: state.flow,
         useShadow: CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15,
@@ -2028,10 +2103,12 @@
       });
     }
     const _themeColors = () => CONFIG.THEMES[state.currentTheme].colors;
+    /** @param {number} _time */
     const drawBgStars = (_time) => {
       if (!_bg) return;
       PianoCore.drawBgStars(ctx, _bg, { flow: state.flow, themeColors: _themeColors() });
     };
+    /** @param {number} time */
     const drawAurora = (time) =>
       PianoCore.drawAurora(ctx, {
         screenW: W,
@@ -2040,6 +2117,7 @@
         themeColors: _themeColors(),
         timeMs: time,
       });
+    /** @param {number} time */
     const drawGroundFlowers = (time) =>
       PianoCore.drawGroundFlowers(ctx, {
         screenW: W,
@@ -2067,6 +2145,7 @@
     // ========================================
     // Multi-Feature Onset Detection (v9 — with harmonicity)
     // ========================================
+    /** @param {number} timeMs @param {number} currentPitchHz */
     function updateMultiFeatureOnset(timeMs, currentPitchHz) {
       if (!onsetAnalyser || !onsetDataArray) {
         state.debugGateOpen = false;
@@ -2223,6 +2302,7 @@
     // ========================================
     // Session Confidence Layer
     // ========================================
+    /** @param {number} timeMs @param {boolean} isPianoDetected */
     function updateSessionConfidence(timeMs, isPianoDetected) {
       if (timeMs - state.lastSessionSampleMs < CONFIG.SESSION_SAMPLE_INTERVAL_MS) return;
       state.lastSessionSampleMs = timeMs;
@@ -2334,6 +2414,7 @@
     _questState.completedIds = state.completedQuests;
     const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
 
+    /** @param {number} timeMs */
     function updateQuestState(timeMs) {
       const result = PianoCore.applyQuestTick(
         _questState,
@@ -2467,6 +2548,7 @@
     // based so 144Hz screens don't fade twice as fast as 60Hz ones.
     const WUF_OPTS = { triggerLevel: 0.2, halfLifeSec: 0.071 };
 
+    /** @param {number} timeMs */
     function updateGrowthTrend(timeMs) {
       const result = PianoCore.updateGrowthTrend(
         state.qualityHistory,
@@ -2489,6 +2571,7 @@
       state.feedbackNext = t('nextStepFmt', { v: t(fb.nextKey) });
     }
 
+    /** @param {number} timeMs */
     function updateQualityScores(timeMs) {
       if (timeMs - state.lastScoreUpdateMs < CONFIG.SCORE_UPDATE_INTERVAL_MS) return;
       state.lastScoreUpdateMs = timeMs;
@@ -2525,6 +2608,7 @@
     // ========================================
     // Software AGC — with v9 voice suppression
     // ========================================
+    /** @param {number} timeMs @param {number} postGainRms */
     function updateAGC(timeMs, postGainRms) {
       if (timeMs - state.agcLastUpdateMs < CONFIG.AGC_UPDATE_INTERVAL_MS) return;
       state.agcLastUpdateMs = timeMs;
@@ -2553,6 +2637,7 @@
     // ========================================
     // Game Logic — 4-layer architecture (v9)
     // ========================================
+    /** @param {number} timeMs @param {number} dt @param {{pitch:number, conf:number, rms:number}} pitchResult */
     function updateGameState(timeMs, dt, pitchResult) {
       const { pitch, conf, rms } = pitchResult;
 
@@ -2730,6 +2815,7 @@
     // ========================================
     // v9: updateHUD — encouragement instead of numbers
     // ========================================
+    /** @param {number} timeMs */
     function updateHUD(timeMs) {
       // v9: Check encouragement tiers (find highest matching tier)
       // Tier-change check (climb fires show, drop silently lowers currentTier)
@@ -2811,6 +2897,7 @@
     // ========================================
     // Main Loop
     // ========================================
+    /** @param {number} timeMs */
     function loop(timeMs) {
       if (!state.running) return;
       requestAnimationFrame(loop);
@@ -3060,7 +3147,9 @@
     // v11: localStorage Best Scores
     // ========================================
     const BEST_DEFAULT = { bestCombo: 0, peakFlow: 0, totalSessions: 0 };
+    /** @returns {BestScoresShape} */
     function loadBestScores() { return loadJSON('pianoViz_best', { ...BEST_DEFAULT }); }
+    /** @param {number} combo @param {number} flow */
     function saveBestScores(combo, flow) {
       const best = loadBestScores();
       best.bestCombo = Math.max(best.bestCombo, combo);
@@ -3079,6 +3168,7 @@
     // ========================================
     // v11: Update Play Time Display
     // ========================================
+    /** @param {number} timeMs */
     function updatePlayTime(timeMs) {
       if (state.sessionStartTimeMs > 0) {
         DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
@@ -3092,6 +3182,7 @@
     // from `state._lastSummary` cache + current i18n. Used by both the initial
     // show (with animation) and language toggle (without \u2014 we don't want a
     // stagger replay).
+    /** @param {boolean} animate */
     function renderSessionSummaryText(animate) {
       const s = state._lastSummary;
       if (!s) return;
@@ -3165,8 +3256,9 @@
 
     // Sizes a canvas to the given CSS pixels with backing store scaled by devicePixelRatio,
     // then returns the 2D context with the DPR transform pre-applied.
+    /** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h */
     function setupHiDPICanvas(canvas, w, h) {
-      const c = canvas.getContext('2d');
+      const c = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
       const dpr = window.devicePixelRatio || 1;
       canvas.width = w * dpr;
       canvas.height = h * dpr;
@@ -3176,6 +3268,7 @@
       return c;
     }
 
+    /** @param {HTMLCanvasElement} canvas @param {string[]} labels @param {number[]} values */
     function drawRadarChart(canvas, labels, values) {
       const size = 200;
       const c = setupHiDPICanvas(canvas, size, size);
@@ -3187,6 +3280,7 @@
       const angleStep = (Math.PI * 2) / axes;
       const startAngle = -Math.PI / 2; // top
 
+      /** @param {number} axisIndex @param {number} value */
       function getPoint(axisIndex, value) {
         const angle = startAngle + axisIndex * angleStep;
         return {
@@ -3199,6 +3293,7 @@
       const duration = 800; // ms
       const startTime = performance.now();
 
+      /** @param {number} now */
       function frame(now) {
         progress = Math.min(1, (now - startTime) / duration);
         const ease = 1 - Math.pow(1 - progress, 3); // ease out cubic
@@ -3375,8 +3470,9 @@
     // source-score measure number); the section runs until the next def's
     // startMeasure (or end-of-song). Boundaries are chosen at musical landmarks
     // (theme returns, key changes, climaxes) so a kid never gets cut off mid-phrase.
+    /** @param {string} id @param {string} titleKey @param {string} composerKey @param {string} icon @param {SectionDef[]} sectionDefs @returns {SongRec} */
     function makeSong(id, titleKey, composerKey, icon, sectionDefs) {
-      return {
+      return /** @type {SongRec} */ (/** @type {any} */ ({
         id,
         titleKey,
         composerKey,
@@ -3391,7 +3487,7 @@
         playbackOrder: [],
         _loaded: false,
         _loadingPromise: null
-      };
+      }));
     }
     const SONGS = {
       // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
@@ -3441,9 +3537,11 @@
     async function userDbAll() {
       return PianoCore.userDbAll(await openUserDb());
     }
+    /** @param {import('@piano/core').UserSongRecord} record */
     async function userDbPut(record) {
       return PianoCore.userDbPut(await openUserDb(), record);
     }
+    /** @param {string} id */
     async function userDbDelete(id) {
       return PianoCore.userDbDelete(await openUserDb(), id);
     }
@@ -3456,6 +3554,7 @@
     // plain XML blob — blob: URLs strip filename/MIME hints, so OSMD can't
     // reliably auto-detect a zip via the URL alone, especially on Android
     // Chrome where it parses the bytes as XML and fails).
+    /** @param {Blob} blob */
     async function unzipMxlToXmlText(blob) {
       const JSZipLib = window.JSZip || (typeof JSZip !== 'undefined' ? JSZip : null);
       if (!JSZipLib) throw new Error('JSZip not available — cannot read .mxl');
@@ -3483,6 +3582,7 @@
     // the cached `record.xmlText` if present, else lazily unzipped here and
     // written back to IndexedDB so subsequent loads are instant). This sidesteps
     // OSMD's blob-MIME-detection issue on Android Chrome.
+    /** @param {import('@piano/core').UserSongRecord} record */
     async function registerUserSong(record) {
       const isMxl = (record.mimeType !== 'application/vnd.recordare.musicxml+xml');
       let xmlText = record.xmlText;
@@ -3547,6 +3647,7 @@
     // Add a song from a Blob (file upload or fetched URL). The MIME hint helps
     // distinguish .mxl (zip) from .musicxml/.xml (plain text). On success the
     // song is registered AND persisted; the returned song id can be selectSong'd.
+    /** @param {Blob} blob @param {{filename?:string, source?:string, allowAcceptSession?:boolean}} [opts] */
     async function addUserSongFromBlob(blob, opts) {
       opts = opts || {};
       const isMxl = blob.type === 'application/vnd.recordare.musicxml+zip'
@@ -3579,6 +3680,7 @@
 
     const USER_SONG_URL_TIMEOUT_MS = 30000;
     const USER_SONG_MAX_BYTES = 20 * 1024 * 1024;  // 20 MB
+    /** @param {string} url @param {{filename?:string, source?:string, allowAcceptSession?:boolean}} [opts] */
     async function addUserSongFromUrl(url, opts) {
       opts = opts || {};
       const ctrl = new AbortController();
@@ -3622,6 +3724,7 @@
     // IndexedDB and patches the in-memory SONGS entry so the next render
     // (My library / start-screen tile / song panel header) picks it up
     // without needing a reload. Caller passes already-validated strings.
+    /** @param {string} id @param {string} newTitle @param {string} newComposer */
     async function renameUserSong(id, newTitle, newComposer) {
       const db = await openUserDb();
       const rec = await new Promise((res, rej) => {
@@ -3641,6 +3744,7 @@
       }
     }
 
+    /** @param {string} id */
     async function removeUserSong(id) {
       await userDbDelete(id);
       const song = SONGS[id];
@@ -3752,6 +3856,7 @@
     // libraryEntryFromGhFile — Phase 0b: delegated to @piano/core. The
     // pinned SHA + JP overrides flow in from the legacy module-scope
     // constants; the core stays catalog-source-agnostic.
+    /** @param {Parameters<typeof PianoCore.libraryEntryFromGhFile>[0]} f */
     function libraryEntryFromGhFile(f) {
       return PianoCore.libraryEntryFromGhFile(f, {
         pinnedSha: LIBRARY_PINNED_SHA,
@@ -3759,6 +3864,7 @@
       });
     }
 
+    /** @param {boolean} [force] */
     async function fetchLibrary(force) {
       if (!force) {
         try {
@@ -3775,9 +3881,9 @@
       if (!res.ok) throw new Error('GitHub API ' + res.status);
       const json = await res.json();
       const entries = json
-        .filter(f => f.type === 'file' && /\.mxl$/i.test(f.name))
+        .filter((/** @type {{type:string,name:string}} */ f) => f.type === 'file' && /\.mxl$/i.test(f.name))
         .map(libraryEntryFromGhFile)
-        .sort((a, b) => a.label.localeCompare(b.label));
+        .sort((/** @type {{label:string}} */ a, /** @type {{label:string}} */ b) => a.label.localeCompare(b.label));
       try {
         localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), entries }));
       } catch (e) {}
@@ -3918,6 +4024,7 @@
     // @piano/core/library/merge-tied-notes. The legacy shim toggles
     // sample collection off when REMOTE_LOG_ENABLED is false so the
     // production hot path doesn't pay for the per-merge toFixed + push.
+    /** @param {Parameters<typeof PianoCore.mergeTiedNotes>[0]} notes */
     function mergeTiedNotes(notes) {
       return PianoCore.mergeTiedNotes(notes, {
         collectSamples: REMOTE_LOG_ENABLED,
@@ -3930,6 +4037,8 @@
     // (computeLeadingMeasureBpms / timeAtInBarQuarters); the OSMD
     // walker stays at the shell because it touches OSMD's iterator
     // surface directly.
+    /** @param {import('@piano/core').MeasureTimingResult|null|undefined} xmlMeasureTiming
+     *  @param {import('@piano/core').ScoreTiming|null|undefined} scoreTiming */
     function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
       return NoteExtractor.extractNotesFromOsmd(osmd, {
         xmlMeasureTiming,
@@ -3959,6 +4068,7 @@
     // race against a rapid `selectSong()` that changes `currentSong`
     // mid-load — the IIFE would then fetch the wrong song's XML and feed
     // a foreign repeat structure into the in-flight song's note timeline.
+    /** @param {SongRec} [forSong] */
     async function fetchPlaybackOrder(forSong) {
       const targetSong = forSong || currentSong;
       let text = targetSong._xmlText;
@@ -3975,6 +4085,10 @@
     // compute durSec from the cumulative startSec diff (with an OSMD-
     // shaped fallback for the last bar when the caller didn't pre-build
     // a full timing table).
+    /** @param {Parameters<typeof PianoCore.expandNotesByPlaybackOrder>[0]} baseNotes
+     *  @param {Parameters<typeof PianoCore.expandNotesByPlaybackOrder>[1]} order
+     *  @param {ReadonlyArray<{TempoInBPM?:number, Duration?:{realValue:number}}>} measures
+     *  @param {number[]=} sourceMeasureStartSec */
     function expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec) {
       let measureStartSec;
       let measureDurSec;
@@ -4014,6 +4128,7 @@
     // Load-time DIAG dump — Phase 0c: delegated to
     // @piano/core/library/diag-load. The shim threads the legacy
     // remoteLog as the injected logger.
+    /** @param {Parameters<typeof PianoCore.dumpLoadDiagnostics>[0]} p */
     function dumpLoadDiagnostics(p) {
       PianoCore.dumpLoadDiagnostics(p, remoteLog);
     }
@@ -4089,10 +4204,10 @@
         try {
           order = await fetchPlaybackOrder(song);
           if (!stillCurrent()) return;
-          if (!order.length) order = measures.map((_, i) => i);
+          if (!order.length) order = measures.map((/** @type {unknown} */ _, /** @type {number} */ i) => i);
         } catch (e) {
           console.warn('Playback order parse failed, falling back to linear', e);
-          order = measures.map((_, i) => i);
+          order = measures.map((/** @type {unknown} */ _, /** @type {number} */ i) => i);
         }
         const expanded = expandNotesByPlaybackOrder(baseNotes, order, measures, srcMeasureStartSec);
 
@@ -4263,6 +4378,7 @@
     // Backward seeks always reset() and walk forward; cursor.previous()
     // in OSMD 1.9.x leaves the visual cursor at the previous position
     // while iterator state moves backward (ghost cursor).
+    /** @param {OsmdLikeNote} note */
     function setOsmdCursorToNote(note) {
       if (!osmd || !osmd.cursor || !note) return;
       const it = osmd.cursor.iterator;
@@ -4272,6 +4388,7 @@
       const targetQ = +note.inBarQuarters || 0;
       const eps = 1e-6;
 
+      /** @param {number} m */
       const measureStartWhole = (m) => sm[m]?.AbsoluteTimestamp?.realValue || 0;
       const inBarQ = () => Math.max(0,
         (it.currentTimeStamp.realValue - measureStartWhole(it.CurrentMeasureIndex)) * 4);
@@ -4316,6 +4433,7 @@
     // shell state (xmlMeasureTiming, scoreTiming) that the adapter
     // shouldn't have to know about. Kept on the adapter so Phase 0c
     // can find the call site via the interface.
+    /** @type {import('@piano/core').OsmdAdapter} */
     const osmdAdapter = {
       async load(url) {
         if (currentSong) currentSong.mxlUrl = url;
@@ -4458,6 +4576,7 @@
     // ========================================
     // Section banner
     // ========================================
+    /** @param {{nameKey:string, isBoss?:boolean}} sec */
     function showSectionBanner(sec) {
       if (!DOM.sectionBanner) return;
       DOM.sectionBanner.textContent = (sec.isBoss ? '👑 ' : '') + t(sec.nameKey);
@@ -4500,6 +4619,7 @@
     // Single source of truth for the port-message handler. attachMidiPort and
     // verifyMidiAlive both use this so re-binding after a suspend produces
     // exactly the same routing.
+    /** @param {MIDIMessageEvent} e */
     function onMidiMessageHandler(e) {
       if (e.data && e.data.length >= 2) {
         dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
@@ -4533,6 +4653,7 @@
     // Reconnect the audio graph after a fresh AudioContext: rebuild gain +
     // both analysers, re-wire the mic source if it's still alive. Used by
     // visibilitychange recovery and devicechange (AirPods plug/unplug).
+    /** @param {MediaStream|null} prevMicStream */
     function rebuildAudioGraph(prevMicStream) {
       gainNode = audioCtx.createGain();
       gainNode.gain.setValueAtTime(state.micSuspended ? 0 : 1.0, audioCtx.currentTime);
@@ -4679,6 +4800,7 @@
     // Drop identical note-ons within 30ms — well below human-playable speed.
     let _lastMidiNoteOnKey = -1;
     let _lastMidiNoteOnTime = 0;
+    /** @param {number} status @param {number} a @param {number} b */
     function dispatchMidiMessage(status, a, b) {
       const cmd = status & 0xF0;
       const now = performance.now();
@@ -4759,6 +4881,7 @@
     // that has no physical keyboard attached. macOS has "IAC Driver" and "rtpmidi"
     // can show up too. Auto-connecting to these makes the UI claim MIDI is active
     // while no events ever fire — so we filter them out.
+    /** @param {{name?:string|null, manufacturer?:string|null}|null} port */
     function isVirtualMidiPort(port) {
       const name = (port.name || '').toLowerCase();
       return !name
@@ -4771,6 +4894,7 @@
     // Returns true if the port was successfully attached, false if it was skipped
     // (virtual/system port). Callers can use the return to decide whether to keep
     // searching the port list.
+    /** @param {MIDIInput|null} port */
     function attachMidiPort(port) {
       if (midiInput.port === port) return true;
       if (isVirtualMidiPort(port)) {
@@ -4797,6 +4921,7 @@
       return true;
     }
 
+    /** @param {MIDIInput|{name:string}|null} port */
     function detachMidiPort(port) {
       if (midiInput.port !== port) return;
       port.onmidimessage = null;
@@ -4859,6 +4984,7 @@
     // Force=true drops the cache and re-requests. Used by the explicit user
     // rescan path so a stale MIDIAccess (Web MIDI Browser / sleeping iPad) can
     // recover without requiring an app restart.
+    /** @param {boolean} [force] */
     async function ensureMidiAccess(force) {
       if (force && _midiAccess) {
         // Drop the stale MIDIAccess's listener BEFORE losing the reference,
@@ -4893,6 +5019,7 @@
 
     // Defensive iteration of access.inputs: handles both Map (per spec) and
     // plain-object polyfill shapes.
+    /** @param {MIDIAccess} access */
     function gatherMidiInputs(access) {
       const out = [];
       const inputs = access && access.inputs;
@@ -4900,7 +5027,7 @@
       if (typeof inputs.values === 'function') {
         for (const p of inputs.values()) out.push(p);
       } else if (typeof inputs.forEach === 'function') {
-        inputs.forEach((p) => out.push(p));
+        inputs.forEach((/** @type {MIDIInput} */ p) => out.push(p));
       } else if (typeof inputs === 'object') {
         for (const k in inputs) {
           const p = inputs[k];
@@ -4910,6 +5037,7 @@
       return out;
     }
 
+    /** @param {boolean} [silent] */
     async function rescanMidi(silent) {
       if (!navigator.requestMIDIAccess) {
         if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagWebMidiUnsupported')));
@@ -4952,6 +5080,7 @@
     // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
     // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
     // か再スキャンの明示的な操作までは再表示しない。
+    /** @param {string} line1 @param {string} [line2] */
     function setIntroHintDiagnostic(line1, line2) {
       if (!DOM.introHint) return;
       const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
@@ -4961,6 +5090,7 @@
     // Each callsite that produces a diagnostic with localized strings should
     // wrap its call in showIntroDiag(() => setIntroHintDiagnostic(t(...), ...))
     // so a language toggle can re-run the same closure with fresh translations.
+    /** @param {() => void} thunk */
     function showIntroDiag(thunk) {
       state.lastIntroDiag = thunk;
       thunk();
@@ -5004,6 +5134,7 @@
     // Parse BLE-MIDI 1.0 packet. The packet starts with a header byte (high bit set,
     // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
     // use we ignore timestamps and extract MIDI messages of types we care about.
+    /** @param {ArrayBuffer} buf */
     function parseBleMidiPacket(buf) {
       const data = new Uint8Array(buf);
       if (data.length < 3) return;
@@ -5061,7 +5192,7 @@
         const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
         const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
         await ch.startNotifications();
-        ch.addEventListener('characteristicvaluechanged', (e) => parseBleMidiPacket(e.target.value.buffer));
+        ch.addEventListener('characteristicvaluechanged', (e) => parseBleMidiPacket(/** @type {{value:DataView}} */ (/** @type {Event} */ (e).target).value.buffer));
 
         bleMidi.device = device;
         bleMidi.characteristic = ch;
@@ -5134,13 +5265,16 @@
     // safe to alias at parse time.
     const detectChord = PianoCore.detectChord;
 
+    /** @param {number} midiNum */
     function midiToScreenX(midiNum) {
       return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
     }
 
     // Per-note color helpers — Phase 0b.3: delegated to @piano/core.
+    /** @param {number} midiNum */
     const noteThemeColor = (midiNum) =>
       PianoCore.noteThemeColor(midiNum, CONFIG.THEMES[state.currentTheme]);
+    /** @param {number} midiNum */
     const synColorFor = (midiNum) =>
       PianoCore.synColorFor(midiNum, {
         enabled: state.useSynesthesiaMode,
@@ -5148,6 +5282,7 @@
         colorMap: CONFIG.NOTE_COLORS,
       });
 
+    /** @param {string} displayText @param {string} changeKey @param {string|null|undefined} color @param {number} timeMs */
     function showNoteDisplay(displayText, changeKey, color, timeMs) {
       // In practice mode the falling lane already shows the just-played note,
       // so showing noteDisplay where it overlaps the score is visual noise.
@@ -5161,6 +5296,7 @@
       DOM.noteDisplay.classList.add('visible');
     }
 
+    /** @param {number} midiNum @param {number} velocity @param {string=} synColor */
     function spawnMidiNoteVisuals(midiNum, velocity, synColor) {
       hideIntroHint();
       const v = Math.max(0.15, velocity / 127);
@@ -5196,6 +5332,7 @@
       if (state.flow < 10) PianoCore.triggerWakeUpFlash(state, WUF_OPTS);
     }
 
+    /** @param {number} midiNum @param {number} velocity */
     function onMidiNoteOn(midiNum, velocity) {
       if (!state.running) return;
       const now = performance.now();
@@ -5224,6 +5361,7 @@
       if (cw.emitted && !practice.enabled) effectGlowPulse();
     }
 
+    /** @param {number} midiNum */
     function onMidiNoteOff(midiNum) {
       if (midiState.sustainOn) {
         midiState.sustainedNotes.add(midiNum);
@@ -5235,6 +5373,7 @@
       if (practice.enabled) finalizeNoteHold(midiNum);
     }
 
+    /** @param {number} cc @param {number} value */
     function onMidiCC(cc, value) {
       if (cc !== 64) return;
       const wasOn = midiState.sustainOn;
@@ -5299,6 +5438,7 @@
     // @piano/core/render/midi-beams. The pure draw function takes the canvas
     // ctx, midiState (duck-typed as MidiBeamsView), and the layout / color
     // adapters from the legacy shell.
+    /** @param {number} timeMs */
     function drawMidiBeams(timeMs) {
       PianoCore.drawMidiBeams(ctx, midiState, {
         kbTop: H - kbHeight - kbSafeBottom,
@@ -5310,6 +5450,7 @@
 
     // Chord-name display. Free play celebrates with a big centered label;
     // practice puts it small and quiet just above the keyboard so it doesn't fight the lane/score.
+    /** @param {number} timeMs */
     function drawMidiChordDisplay(timeMs) {
       if (!midiState.lastChordName) return;
       const age = timeMs - midiState.lastChordTimeMs;
@@ -5367,6 +5508,7 @@
     // We never skip ahead in the score, so playing a wrong note → MISS rather than
     // accidentally crediting a same-pitch-class note further along the timeline.
     // ========================================
+    /** @param {number} detectedMidi @param {boolean} isExact */
     function matchNoteOnset(detectedMidi, isExact) {
       if (!practice.enabled) return false;
       // Listen mode: the song plays itself, the kid is just watching/listening.
@@ -5452,6 +5594,7 @@
 
     // Note-length scoring (rhythm mode only): compare physical hold time to the
     // written length. score = 1 at exact, 0 at full tolerance off.
+    /** @param {number} detectedMidi */
     function finalizeNoteHold(detectedMidi) {
       const matched = practice.pendingHolds.get(detectedMidi);
       if (!matched) return;
@@ -5561,6 +5704,7 @@
     // Count-in beeps — Phase 0c: delegated to packages/web/src/audio-scheduler.
     // The scheduler module owns the Tone.Transport calls; this shim
     // assembles the deps + options bag from the legacy globals.
+    /** @param {number} startAudioTime */
     function scheduleCountInBeeps(startAudioTime) {
       if (typeof Tone === 'undefined') return;
       AudioScheduler.scheduleCountInBeeps(
@@ -5570,9 +5714,12 @@
       );
     }
 
+    /** @param {number} midi */
     function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
+    /** @param {number} midi */
     function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
     // DIAG helper — short note state suffix for tick logs.
+    /** @param {OsmdLikeNote} n */
     function n_state(n) {
       if (n.hit) return ' HIT';
       if (n.missed) return ' MISS';
@@ -5586,12 +5733,15 @@
     // Hot-path cache — refreshed on langchange so the per-frame lane draw
     // doesn't re-evaluate the prefs.lang ternary 25× per frame.
     let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+    /** @param {number} midi */
     function midiToPitchName(midi) { return activeNoteNames[notePitchClass(midi)]; }
+    /** @param {number} midi */
     function midiToName(midi) { return midiToPitchName(midi) + (Math.floor(midi / 12) - 1); }
 
     // ========================================
     // Section build + start
     // ========================================
+    /** @param {number} sectionIdx */
     function buildSectionNotes(sectionIdx) {
       const sec = currentSong.sections[sectionIdx];
       const speedFactor = 100 / practice.tempoPct;
@@ -5624,6 +5774,7 @@
 
     // Per-hand MIDI range used by the lane drawer to map pitch → x-position.
     // Computed once per section so the hot path doesn't re-scan every frame.
+    /** @param {OsmdLikeNote[]} sectionNotes */
     function computeHandRanges(sectionNotes) {
       let lhMin = 200, lhMax = 0, rhMin = 200, rhMax = 0;
       let lhCount = 0, rhCount = 0;
@@ -5645,6 +5796,7 @@
       return { lhMin, lhMax, rhMin, rhMax };
     }
 
+    /** @param {number} sectionIdx */
     async function startPracticeSection(sectionIdx) {
       hideIntroHint();
       if (!currentSong._loaded) {
@@ -5689,7 +5841,7 @@
           ' span=' + (psn[psn.length - 1].timeMs - psn[0].timeMs).toFixed(0) + 'ms' +
           ' first.t=' + psn[0].timeMs.toFixed(0) +
           ' last.t=' + psn[psn.length - 1].timeMs.toFixed(0));
-        const fmtPsn = (n, i) => 'i=' + i +
+        const fmtPsn = (/** @type {OsmdLikeNote} */ n, /** @type {number} */ i) => 'i=' + i +
           ' t=' + n.timeMs.toFixed(0) +
           ' dur=' + n.durMs.toFixed(0) +
           ' midi=' + n.midi +
@@ -5852,6 +6004,7 @@
     // ========================================
     // Per-frame practice tick
     // ========================================
+    /** @param {number} timeMs @param {boolean} isOnsetNote @param {number=} pitchHz */
     function updatePractice(timeMs, isOnsetNote, pitchHz) {
       if (!practice.enabled) return;
       const elapsed = practiceElapsedMs();
@@ -6110,6 +6263,7 @@
     refreshLaneOptsI18n();
     window.addEventListener('langchange', refreshLaneOptsI18n);
 
+    /** @param {CanvasRenderingContext2D} c @param {number} x @param {number} y @param {number} w @param {number} h @param {number} r */
     function roundRect(c, x, y, w, h, r) {
       c.beginPath();
       c.moveTo(x + r, y);
@@ -6310,6 +6464,7 @@
     }
 
     // Growth chart — line graph of accuracy over the last 8 attempts.
+    /** @param {HTMLCanvasElement} canvas @param {Array<{accuracy:number}>} history */
     function drawHistoryChart(canvas, history) {
       const w = 280, h = 80;
       const c = setupHiDPICanvas(canvas, w, h);
@@ -6337,7 +6492,9 @@
       c.fillText('50',   padX - 4, padTop + innerH / 2);
       c.fillText('0',    padX - 4, padTop + innerH);
 
+      /** @param {number} i */
       const xAt = (i) => n === 1 ? padX + innerW / 2 : padX + (i / (n - 1)) * innerW;
+      /** @param {number} v */
       const yAt = (v) => padTop + innerH * (1 - clamp01(v / 100));
 
       c.strokeStyle = 'rgba(255, 215, 0, 0.85)';
@@ -6704,6 +6861,7 @@
       userSongList: document.getElementById('userSongList')
     };
 
+    /** @param {string} msg @param {boolean} [isError] */
     function setAddSongStatus(msg, isError) {
       DOM_ADDSONG.status.textContent = msg || '';
       DOM_ADDSONG.status.classList.toggle('error', !!isError);
@@ -6723,7 +6881,9 @@
       modalFocus.close(DOM_ADDSONG.modal);
     }
 
+    /** @type {Promise<unknown>|null} */
     let _libraryLoadPromise = null;
+    /** @param {boolean} [force] */
     function ensureLibraryLoaded(force) {
       if (_libraryLoadPromise && !force) return _libraryLoadPromise;
       const statusEl = document.getElementById('addSongLibraryStatus');
@@ -6750,6 +6910,7 @@
     // JP labels exist for the 69 pinned scores; falls back to ASCII label
     // for anything not in the table (e.g. future additions before the JP
     // map is updated).
+    /** @param {{label:string, labelJp?:string}} item */
     function libraryDisplayLabel(item) {
       if (prefs.lang === 'jp' && item.labelJp) return item.labelJp;
       return item.label;

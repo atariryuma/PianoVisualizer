@@ -16,12 +16,14 @@ highlight call sites routed through it. `legacy-app.js` is a real ES module
 (`export {}`), `allowJs: true` is on. Type-scaffolding landed: bare-identifier
 globals are `declare global { var }`-typed in `main.ts`, the module-scoped
 `let`s (`audioCtx`, `W`, `H`, `osmd`, `particles`, `ripples`, …) are
-JSDoc-typed, the `DOM` bag asserts `Record<string, HTMLElement>`, and the four
-big runtime singletons (`state` / `practice` / `midiState` / `midiInput`) +
-`CONFIG` carry full `GameStateShape` / `PracticeStateShape` / `MidiStateShape` /
-`MidiInputShape` / `ConfigShape` typedefs. **`@ts-check` residual count: 1,041 →
-557** (-484, -47%) via the eight extractions + the globals + the JSDoc
-scaffolding + the shape typedefs. SW takeover hardened. 786 vitest cases,
+JSDoc-typed, the `DOM` bag asserts `Record<string, HTMLElement>`, the four big
+runtime singletons (`state` / `practice` / `midiState` / `midiInput`) + `CONFIG`
+carry full shape typedefs, and the `SongRec` library record is fully typed. The
+hot helpers (`updatePractice`, `loop`, `onMidiNoteOn`,
+`updateSessionConfidence`, `dispatchMidiMessage`, the PianoCore adapter arrows,
+the WebMIDI port handlers, the OSMD cursor walker, plus 60+ other single-purpose
+functions) carry per-function `@param` JSDoc. **`@ts-check` residual count:
+1,041 → 359** (-682, -66%). SW takeover hardened. 786 vitest cases,
 `pnpm verify` clean.)
 
 ---
@@ -74,6 +76,7 @@ scaffolding + the shape typedefs. SW takeover hardened. 786 vitest cases,
 | 42  | `state/practice-progress.ts`  | 15    | `packages/core/src/state/practice-progress.ts`  |
 | 43  | `web/note-extractor.ts`       | —     | `packages/web/src/note-extractor.ts`            |
 | 44  | shape typedefs (state etc.)   | —     | `packages/web/src/legacy-app.js` (top of file)  |
+| 45  | `@param` sweep (60+ helpers)  | —     | `packages/web/src/legacy-app.js`                |
 
 **Status: 786/786 tests green, 0 lint errors, 0 type errors. `pnpm verify`
 clean.** (audio-scheduler.ts and note-extractor.ts are web-shell typed modules —
@@ -83,23 +86,14 @@ no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
 
 ## ⏳ In queue
 
-## 1. Per-function `@param` annotations on the hot helpers
-
-The TS7006 'Parameter X implicitly has any' category (~203 errors) is spread
-across maybe 80 functions. The hot ones (`updatePractice`, `drawPracticeLane`,
-`loop`, `onMidiNoteOn`, etc.) account for the plurality. Each function takes
-5-10 minutes to annotate. The runtime singletons (`state` / `practice` /
-`midiState`) now have full named shapes, so JSDoc `@param` types can reference
-`GameStateShape` etc. directly.
-
-**Strategy**: annotate the top 20 by error-count first; that knocks out maybe
-half the TS7006s.
-
-## 2. Whole-file `// @ts-check` — once the residual count is manageable
+## 1. Whole-file `// @ts-check` — once the residual count is manageable
 
 **What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
-errors. Current residual is 557 (down from 629 after the shape typedefs); #1
-above should bring it under 350 if it lands cleanly.
+errors. Current residual is 359 (down from 629 after shape typedefs + the
+`@param` sweep). The remaining error mix is dominated by TS18047 (~109,
+"possibly null") + TS2339 (~79, scattered DOM and external lib edges) + TS2345
+(~31, arg-type mismatches at @piano/core boundaries). Knock those down enough to
+flip the global ratchet.
 
 **Acceptance**:
 
@@ -110,7 +104,7 @@ above should bring it under 350 if it lands cleanly.
 `tsconfig.probe.json` (`packages/web/tsconfig.probe.json` flips `checkJs: true`
 without the `// @ts-check` ratchet) to gauge.
 
-## 3. More leaf extractions — when worth it
+## 2. More leaf extractions — when worth it
 
 Each extraction reduces the `@ts-check` surface by 50-200 errors. Candidates
 that haven't been tackled (ordered hardest-last):
