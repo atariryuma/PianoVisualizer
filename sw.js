@@ -56,8 +56,15 @@
 // (multi-voice rests, dotted rhythms, mid-bar tempo events break the
 // uniformity), so the linear walk visibly raced past rest measures.
 // Cursor now sits on the current note's sourceStep — no synthesis.
+// 2026-05-06: bumped to v14 — fix cursor skipping notes when entering
+// la Campanella's m=5 (partial measure, actualDur 480 of nominal 720
+// ticks). Step-counter approach (sourceStep + _osmdStepCursor) drifted
+// from OSMD's iterator at partial-measure boundaries. Now positioning
+// uses OSMD's iterator native state — each note carries
+// (measureIdx, inBarQuarters), and we walk osmd.cursor until its
+// CurrentMeasureIndex + currentTimeStamp match. No shadow counter.
 
-const CACHE = 'piano-viz-v13';
+const CACHE = 'piano-viz-v14';
 const APP_SHELL = [
   './',
   './index.html',

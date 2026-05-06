@@ -3473,7 +3473,7 @@
         // re-parsing the raw XML, so we ASK OSMD to keep the legacy 1.8.x
         // behavior (one linear walk through the score). Without this, the
         // iterator would visit the same measure twice and stepToMeasure[]
-        // would have duplicate entries, breaking setOsmdCursorStep().
+        // would have duplicate entries, breaking the cursor positioning.
         try { inst.EngravingRules.CursorIgnoreRepetitions = true; }
         catch (_) { /* older OSMD: option doesn't exist, behavior is the same */ }
         // OSMD's load() accepts both .mxl URLs (zipped) and plain MusicXML URLs.
@@ -3772,6 +3772,12 @@
                     hand, midi,
                     timeSec: noteTimeSec,
                     durSec, measureIdx,
+                    // inBarQuarters = position within the bar in quarter-note
+                    // units. Drives cursor positioning via OSMD's iterator
+                    // currentTimeStamp — robust against partial measures
+                    // (la Campanella m=5 actualDur < nominalDur) where step
+                    // counts can drift between extraction and playback.
+                    inBarQuarters,
                     sourceStep: cursorStep, tieStart, tieEnd,
                   });
                   if (stepDiag) {
@@ -4290,6 +4296,7 @@
             timeSec: cumTime + (n.timeSec - mStart),
             durSec: n.durSec,
             measureIdx: mIdx,
+            inBarQuarters: n.inBarQuarters,
             sourceStep: n.sourceStep,
             cursorJump: (j === 0 && isJump) ? mIdx : null
           });
@@ -4709,71 +4716,81 @@
     function osmdResetToStart() {
       if (!osmd || !osmd.cursor) return;
       osmd.cursor.reset();
-      resetOsmdStepCursor();
       DOM.osmdContainer.scrollTop = 0;
     }
 
-    // Jump the OSMD cursor to the first step of a specific written-score measure.
-    // Used when the playback order takes a non-sequential jump (repeat back-jump or
-    // forward skip over a 1st-ending volta).
+    // Jump the OSMD cursor to the first position of a specific written-score
+    // measure. Used when the playback order takes a non-sequential jump
+    // (repeat back-jump or forward skip over a 1st-ending volta).
     function jumpCursorToMeasure(measureIdx) {
       if (!osmd || !osmd.cursor) return;
-      const target = currentSong.measureToCursorStep[measureIdx];
-      if (typeof target !== 'number' || target < 0) return;
-      // Delegate to the absolute-step setter so the internal counter
-      // (_osmdStepCursor) stays in sync — otherwise the next setOsmdCursorStep
-      // call would think it's at step 0 and reset+walk again.
-      setOsmdCursorStep(target);
+      // Synthetic "first beat of the measure" target — setOsmdCursorToNote
+      // walks OSMD's iterator to (measureIdx, inBarQuarters >= 0), landing
+      // on the first iterator step in that measure.
+      setOsmdCursorToNote({ measureIdx, inBarQuarters: 0 });
     }
 
     // Advance the OSMD cursor one playback step. cursorJump != null = next
     // playback note is in a non-sequential measure (repeat back-jump / 1st-
-    // ending skip) — reposition rather than step. _osmdStepCursor must
-    // stay in lockstep with the iterator or the per-frame cursor sync
-    // sees a stale counter and double-advances.
+    // ending skip) — reposition rather than step.
     function advanceOsmdCursor(cursorJump) {
       if (!osmd || !osmd.cursor) return;
       if (cursorJump != null) jumpCursorToMeasure(cursorJump);
       else if (!osmd.cursor.iterator.endReached) {
-        // OSMD's grace-note bug throws but the iterator still advances —
-        // increment regardless; setOsmdCursorStep resyncs on any drift.
-        try { osmd.cursor.next(); } catch (_) {}
-        _osmdStepCursor++;
+        try { osmd.cursor.next(); } catch (_) { /* grace-note throws — iterator still advances */ }
       }
     }
 
-    // === Absolute cursor positioning by source-iterator step ===
-    // Replaces the relative .next()-per-onset model that drifted on repeats
-    // / voltas / grace notes / D.C.: every playback note carries the OSMD
-    // step it came from, so we always JUMP to the truth instead of
-    // accumulating .next() calls and hoping the count matches OSMD's
-    // iterator. Forward jumps walk N × cursor.next(); backward jumps reset
-    // and re-walk because cursor.previous() is unreliable in 1.9.x (see
-    // setOsmdCursorStep below for the reproduction notes).
-    let _osmdStepCursor = 0;
-    function resetOsmdStepCursor() {
-      _osmdStepCursor = 0;
-    }
-    function setOsmdCursorStep(targetStep) {
-      if (!osmd || !osmd.cursor) return;
-      if (typeof targetStep !== 'number' || targetStep < 0) return;
+    // === Cursor positioning by OSMD iterator's native state ===
+    // Each note carries (measureIdx, inBarQuarters) — OSMD's iterator
+    // exposes the same coordinates via CurrentMeasureIndex and
+    // currentTimeStamp. So we walk the iterator until its position
+    // matches the target's, with no parallel step counter to drift.
+    //
+    // This replaces the previous sourceStep-counting model. In partial
+    // measures (la Campanella m=5: actualDur 480 of nominal 720 ticks)
+    // OSMD's iterator visit count diverged from our manual cursorStep
+    // counter — the cursor visibly skipped notes. Driving by the
+    // iterator's own currentTimeStamp eliminates that whole class of
+    // off-by-one bugs.
+    //
+    // Backward seeks always reset() and walk forward — cursor.previous()
+    // in OSMD 1.9.x leaves the visual cursor at its previous position
+    // while the iterator state moves backward, producing a "ghost"
+    // cursor. The forward walk from reset() is reliable.
+    function setOsmdCursorToNote(note) {
+      if (!osmd || !osmd.cursor || !note) return;
       const it = osmd.cursor.iterator;
-      // Backward: ALWAYS reset() then walk forward. We tried using
-      // cursor.previous() for short back-jumps (faster) but OSMD 1.9.x has
-      // been observed leaving the visual cursor at its previous position
-      // while the iterator state moves backward — the result is a "ghost"
-      // cursor that visually lags by however many measures we tried to
-      // rewind. reset() always works, so we accept the O(N) walk forward.
-      if (targetStep < _osmdStepCursor) {
+      const sm = osmd.Sheet?.SourceMeasures;
+      if (!sm) return;
+      const targetM = note.measureIdx | 0;
+      const targetQ = +note.inBarQuarters || 0;
+      const eps = 1e-6;
+
+      const measureStartWhole = (m) => sm[m]?.AbsoluteTimestamp?.realValue || 0;
+      const inBarQ = () => Math.max(0,
+        (it.currentTimeStamp.realValue - measureStartWhole(it.CurrentMeasureIndex)) * 4);
+
+      // Already at target? Skip.
+      const startM = it.CurrentMeasureIndex;
+      if (!it.endReached && startM === targetM && Math.abs(inBarQ() - targetQ) < eps) return;
+
+      // Past target → reset; otherwise we'd walk forever forward.
+      if (it.endReached
+        || startM > targetM
+        || (startM === targetM && inBarQ() > targetQ + eps)) {
         try { osmd.cursor.reset(); } catch (_) {}
-        _osmdStepCursor = 0;
       }
-      // Forward (or remaining distance after reset).
-      while (_osmdStepCursor < targetStep) {
-        if (it.endReached) break;
-        // Same grace-note throw as advanceOsmdCursor — swallow + keep counter aligned.
-        try { osmd.cursor.next(); } catch (_) {}
-        _osmdStepCursor++;
+
+      // Walk forward until iterator's (measureIdx, inBarQuarters) reaches the
+      // target. Bounded loop in case cursor.next() throws repeatedly without
+      // advancing — without the cap we'd hang.
+      let safety = 20000;
+      while (!it.endReached && safety-- > 0) {
+        const m = it.CurrentMeasureIndex;
+        if (m > targetM) break;
+        if (m === targetM && inBarQ() >= targetQ - eps) break;
+        try { osmd.cursor.next(); } catch (_) { /* grace-note throws — iterator still advances */ }
       }
     }
 
@@ -6124,6 +6141,7 @@
             timeMs: relSec * 1000 * speedFactor + COUNT_IN_MS,
             durMs: n.durSec * 1000 * speedFactor,
             measureIdx: n.measureIdx,
+            inBarQuarters: n.inBarQuarters,
             sourceStep: n.sourceStep,
             cursorJump: n.cursorJump,
             hit: filtered,
@@ -6252,22 +6270,17 @@
       // Section banner — flies in to celebrate the start
       showSectionBanner(sec);
 
-      // Position OSMD's cursor at the section's first step. reset()-first
-      // keeps OSMD's iterator state in sync with our tracking counter.
+      // Position OSMD's cursor at the section's first note.
       try { osmd.cursor.reset(); } catch (_) {}
-      _osmdStepCursor = 0;
       const firstNote = practice.sectionNotes[0];
-      if (firstNote && typeof firstNote.sourceStep === 'number') {
-        setOsmdCursorStep(firstNote.sourceStep);
-      } else if (firstNote && typeof firstNote.measureIdx === 'number') {
-        jumpCursorToMeasure(firstNote.measureIdx);
-      }
+      if (firstNote) setOsmdCursorToNote(firstNote);
       _lastOsmdScrollMs = 0;
       osmdScrollToCursor();
       try { osmd.cursor.show(); } catch (_) {}
       // Reset the per-frame scan cursor so the lane drawer's elapsed →
       // step lookup starts from index 0 for the new section.
       practice._cursorScanIdx = 0;
+      practice._lastCursorNoteIdx = -1;
 
       // Audio setup — guided mode skips ALL transport scheduling because the score
       // doesn't auto-advance. Ghost / metronome / cursor-sync events are only used in
@@ -6400,31 +6413,24 @@
             if (n._filtered) continue;
             if (n.hit) hit++; else if (n.missed) miss++; else pend++;
           }
-          // Find current measure from cursor step (measureToCursorStep is
-          // sorted by measure index; the largest entry ≤ osmdStep wins).
-          let curM = -1;
-          const m2c = currentSong.measureToCursorStep;
-          if (m2c) {
-            for (let i = 0; i < m2c.length; i++) {
-              if (m2c[i] >= 0 && m2c[i] <= _osmdStepCursor) curM = i;
-              else if (m2c[i] > _osmdStepCursor) break;
-            }
-          }
+          // Read current cursor measure straight from OSMD's iterator —
+          // the iterator is the source of truth now, no shadow counter.
+          const curM = osmd?.cursor?.iterator?.CurrentMeasureIndex ?? -1;
           remoteLog('[DIAG/play.tick] t=' + elapsed.toFixed(0) + 'ms' +
             ' mode=' + practice.mode +
             ' | progress hit=' + hit + ' miss=' + miss + ' pend=' + pend + '/' + len +
             ' curIdx=' + practice.currentNoteIdx +
             ' | exp=' + (exp
               ? '{i=' + expIdx + ' t=' + exp.timeMs.toFixed(0) +
-                ' m=' + exp.measureIdx + ' step=' + exp.sourceStep +
+                ' m=' + exp.measureIdx + ' q=' + (exp.inBarQuarters ?? 0).toFixed(2) +
                 ' midi=' + exp.midi + n_state(exp) + ' dt=' + (elapsed - exp.timeMs).toFixed(0) + '}'
               : 'none') +
             ' next=' + (next
               ? '{i=' + (expIdx + 1) + ' t=' + next.timeMs.toFixed(0) +
-                ' m=' + next.measureIdx + ' step=' + next.sourceStep +
+                ' m=' + next.measureIdx + ' q=' + (next.inBarQuarters ?? 0).toFixed(2) +
                 ' midi=' + next.midi + ' in=' + (next.timeMs - elapsed).toFixed(0) + '}'
               : 'none') +
-            ' | cursor osmdStep=' + _osmdStepCursor + ' m=' + curM);
+            ' | cursor m=' + curM);
         }
       }
 
@@ -6492,11 +6498,11 @@
         osmdScrollToCursor();
       }
 
-      // 4. (OSMD cursor advance is driven by the per-frame sync in
-      //     drawPracticeLane (step-timeline lookup based on practiceElapsedMs).
-      //     In guided mode advanceOsmdCursor above also fires per resolved
-      //     note; both must keep _osmdStepCursor in lockstep with the actual
-      //     OSMD cursor — see the comment on advanceOsmdCursor.)
+      // 4. (OSMD cursor advance: the per-frame sync in drawPracticeLane is
+      //     the primary driver — it positions the cursor by walking OSMD's
+      //     iterator to the active note's (measureIdx, inBarQuarters). The
+      //     advanceOsmdCursor call above just nudges by one step on note
+      //     resolve; the next frame's sync corrects any drift.)
 
       // 5. Progress UI (rate-limited) — exclude the other hand in one-hand mode
       if (timeMs - practice._lastProgUpdate > 100) {
@@ -6565,11 +6571,13 @@
           practice._cursorScanIdx = pIdx;
           targetIdx = pIdx;
         }
-        const note = notes[targetIdx];
-        if (note && typeof note.sourceStep === 'number'
-          && note.sourceStep !== _osmdStepCursor) {
-          setOsmdCursorStep(note.sourceStep);
-          osmdScrollToCursor();
+        if (targetIdx !== practice._lastCursorNoteIdx) {
+          const note = notes[targetIdx];
+          if (note) {
+            setOsmdCursorToNote(note);
+            osmdScrollToCursor();
+          }
+          practice._lastCursorNoteIdx = targetIdx;
         }
       }
 
