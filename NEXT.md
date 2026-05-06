@@ -105,30 +105,41 @@ of size / ease:
 
 **DoD for Phase 0d**: `wc -l packages/web/src/legacy-app.js` ≤ 200.
 
+**Note for next agent / picking up from `phase-0c.5-done`**: the wakelock
+extraction commit (`fa479f4`) is the canonical pattern. Replicate:
+
+1. Read the legacy code block in `legacy-app.js`.
+2. Create `packages/web/src/<name>.ts` with explicit exports and
+   `@piano/core`-compatible types. Keep deps narrow — pass them in via function
+   args or an init object rather than reaching for shell globals from inside the
+   module.
+3. Add the import + `globalThis` pin in `packages/web/src/main.ts`. Avoid
+   identifier names that clash with lib.dom (e.g. `WakeLock` → `PianoWakeLock`).
+4. In `legacy-app.js`, replace the inline implementation with thin
+   alias-from-global forwarders so the rest of the shell keeps calling the short
+   names.
+5. `pnpm verify` clean.
+6. **iPad practice-mode A/B**: load a song, start a section, play through to
+   completion, verify scoring + section-result modal. Especially watch the SW
+   console (some extractions have triggered SW SecurityErrors).
+
 ## 2. Phase 0e — Retire `legacy-app.js` entirely
 
-Each extraction reduces the `@ts-check` surface by 50-200 errors. Candidates
-that haven't been tackled (ordered hardest-last):
+Once `legacy-app.js` is ≤200 lines, fold the residual into `main.ts` and delete
+the file. Detailed checklist in
+[ROADMAP.md](ROADMAP.md#phase-0e--retire-legacy-appjs-entirely).
 
-- **The big `loop()` render frame composer** — ~500 lines of canvas draw
-  orchestration, mostly already calling `PianoCore.draw*` / `osmdAdapter.*`.
-  Hard target — many fragile lookahead reads of the `state` object.
-- **Per-frame practice tick (`updatePractice`)** — ~250 lines, the hot-path
-  note-onset → flow / combo / quality pipeline. Already delegates most reducers
-  to `PianoCore.*`; the remaining glue is state.X mutation that would type-check
-  well once `state` has a named shape (item #1).
-- **DOM event handlers** — ~1500 lines of `DOM.btn.addEventListener` blocks.
-  Could move to a typed `packages/web/src/event-wiring.ts`.
-
-**Est**: per-chunk between half-day and a day.
+**Tag at completion: `phase-0e-done`.** This is the agreed waypoint before Phase
+1 (Capacitor first install, blocked on Mac + Xcode + Android Studio).
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-(empty — Phase 0c items dominate near-term planning. The next major non-Phase-0c
+(empty — Phase 0d / 0e dominate near-term planning. The next major non-0d/0e
 work is Phase 1 Capacitor install, but that needs Mac + Xcode + Android Studio,
-so it's blocked on human hardware.)
+so it's blocked on human hardware. See
+[ROADMAP.md](ROADMAP.md#phase-1--capacitor-first-install--blocked-on-human).)
 
 ---
 
