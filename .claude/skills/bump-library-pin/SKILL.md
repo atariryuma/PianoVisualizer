@@ -28,8 +28,8 @@ curl -s https://api.github.com/repos/musetrainer/library/commits/master \
   | grep -m1 '"sha"' | cut -d'"' -f4
 ```
 
-Copy the 40-char SHA. Compare with the current `LIBRARY_PINNED_SHA` in `app.js`
-— if same, abort.
+Copy the 40-char SHA. Compare with the current `LIBRARY_PINNED_SHA` in
+`legacy-app.js` — if same, abort.
 
 ### 2. List what's new
 

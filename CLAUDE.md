@@ -14,37 +14,38 @@ Current version: **0.14**
 
 ## Repository structure
 
-This repo is mid-migration from a single-file HTML build (legacy, still
-authoritative as of 2026-05-05) to a Vite + Capacitor monorepo (scaffold in
-place, extraction in progress).
+The repo is a pnpm workspace; **`packages/web` is the production entry** (Phase
+0b.3 complete as of 2026-05-06). The legacy 3-file shell at the repo root has
+been retired — `legacy-app.js` lives at
+[`packages/web/src/legacy-app.js`](packages/web/src/legacy-app.js) until its
+Phase 0c TypeScript conversion.
 
-**Phase 0b extraction status (2026-05-06)**: 580+ tests across 33+ test files;
-pure logic for audio detection, render layers, practice + free-play state
-machines, library catalog + section assembly, i18n, and result-tier / unlock
-gating now lives in `@piano/core`. Legacy `app.js` delegates each via
-`PianoCore.*`. Major remaining chunks: a few in-flight per-onset reducers
-(`quality-history`, `pitch-stability`, `chord-window` — see NEXT.md), the OSMD
-adapter design for cursor / render wiring, and the Phase 0b.3 dual-build wire-up
-where `packages/web` becomes the real entry instead of the legacy 3-file shell.
+**Engine extraction status (2026-05-06)**: 680 tests across 38 test files; 35
+pure modules in `@piano/core` covering audio detection, render layers,
+practice + free-play state machines, library catalog + section assembly, i18n,
+result-tier / unlock gating, per-onset reducers, daily-streak math, and the MIDI
+sustained-note beam adapter. The remaining work is Phase 0c (TypeScript
+conversion of `legacy-app.js` into proper modules) and the OSMD adapter design —
+see [NEXT.md](NEXT.md).
 
 ```text
 piano-visualizer/
-├── index.html              # ★ Authoritative web app entry (LAN HTTPS server)
-├── app.css                 # ★ Authoritative styles
-├── app.js                  # ★ Authoritative script (vanilla JS)
-├── sw.js                   # Service worker (caches index/css/js + assets)
-├── manifest.json           # PWA manifest
-├── icon.svg                # PWA icon
-├── assets/                 # Bundled MusicXML scores (.mxl + .xml)
-├── gen_cert.ps1            # Self-signed cert generator (LAN dev)
-├── https_server.ps1        # PowerShell HTTPS server (port 8443)
-│
-├── packages/               # ★ Monorepo (Phase 0b/c — scaffolded, not yet primary)
+├── packages/               # ★ Monorepo source of truth
 │   ├── core/               # Pure-TS engine (DOM-free, testable, shared)
-│   ├── web/                # Vite PWA shell
+│   ├── web/                # ★ Vite PWA shell — production entry
+│   │   ├── index.html      # Web app shell
+│   │   ├── public/         # app.css + manifest + icon + assets/
+│   │   └── src/
+│   │       ├── main.ts     # Module entry — seeds globals, imports legacy
+│   │       ├── legacy-app.js   # Vanilla shell (Phase 0c rewrite pending)
+│   │       └── adapters/   # WebMIDI / WebAudio (Phase 0c wiring pending)
 │   ├── mobile/             # Capacitor 6 wrapper (iOS + Android)
 │   └── plugins/
 │       └── capacitor-piano-midi/   # Native MIDI plugin (Swift + Kotlin)
+│
+├── gen_cert.ps1            # Self-signed cert generator (LAN dev)
+├── https_server.ps1        # PowerShell HTTPS server (port 8443) — serves
+│                           # packages/web/dist by default
 │
 ├── docs/
 │   ├── PRIVACY.md          # Privacy policy (App Store + Play Store)
@@ -55,29 +56,32 @@ piano-visualizer/
 └── package.json            # pnpm workspaces root
 ```
 
-## Two source-of-truth realities right now
+## Single source of truth: packages/web
 
-**The legacy single-file build (`index.html` + `app.css` + `app.js`) is what
-runs in production today.** All bug fixes and feature work on existing behavior,
-and LAN deploys, go here. The PowerShell HTTPS server expects this.
+Phase 0b.3 retired the repo-root 3-file shell on 2026-05-06. The flow is:
 
-**The `packages/` monorepo is the migration target.** It has the structure plus
-contracts (`MidiInputAdapter` interface, `perf-tier`) plus native plugin source
-plus all CI/docs. The actual engine code (audio/render/state) is still being
-extracted from `app.js` module by module. Until extraction completes, the
-monorepo's `web` and `mobile` shells are placeholders.
+- `packages/web/src/main.ts` — module entry. Imports Tone / OSMD / JSZip /
+  `@piano/core` from npm, pins each to `globalThis` (legacy code still reads
+  them as browser globals), then dynamically imports `legacy-app.js` for its
+  IIFE-style side effects.
+- `packages/web/src/legacy-app.js` — the still-vanilla shell. Most pure logic
+  now delegates via `PianoCore.*`; awaiting Phase 0c TS conversion.
+- `packages/web/public/` — static assets (`app.css`, `manifest.json`,
+  `icon.svg`, `assets/*.{mxl,xml}`) copied through unchanged at build time.
+- `pnpm build:web` → `packages/web/dist/` is the deployable output.
 
 When making changes, decide:
 
-- Hot bug fix or new feature on existing behavior → edit `app.js` / `app.css`.
+- Hot bug fix or new feature on existing behavior → edit
+  `packages/web/src/legacy-app.js` + `packages/web/public/app.css`.
 - New abstraction or platform-specific code → edit `packages/*` and document
-  what needs to flow back to `app.js`.
+  what needs to flow back into the legacy shell.
 
-The 3-file root build was split from a single 9000-line monolith on 2026-05-05;
-the redirect stub for the old `piano-visualizer.html` URL was retired 2026-05-06
-once we'd confirmed no PWA installs depended on it.
+The 9000-line `piano-visualizer.html` monolith was split into a 3-file shell on
+2026-05-05; that 3-file shell was retired into `packages/web` on 2026-05-06 once
+35 modules were extracted into `@piano/core`.
 
-## Running the Application (legacy / production)
+## Running the Application
 
 The app requires HTTPS for microphone access (especially on iPad/Safari). A
 PowerShell HTTPS server is provided:
@@ -85,8 +89,10 @@ PowerShell HTTPS server is provided:
 1. **Generate certs** with `powershell -File gen_cert.ps1` (auto-detects LAN IP,
    outputs `cert.pfx` for the server + `cert.cer` for iOS to trust). Re-run any
    time the LAN IP changes.
-2. **Run server**: `powershell -File https_server.ps1` — serves on port 8443.
-3. **Access** at `https://<host-ip>:8443`.
+2. **Build** with `pnpm build:web` — produces `packages/web/dist/`.
+3. **Run server**: `powershell -File https_server.ps1` — serves
+   `packages/web/dist` on port 8443. (Or `pnpm serve` to do step 2 + 3.)
+4. **Access** at `https://<host-ip>:8443`.
 
 ### iPad / strict-cert browser (Web MIDI Browser etc.) setup
 
@@ -101,17 +107,16 @@ and many WKWebView-based apps don't. Install the cert as trusted:
    _PianoVisualizer_ root certificate.
 4. Re-open `https://<host-ip>:8443/` in Web MIDI Browser — no more cert error.
 
-For local development, any HTTPS-capable static server works, or simply open the
-HTML file directly in a desktop browser.
+For local development, any HTTPS-capable static server works once
+`packages/web/dist/` is built.
 
-## Building (monorepo, future)
-
-Once the extraction is far enough along to make the monorepo authoritative:
+## Building
 
 ```bash
 pnpm install
 pnpm build:web                 # → packages/web/dist/
-pnpm --filter @piano/web dev   # vite dev server (port 8443)
+pnpm --filter @piano/web dev   # vite dev server (port 8443) for HMR
+pnpm serve                     # build:web + https_server.ps1 in one step
 
 pnpm build:mobile              # → packages/mobile/dist/ + cap sync
 pnpm cap:ios                   # opens iOS simulator
@@ -224,8 +229,8 @@ Canvas-based with `requestAnimationFrame`. Layers drawn back-to-front:
 
 ### Key Configuration
 
-All tunable parameters are in the `CONFIG` object at the top of `app.js`. Key
-groups:
+All tunable parameters are in the `CONFIG` object at the top of `legacy-app.js`.
+Key groups:
 
 - Audio analysis: `FFT_SIZE`, `SMOOTHING`, `YIN_*`
 - Onset detection: `SPECTRAL_FLUX_*`, `ONSET_*`, `FLATNESS_*`, `CREST_*`,
@@ -266,7 +271,8 @@ change between releases (App Store 4.7 compliance).
 - Manual section editor for parents/teachers.
 - Export/import as JSON.
 - See: `addUserSongFromBlob`, `addUserSongFromUrl`, `autoSectionDefs`,
-  `openSectionEditor`, `exportUserLibrary`, `importUserLibrary` in `app.js`.
+  `openSectionEditor`, `exportUserLibrary`, `importUserLibrary` in
+  `legacy-app.js`.
 
 ## Native (Capacitor) plans
 

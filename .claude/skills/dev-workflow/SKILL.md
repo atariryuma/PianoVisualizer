@@ -61,7 +61,7 @@ pnpm assets:generate                               # icon + splash from packages
 | Symptom                                  | Likely cause                       | Fix                                                     |
 | ---------------------------------------- | ---------------------------------- | ------------------------------------------------------- |
 | `pnpm install` fails                     | corrupt store                      | `rm -rf node_modules .pnpm-store && pnpm install`       |
-| ESLint complains about `app.js`          | should be ignored                  | check `.prettierignore` + `eslint.config.mjs` `ignores` |
+| ESLint complains about `legacy-app.js`   | should be ignored                  | check `.prettierignore` + `eslint.config.mjs` `ignores` |
 | Vitest can't resolve `@piano/core`       | workspace not installed            | `pnpm install` to refresh links                         |
 | `cap sync` says "missing native project" | `ios/` or `android/` not generated | `npx cap add ios` (Mac) or `npx cap add android`        |
 | Pre-commit hook hangs                    | husky not installed                | `pnpm prepare` (runs husky install)                     |

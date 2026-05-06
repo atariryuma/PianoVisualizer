@@ -29,8 +29,8 @@ node --check app.js
 node --check sw.js
 ```
 
-Both must pass. If you didn't touch `app.js`, this still must pass — git might
-have included an unrelated edit.
+Both must pass. If you didn't touch `legacy-app.js`, this still must pass — git
+might have included an unrelated edit.
 
 ## 3. Diff review
 
@@ -64,7 +64,7 @@ If your change touches anything user-facing (UI, network, storage):
 
 - [ ] If you added a new public API in `packages/core`, exports updated in
       `src/index.ts` AND mentioned in package README
-- [ ] If you touched legacy `app.js` behavior, `CLAUDE.md` updated
+- [ ] If you touched legacy `legacy-app.js` behavior, `CLAUDE.md` updated
 - [ ] If you completed a NEXT.md item, it's marked `✅ DONE`
 - [ ] If your change closes an issue, the PR mentions `Closes #N`
 

@@ -1,9 +1,9 @@
 param(
-    # Directory to serve. Defaults to the script's own directory (legacy
-    # 3-file shell at the repo root). Pass -Root packages/web/dist to test
-    # the Phase 0b.3 Vite build in parallel; the cert lookup still happens
-    # from $PSScriptRoot so cert.pfx doesn't have to live inside dist/.
-    [string]$Root = $PSScriptRoot,
+    # Directory to serve. Defaults to packages/web/dist (the Vite build
+    # output, Phase 0b.3 onwards). Override with -Root anywhere else for
+    # ad-hoc serving. The cert lookup still happens from $PSScriptRoot
+    # so cert.pfx doesn't have to live inside the served directory.
+    [string]$Root = (Join-Path $PSScriptRoot "packages\web\dist"),
     [int]$Port = 8443
 )
 

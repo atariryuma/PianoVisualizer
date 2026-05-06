@@ -1,9 +1,9 @@
 ---
 name: extract-module
 description:
-  Move a function (or small set of related functions) from the legacy `app.js`
-  into a typed `packages/core/` module with Vitest tests. Use when NEXT.md or an
-  issue lists a "Extract X" item.
+  Move a function (or small set of related functions) from the legacy
+  `legacy-app.js` into a typed `packages/core/` module with Vitest tests. Use
+  when NEXT.md or an issue lists a "Extract X" item.
 ---
 
 # extract-module
@@ -22,18 +22,18 @@ you'll add a "state-machine refactor" step (see Step 5b).
 ## Don't use this for
 
 - New features (use `add-song-to-library` or open a feature issue first)
-- Changes to legacy `app.js` behavior (those go in their own commit, not bundled
-  with extraction)
+- Changes to legacy `legacy-app.js` behavior (those go in their own commit, not
+  bundled with extraction)
 - Capacitor plugin work (touches Swift/Kotlin — separate skill)
 
 ## Steps
 
 ### 1. Confirm scope
 
-Find the lines in `app.js` you're moving:
+Find the lines in `legacy-app.js` you're moving:
 
 ```bash
-grep -n "^    function <NAME>" app.js
+grep -n "^    function <NAME>" packages/web/src/legacy-app.js
 ```
 
 Read the function and **everything it depends on** (constants, helpers called
@@ -60,7 +60,7 @@ export interface FooResult {
 }
 
 export function foo(input: Float32Array, sampleRate: number): FooResult {
-  // body — copy from app.js, add types
+  // body — copy from legacy-app.js, add types
 }
 ```
 
@@ -117,43 +117,39 @@ export { foo } from './audio/foo';
 export type { FooResult } from './audio/foo';
 ```
 
-### 5a. Mirror in legacy `app.js` (until Phase 0b.3 is done)
+### 5a. Replace the legacy implementation with a `PianoCore.*` delegation
 
-The legacy single-file build still ships `app.js` to users. Until 0b.3 wires the
-bundled core into `app.js`, both copies must exist. Annotate:
+Phase 0b.3 retired the dual-shell mirror dance. The new `legacy-app.js` imports
+`PianoCore` off `globalThis` (seeded by `main.ts`); replace the old function
+body with a one-line delegation:
 
 ```js
-// MIRROR of packages/core/src/audio/foo.ts — keep in sync until Phase 0b.3 lands.
-//                                            See ROADMAP.md.
-function foo(buf, sr) {
-  // ... existing implementation, unchanged ...
-}
+// Phase 0b.3: delegated to @piano/core/audio/foo.
+const fooResult = PianoCore.foo(buf, sr, opts);
 ```
 
-This signals to humans (and future agents) that there's a duplicated copy. The
-mirror gets removed in 0b.3 when we wire the core bundle in.
+No "MIRROR" annotation, no second copy — the old body is deleted in the same
+commit that adds the core module.
 
 ### 5b. State-machine refactor (only if your function mutates state)
 
 If the legacy function reads/writes `state.X` directly:
 
 1. Lift those into explicit parameters / return values in the new module.
-2. Wrap a call site in `app.js` that does the state plumbing:
+2. Wrap a call site in `legacy-app.js` that does the state plumbing:
 
 ```js
-const result = foo(buf, sr, { config, prevState: state.foo });
+const result = PianoCore.foo(buf, sr, { config, prevState: state.foo });
 state.foo = result.newState;
 ```
-
-3. The mirror in `app.js` stays unchanged for now; the wrapping happens in 0b.3.
 
 ### 6. Verify
 
 ```bash
-pnpm --filter @piano/core typecheck   # TS clean
-pnpm --filter @piano/core test        # Vitest green
-node --check app.js                   # legacy mirror still parses
-pnpm verify                           # full sweep
+pnpm --filter @piano/core typecheck                 # TS clean
+pnpm --filter @piano/core test                      # Vitest green
+node --check packages/web/src/legacy-app.js         # legacy parses
+pnpm verify                                         # full sweep
 ```
 
 If `pnpm verify` fails on something unrelated to your extraction, **don't fix it
@@ -164,10 +160,10 @@ in this PR** — open a separate issue.
 Commit message:
 
 ```text
-refactor(core): extract <name> from app.js
+refactor(core): extract <name> from legacy-app.js
 
 - New module packages/core/src/audio/<name>.ts with X tests
-- Mirror left in app.js with sync marker (Phase 0b.3 will remove)
+- legacy-app.js delegates via PianoCore.<name>
 - No behavior change
 
 Closes #<issue>
@@ -207,8 +203,8 @@ ROADMAP.md 0b.2 list onto NEXT.md to keep the queue at 5–10 items.
 - **Leaving CONFIG references** — `core/` doesn't have CONFIG yet. Either add a
   `config.ts` extraction first, or accept the relevant numbers as args.
 - **Test depends on legacy `state` global** — tests must be self-contained.
-- **Mirror gets out of date** — if you tweak `app.js` later, also tweak the core
-  copy. The MIRROR comment is the reminder.
+- **Mirror gets out of date** — if you tweak `legacy-app.js` later, also tweak
+  the core copy. The MIRROR comment is the reminder.
 - **`@piano/core` not in workspace deps of consumer** — usually only matters for
   `packages/web` and `packages/mobile`; their package.json already has
   `"@piano/core": "workspace:*"`.

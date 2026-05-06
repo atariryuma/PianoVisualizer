@@ -4,15 +4,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "types": ["vite/client", "vite-plugin-pwa/client"],
-    "baseUrl": ".",
-    "paths": {
-      // Mirror the vite alias so tsc can resolve the legacy app.js import
-      // in main.ts. The shim type lives in src/legacy.d.ts (no real .d.ts
-      // for app.js — just declare it as a side-effect module).
-      "@legacy/*": ["../../*"]
-    },
-    "allowJs": false
+    "types": ["vite/client", "vite-plugin-pwa/client"]
   },
   "include": ["src/**/*", "index.html"],
   "exclude": ["dist", "node_modules"]

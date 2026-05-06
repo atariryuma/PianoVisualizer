@@ -1,6 +1,6 @@
 // Flat-config ESLint 9 setup. Targets the monorepo (packages/**) — explicitly
-// EXCLUDES the legacy single-file build (app.js / app.css / index.html), which
-// stays vanilla and is sunset-pending.
+// EXCLUDES the still-vanilla legacy-app.js (loaded by the Vite shell as a
+// side-effect import; awaiting Phase 0c TypeScript conversion).
 
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -12,17 +12,14 @@ export default [
   {
     ignores: [
       '**/dist/**',
-      '**/dist-legacy/**',
       '**/build/**',
       '**/node_modules/**',
       '**/coverage/**',
       '**/.turbo/**',
       'packages/mobile/ios/**',
       'packages/mobile/android/**',
-      'app.js',
-      'app.css',
-      'index.html',
-      'sw.js',
+      // Legacy shell — Phase 0c will rewrite to TS and lift this exclusion.
+      'packages/web/src/legacy-app.js',
     ],
   },
   js.configs.recommended,

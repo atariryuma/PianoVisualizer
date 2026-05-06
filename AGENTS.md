@@ -10,11 +10,10 @@ truth for **how to work here**, complementing `CLAUDE.md` (which describes
 1. **Always run** `pnpm verify` before claiming "done". It runs
    `lint + typecheck + test + build:web`. If you can't get to green, your task
    isn't done.
-2. **Two source-of-truth realities**:
-   - `app.js` + `app.css` + `index.html` at repo root = **production today**.
-   - `packages/**` = **migration target**. Engine extraction in progress.
-   - Most tasks live in ONE of those two worlds. Don't straddle without reading
-     the "Cross-cutting changes" section below.
+2. **Source of truth** is now `packages/**` (Phase 0b.3 retired the repo-root
+   3-file shell on 2026-05-06). The legacy vanilla shell lives at
+   [`packages/web/src/legacy-app.js`](packages/web/src/legacy-app.js) and is
+   awaiting Phase 0c TypeScript conversion.
 3. **Work item discovery**:
    - **Open issues** labeled `agent-task` are the highest-priority queue.
    - `NEXT.md` lists the next 5–10 actionable extractions in execution order.
@@ -34,13 +33,13 @@ truth for **how to work here**, complementing `CLAUDE.md` (which describes
 | ----- | -------------------------------------------------------- | -------------------------------------------------------------- |
 | 1     | Read any file                                            | Yes                                                            |
 | 1     | Run `pnpm verify` / `pnpm lint` / `pnpm test`            | Yes                                                            |
-| 1     | Run `node --check app.js` / `sw.js`                      | Yes                                                            |
+| 1     | Run `node --check packages/web/src/legacy-app.js`        | Yes                                                            |
 | 1     | Run `gh pr view` / `gh issue list`                       | Yes                                                            |
 | 2     | Edit files under `packages/`                             | Yes if scoped to your task                                     |
 | 2     | Add tests under `packages/*/tests`                       | Yes                                                            |
 | 2     | Edit docs under `docs/` (PRIVACY, COMPLIANCE, LICENSES)  | Yes                                                            |
 | 2     | Update `CLAUDE.md`, `AGENTS.md`, `ROADMAP.md`, `NEXT.md` | Yes                                                            |
-| 3     | Edit legacy `app.js` / `app.css`                         | Yes if your task says "legacy"                                 |
+| 3     | Edit `packages/web/src/legacy-app.js` / `public/app.css` | Yes if your task says "legacy"                                 |
 | 3     | Open a draft PR                                          | Yes                                                            |
 | 3     | Run `pnpm install` (touches `pnpm-lock.yaml`)            | Yes if a deps change is part of your task                      |
 | 4     | Force-push, rebase published branches                    | **Ask first**                                                  |
@@ -72,7 +71,7 @@ truth for **how to work here**, complementing `CLAUDE.md` (which describes
 
 These have caught past agents. Don't "fix" them:
 
-- **`SHADOW_BLUR_ENABLED` overridden at runtime** in `app.js`. The CONFIG
+- **`SHADOW_BLUR_ENABLED` overridden at runtime** in `legacy-app.js`. The CONFIG
   literal value is a default; `PERF_TIER` detection rewrites it. See
   `packages/core/src/render/perf-tier.ts`.
 - **Duplicated `MAX_PARTICLES_3D` and `CONFIG.MAX_PARTICLES`**. Different caps
@@ -87,45 +86,43 @@ These have caught past agents. Don't "fix" them:
   mid-session).
 - **`#midiRescanBtn` element + handler appears unused**. Hidden via CSS
   `display: none`; kept as a back-compat shim because callsites still toggle
-  `.visible` on it. Documented in app.js comments.
+  `.visible` on it. Documented in legacy-app.js comments.
 - **`/log` POST in `remoteLog`**. Gated by `REMOTE_LOG_ENABLED` (LAN dev only).
   Don't enable globally; native builds must strip entirely.
 - **`commit-pinned jsDelivr URL`** for the music library. Pinned to a specific
   SHA on purpose (App Store 4.7 compliance). Bumping the SHA is a deliberate
   action with a docs/LICENSES audit attached.
 
-## Cross-cutting changes (legacy ↔ packages)
+## Cross-cutting changes (legacy-app.js ↔ @piano/core)
 
-If a change must touch BOTH `app.js` AND `packages/`:
+If a change must touch BOTH `packages/web/src/legacy-app.js` AND
+`packages/core/`:
 
 1. Make the change in `packages/core/` first with a test.
-2. Manually port the same change to `app.js`. Annotate with a comment:
-   `// MIRROR of packages/core/src/<path> — keep in sync until Phase 0b complete.`
-3. Open a follow-up issue tagged `phase-0b` to delete the mirror once the legacy
-   build switches to the bundled core.
-
-This is friction, but the cost of getting the two out of sync is worse.
+2. Update the call site in `legacy-app.js` to delegate via `PianoCore.*`.
+3. After Phase 0c (TS conversion of `legacy-app.js`), this dance collapses into
+   a normal monorepo edit.
 
 ## File-touching matrix
 
 When you change X, also consider Y:
 
-| Change                                 | Also update                                                                                     |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| New CONFIG key in `app.js`             | `CLAUDE.md` "Key Configuration" section                                                         |
-| New i18n key                           | Both `en` and `jp` strings — never half. Default lang is `en`.                                  |
-| New playbook                           | Add to `.claude/skills/` index in this file (below)                                             |
-| New permission needed (mic, BLE, etc.) | `docs/PRIVACY.md`, `packages/mobile/README.md`, native manifest snippets                        |
-| New external network endpoint          | `docs/PRIVACY.md` "Network access" table, `sw.js` cache list, `vite.config.ts` `runtimeCaching` |
-| New bundled music score                | `docs/LICENSES/README.md`, `assets/`, `sw.js` `APP_SHELL`                                       |
-| New CONFIG threshold tuned             | Comment with the empirical observation that prompted the change                                 |
-| New `state.X` field                    | Pre-declare in the `state = { ... }` object literal (V8 hidden class stability)                 |
+| Change                                 | Also update                                                                                                |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| New CONFIG key in `legacy-app.js`      | `CLAUDE.md` "Key Configuration" section                                                                    |
+| New i18n key                           | Both `en` and `jp` strings — never half. Default lang is `en`.                                             |
+| New playbook                           | Add to `.claude/skills/` index in this file (below)                                                        |
+| New permission needed (mic, BLE, etc.) | `docs/PRIVACY.md`, `packages/mobile/README.md`, native manifest snippets                                   |
+| New external network endpoint          | `docs/PRIVACY.md` "Network access" table, `packages/web/vite.config.ts` `runtimeCaching` (VitePWA workbox) |
+| New bundled music score                | `docs/LICENSES/README.md`, `packages/web/public/assets/`, VitePWA `globPatterns`                           |
+| New CONFIG threshold tuned             | Comment with the empirical observation that prompted the change                                            |
+| New `state.X` field                    | Pre-declare in the `state = { ... }` object literal (V8 hidden class stability)                            |
 
 ## Available playbooks
 
 (`.claude/skills/<name>.md`)
 
-- `extract-module` — move a function from `app.js` into `packages/core/`
+- `extract-module` — move a function from `legacy-app.js` into `packages/core/`
 - `add-song-to-library` — extend `ONLINE_LIBRARY` with a new piece
 - `dev-workflow` — common commands cheat sheet
 - `before-pr` — pre-PR self-review checklist
@@ -139,7 +136,7 @@ A task is done when ALL of:
 
 - [ ] Acceptance criteria from the issue / playbook met
 - [ ] `pnpm verify` green
-- [ ] If touching legacy: `node --check app.js && node --check sw.js` green
+- [ ] If touching legacy: `node --check packages/web/src/legacy-app.js` green
 - [ ] If new module: at least one Vitest test exists
 - [ ] If user-visible: tested in desktop Chrome at minimum
 - [ ] If user-visible AND has audio path: tested with mic OR MIDI

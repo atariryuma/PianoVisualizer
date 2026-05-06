@@ -5,69 +5,47 @@ should pick up `NEXT.md` for immediate-next tasks; this file is for orientation.
 
 Last updated: **2026-05-06**.
 
-## Phase 0a — 3-file split ✅ DONE
+## Phase 0a — 3-file split ✅ DONE (2026-05-05)
 
-Split monolithic `piano-visualizer.html` (~9000 lines) into:
+Split monolithic `piano-visualizer.html` (~9000 lines) into a 3-file shell
+(`index.html` + `app.css` + `app.js` + `sw.js` v2). The `piano-visualizer.html`
+redirect stub was retired the next day once we confirmed
+`manifest.json#start_url` was always `./`.
 
-- [x] `index.html`
-- [x] `app.css`
-- [x] `app.js`
-- [x] `sw.js` v2 with new cache list
-- [x] `piano-visualizer.html` redirect stub (retired 2026-05-06 — see SW v7)
+## Phase 0b — monorepo scaffold + extraction ✅ DONE (2026-05-06)
 
-**DoD met:** `node --check app.js && node --check sw.js` green; PWA install path
-unchanged. The legacy-URL redirect was kept for a day post-split, then dropped
-once we confirmed `manifest.json#start_url` was always `./`.
+### 0b.1 Scaffold ✅ (pre-existing)
 
-## Phase 0b — monorepo scaffold + extraction 🟡 IN PROGRESS
+`packages/core` (TS, DOM-free), `packages/web` (Vite shell), `packages/mobile`
+(Capacitor wrapper), `packages/plugins/capacitor-piano-midi` (Swift + Kotlin),
+`MidiInputAdapter` interface + `perf-tier` extracted.
 
-### 0b.1 Scaffold ✅ DONE
+### 0b.2 Engine extraction ✅
 
-- [x] `packages/core` (TypeScript, no DOM globals)
-- [x] `packages/web` (Vite shell)
-- [x] `packages/mobile` (Capacitor wrapper)
-- [x] `packages/plugins/capacitor-piano-midi` (Swift + Kotlin)
-- [x] `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`
-- [x] `MidiInputAdapter` interface + `perf-tier` extracted
+35 modules now live in `@piano/core` with 680 vitest cases. The full table is
+rotated into `NEXT.md` under "✅ Completed". Coverage spans: audio detection
+(chord, YIN, spectral, harmonicity, onset, AGC, audio-context, chord-window),
+library (musicxml-meta, auto-section, user-songs, musetrainer-catalog), state
+(session-confidence, practice-state, midi-state, flow-meter, encouragement,
+quest-tracker, quality + quality- history, pitch-stability, wake-up-flash,
+streak), render (particles, ripples, effects, keyboard, lane, background, theme,
+spectrum, center- glow, stage, midi-beams), and i18n + config.
 
-### 0b.2 Engine extraction ⏳ TODO
+### 0b.3 Dual-build wire-up ✅ (2026-05-06)
 
-Extract pure modules from `app.js` into `packages/core/src/`. Each row below
-corresponds to a leaf-level agent task. Order is by complexity asc.
+`packages/web` is now the production entry. `packages/web/src/main.ts` imports
+Tone / OSMD / JSZip / `@piano/core` from npm, pins them to `globalThis`, and
+dynamically imports `legacy-app.js` (formerly the root `app.js`) for its
+IIFE-style side effects. Repo-root 3-file shell + `dist-legacy/core-bundle.js`
+IIFE retired in the same commit set; `https_server.ps1` defaults to serving
+`packages/web/dist/`.
 
-- [ ] `audio/chord.ts` — already pure, ~30 lines, low risk
-- [ ] `audio/yin.ts` — pure DSP, requires Float32Array tests
-- [ ] `audio/spectral.ts` — flatness, crest, centroid, CV
-- [ ] `audio/harmonicity.ts` — partials check
-- [ ] `audio/audio-context.ts` — `createAudioContext`, `recoverAudioContext`
-- [ ] `audio/onset.ts` — uses spectral + harmonicity (depends on above)
-- [ ] `audio/agc.ts` — software AGC + voice suppression
-- [ ] `library/musicxml-meta.ts` — parser for title/composer/measure count
-- [ ] `library/auto-section.ts` — already pure
-- [ ] `library/user-songs.ts` — IndexedDB CRUD
-- [ ] `state/game-state.ts` — flow / combo / stage transitions
-- [ ] `state/practice-state.ts` — section progression, hit windows
-- [ ] `state/midi-state.ts` — active notes, sustained, chord window
-- [ ] `state/session-confidence.ts` — ring buffer + waiting/warmup/performing
-- [ ] `state/quality.ts` — rhythm/dynamics/stability scoring
-- [ ] `i18n/index.ts` — `t()` + T_STRINGS
-- [ ] `render/particles.ts` — Particle class + spawn helpers
-- [ ] `render/lane.ts` — falling notes lane
-- [ ] `render/keyboard.ts` — virtual keyboard
-- [ ] `render/effects.ts` — encouragement effects
-- [ ] `render/theme.ts` — themes + synesthesia
-- [ ] `config.ts` — CONFIG object
-
-**DoD:** `app.js` imports `<core-bundle>` and uses extracted functions. Behavior
-identical (manual A/B test on iPad).
-
-### 0b.3 Dual-build wire-up ⏳ TODO
-
-- [ ] Vite build outputs `dist/core-bundle.js` consumable from `app.js`
-- [ ] `app.js` thinned to glue + DOM wiring
-- [ ] Eventually: `index.html` updated to load Vite bundle directly
-
-**DoD:** Repo root `index.html` is the same shell that `packages/web` serves.
+**DoD met:** `pnpm verify` clean (lint + typecheck + 680/680 tests +
+`pnpm build:web`); Windows + iPad smoke test verified end-to-end (DIAG tick log
+shows OSMD cursor advance, Tone scheduler running, hit detection working). The
+legacy 3-file shell at the repo root no longer exists; the only remaining
+"vanilla shell" file is `packages/web/src/legacy-app.js`, which Phase 0c will
+rewrite to TS.
 
 ## Phase 0c — TypeScript migration ⏸ NOT STARTED
 

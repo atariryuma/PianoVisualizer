@@ -13,12 +13,12 @@ review (reviewers ask for license PDFs even for clearly-PD pieces).
 
 ## Downloadable library (musetrainer/library, pinned commit `9128876f6164d96997c877a2be843349a32bdabb`)
 
-The library code (`app.js`, function `fetchLibrary`) only fetches files from the
-pinned commit. To add a new commit:
+The library code (`legacy-app.js`, function `fetchLibrary`) only fetches files
+from the pinned commit. To add a new commit:
 
 1. Verify each new score's PD status (composer death + 70 OR pre-1925 US
    publication).
-2. Update `LIBRARY_PINNED_SHA` in `app.js`.
+2. Update `LIBRARY_PINNED_SHA` in `legacy-app.js`.
 3. Add per-piece evidence to this README.
 4. Resubmit to App Store (the catalog change is a content change → 4.7 review).
 

@@ -55,7 +55,7 @@ Three suspects:
 
 Edit BOTH:
 
-- `app.js` → the `PERF_PROFILE` lookup (top of audio init section)
+- `legacy-app.js` → the `PERF_PROFILE` lookup (top of audio init section)
 - `packages/core/src/render/perf-tier.ts` → the `PERF_PROFILES` const
 
 Keep them in sync (the MIRROR pattern from `extract-module` skill).
@@ -72,7 +72,7 @@ bgStarCount:     30 ... 200
 ### 4. Tune the detection heuristic if needed
 
 If a device is consistently mis-tiered, edit `detectPerfTier()` in
-`packages/core/src/render/perf-tier.ts` (and the mirror in `app.js`).
+`packages/core/src/render/perf-tier.ts` (and the mirror in `legacy-app.js`).
 
 Useful signals:
 

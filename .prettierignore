@@ -1,6 +1,5 @@
 # Generated / vendored
 dist/
-dist-legacy/
 build/
 node_modules/
 *.min.js
@@ -13,14 +12,13 @@ packages/mobile/ios/
 packages/mobile/android/
 packages/plugins/*/dist/
 
-# Legacy single-file build — formatting it would explode the diff
-app.js
-app.css
-index.html
+# Legacy shell — formatting it would explode the diff. Phase 0c TS migration
+# will convert + reformat as a single move.
+packages/web/src/legacy-app.js
 
 # Lockfiles
 pnpm-lock.yaml
 
 # Asset binaries
 *.mxl
-assets/
+packages/web/public/assets/

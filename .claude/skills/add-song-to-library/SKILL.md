@@ -53,7 +53,7 @@ Where `<id>` is a short, lowercase, underscore-separated identifier
 
 #### 3. Register in SONGS
 
-In `app.js`, find `const SONGS = { ... }` (around line 5060) and add:
+In `legacy-app.js`, find `const SONGS = { ... }` (around line 5060) and add:
 
 ```js
 const SONGS = {
@@ -119,7 +119,7 @@ measures.
 
 #### 4. i18n strings
 
-Add to `T_STRINGS` in `app.js`:
+Add to `T_STRINGS` in `legacy-app.js`:
 
 ```js
 bachInv1:        { en: 'Invention No. 1',          jp: 'インヴェンション第1番' },

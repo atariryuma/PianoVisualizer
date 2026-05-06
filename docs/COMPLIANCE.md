@@ -6,10 +6,10 @@ item cites the relevant rule and the evidence to attach.
 ## Pre-flight (every build)
 
 - [ ] `REMOTE_LOG_ENABLED` resolves to `false` in mobile build (verify via grep
-      of bundled `app.js` — string `/log` should not appear except in comments).
-      The current code gates by `location.hostname` checks, but Capacitor's
-      `capacitor://localhost` would falsely match `localhost` — use a build-time
-      `--define` flag to force-disable.
+      of bundled `legacy-app.js` — string `/log` should not appear except in
+      comments). The current code gates by `location.hostname` checks, but
+      Capacitor's `capacitor://localhost` would falsely match `localhost` — use
+      a build-time `--define` flag to force-disable.
 - [ ] No external links surfaced in UI when running with
       `Capacitor.isNativePlatform()` true. (Apple 1.3 Kids Category bans
       external links without parental gate.)

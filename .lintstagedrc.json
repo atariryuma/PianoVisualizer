@@ -1,5 +1,8 @@
 {
-  "packages/**/*.{ts,tsx,js,jsx}": ["prettier --write", "eslint --fix --max-warnings=0"],
+  "packages/**/*.{ts,tsx,js,jsx}": [
+    "prettier --write",
+    "eslint --fix --max-warnings=0 --no-warn-ignored"
+  ],
   "packages/**/*.{json,yml,yaml,md}": ["prettier --write"],
   "*.{md,yml,yaml,json}": ["prettier --write"]
 }

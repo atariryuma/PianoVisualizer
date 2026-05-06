@@ -3,8 +3,7 @@
 Real-time piano visualizer for upper-elementary children. Plays beautifully on
 iPad with mic input or a USB / Bluetooth MIDI keyboard.
 
-> Single-file vanilla-JS PWA today. Capacitor 6 monorepo (iOS + Android + web)
-> in progress.
+> Vite + pnpm monorepo. Capacitor 6 wrapper for iOS + Android in progress.
 
 ## Features
 
@@ -20,10 +19,16 @@ iPad with mic input or a USB / Bluetooth MIDI keyboard.
 ## Quick start (web, dev)
 
 ```bash
+pnpm install
+
 # Generate self-signed certs for HTTPS (mic requires HTTPS):
 powershell -File gen_cert.ps1
 
-# Start the LAN HTTPS server (port 8443):
+# Build + serve the web shell on port 8443:
+pnpm serve
+
+# Or run them separately:
+pnpm build:web                 # → packages/web/dist/
 powershell -File https_server.ps1
 
 # Open in your browser:
@@ -36,42 +41,41 @@ iPad needs the cert installed as a trusted profile — see
 
 ## Project layout
 
-This repo is mid-migration from a single-file PWA to a Vite + Capacitor
-monorepo. **The single-file build (`index.html` + `app.css` + `app.js`) is
-authoritative for now.**
-
 ```
-.                           ← Authoritative web app (PWA, LAN-served)
-├── index.html
-├── app.css
-├── app.js
-├── sw.js
-├── manifest.json
-├── assets/                 ← Bundled MusicXML scores
-│
-├── packages/               ← Migration target (Phase 0/1/2 in progress)
-│   ├── core/               ← Pure-TS engine
-│   ├── web/                ← Vite PWA shell
-│   ├── mobile/             ← Capacitor wrapper
+.
+├── packages/               ← Source of truth
+│   ├── core/               ← Pure-TS engine (35 modules, 680 tests)
+│   ├── web/                ← ★ Vite PWA shell — production entry
+│   │   ├── index.html
+│   │   ├── public/         ← app.css + manifest + icon + scores
+│   │   └── src/
+│   │       ├── main.ts     ← Module entry — seeds globals, imports legacy
+│   │       └── legacy-app.js  ← Vanilla shell (Phase 0c rewrite pending)
+│   ├── mobile/             ← Capacitor 6 wrapper
 │   └── plugins/
-│       └── capacitor-piano-midi/  ← Native MIDI plugin
+│       └── capacitor-piano-midi/  ← Native MIDI plugin (Swift + Kotlin)
 │
+├── gen_cert.ps1            ← Self-signed cert generator (LAN dev)
+├── https_server.ps1        ← PowerShell HTTPS server (port 8443)
 └── docs/                   ← Privacy / compliance / score licenses
 ```
 
 ## Roadmap
 
-- [x] **Phase 0a**: 3-file split (HTML/CSS/JS) — _2026-05-05_
-- [x] **Phase 0b setup**: monorepo scaffold + perf tier + AudioContext fixes —
+- [x] **Phase 0a**: split 9000-line monolith into 3-file HTML/CSS/JS shell —
       _2026-05-05_
-- [ ] **Phase 0b extraction**: move engine into `packages/core/` modules
-- [ ] **Phase 0c**: TypeScript migration (incremental, JSDoc-first)
+- [x] **Phase 0b extraction**: move engine into `packages/core/` modules — 35
+      modules, 680 tests — _2026-05-06_
+- [x] **Phase 0b.3**: dual-build wire-up — `packages/web` is the production
+      entry, legacy 3-file shell retired — _2026-05-06_
+- [ ] **Phase 0c**: TypeScript migration of `legacy-app.js` (incremental,
+      JSDoc-first)
 - [ ] **Phase 1**: `npx cap add ios && npx cap add android` + first installable
       build
 - [ ] **Phase 2a**: Validate `capacitor-piano-midi` against real iOS hardware
 - [ ] **Phase 2b**: Same on Android
-- [ ] **Phase 3**: CDN bundle removal + privacy manifest + 5.2.3 evidence
-      collection
+- [ ] **Phase 3**: Privacy manifest + 5.2.3 evidence collection (CDN deps are
+      already npm-bundled via Vite)
 - [ ] **Phase 4**: App Store + Play Store submission
 
 See [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) for the submission checklist.

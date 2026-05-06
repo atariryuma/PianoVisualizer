@@ -6,12 +6,11 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-06** (35 modules extracted; per-onset trio
-(quality-history / pitch-stability / chord-window) plus the wake-up flash,
-daily-streak, and MIDI-beam adapters are now all in core. Quest-cooldown turned
-out to be subsumed by the existing quest-tracker's `postCompletionDelayMs` and
-was not extracted separately. Phase 0b.3 dual-build wire-up is the next
-architectural milestone.)
+Last refreshed: **2026-05-06** (Phase 0b.3 dual-build wire-up is **done**:
+`packages/web` is now the production entry, the legacy 3-file shell at the repo
+root has been retired, `legacy-app.js` lives under `packages/web/src/`. 35
+modules in `@piano/core` with 680 vitest cases. Next architectural milestone is
+Phase 0c — TypeScript conversion of `legacy-app.js` into proper modules.)
 
 ---
 
@@ -55,67 +54,66 @@ architectural milestone.)
 | 34  | `state/streak.ts`             | 19    | `packages/core/src/state/streak.ts`             |
 | 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
 
-**Status: 684/684 tests green, 0 lint errors, 0 type errors. `pnpm verify`
-clean.**
+**Status: 680/680 tests green, 0 lint errors, 0 type errors. `pnpm verify`
+clean. Phase 0b.3 dual-build complete; legacy IIFE bundle smoke test removed (4
+cases) — the IIFE bundle is no longer produced.**
 
 ---
 
 ## ⏳ In queue
 
-## 1. Phase 0b.3 — dual-build wire-up
-
-**What**: Make `packages/web` the real production entry, not a placeholder. Vite
-consumes `@piano/core` directly; `app.js` shrinks to glue + DOM wiring.
-Eventually `index.html` loads the Vite output (or a copy of it) instead of the
-legacy 3-file shell.
-
-**Why**: With 35 modules extracted, the legacy app.js is now mostly adapters /
-DOM glue / per-frame composition. The next major reduction requires moving the
-entry, which is an architectural cut — needs a single PR with full LAN-test +
-iPad + service-worker validation, not piecemeal.
-
-**Acceptance**:
-
-- [ ] `pnpm --filter @piano/web build` produces a working `dist/` that serves
-      equivalently to the current root `index.html`
-- [ ] PWA service worker still caches the right asset list
-- [ ] OSMD load path still works (Vite handles the dynamic-import properly)
-- [ ] LAN HTTPS server renamed/repurposed to serve the Vite output
-- [ ] iPad + Web MIDI Browser both render the visualizer end-to-end
-- [ ] Manual A/B against legacy build: identical behavior on at least three
-      songs (Für Elise, La Campanella, a user-imported piece)
-
-**Est**: ~400 lines of moves + a handful of new files. Roughly 1 day's work.
-
-## 2. OSMD adapter design
+## 1. OSMD adapter design
 
 **What**: Wrap the OpenSheetMusicDisplay touch points (cursor positioning,
-notehead highlight, score load, note extraction) behind a thin core interface so
-the legacy `app.js` and the future `packages/web` can share the same OSMD wiring
-without copy-paste.
+notehead highlight, score load, note extraction) behind a thin core interface.
+Phase 0c will split `legacy-app.js` into typed modules, and those modules will
+need to talk to OSMD without bringing the entire OSMD type surface into core.
 
-**Why**: The recent cursor / notehead-highlight work touched several legacy-
-shaped surfaces (DOM lookups, SVG mutation, OSMD object property reads) that
-will be a friction point once `packages/web` becomes authoritative. Easier to
-design the abstraction now while the call sites are fresh.
+**Why**: The recent cursor / notehead-highlight work touched several
+legacy-shaped surfaces (DOM lookups, SVG mutation, OSMD object property reads).
+Designing the abstraction now means Phase 0c can split modules against a stable
+interface instead of mid-refactor reshaping it.
 
 **Acceptance**:
 
 - [ ] `packages/core/src/adapters/osmd-adapter.ts` interface (no concrete
-      implementation; the OSMD library itself stays in the shells)
+      implementation; the OSMD library itself stays in `packages/web/`)
 - [ ] Methods cover: `loadScore`, `getCursorPositionAt`, `getCurrentNotes`,
       `walkIteratorTo`, `highlightNotes`, `clearHighlights`
-- [ ] Legacy app.js implements the interface as a thin adapter over its existing
-      `osmd` instance
+- [ ] `legacy-app.js` implements the interface as a thin adapter over its
+      existing `osmd` instance
 - [ ] All cursor / highlight / scroll call sites go through the adapter
 
 **Est**: ~250 lines core + ~150 lines legacy adapter. ~half-day.
+
+## 2. Phase 0c kickoff — JSDoc-typed boundaries on `legacy-app.js`
+
+**What**: Add JSDoc `@type` annotations at the function-signature boundary of
+`legacy-app.js` (parameters + returns) so TypeScript can typecheck call sites
+without a full `.js → .ts` rename.
+
+**Why**: Renames are big-bang; JSDoc-first lets us land typing incrementally.
+Each typed function becomes a candidate for extraction into `@piano/core` — and
+the `// @ts-expect-error` shim in `packages/web/src/main.ts` for the dynamic
+legacy import disappears once `legacy-app.js` declares an `export {}` and gains
+real types.
+
+**Acceptance**:
+
+- [ ] `packages/web/tsconfig.json` enables `allowJs` + `checkJs`
+- [ ] Top-level `legacy-app.js` symbols (`state`, `CONFIG`, `DOM`) gain JSDoc
+      types
+- [ ] `pnpm typecheck` reports zero errors with `legacy-app.js` checked (initial
+      baseline; ratchet TS strictness later)
+- [ ] `// @ts-expect-error` shim in `main.ts` removed
+
+**Est**: ~150 lines of JSDoc, no behavior change.
 
 ---
 
 ## Backlog (rotate up as items complete)
 
-(empty — the in-queue items now blockers for further work)
+(empty — the in-queue items are the architectural blockers for further work.)
 
 ---
 

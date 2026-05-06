@@ -1,0 +1,2366 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a14;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:root {
+  /* === Design tokens — "starry-night kids' piano studio" ===
+         Goal: keep the playful + magical character (kids 9-12, bilingual,
+         celebratory game feel) while unifying spacing, color, radius, and
+         shadow so the chrome reads as crafted instead of random. We are
+         NOT moving to Apple-HIG cold minimalism; the warm purple/pink
+         dark palette and emoji-rich identity are intentional. */
+
+  /* Type scale — system fonts only (no webfonts; offline-friendly).
+         The display family adds personality to headings; body family is
+         the OS default for crisp legibility on settings labels etc. */
+  --font-body: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-display:
+    'Hiragino Maru Gothic ProN', 'Quicksand', 'Avenir Next', 'Hiragino Sans', -apple-system,
+    sans-serif;
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.85rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.15rem;
+  --fs-xl: 1.4rem;
+  --fs-2xl: 1.8rem;
+  --fs-3xl: 2.6rem;
+  --fs-display: 3.4rem;
+
+  /* Radius scale — generous rounding for a friendly, kid-safe feel. */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-pill: 999px;
+
+  /* Spacing scale — 4px grid. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Shadow scale — soft + colored, not hard black. Matches the
+         "particle aurora" backdrop better than a stark drop shadow. */
+  --shadow-soft: 0 4px 16px rgba(80, 40, 120, 0.25);
+  --shadow-lift: 0 8px 28px rgba(80, 40, 120, 0.35);
+  --shadow-glow-purple: 0 0 24px rgba(180, 140, 255, 0.35);
+  --shadow-glow-pink: 0 0 24px rgba(255, 160, 210, 0.35);
+
+  /* Color tokens — surfaces + text + accents. Single palette for every
+         modal / button / chip so visual rhythm stays consistent. */
+  --c-bg-deep: #0a0a14;
+  --c-bg-soft: #151530;
+  --c-surface: rgba(20, 20, 36, 0.92);
+  --c-surface-raised: rgba(28, 28, 50, 0.96);
+  --c-surface-hover: rgba(40, 30, 70, 0.65);
+  --c-border-subtle: rgba(255, 255, 255, 0.08);
+  --c-border: rgba(255, 220, 230, 0.25);
+  --c-border-strong: rgba(255, 220, 230, 0.45);
+  --c-text-primary: #f4ecff;
+  --c-text-secondary: rgba(244, 236, 255, 0.72);
+  --c-text-muted: rgba(244, 236, 255, 0.45);
+  --c-accent-pink: #ff8cd8;
+  --c-accent-purple: #a98cff;
+  --c-accent-cyan: #6ce0ff;
+  --c-accent-mint: #98f0c8;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.18, 0.9, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 150ms;
+  --t-base: 250ms;
+  --t-slow: 400ms;
+
+  /* === Safe-area edges (notch / home-indicator) === */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* === Top cluster (practiceTopBar pill + 🏠/⚙ button) ===
+         JS (syncLayout) overrides this with the measured bottom of those
+         elements. Default is a sensible first-paint fallback. */
+  --top-cluster-bottom: calc(var(--safe-top) + 56px);
+
+  /* === Keyboard preview reserve ===
+         JS keeps these in sync with the runtime kbHeight / safe-bottom. */
+  --kb-bottom-inset: calc(var(--safe-bottom) + 4px);
+  --kb-height: 50px;
+
+  /* === OSMD score panel region (defaults = phone-portrait stacked) ===
+         All four corners are var()-driven so layout-mode overrides below
+         can move/resize the panel without touching #osmdContainer's CSS.
+         (set width:auto + left/right for stretch, or width:value + right:auto
+         for left-anchored fixed-width.) */
+  --osmd-top: calc(var(--top-cluster-bottom) + 8px);
+  --osmd-left: max(8px, var(--safe-left));
+  --osmd-right: max(8px, var(--safe-right));
+  --osmd-width: auto;
+  --osmd-height: clamp(140px, 28vh, 240px);
+}
+
+/* === Layout-mode overrides ===
+       JS (syncLayout) sets <body data-layout="..."> based on viewport.
+       Each mode redefines the OSMD region; #osmdContainer just consumes
+       the variables. Adding a new breakpoint = add one selector here. */
+
+/* phone-landscape: split — OSMD left half (full height), lanes right half.
+       Solves the "180px score eats half the 360px viewport" problem on
+       horizontal phones. Drawer translates the canvas by laneLeft so the
+       lane.ts code is reused unchanged. */
+body[data-layout='phone-landscape'] {
+  --osmd-top: calc(var(--top-cluster-bottom) + 4px);
+  --osmd-left: max(8px, var(--safe-left));
+  --osmd-right: auto;
+  --osmd-width: calc(50vw - max(16px, var(--safe-left)));
+  --osmd-height: calc(
+    100vh - var(--top-cluster-bottom) - var(--kb-height) - var(--kb-bottom-inset) - 16px
+  );
+}
+
+/* tablet / desktop: stacked but centered with max-width and roomier
+       height so the score doesn't stretch awkwardly across a 1440px monitor. */
+/* tablet / desktop: max 1280 wide (iPad Pro 12.9 landscape, 27"+ desktop)
+       so the score panel uses the available headroom rather than feeling
+       cramped at 960. Heights bumped to 32–40 vh range so two-staff scores
+       with high ledger lines (Liszt, La Campanella) don't get clipped. */
+body[data-layout='tablet'],
+body[data-layout='desktop'] {
+  --osmd-left: max(16px, calc(50vw - 640px));
+  --osmd-right: max(16px, calc(50vw - 640px));
+  --osmd-top: calc(var(--top-cluster-bottom) + 12px);
+  --osmd-height: clamp(220px, 36vh, 560px);
+}
+body[data-layout='desktop'] {
+  --osmd-height: clamp(240px, 40vh, 640px);
+}
+
+/* phone-landscape elements that would otherwise sit behind the OSMD
+       panel on the left half. flowGauge moves to the seam between OSMD
+       and lanes; bottom labels squeeze toward the lane's center so they
+       don't bridge across the score panel. */
+body[data-layout='phone-landscape'] #flowGauge {
+  left: calc(50vw + 2px);
+  height: 70vh;
+}
+body[data-layout='phone-landscape'] #stageLabel,
+body[data-layout='phone-landscape'] #noteDisplay {
+  left: 75vw;
+}
+
+/* Modal cards (settings / song detail / result / summary / add-song)
+       are 88-92vw on phones — fine — but capped at ~340-520px which
+       feels lonely on tablets/desktops with 1000+ px of width. Widen
+       the caps so the cards utilize the available headroom. */
+body[data-layout='tablet'] .settings-card,
+body[data-layout='desktop'] .settings-card,
+body[data-layout='tablet'] .song-card,
+body[data-layout='desktop'] .song-card {
+  max-width: 600px;
+}
+body[data-layout='tablet'] .result-card,
+body[data-layout='desktop'] .result-card {
+  max-width: 480px;
+}
+body[data-layout='tablet'] .summary-card,
+body[data-layout='desktop'] .summary-card {
+  max-width: 440px;
+}
+body[data-layout='tablet'] .add-song-card,
+body[data-layout='desktop'] .add-song-card {
+  max-width: 720px;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+
+#startScreen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  /* Mesh-gradient backdrop: 3 stacked radial gradients give the
+         title screen a "starry sky over an aurora" feel without needing
+         an image. Pure CSS, GPU-friendly, ages well. */
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 30%, rgba(160, 80, 220, 0.25), transparent 60%),
+    radial-gradient(ellipse 70% 60% at 80% 70%, rgba(255, 100, 180, 0.18), transparent 60%),
+    radial-gradient(ellipse at center, #181838 0%, #0a0a14 100%);
+}
+
+/* Decorative glow ring behind the title — pulses very gently so the
+       title screen feels alive without being noisy. Disabled when the
+       device opts into prefers-reduced-motion. */
+#startScreen::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(900px, 90vw);
+  height: min(900px, 90vw);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    rgba(180, 140, 255, 0.12) 0%,
+    rgba(180, 140, 255, 0.06) 30%,
+    transparent 60%
+  );
+  pointer-events: none;
+  animation: titleGlowPulse 8s var(--ease-out) infinite;
+}
+@keyframes titleGlowPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #startScreen::before {
+    animation: none;
+  }
+}
+
+#startScreen h1 {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: var(--fs-3xl);
+  color: var(--c-text-primary);
+  margin-bottom: var(--sp-3);
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  /* Subtle text-shadow stack: a tiny dark depth + a wide soft glow,
+         so the title reads as luminous on the dark background without
+         looking like a 90s bevel-and-emboss filter. */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 0 24px rgba(180, 140, 255, 0.35),
+    0 0 48px rgba(180, 140, 255, 0.15);
+  background: linear-gradient(135deg, #fff 0%, #ffd9ee 60%, #b9a3ff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+#startScreen p {
+  position: relative;
+  font-size: var(--fs-lg);
+  color: var(--c-text-secondary);
+  margin-bottom: var(--sp-10);
+  letter-spacing: 0.04em;
+}
+
+/* Title text scales with layout: compress on short landscape, enlarge
+       on tablet/desktop where there's headroom. */
+body[data-layout='phone-landscape'] #startScreen h1 {
+  font-size: var(--fs-xl);
+  margin-bottom: var(--sp-1);
+  letter-spacing: 0.08em;
+}
+body[data-layout='phone-landscape'] #startScreen p {
+  margin-bottom: var(--sp-4);
+  font-size: var(--fs-sm);
+}
+body[data-layout='tablet'] #startScreen h1 {
+  font-size: 3rem;
+}
+body[data-layout='desktop'] #startScreen h1 {
+  font-size: var(--fs-display);
+}
+
+#startBtn {
+  font-size: 1.2rem;
+  padding: 1rem 3rem;
+  border: 1px solid rgba(180, 160, 255, 0.4);
+  border-radius: 50px;
+  background: rgba(100, 80, 200, 0.15);
+  color: #c8b8ff;
+  cursor: pointer;
+  transition:
+    background 0.3s,
+    transform 0.3s,
+    border-color 0.3s,
+    color 0.3s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#startBtn:active {
+  background: rgba(100, 80, 200, 0.35);
+  transform: scale(0.97);
+}
+
+#startBtn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Top-right cluster: ⚙ settings + 🏠 home. Always visible so a kid can
+       adjust language/theme/audio-offset before even starting. The home button
+       hides itself on the title screen via body.title-screen.
+       z-index 55 sits above the title screen (10), song panel (30), and
+       session summary (50) so the bar is reachable from every screen, but
+       below the settings panel modal (60) which it launches. */
+#themeBar {
+  position: fixed;
+  top: max(16px, calc(var(--safe-top) + 12px));
+  right: max(16px, var(--safe-right));
+  z-index: 55;
+  display: flex;
+  gap: 8px;
+}
+
+body.title-screen #homeBtn {
+  display: none;
+}
+
+.theme-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition:
+    transform var(--t-base) var(--ease-spring),
+    border-color var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.theme-dot:hover {
+  transform: scale(1.06);
+}
+
+.theme-dot.active {
+  border-color: #fff;
+  transform: scale(1.18);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    0 0 0 3px rgba(255, 255, 255, 0.15),
+    var(--shadow-glow-purple);
+}
+
+.theme-dot:nth-child(1) {
+  background: linear-gradient(135deg, #6a5acd, #ff69b4);
+}
+
+.theme-dot:nth-child(2) {
+  background: linear-gradient(135deg, #00bcd4, #4caf50);
+}
+
+.theme-dot:nth-child(3) {
+  background: linear-gradient(135deg, #ff9800, #f44336);
+}
+
+.theme-dot:nth-child(4) {
+  background: linear-gradient(135deg, #e0e0ff, #a0a0ff);
+}
+
+#synesthesiaToggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition:
+    transform var(--t-base) var(--ease-spring),
+    background var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+
+#synesthesiaToggle:hover {
+  transform: scale(1.06);
+}
+
+#synesthesiaToggle.active {
+  background: linear-gradient(135deg, #fff, #ffd9ee);
+  color: #1a1030;
+  border-color: #fff;
+  transform: scale(1.1);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+/* Settings panel — consolidates theme, synesthesia, audio calibration,
+       MIDI controls, and debug toggle. Opened via the ⚙ button in the top-right. */
+#settingsBtn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 32px;
+  text-align: center;
+  transition:
+    background 0.3s,
+    transform 0.3s;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+  color: #fff;
+}
+
+#settingsBtn:hover,
+#settingsBtn:active {
+  background: rgba(255, 255, 255, 0.25);
+  transform: rotate(90deg);
+}
+
+#settingsPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 16, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+#settingsPanel.visible {
+  display: flex;
+}
+
+.settings-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-xl);
+  padding: var(--sp-6);
+  width: 92vw;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  color: var(--c-text-primary);
+  box-shadow: var(--shadow-lift);
+  backdrop-filter: blur(20px);
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-5);
+}
+
+.settings-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.settings-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--c-text-primary);
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--t-fast) var(--ease-out);
+}
+.settings-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Each settings group is now a soft card so the panel doesn't feel
+       like a flat 2010s admin form. Cards group related controls and
+       give the eye a clear scan rhythm. */
+.settings-section {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-4);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-lg);
+}
+
+.settings-section-label {
+  font-size: var(--fs-sm);
+  color: var(--c-text-secondary);
+  margin-bottom: var(--sp-3);
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+  flex-wrap: wrap;
+}
+
+.settings-theme-row {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+}
+
+.settings-theme-row .theme-dot {
+  margin: 0;
+}
+
+.settings-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.settings-slider-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+}
+
+.settings-slider-label .val {
+  font-variant-numeric: tabular-nums;
+  color: var(--c-accent-cyan);
+  font-weight: 500;
+}
+
+.settings-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: linear-gradient(90deg, rgba(108, 224, 255, 0.35) 0%, rgba(108, 224, 255, 0.12) 100%);
+  border-radius: var(--r-pill);
+  outline: none;
+  margin: var(--sp-2) 0;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #fff, var(--c-accent-cyan) 70%);
+  cursor: pointer;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    0 0 0 4px rgba(108, 224, 255, 0.2);
+  transition: transform var(--t-fast) var(--ease-spring);
+}
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.08);
+}
+.settings-slider:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #fff, var(--c-accent-cyan) 70%);
+  cursor: pointer;
+  border: none;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    0 0 0 4px rgba(108, 224, 255, 0.2);
+}
+
+.settings-help {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.settings-btn {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e8e0ff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.settings-btn:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.settings-btn.danger {
+  border-color: rgba(255, 130, 150, 0.35);
+  color: rgba(255, 200, 210, 0.95);
+}
+
+.settings-input-status {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: rgba(200, 220, 255, 0.9);
+  flex: 1;
+}
+
+#questDisplay {
+  position: fixed;
+  top: 55px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  transition: opacity 0.5s;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#questDisplay.visible {
+  opacity: 1;
+}
+
+.quest-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.quest-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition:
+    background 0.5s,
+    border-color 0.5s,
+    box-shadow 0.5s,
+    transform 0.5s;
+}
+
+.quest-dot.done {
+  background: #ffd700;
+  border-color: #ffaa00;
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
+}
+
+.quest-dot.current {
+  border-color: rgba(255, 255, 255, 0.6);
+  animation: dotPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.quest-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: right;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Center-screen quest CLEARED toast */
+#questToast {
+  position: fixed;
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  z-index: 20;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+}
+
+#questToast.show {
+  animation: toastIn 2.5s ease-out forwards;
+}
+
+@keyframes toastIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+
+  10% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+
+  20% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  75% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(0.9);
+  }
+}
+
+.toast-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow:
+    0 0 20px rgba(255, 215, 0, 0.8),
+    0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.toast-sub {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+#hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  pointer-events: none;
+  display: none;
+}
+
+#introHint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  font-size: 1.6rem;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-shadow:
+    0 0 30px rgba(180, 160, 255, 0.55),
+    0 2px 12px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+
+#introHint.visible {
+  opacity: 1;
+  animation: introHintPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes introHintPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+}
+
+#midiBadge {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  font-size: 0.75rem;
+  padding: 5px 12px;
+  border-radius: 14px;
+  background: rgba(80, 200, 120, 0.18);
+  border: 1px solid rgba(140, 230, 160, 0.45);
+  color: rgba(200, 255, 220, 0.92);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(1);
+  transition:
+    opacity 0.35s,
+    transform 0.12s ease-out,
+    background 0.12s;
+}
+
+#midiBadge.visible {
+  opacity: 1;
+}
+
+#midiBadge.pulse {
+  transform: scale(1.12);
+  background: rgba(120, 230, 160, 0.45);
+}
+
+#micMeter {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  width: 90px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+
+body.midi-on #micMeter {
+  display: none;
+}
+
+#micMeter.visible {
+  opacity: 0.7;
+}
+
+#micMeterFill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 220, 140, 0.85),
+    rgba(255, 220, 100, 0.85),
+    rgba(255, 130, 130, 0.85)
+  );
+  transition: width 0.08s linear;
+}
+
+#encouragement {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  font-size: 1.6rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  text-shadow:
+    0 0 30px rgba(180, 160, 255, 0.6),
+    0 0 60px rgba(180, 160, 255, 0.3);
+  opacity: 0;
+  transition:
+    opacity 0.5s,
+    transform 0.5s;
+  pointer-events: none;
+}
+
+#encouragement.visible {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+#encouragement.entering {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.8);
+}
+
+#flowGauge {
+  position: fixed;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 60vh;
+  max-height: 400px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+#flowFill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  border-radius: 7px;
+  transition:
+    height 0.3s,
+    background 0.5s;
+  height: 0%;
+}
+
+#stageLabel {
+  position: fixed;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.15em;
+  font-weight: 300;
+  opacity: 0;
+  transition:
+    opacity 0.8s,
+    bottom 0.3s;
+}
+body.midi-on #stageLabel {
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+}
+
+#stageLabel.visible {
+  opacity: 1;
+}
+
+#noteDisplay {
+  position: fixed;
+  bottom: calc(50px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: 1.6rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 200;
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 20px rgba(180, 160, 255, 0.5);
+  opacity: 0;
+  transition:
+    opacity 0.4s,
+    bottom 0.3s;
+  pointer-events: none;
+}
+body.midi-on #noteDisplay {
+  bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+}
+
+#noteDisplay.visible {
+  opacity: 1;
+}
+
+#sessionStatus {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.12em;
+  font-weight: 300;
+  opacity: 0;
+  transition: opacity 0.6s;
+  pointer-events: none;
+}
+
+#sessionStatus.visible {
+  opacity: 1;
+}
+
+#qualityScore {
+  position: fixed;
+  top: 55px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.28);
+  letter-spacing: 0.06em;
+  opacity: 0;
+  transition: opacity 0.5s;
+  pointer-events: none;
+  white-space: pre-line;
+  text-align: center;
+  max-width: min(92vw, 640px);
+}
+
+#qualityScore.visible {
+  opacity: 1;
+}
+
+#debugOverlay {
+  position: fixed;
+  bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  left: 4px;
+  z-index: 20;
+  font-size: 11px;
+  font-family: 'SF Mono', Menlo, monospace;
+  color: rgba(0, 255, 150, 0.7);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 6px 10px;
+  border-radius: 6px;
+  pointer-events: none;
+  display: none;
+  line-height: 1.5;
+  white-space: pre;
+  transition: bottom 0.3s;
+}
+body.midi-on #debugOverlay {
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Top-bar circular icon button. */
+#homeBtn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 32px;
+  text-align: center;
+  transition:
+    background 0.3s,
+    transform 0.3s;
+  -webkit-tap-highlight-color: transparent;
+  margin-left: 8px;
+  padding: 0;
+}
+
+#homeBtn:hover,
+#homeBtn:active {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.1);
+}
+
+/* v11: Session Summary Overlay */
+#sessionSummary {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+
+#sessionSummary.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.summary-card {
+  background: rgba(30, 30, 50, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: 28px 32px;
+  text-align: center;
+  max-width: 340px;
+  width: 85vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  color: #fff;
+  animation: summaryPop 0.4s ease-out;
+}
+
+.summary-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.summary-actions button {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #fff;
+  border-radius: 24px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.3s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.summary-actions button:hover,
+.summary-actions button:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.summary-actions .primary {
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.35), rgba(140, 100, 255, 0.35));
+  border-color: rgba(255, 200, 230, 0.6);
+}
+
+@keyframes summaryPop {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.summary-card h2 {
+  margin: 0 0 18px;
+  font-size: 1.4rem;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+}
+
+.summary-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.95rem;
+}
+
+.summary-stat:last-child {
+  border-bottom: none;
+}
+
+.summary-label {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.summary-value {
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+.summary-radar {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.summary-radar canvas {
+  border-radius: 8px;
+}
+
+.summary-quests {
+  text-align: left;
+  margin: 10px 0 6px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.summary-quests-title {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+}
+
+/* Result screen: animated badge stacking */
+.sq-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 4px 0;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.sq-badge.animate-in {
+  animation: badgeBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.sq-badge.done {
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  color: #ffd700;
+}
+
+.sq-badge.undone {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.sq-badge .badge-icon {
+  font-size: 1.1rem;
+  width: 24px;
+  text-align: center;
+}
+
+.sq-badge.done .badge-icon {
+  animation: badgeShine 2s ease-in-out infinite;
+}
+
+@keyframes badgeBounce {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.8);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.03);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes badgeShine {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+
+  50% {
+    filter: brightness(1.4);
+  }
+}
+
+.sq-all-clear {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffd700;
+  padding: 8px;
+  animation: rainbowGlow 3s linear infinite;
+}
+
+@keyframes rainbowGlow {
+  0% {
+    text-shadow: 0 0 10px #ff0000;
+  }
+
+  16% {
+    text-shadow: 0 0 10px #ff8800;
+  }
+
+  33% {
+    text-shadow: 0 0 10px #ffff00;
+  }
+
+  50% {
+    text-shadow: 0 0 10px #00ff88;
+  }
+
+  66% {
+    text-shadow: 0 0 10px #0088ff;
+  }
+
+  83% {
+    text-shadow: 0 0 10px #ff00ff;
+  }
+
+  100% {
+    text-shadow: 0 0 10px #ff0000;
+  }
+}
+
+.summary-best {
+  font-size: 0.75rem;
+  color: rgba(255, 200, 80, 0.6);
+  margin-top: 14px;
+}
+
+/* v11: Play Time Display */
+#playTime {
+  position: fixed;
+  top: 50px;
+  right: 16px;
+  z-index: 4;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
+
+/* ============================== */
+/* Practice Mode song picker          */
+/* ============================== */
+/* Title-screen song picker. Grid columns adapt to body[data-layout]
+       (overrides below) so the buttons use horizontal space on tablet /
+       desktop instead of forming one long stack. The "+ Add a song" tile
+       always spans the final row regardless of column count. */
+#modeButtons {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+  gap: 14px;
+  justify-content: center;
+  margin-top: 4px;
+  width: min(96vw, 1100px);
+}
+body[data-layout='phone-landscape'] #modeButtons,
+body[data-layout='tablet'] #modeButtons {
+  grid-template-columns: repeat(2, minmax(220px, 320px));
+}
+body[data-layout='desktop'] #modeButtons {
+  grid-template-columns: repeat(3, minmax(220px, 320px));
+}
+#modeButtons #addSongBtn {
+  grid-column: 1 / -1;
+  justify-self: center;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.mode-btn {
+  font-family: var(--font-display);
+  font-size: var(--fs-base);
+  padding: 14px 22px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-pill);
+  background: rgba(40, 30, 70, 0.55);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  transition:
+    transform var(--t-base) var(--ease-spring),
+    background var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.06em;
+  width: 100%;
+  backdrop-filter: blur(8px);
+}
+
+.mode-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(60, 45, 100, 0.7);
+  border-color: rgba(180, 140, 255, 0.35);
+}
+
+/* Primary songs lift visually with a soft pink/purple glow so kids
+       can see at a glance which buttons are "the songs" vs the
+       Free Play / Add Song chrome. */
+.mode-btn.primary {
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.35) 0%, rgba(160, 100, 230, 0.35) 100%);
+  border-color: var(--c-border-strong);
+  color: var(--c-text-primary);
+  box-shadow: var(--shadow-soft);
+}
+.mode-btn.primary:hover {
+  box-shadow: var(--shadow-lift), var(--shadow-glow-pink);
+  border-color: rgba(255, 220, 230, 0.7);
+}
+
+.mode-btn:active {
+  transform: scale(0.97);
+}
+
+.mode-btn:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+/* Loading-state swap: show "Starting..." text while audio init is running.
+       The label markup stays intact (so data-i18n re-render isn't fragile). */
+.mode-btn .mode-btn-loading {
+  display: none;
+}
+.mode-btn.is-loading .mode-btn-label {
+  display: none;
+}
+.mode-btn.is-loading .mode-btn-loading {
+  display: inline;
+}
+
+/* Song select panel (after audio start, before practice begins) */
+#songPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #181828 0%, #0a0a14 100%);
+}
+
+#songPanel.visible {
+  display: flex;
+}
+
+.song-card {
+  background: rgba(20, 20, 36, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  padding: 24px 28px;
+  width: 92vw;
+  max-width: 460px;
+  max-height: 88vh;
+  overflow-y: auto;
+  color: #e8e0ff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.song-title {
+  font-size: 1.4rem;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.song-composer {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.song-streak {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 16px;
+  font-size: 0.85rem;
+  color: rgba(255, 220, 120, 0.85);
+  flex-wrap: wrap;
+}
+
+.streak-cal {
+  display: flex;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.streak-day {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.streak-day.done {
+  background: linear-gradient(135deg, #ffd87a, #ff9eb1);
+  border-color: rgba(255, 215, 130, 0.8);
+  box-shadow: 0 0 6px rgba(255, 200, 100, 0.5);
+}
+
+.song-section-label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.14em;
+  margin: 14px 0 6px;
+}
+
+.song-bpm-hint {
+  margin-left: 10px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.42);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', monospace);
+  text-transform: none;
+}
+.song-bpm-hint.rescaled {
+  color: rgba(255, 200, 130, 0.72);
+}
+.song-bpm-hint.rescaled::after {
+  content: ' ✓';
+}
+
+.hand-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hand-btn {
+  flex: 1;
+  padding: 10px 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e8e0ff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s,
+    transform 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hand-btn.active {
+  background: rgba(180, 220, 255, 0.25);
+  border-color: rgba(180, 220, 255, 0.8);
+  color: #fff;
+}
+
+.hand-btn:active {
+  transform: scale(0.97);
+}
+
+.tempo-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.tempo-btn {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 64px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--c-border-subtle);
+  color: var(--c-text-primary);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  transition:
+    transform var(--t-fast) var(--ease-spring),
+    background var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.tempo-btn:hover:not(.locked):not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tempo-btn.active {
+  background: linear-gradient(135deg, rgba(255, 200, 230, 0.35), rgba(180, 140, 255, 0.35));
+  border-color: var(--c-border-strong);
+  color: #fff;
+  box-shadow: var(--shadow-glow-pink);
+}
+
+/* Locked tempo: muted pill with a small CSS-drawn padlock badge
+       in the corner. No more " 🔒" suffix on the text. */
+.tempo-btn.locked,
+.tempo-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+.tempo-btn.locked::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 12px;
+  height: 14px;
+  background: linear-gradient(180deg, transparent 0 4px, rgba(244, 236, 255, 0.9) 4px 100%);
+  border-radius: 2px 2px 3px 3px;
+  box-shadow: inset 0 0 0 2px rgba(20, 10, 35, 0.85);
+}
+.tempo-btn.locked::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid rgba(244, 236, 255, 0.9);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+}
+
+.section-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+.section-row.locked {
+  opacity: 0.4;
+}
+
+.section-row.boss {
+  border-color: rgba(255, 100, 150, 0.35);
+  background: linear-gradient(135deg, rgba(255, 100, 150, 0.08), rgba(255, 200, 80, 0.08));
+}
+
+.section-icon {
+  font-size: 1.2rem;
+}
+
+.section-stars {
+  letter-spacing: 0.15em;
+  color: #ffd57a;
+  font-size: 0.95rem;
+}
+
+.opt-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* iOS-style switch — pill body with a sliding knob, soft glow when on,
+       proper hit target. Replaces the previous 36×20 mini-toggle that
+       felt like a debug widget. */
+.opt-toggle {
+  width: 50px;
+  height: 30px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  position: relative;
+  cursor: pointer;
+  transition:
+    background var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.opt-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fff, #f0e6ff);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform var(--t-base) var(--ease-spring);
+}
+
+.opt-toggle.on {
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.65), rgba(160, 100, 230, 0.65));
+  border-color: rgba(255, 200, 230, 0.55);
+  box-shadow: var(--shadow-glow-pink);
+}
+
+.opt-toggle.on::after {
+  transform: translateX(20px);
+}
+
+.song-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.song-actions button {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #e8e0ff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s,
+    transform 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.song-actions .primary {
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.35), rgba(140, 100, 255, 0.35));
+  border-color: rgba(255, 200, 230, 0.6);
+  color: #fff;
+}
+
+.song-actions button:active {
+  transform: scale(0.97);
+}
+
+/* Practice HUD overlay */
+#practiceHud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 8; /* above #hud (z=4) so practice bar is never blocked */
+  display: none;
+}
+
+#practiceHud.visible {
+  display: block;
+}
+
+#practiceTopBar {
+  position: absolute;
+  top: max(10px, calc(var(--safe-top) + 10px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(80, 60, 130, 0.9), rgba(140, 70, 110, 0.9));
+  border: 1px solid rgba(255, 220, 230, 0.35);
+  padding: 8px 16px;
+  border-radius: 22px;
+  pointer-events: auto;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  max-width: 92vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+#practiceTopBar .ptb-section {
+  color: #ffe4a8;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+#practiceTopBar .ptb-tempo {
+  color: rgba(180, 220, 255, 0.8);
+}
+
+#practiceTopBar .ptb-progress {
+  color: rgba(255, 220, 230, 0.85);
+}
+
+#practiceTopBar .ptb-input {
+  font-size: 1rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: default;
+  transition:
+    background 0.25s,
+    border-color 0.25s;
+}
+
+#practiceTopBar .ptb-input.midi {
+  background: rgba(120, 220, 140, 0.35);
+  border-color: rgba(160, 255, 180, 0.8);
+  box-shadow: 0 0 12px rgba(120, 220, 140, 0.4);
+}
+
+#practiceTopBar button {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+#practiceTopBar button:active {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Icon-only buttons (📜 score toggle, ✕ quit) — emoji-sized so they
+       read at a glance on every layout, with a square-ish tap region that
+       still meets the 32 px iOS minimum. Title attr carries the localized
+       label for hover / long-press. */
+#practiceTopBar .ptb-icon-btn {
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 9px;
+  min-width: 32px;
+  text-align: center;
+}
+
+/* Narrow-viewport overrides — phone widths (≤520 px) regardless of
+       orientation. The default topBar wraps to 3-4 rows on portrait phones
+       (section name + tempo + progress + MIDI/MIC pill + 楽譜 + やめる all
+       together exceed ~360px), and the wrapped bar covers the score top.
+       Force the bar to one compact row + ellipsis the section name so the
+       OSMD strip below it stays visible.
+       NOTE: OSMD position no longer overridden here — see :root and the
+       body[data-layout="..."] selectors above. The topBar bottom is measured
+       at runtime and flows into --top-cluster-bottom, which OSMD reads. */
+@media (max-width: 520px) {
+  #practiceTopBar {
+    font-size: 0.72rem;
+    gap: 5px;
+    padding: 4px 9px;
+    flex-wrap: nowrap;
+    max-width: 96vw;
+    overflow: hidden;
+  }
+  #practiceTopBar .ptb-section {
+    max-width: 30vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #practiceTopBar .ptb-input {
+    font-size: 0.72rem;
+    padding: 1px 5px;
+  }
+  #practiceTopBar button {
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+}
+
+/* Section result overlay */
+#sectionResult {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  pointer-events: none;
+}
+
+#sectionResult.visible {
+  display: flex;
+  pointer-events: auto;
+}
+
+.result-card {
+  background: rgba(28, 22, 46, 0.96);
+  border: 1px solid rgba(255, 200, 230, 0.25);
+  border-radius: 22px;
+  padding: 24px 28px;
+  text-align: center;
+  max-width: 380px;
+  width: 88vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  color: #fff;
+  animation: summaryPop 0.45s ease-out;
+}
+
+.result-title {
+  font-size: 1.3rem;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  color: #ffe4f1;
+  margin-bottom: 6px;
+}
+
+.result-section-name {
+  font-size: 0.9rem;
+  color: rgba(255, 220, 230, 0.65);
+  margin-bottom: 14px;
+}
+
+.result-stars {
+  font-size: 2.6rem;
+  letter-spacing: 0.25em;
+  margin: 8px 0 14px;
+  color: #ffd57a;
+  text-shadow: 0 0 24px rgba(255, 200, 100, 0.55);
+}
+
+.result-stars .empty {
+  color: rgba(255, 255, 255, 0.15);
+  text-shadow: none;
+}
+
+.result-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+}
+
+.result-stat:last-of-type {
+  border-bottom: none;
+}
+
+.result-history {
+  margin: 10px auto 4px;
+  padding: 8px 6px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.result-history canvas {
+  display: block;
+}
+
+.result-history.hidden {
+  display: none;
+}
+
+.result-msg {
+  font-size: 0.9rem;
+  color: rgba(255, 220, 240, 0.75);
+  margin: 14px 0 6px;
+  letter-spacing: 0.05em;
+}
+
+.result-unlock {
+  font-size: 0.85rem;
+  color: #ffd57a;
+  margin: 6px 0;
+  animation: rainbowGlow 3s linear infinite;
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.result-actions button {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.result-actions .primary {
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.35), rgba(140, 100, 255, 0.35));
+  border-color: rgba(255, 200, 230, 0.6);
+}
+
+.result-actions button:active {
+  transform: scale(0.97);
+}
+
+/* Hit feedback chips floating from hit line */
+.hit-chip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 6;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+  animation: chipFloat 1s ease-out forwards;
+}
+
+.hit-chip.perfect {
+  color: #ffe26b;
+  text-shadow: 0 0 16px rgba(255, 220, 100, 0.8);
+}
+
+.hit-chip.good {
+  color: #b6f5b3;
+  text-shadow: 0 0 14px rgba(140, 255, 150, 0.7);
+}
+
+.hit-chip.miss {
+  color: #ff8a9a;
+  text-shadow: 0 0 14px rgba(255, 100, 130, 0.7);
+}
+
+@keyframes chipFloat {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.6);
+  }
+
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -20px) scale(1.1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -80px) scale(1);
+  }
+}
+
+/* OSMD sheet music container — top-level fixed strip, always laid out so OSMD can
+       render into it before practice mode is visible. Hidden via opacity only (not
+       visibility/display) so OSMD's layout measurements always work.
+       Position/size driven by --osmd-* variables on :root (see top of file).
+       Layout-mode overrides on body[data-layout=...] redefine those vars
+       — never override #osmdContainer's properties directly here. */
+#osmdContainer {
+  position: fixed;
+  top: var(--osmd-top);
+  left: var(--osmd-left);
+  right: var(--osmd-right);
+  width: var(--osmd-width);
+  height: var(--osmd-height);
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s;
+  z-index: 7;
+}
+
+#osmdContainer.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#osmdContainer svg {
+  max-width: 100%;
+  height: auto !important;
+}
+
+/* Section-start banner — flies in at the start of each section to celebrate */
+#sectionBanner {
+  position: fixed;
+  left: 50%;
+  top: 38%;
+  z-index: 25;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #fff;
+  text-align: center;
+  padding: 18px 36px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.95), rgba(140, 100, 255, 0.95));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%) scale(0.6);
+}
+
+#sectionBanner.show {
+  animation: sectionBannerIn 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes sectionBannerIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  22% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(0.92);
+  }
+}
+
+/* Add-song modal — reuses .settings-card chrome for visual consistency. */
+#addSongModal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 16, 0.78);
+  backdrop-filter: blur(4px);
+}
+#addSongModal.visible {
+  display: flex;
+}
+.add-song-card {
+  width: 92vw;
+  max-width: 520px;
+}
+.add-song-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.add-song-tab {
+  flex: 1;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.85rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.add-song-tab.active {
+  color: #e8e0ff;
+  border-bottom-color: rgba(180, 200, 255, 0.7);
+}
+.add-song-tab-body {
+  padding: 8px 0 14px;
+}
+.add-song-tab-body[hidden] {
+  display: none;
+}
+#addSongLibraryList .lib-row,
+#addSongMyList .my-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  font-size: 0.88rem;
+}
+#addSongLibraryList .lib-row {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+#addSongLibraryList .lib-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+#addSongLibraryList .lib-row.busy {
+  opacity: 0.55;
+  cursor: wait;
+}
+#addSongLibraryList .lib-row .lib-icon,
+#addSongMyList .my-row .my-icon {
+  font-size: 1.4rem;
+}
+#addSongLibraryList .lib-row .lib-label,
+#addSongMyList .my-row .my-label {
+  flex: 1;
+}
+#addSongMyList .my-row .my-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 2px;
+}
+#addSongMyList .my-row .my-remove {
+  background: transparent;
+  border: 1px solid rgba(255, 130, 150, 0.3);
+  color: rgba(255, 180, 190, 0.85);
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+/* Compact icon-only action buttons in the My library row.
+       Three full-width pills (✎ Rename / ✂ Edit sections / Delete)
+       crowded the row; now each is a 32px square with a localized
+       title. Tinted by role so the destructive Delete is unambiguous. */
+#addSongMyList .my-row .my-action-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--c-border-subtle);
+  color: var(--c-text-secondary);
+  border-radius: var(--r-md);
+  font-size: 1rem;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+#addSongMyList .my-row .my-action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--c-text-primary);
+}
+#addSongMyList .my-row .my-rename:hover {
+  border-color: rgba(180, 200, 255, 0.5);
+}
+#addSongMyList .my-row .my-edit:hover {
+  border-color: rgba(255, 220, 130, 0.5);
+}
+#addSongMyList .my-row .my-delete {
+  color: rgba(255, 180, 190, 0.9);
+  border-color: rgba(255, 130, 150, 0.3);
+}
+#addSongMyList .my-row .my-delete:hover {
+  background: rgba(180, 40, 60, 0.35);
+  border-color: rgba(255, 130, 150, 0.6);
+  color: #fff;
+}
+.add-song-file-pick {
+  display: block;
+  padding: 18px;
+  text-align: center;
+  border: 2px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.add-song-file-pick:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(180, 200, 255, 0.5);
+}
+.add-song-attest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+.add-song-url-input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #e8e0ff;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+.add-song-url-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+.settings-btn.primary {
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.35), rgba(140, 100, 255, 0.35));
+  border-color: rgba(255, 200, 230, 0.6);
+}
+.add-song-status {
+  min-height: 1.5em;
+  padding: 6px 0;
+  font-size: 0.85rem;
+  color: rgba(180, 255, 200, 0.85);
+}
+.add-song-status.error {
+  color: rgba(255, 180, 180, 0.95);
+}
+.add-song-mylib {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* Section editor — sub-modal layered above addSongModal. */
+#sectionEditModal {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 16, 0.78);
+  backdrop-filter: blur(4px);
+}
+#sectionEditModal.visible {
+  display: flex;
+}
+#sectionEditRows .sec-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+#sectionEditRows .sec-edit-row label {
+  flex: 1;
+  font-size: 0.85rem;
+}
+#sectionEditRows .sec-edit-row input[type='number'] {
+  width: 80px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #e8e0ff;
+  font-size: 0.9rem;
+  text-align: right;
+}
+/* Inserted user-song buttons on the start screen — match .mode-btn sizing.
+       Reserve horizontal padding equal on both sides so the centered label
+       can't run into the absolutely-positioned ✕ delete button. */
+#userSongList {
+  display: contents;
+}
+#userSongList .mode-btn {
+  padding-right: 56px;
+  padding-left: 56px;
+}
+/* iOS HIG recommends 44x44 px minimum tap targets. Earlier 2x8 padding +
+       0.85rem font hit ~22px — too easy to misclick on iPad / Android tablets,
+       and the danger of accidentally tapping ✕ instead of the song made the
+       feature feel risky. Bumped to ~40x36 effective touch area. */
+#userSongList .mode-btn .my-remove {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 180, 190, 0.4);
+  color: rgba(255, 200, 210, 0.95);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 7px 11px;
+  border-radius: 10px;
+  cursor: pointer;
+  min-width: 40px;
+  min-height: 36px;
+  -webkit-tap-highlight-color: transparent;
+}
+#userSongList .mode-btn .my-remove:hover {
+  background: rgba(180, 40, 60, 0.55);
+}
+/* My library rename button (inside add-song modal). Inherits the danger-pill
+       base from .my-remove; this overrides the tone to neutral so users don't
+       confuse it with the destructive Delete button. */
+#addSongMyList .my-row .my-rename {
+  border-color: rgba(180, 200, 255, 0.35);
+  color: rgba(200, 220, 255, 0.9);
+}
