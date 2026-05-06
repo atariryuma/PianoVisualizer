@@ -222,8 +222,11 @@
     </div>
   </div>
   <!-- OSMD container lives at body level so it's always rendered (even before practice
-       starts). Visibility is controlled via opacity/visibility classes only. -->
-  <div id="osmdContainer"></div>
+       starts). Visibility is controlled via opacity/visibility classes only.
+       #osmdCustomCursor lives INSIDE the container so it scrolls with the SVG;
+       it replaces OSMD's own (alpha=0 / hidden) cursor for smoother per-step
+       movement. Position is set via transform; CSS transition does the easing. -->
+  <div id="osmdContainer"><div id="osmdCustomCursor" aria-hidden="true"></div></div>
   <!-- Section-start banner that flies in at the start of each section -->
   <div id="sectionBanner"></div>
 
