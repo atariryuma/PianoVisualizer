@@ -13,11 +13,13 @@ modules extracted (`library/score-timing.ts`, `library/measure-timing.ts`,
 `web/note-extractor.ts`), shrinking `legacy-app.js` by ~1,000 lines
 cumulatively. `OsmdAdapter` interface in `@piano/core` + impl + all cursor /
 highlight call sites routed through it. `legacy-app.js` is a real ES module
-(`export {}`), `allowJs: true` is on, boundary `@typedef`s for Note /
-PracticeState / MidiState / Prefs are seeded, and bare-identifier globals (Tone
-/ OSMD / JSZip / PianoCore / AudioScheduler / NoteExtractor / osmdAdapter) are
-`declare global { var }`- typed in `main.ts` so a future `@ts-check` doesn't see
-TS2304s for them. SW takeover hardened. 786 vitest cases, `pnpm verify` clean.)
+(`export {}`), `allowJs: true` is on. Type-scaffolding landed: bare-identifier
+globals are `declare global { var }`-typed in `main.ts`, the module-scoped
+`let`s (`audioCtx`, `W`, `H`, `osmd`, `particles`, `ripples`, …) are
+JSDoc-typed, and the `DOM` bag asserts `Record<string, HTMLElement>`.
+**`@ts-check` residual count: 1,041 → 629** (-412, -40%) via the eight
+extractions + the globals + the JSDoc scaffolding. SW takeover hardened. 786
+vitest cases, `pnpm verify` clean.)
 
 ---
 
@@ -77,30 +79,33 @@ no @piano/core unit tests; runtime-verified via iPad practice-mode A/B.)
 
 ## ⏳ In queue
 
-## 1. Type the long-lived globals (`H`, `W`, `audioCtx`, `osmd`, `state`, `DOM`, `CONFIG`)
+## 1. Type the `state` / `practice` / `midiState` / `CONFIG` shapes
 
-The next-cheapest scaffolding win. Re-probe (2026-05-07): with the
-`declare global { var X }` block already covering library globals, the remaining
-`// @ts-check + checkJs` count is **902** errors. The top categories are:
+The next biggest TS7005 / TS2339 source. Apply the same pattern that worked for
+the module-scoped `let`s + the DOM bag:
 
-- TS7005
-  `Variable 'H'/'W'/'audioCtx'/'osmd'/'particles'/'gainNode' implicitly has any type`
-  — ~120 errors. Fixed by JSDoc-typing the module-scoped `let`/`const`
-  declarations.
-- TS18047 `'DOM.X' is possibly 'null'` — ~248 errors. Fixed by typing
-  `const DOM = { ... }` as `Record<string, HTMLElement>` (with a defensive `!`
-  cast or as-pattern, since the legacy assumes the IDs exist in index.html).
-- TS7006 `Parameter 's' implicitly has any` — ~206 errors. Fixed per-function
-  via JSDoc `@param {Type} s`.
+- `const state = /** @type {GameStateShape} */ ({ … })` — the boundary
+  `@typedef`s at the top of `legacy-app.js` already partly cover the shape
+  (`PracticeStateShape`, `MidiStateShape`); extend with a `GameStateShape` for
+  the live game state object.
+- Same treatment for `practice` and `midiState`.
+- `CONFIG` is read-mostly — wrapping in `Object.freeze` + a JSDoc `@type` would
+  also let TS narrow `CONFIG.X` correctly.
 
-**Strategy**: type the few wide identifiers (~10 declarations) for the biggest
-leverage, then enable `@ts-check` at the file top and use the remaining errors
-as a TODO list.
+**Est**: ~50 lines of type definitions + ~20 cast sites. Should drop TS2339
+(~153 errors) and the remaining TS7005 (~34) substantially.
 
-**Est**: ~2-3 hours for the scaffolding pass; another full day to ratchet down
-the per-function annotations.
+## 2. Per-function `@param` annotations on the hot helpers
 
-## 2. Whole-file `@ts-check` — once the residual count is manageable
+The TS7006 'Parameter X implicitly has any' category (~206 errors) is spread
+across maybe 80 functions. The hot ones (`updatePractice`, `drawPracticeLane`,
+`loop`, `onMidiNoteOn`, etc.) account for the plurality. Each function takes
+5-10 minutes to annotate.
+
+**Strategy**: annotate the top 20 by error-count first; that knocks out maybe
+half the TS7006s.
+
+## 3. Whole-file `@ts-check` — once the residual count is manageable
 
 **What**: Add `// @ts-check` at the top of `legacy-app.js` and fix the remaining
 errors. The 902-error count is too many for one session; but each upstream
