@@ -4917,12 +4917,23 @@
     // upcoming queue displayed above it. The lane only moves when the kid plays
     // correctly and currentNoteIdx advances.
     function practiceRealElapsedMs() {
-      const raw = (typeof Tone !== 'undefined')
-        ? (Tone.now() - practice.startAudioTime) * 1000
+      // Use the RAW AudioContext clock (currentTime) — NOT Tone.now(), which
+      // returns currentTime + lookAhead (~100 ms scheduler safety margin) and
+      // would shift the visual countdown ahead of the audible beeps by exactly
+      // that lookAhead. The 100 ms drift was the root cause of the
+      // count-in-vs-woodblock desync. startAudioTime itself is set via
+      // Tone.now() (the audio time at which beep 0 is scheduled to play), so
+      // currentTime - startAudioTime gives "audio seconds until/since the
+      // first beep" without lookAhead bias — negative during the pre-roll,
+      // zero exactly when beep 0 begins to be sample-emitted, and the kid
+      // hears it `outputLatency` later.
+      const raw = (typeof Tone !== 'undefined' && Tone.context)
+        ? (Tone.context.currentTime - practice.startAudioTime) * 1000
         : performance.now() - practice.startAudioTime * 1000;
-      // Subtract the audio output latency. Applied to both judging (so an
-      // on-the-beat press scores PERFECT) and lane visuals (so the note crosses
-      // the hit line at the same wall-clock instant the kid hears the beep).
+      // audioOffsetMs ≈ outputLatency: shifts the visual clock back so it
+      // matches what the kid actually hears (which is delayed by speaker
+      // buffering). Applied to both judging (so an on-the-beat press scores
+      // PERFECT) and lane visuals.
       return raw - (practice.audioOffsetMs || 0);
     }
     function practiceElapsedMs() {
@@ -5234,7 +5245,13 @@
           }
           practice.startAudioTime = Tone.now() + audioStartLead;
           scheduleCountInBeeps(practice.startAudioTime);
-          Tone.Transport.start('+' + audioStartLead);
+          // CRITICAL: pass startAudioTime as an ABSOLUTE audio time so
+          // Transport.position = 0 lines up exactly with beep 0. Using a
+          // relative '+0.05' string anchors the Transport at currentTime+0.05
+          // while startAudioTime is currentTime+lookAhead+0.05 — the
+          // resulting `lookAhead` (≈100 ms) gap is what made the GO! beep
+          // land after the first note in rhythm mode.
+          Tone.Transport.start(practice.startAudioTime);
         }
         // Diagnostic: log device audio output latency. AudioContext.outputLatency
         // is the speaker-side buffer delay; baseLatency is the processing block.

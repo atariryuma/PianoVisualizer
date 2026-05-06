@@ -299,9 +299,12 @@ export function drawPracticeLane(
   }
 
   // Count-in countdown — 4 → 3 → 2 → 1 → GO!, driven by realElapsedMs so the
-  // animation completes regardless of the parked practice clock.
+  // animation completes regardless of the parked practice clock. realElapsedMs
+  // is negative during the audio pre-roll (Tone's lookAhead + audioStartLead);
+  // we want the count to appear in lockstep with the FIRST audible beep, so
+  // skip drawing entirely while the kid hasn't heard anything yet.
   const ctElapsed = timing.realElapsedMs;
-  if (ctElapsed < opts.countInMs + 400) {
+  if (ctElapsed >= 0 && ctElapsed < opts.countInMs + 400) {
     const totalBeats = 4;
     const beatMs = opts.countInMs / totalBeats;
     const beatIdx = Math.min(totalBeats - 1, Math.max(0, Math.floor(ctElapsed / beatMs)));
