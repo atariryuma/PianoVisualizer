@@ -6651,15 +6651,29 @@
       // Walk the per-step timeline by playback time so OSMD's built-in
       // cursor advances through rests / long-held notes / tempo-direction
       // steps continuously instead of freezing at the last note onset.
-      // The cursor moves in OSMD's native discrete steps — no overlay,
-      // no interpolation — keeping the familiar wide-yellow-block look.
+      //
+      // Time source differs by mode:
+      // - rhythm/listen: real elapsed (the score plays itself).
+      // - guided: real elapsed CAPPED at the current note's timeMs. The
+      //   cursor advances at the score's beat tempo through rest steps,
+      //   then waits on the note the kid is supposed to play. Without the
+      //   cap, the cursor would race ahead while the kid is still trying.
+      //   Using practiceElapsedMs() (which freezes at cur.timeMs all the
+      //   time) made the cursor only move when a note resolved — visually
+      //   it skipped beats inside the bar.
       if (osmdVisible) {
-        const elapsed = practiceElapsedMs();
+        let cursorElapsed = practiceRealElapsedMs();
+        if (practice.mode === 'guided') {
+          const cur = practice.sectionNotes[practice.currentNoteIdx];
+          if (cur && Number.isFinite(cur.timeMs)) {
+            cursorElapsed = Math.min(cursorElapsed, cur.timeMs);
+          }
+        }
         const tl = practice.sectionCursorTimeline;
         if (tl && tl.length > 0) {
           let tIdx = practice._cursorTimelineIdx | 0;
-          if (tIdx >= tl.length || tl[tIdx].timeMs > elapsed) tIdx = 0;
-          while (tIdx + 1 < tl.length && tl[tIdx + 1].timeMs <= elapsed) tIdx++;
+          if (tIdx >= tl.length || tl[tIdx].timeMs > cursorElapsed) tIdx = 0;
+          while (tIdx + 1 < tl.length && tl[tIdx + 1].timeMs <= cursorElapsed) tIdx++;
           practice._cursorTimelineIdx = tIdx;
           const cur = tl[tIdx];
           if (cur.step !== _osmdStepCursor) {
@@ -6671,8 +6685,8 @@
           // — cursor freezes during rests, but still tracks notes.
           const notes = practice.sectionNotes;
           let pIdx = practice._cursorScanIdx | 0;
-          if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
-          while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
+          if (pIdx >= notes.length || notes[pIdx].timeMs > cursorElapsed) pIdx = 0;
+          while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= cursorElapsed) pIdx++;
           practice._cursorScanIdx = pIdx;
           const n = notes[pIdx];
           if (n && typeof n.sourceStep === 'number' && n.sourceStep !== _osmdStepCursor) {

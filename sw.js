@@ -39,8 +39,14 @@
 // with repeats. stepTimeline was on the first-pass time domain while
 // notes were expanded by playbackOrder; v10 expands stepTimeline the
 // same way so both share one timeline.
+// 2026-05-06: bumped to v11 — fix cursor not advancing through beats
+// inside a measure in guided mode. practiceElapsedMs() freezes at the
+// current note's timeMs so the timeline scan only moved when a note
+// resolved (skipping rest steps between notes). Cursor sync now uses
+// real elapsed time, capped at the current note's timeMs — beats tick
+// at score tempo, then the cursor waits on the current note for input.
 
-const CACHE = 'piano-viz-v10';
+const CACHE = 'piano-viz-v11';
 const APP_SHELL = [
   './',
   './index.html',
