@@ -6554,158 +6554,40 @@
     }
 
     // ========================================
-    // Song panel UI building
+    // Song panel UI building — Phase 0d batch 7d wire-up
     // ========================================
-    function renderSongPanel() {
-      const top = practice.progress;            // shared (streak)
-      if (!top) return;
-      const sp  = songProg();                   // per-song (sections, tempos, unlocks)
-      // Refresh title/composer too — selectSong sets them once but a langchange
-      // while the song panel is visible would otherwise leave the heading in
-      // the previous language until reselect.
-      if (currentSong) {
-        DOM.songTitle.textContent = t(currentSong.titleKey);
-        DOM.songComposer.textContent = t(currentSong.composerKey);
-      }
-      DOM.streakCount.textContent = String(top.streakCount || 0);
-      DOM.streakCal.innerHTML = '';
-      const days = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        days.push(dateKey(d));
-      }
-      for (const k of days) {
-        const cell = document.createElement('div');
-        cell.className = 'streak-day' + (top.streakDays.includes(k) ? ' done' : '');
-        cell.title = k;
-        DOM.streakCal.appendChild(cell);
-      }
-
-      // Full-song listen always plays at 100% (see buildFullSongNotes comment).
-      // Compute it up front so the BPM hint + tempo buttons agree on what the
-      // kid will actually hear when they tap Start.
-      const tempoLockedToFull = practice.mode === 'listen' && practice.fullSongMode;
-      const displayedTempoPct = tempoLockedToFull ? 100 : practice.tempoPct;
-
-      // Show the score's source BPM so the user knows why two versions of the
-      // same piece can feel different at the same tempo% (e.g. one Für Elise
-      // encoded at ♩=72, another at ♩=120 → "60%" means very different speeds).
-      if (DOM.songBpmHint) {
-        if (currentSong._loaded && currentSong.bpm) {
-          const bpm = Math.round(currentSong.bpm);
-          const effective = Math.round(bpm * (displayedTempoPct || 100) / 100);
-          DOM.songBpmHint.textContent = '♩ = ' + bpm + ' → ' + effective;
-          DOM.songBpmHint.classList.toggle('rescaled', !!currentSong._bpmRescaled);
-        } else {
-          DOM.songBpmHint.textContent = '';
-        }
-      }
-
-      DOM.tempoRow.innerHTML = '';
-      const tempos = [60, 75, 90, 100];
-      for (const t of tempos) {
-        const btn = document.createElement('button');
-        // Full-song listen forces 100% regardless of unlock progression — the
-        // tempo row dims as a whole and only the 100% button reads as "active".
-        const isActive = tempoLockedToFull ? (t === 100) : (t === practice.tempoPct);
-        const isLocked = tempoLockedToFull ? (t !== 100) : !sp.unlockedTempos[t];
-        btn.className = 'tempo-btn' + (isActive ? ' active' : '') + (isLocked ? ' locked' : '');
-        // Lock indicator now lives in CSS (.tempo-btn.locked::after) so the
-        // disabled state reads as a designed UI, not a "60% 🔒" emoji
-        // pasted after the percent.
-        btn.textContent = t + '%';
-        btn.disabled = isLocked;
-        if (isLocked) btn.setAttribute('aria-label', t + '% locked');
-        btn.onclick = () => {
-          if (isLocked) return;
-          practice.tempoPct = t;
-          renderSongPanel();
-        };
-        DOM.tempoRow.appendChild(btn);
-      }
-      // Dim the tempo row in full-song listen so the kid can tell the choice
-      // is locked. The 100% button stays visually active inside the dimmed row.
-      if (DOM.tempoRow) {
-        DOM.tempoRow.style.opacity = tempoLockedToFull ? '0.55' : '';
-      }
-
-      DOM.sectionList.innerHTML = '';
-      if (!currentSong._loaded || currentSong.sections.length === 0) {
-        const row = document.createElement('div');
-        row.className = 'section-row';
-        if (currentSong._loadError) {
-          row.style.opacity = '0.85';
-          const safe = String(currentSong._loadError).replace(/[<>&]/g, (c) =>
-            c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;');
-          row.innerHTML = '<div class="section-icon">❌</div>' +
-            '<div style="font-size:.78rem;color:rgba(255,180,180,.95);line-height:1.35;">' + safe + '</div>' +
-            '<div></div>';
-        } else {
-          row.style.opacity = '0.6';
-          row.innerHTML = '<div class="section-icon">⏳</div><div>' + t('loadingScore') + '</div><div></div>';
-        }
-        DOM.sectionList.appendChild(row);
-        return;
-      }
-      currentSong.sections.forEach((sec, i) => {
-        const unlocked = sp.unlockedSections[sec.id];
-        const row = document.createElement('div');
-        row.className = 'section-row' + (sec.isBoss ? ' boss' : '') + (unlocked ? '' : ' locked');
-        const stars = sp.sections[sec.id]?.stars || 0;
-        row.innerHTML = `
-          <div class="section-icon">${sec.isBoss ? '👑' : (unlocked ? '🎵' : '🔒')}</div>
-          <div>
-            <div style="font-weight:500;">${t(sec.nameKey)}</div>
-            <div style="font-size:.75rem; color:rgba(255,255,255,.45);">${t(sec.descKey ?? '')}</div>
-          </div>
-          <div class="section-stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
-        `;
-        if (unlocked) {
-          row.style.cursor = 'pointer';
-          row.onclick = () => {
-            practice.sectionIdx = i;
-            // visually highlight selected
-            Array.from(DOM.sectionList.children).forEach(c => { /** @type {HTMLElement} */ (c).style.outline = ''; });
-            row.style.outline = '2px solid rgba(255,200,230,.6)';
-          };
-        }
-        DOM.sectionList.appendChild(row);
-        if (i === practice.sectionIdx && unlocked) row.style.outline = '2px solid rgba(255,200,230,.6)';
-      });
-
-      // Highlight current mode in the 3-way picker (Listen / Guided / Rhythm).
-      // Ghost / metronome only make sense in rhythm mode — Listen plays the song
-      // through automatically and Guided waits for input note-by-note.
-      document.querySelectorAll('#modeRow .hand-btn').forEach(b => {
-        b.classList.toggle('active', b.getAttribute('data-mode') === practice.mode);
-      });
-      // Hand picker — also re-paints active state since renderSongPanel rebuilds.
-      document.querySelectorAll('#handRow .hand-btn').forEach(b => {
-        const h = b.getAttribute('data-hand');
-        const active = (h === 'L' || h === 'R') ? practice.handFilter === h : !practice.handFilter;
-        b.classList.toggle('active', active);
-      });
-      DOM.ghostToggle.classList.toggle('on', practice.ghostOn);
-      DOM.metronomeToggle.classList.toggle('on', practice.metronomeOn);
-      const showRhythmOpts = practice.mode === 'rhythm';
-      const showListenOpts = practice.mode === 'listen';
-      if (DOM.ghostRow) DOM.ghostRow.style.display = showRhythmOpts ? '' : 'none';
-      if (DOM.metronomeRow) DOM.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
-      if (DOM.fullSongRow) DOM.fullSongRow.style.display = showListenOpts ? '' : 'none';
-      if (DOM.fullSongToggle) DOM.fullSongToggle.classList.toggle('on', practice.fullSongMode);
-      // Full-song mode ignores the section picker — visually dim it so the kid
-      // understands the choice doesn't matter; clicks still work (re-tapping
-      // jumps the highlight) but they have no effect on listen-from-the-top.
-      const sectionListDimmed = showListenOpts && practice.fullSongMode;
-      if (DOM.sectionList) {
-        DOM.sectionList.style.opacity = sectionListDimmed ? '0.4' : '';
-        DOM.sectionList.style.pointerEvents = sectionListDimmed ? 'none' : '';
-      }
-      // Start button copy: Listen mode reads as "Start listening" instead of "Start practice".
-      const startBtn = DOM.songStart;
-      if (startBtn) startBtn.textContent = t(practice.mode === 'listen' ? 'startListening' : 'startPractice');
-    }
+    // The renderSongPanel implementation now lives in
+    // packages/web/src/song-panel-render.ts. createSongPanelRender
+    // returns a closure the shell calls under the legacy short name
+    // and hands into other modules via their deps bags (practice-flow,
+    // song-panel-controls, user-songs-ui all call renderSongPanel after
+    // their state mutations).
+    const _songPanelRender = SongPanelRender.createSongPanelRender({
+      dom: /** @type {import('./song-panel-render').SongPanelRenderDom} */ ({
+        songTitle: DOM.songTitle,
+        songComposer: DOM.songComposer,
+        streakCount: DOM.streakCount,
+        streakCal: DOM.streakCal,
+        songBpmHint: DOM.songBpmHint,
+        tempoRow: DOM.tempoRow,
+        sectionList: DOM.sectionList,
+        ghostToggle: DOM.ghostToggle,
+        metronomeToggle: DOM.metronomeToggle,
+        ghostRow: DOM.ghostRow,
+        metronomeRow: DOM.metronomeRow,
+        fullSongRow: DOM.fullSongRow,
+        fullSongToggle: DOM.fullSongToggle,
+        songStart: DOM.songStart,
+      }),
+      practice: /** @type {import('./song-panel-render').SongPanelPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      getCurrentSong: () => /** @type {any} */ (currentSong),
+      songProg: () => /** @type {any} */ (songProg()),
+      t,
+      dateKey,
+    });
+    const renderSongPanel = _songPanelRender.render;
 
     // Phase 0d batch 7c: hand picker + mode picker + practice toggles
     // (ghost / metronome / full-song) + songBack moved to
