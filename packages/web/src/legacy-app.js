@@ -240,6 +240,7 @@
      * @property {(()=>void)|null} lastIntroDiag
      * @property {LastSummaryShape|null} _lastSummary
      * @property {number} [comboDecayAccum]
+     * @property {boolean} [_midiWaitingShown] One-shot guard so the "Waiting for MIDI" hint doesn't re-show on every rescan tick.
      */
 
     /**
@@ -4815,15 +4816,26 @@
           }
         }
       }
-      if (!state.running || !navigator.requestMIDIAccess) return;
+      if (!navigator.requestMIDIAccess) return;
       if (midiInput.enabled) {
         // We *think* MIDI is connected — verify the port still responds.
         const ok = await verifyMidiAlive();
         if (ok) return;
+        // The port is a corpse (WMB / WKWebView background suspension). Force
+        // a fresh MIDIAccess so the next rescan re-enumerates instead of
+        // re-checking the dead reference.
+        _midiAccess = null;
       }
-      // No MIDI / dead port → rescan silently. Auto-rescan poller keeps trying
-      // if this attempt fails. The user sees nothing unless they explicitly tap 🔄.
-      rescanMidi(true).catch(() => {});
+      // No MIDI / dead port → silent rescan. Force-fresh on resume so a
+      // stale enumeration from before the background trip can't linger;
+      // the auto-rescan poller will keep trying if this single attempt
+      // doesn't catch the device immediately.
+      _midiAccess = null;
+      rescanMidi(true)
+        .then((ok) => {
+          if (!ok) startMidiAutoRescan();
+        })
+        .catch(() => startMidiAutoRescan());
     });
 
     // ========================================
@@ -4918,15 +4930,36 @@
       if (midiInput.enabled) {
         DOM.ptbInput.textContent = '🎹';
         DOM.ptbInput.classList.add('midi');
+        DOM.ptbInput.classList.remove('midi-waiting');
         DOM.ptbInput.title = t('tipMidiKeyboardFmt', { v: midiInput.port?.name || 'unknown' });
+        DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
+      } else if (_midiRescanTimer && typeof navigator.requestMIDIAccess === 'function') {
+        // Auto-rescan poller is running (= we know MIDI is supported but no
+        // port has shown up yet). Show a "waiting" hourglass so users see
+        // the app is actively listening rather than silently mic-only.
+        DOM.ptbInput.textContent = '🎹⏳';
+        DOM.ptbInput.classList.remove('midi');
+        DOM.ptbInput.classList.add('midi-waiting');
+        DOM.ptbInput.title = t('tipMidiWaiting') || 'Waiting for MIDI keyboard… tap to rescan';
         DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
       } else {
         DOM.ptbInput.textContent = '🎙️';
         DOM.ptbInput.classList.remove('midi');
+        DOM.ptbInput.classList.remove('midi-waiting');
         DOM.ptbInput.title = midiInput.platformBlocked ? t('tipIosMidiBlocked') : t('tipMicMode');
         DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
       }
     }
+
+    // Tapping the input badge in the practice topbar triggers a manual rescan
+    // (verbose, surfaces diagnostic in introHint on failure). Cheap escape hatch
+    // for "iPad / Web MIDI Browser doesn't auto-detect after re-pairing" — beats
+    // diving into Settings → Rescan.
+    DOM.ptbInput?.addEventListener('click', () => {
+      if (midiInput.enabled || midiInput.platformBlocked) return;
+      console.log('[MIDI] manual rescan triggered by topbar badge tap');
+      void rescanMidi(false);
+    });
 
     // Linux distros (Steam Deck included) expose a "Midi Through Port-0" by default
     // that has no physical keyboard attached. macOS has "IAC Driver" and "rtpmidi"
@@ -5017,12 +5050,45 @@
           console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
             + ' state=' + p.state + ' connection=' + p.connection);
         }
+        let attached = false;
         for (const port of allPorts) {
-          if (port.state === 'connected' && attachMidiPort(port)) break;
+          if (port.state === 'connected' && attachMidiPort(port)) {
+            attached = true;
+            break;
+          }
+        }
+        // Bug-fix (2026-05-07): when the user opens the page BEFORE
+        // connecting their keyboard in Web MIDI Browser, allPorts is []
+        // and the legacy code did nothing — the user had to manually
+        // tap 🔄 Rescan to reconnect. statechange events from WMB are
+        // unreliable (polyfill quirks), so the only robust safety net
+        // is to start the rescan poller immediately when no port
+        // attached on first try. Stops itself once anything connects.
+        if (!attached) {
+          console.log('[MIDI] no port attached yet — starting auto-rescan poller');
+          showMidiWaitingHint();
+          startMidiAutoRescan();
         }
       } catch (e) {
-        console.warn('[MIDI] requestMIDIAccess failed:', e.message);
+        console.warn('[MIDI] requestMIDIAccess failed:', e instanceof Error ? e.message : String(e));
+        // Even on access failure, keep polling — Web MIDI Browser sometimes
+        // rejects the very first call (permission UI) but accepts a retry.
+        showMidiWaitingHint();
+        startMidiAutoRescan();
       }
+    }
+
+    // Surface a quiet "waiting for MIDI" hint so users on iPad / WMB know
+    // the app is actively listening for their keyboard, not silently broken.
+    // Cleared by attachMidiPort's existing refreshIntroHint() call.
+    function showMidiWaitingHint() {
+      if (!isAppleMobile() || !navigator.requestMIDIAccess) return;
+      // Only show once per session — re-shows would noise up the lifecycle.
+      if (state._midiWaitingShown) return;
+      state._midiWaitingShown = true;
+      showIntroDiag(() =>
+        setIntroHintDiagnostic(t('diagMidiWaiting') || 'Waiting for MIDI…',
+          t('diagWmbHint') || 'Pair your keyboard in Web MIDI Browser, then return here.'));
     }
 
     // MIDI rescan — two-stage connection attempt:
@@ -5158,20 +5224,67 @@
 
     // Polling: when MIDI is required but not connected, detect when the user
     // has paired in the WMB UI in the background and returns to the page.
-    /** @type {ReturnType<typeof setInterval>|number} */
-    let _midiRescanInterval = 0;
+    //
+    // Ramped cadence: the first 30s poll at 1s — this catches the common
+    // "open the page first, then pair the keyboard" iPad flow within 1s of
+    // pairing. After 30s drop to 2.5s (network-friendly for sustained
+    // background listening). After 5min drop to 10s (the user has clearly
+    // walked away; we just want to catch a return-to-page reconnect).
+    //
+    // Forces a fresh MIDIAccess every ~5 ticks (12.5s) to work around Web
+    // MIDI Browser's stale-enumeration quirk: re-pairing in WMB sometimes
+    // doesn't propagate via statechange to a cached MIDIAccess.
+    /** @type {ReturnType<typeof setTimeout>|number} */
+    let _midiRescanTimer = 0;
+    let _midiRescanTickCount = 0;
+    let _midiRescanStartedAt = 0;
     function startMidiAutoRescan() {
-      if (_midiRescanInterval) return;
-      _midiRescanInterval = setInterval(() => {
+      if (_midiRescanTimer) return;
+      _midiRescanTickCount = 0;
+      _midiRescanStartedAt = performance.now();
+      _scheduleNextRescan();
+      // Refresh the input badge so the hourglass "waiting" state shows
+      // up immediately without waiting for the first attach attempt.
+      setInputIndicator();
+    }
+    function _scheduleNextRescan() {
+      const elapsed = performance.now() - _midiRescanStartedAt;
+      let delay;
+      if (elapsed < 30_000) delay = 1_000;          // Fast: 1s for first 30s
+      else if (elapsed < 5 * 60_000) delay = 2_500; // Steady: 2.5s out to 5min
+      else delay = 10_000;                          // Slow: 10s long-tail
+      _midiRescanTimer = setTimeout(() => {
         if (midiInput.enabled || !navigator.requestMIDIAccess) {
           stopMidiAutoRescan();
           return;
         }
-        rescanMidi(true).then((ok) => { if (ok) stopMidiAutoRescan(); });
-      }, 2500);
+        // Periodically force a fresh MIDIAccess. WMB caches port enumeration
+        // and re-pairing doesn't always re-fire statechange. Force every 5
+        // ticks (~12.5s in the 2.5s window, ~5s in the 1s window).
+        _midiRescanTickCount++;
+        const force = _midiRescanTickCount % 5 === 0;
+        if (force) {
+          console.log('[MIDI] auto-rescan: forcing fresh MIDIAccess (tick=' + _midiRescanTickCount + ')');
+          ensureMidiAccess(true).catch(() => {});
+        }
+        rescanMidi(true).then((ok) => {
+          if (ok) {
+            stopMidiAutoRescan();
+          } else if (!midiInput.enabled) {
+            _scheduleNextRescan();
+          }
+        });
+      }, delay);
     }
     function stopMidiAutoRescan() {
-      if (_midiRescanInterval) { clearInterval(_midiRescanInterval); _midiRescanInterval = 0; }
+      if (_midiRescanTimer) {
+        clearTimeout(_midiRescanTimer);
+        _midiRescanTimer = 0;
+        // Same-reason as start: clear the "waiting" hourglass on the badge
+        // when the poller stops (either we connected, or we gave up).
+        setInputIndicator();
+      }
+      _midiRescanTickCount = 0;
     }
 
     // ========================================
