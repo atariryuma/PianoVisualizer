@@ -64,6 +64,7 @@ export const T_STRINGS: TranslationTable = {
   diagDetectedFmt: { en: '🎹 Detected: {v}', jp: '🎹 認識中: {v}' },
   diagCouldNotConnect: { en: 'Could not connect', jp: '接続できませんでした' },
   diagMidiError: { en: '🎹 MIDI error', jp: '🎹 MIDIエラー' },
+  diagMidiWaiting: { en: '🎹 Waiting for MIDI…', jp: '🎹 MIDI待機中…' },
   midiConnectedFmt: { en: '🎹 Connected: {v}', jp: '🎹 接続: {v}' },
   // Alerts
   alertWebBluetoothUnsupported: {
@@ -87,6 +88,10 @@ export const T_STRINGS: TranslationTable = {
   sumQuestProgressFmt: { en: '{n}/{total} cleared', jp: '{n}/{total} クリア' },
   // Input indicator tooltips
   tipMidiKeyboardFmt: { en: 'MIDI keyboard: {v}', jp: 'MIDIキーボード: {v}' },
+  tipMidiWaiting: {
+    en: 'Waiting for MIDI keyboard… tap to rescan',
+    jp: 'MIDIキーボード待機中… タップで再スキャン',
+  },
   tipMicMode: { en: 'Mic input mode', jp: 'マイク入力モード' },
   tipIosMidiBlocked: {
     en: 'iPad/iPhone Safari does not support Web MIDI. Use mic input. (For BLE-MIDI keyboards, install the "Web MIDI Browser" iOS app)',
@@ -343,6 +348,9 @@ export const T_STRINGS: TranslationTable = {
   addSongImport: { en: '⬆ Import', jp: '⬆ インポート' },
   addSongImportDone: { en: 'Imported {n} song(s)', jp: '{n} 曲をインポートしました' },
   addSongEditSections: { en: '✎ Edit sections', jp: '✎ 章を編集' },
+  addSongRename: { en: '✎ Rename', jp: '✎ 名前を変更' },
+  addSongRenamePromptTitle: { en: 'New title:', jp: '新しい曲名：' },
+  addSongRenamePromptComposer: { en: 'New composer:', jp: '新しい作曲家：' },
   sectionEditTitle: { en: 'Edit sections', jp: '章の編集' },
   sectionEditHelp: {
     en: 'Set start measure (1-based) for each part. Total: {v} measures.',

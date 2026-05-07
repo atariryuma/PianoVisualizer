@@ -6,16 +6,15 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0c.5 ✅ DONE — `// @ts-check` is now ON at
-the top of `packages/web/src/legacy-app.js`. Residual TS error count: **1,041 →
-0** (-100%). Tag: `phase-0c.5-done`. The 7,624-line legacy shell type-checks
-under `pnpm typecheck` as part of the regular verify cycle — regressions error
-at typecheck time, no silent re-introduction possible. Wakelock first leaf
-extraction landed (`packages/web/src/wakelock.ts`). Vitest infra in
-`@piano/web` + 46 unit tests for the 3 typed shell modules (audio-scheduler,
-note-extractor, wakelock) closed Phase 0c.5's testing gap. **832 tests across
-both packages**; `pnpm verify` clean across 5 packages. CI green; deployed to
-<https://atariryuma.github.io/PianoVisualizer/>.)
+Last refreshed: **2026-05-07** (Phase 0d batch 4 — i18n wire-up — landed.
+`legacy-app.js` is now **7,538 lines** (was 7,840 before this batch, -301). The
+legacy 320-line `T_STRINGS` literal + `t()` lookup were swapped for a 20-line
+`PianoCore.createT()` closure. Five formerly-missing keys (`addSongRename`,
+`addSongRenamePromptTitle`, `addSongRenamePromptComposer`, `diagMidiWaiting`,
+`tipMidiWaiting`) were added to `@piano/core`'s `T_STRINGS` table — fixes a
+latent bug where two MIDI-status tooltips showed their literal key names. **872
+tests across both packages** (786 core + 86 web); `pnpm verify` clean across 5
+packages.)
 
 ---
 
@@ -71,9 +70,13 @@ both packages**; `pnpm verify` clean across 5 packages. CI green; deployed to
 | 46  | Phase 0c.5 — `// @ts-check`   | —     | `packages/web/src/legacy-app.js` (top of file)  |
 | 47  | `web/wakelock.ts`             | —     | `packages/web/src/wakelock.ts`                  |
 | 48  | web tests (3 shell modules)   | 46    | `packages/web/tests/*.test.ts`                  |
+| 49  | `web/section-editor.ts`       | 20    | `packages/web/src/section-editor.ts`            |
+| 50  | `web/settings-panel.ts`       | 20    | `packages/web/src/settings-panel.ts`            |
+| 51  | i18n wire-up via `createT`    | —     | `packages/web/src/legacy-app.js` (-301 lines)   |
 
-**Status: 832/832 tests green (786 core + 46 web), 0 lint errors, 0 type errors,
+**Status: 872/872 tests green (786 core + 86 web), 0 lint errors, 0 type errors,
 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
+`legacy-app.js`: 7,538 lines (was 7,840 before batch 4, was 9,000+ at Phase 0a).
 
 ---
 
@@ -88,8 +91,9 @@ extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 Wakelock landed in this session (commit `fa479f4`). Remaining batches in order
 of size / ease:
 
-- [ ] `web/section-editor.ts` — section-edit modal (~300 lines, low difficulty)
-- [ ] `web/settings-panel.ts` — settings panel + persist (~500 lines, low)
+- [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
+- [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
+- [x] i18n wire-up via `PianoCore.createT()` (landed batch 4, -301 lines)
 - [ ] `web/audio-init.ts` — getUserMedia + AudioContext + visibility-recovery
       seam (~250 lines, mid)
 - [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid)
