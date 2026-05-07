@@ -1794,54 +1794,21 @@
       };
     })();
 
-    function openSettings() {
-      DOM.settingsPanel.classList.add('visible');
-      refreshSettingsPanel();
-      modalFocus.open(DOM.settingsPanel);
-    }
-    function closeSettings() {
-      DOM.settingsPanel.classList.remove('visible');
-      modalFocus.close(DOM.settingsPanel);
-    }
-
-    function refreshAudioOffsetUI() {
-      const isAuto = prefs.audioOffsetMs == null;
-      // `(true && 0) || DEFAULT` collapses 0 to DEFAULT — use ?? so a
-      // legitimate 0ms override (Linux desktop with negligible buffering)
-      // displays correctly instead of jumping to the 40ms fallback.
-      const autoValue = (typeof practice !== 'undefined' ? practice.audioOffsetMs : null)
-                        ?? DEFAULT_AUDIO_OFFSET_MS;
-      const value = Math.round(isAuto ? autoValue : (prefs.audioOffsetMs ?? autoValue));
-      /** @type {HTMLInputElement} */ (DOM.audioOffsetSlider).value = String(value);
-      DOM.audioOffsetVal.textContent = String(value);
-      DOM.audioOffsetAuto.textContent = isAuto ? t('autoDetectedFmt', { v: value }) : '';
-    }
-
-    function refreshSettingsPanel() {
-      refreshAudioOffsetUI();
-      // Input source status
-      if (typeof midiInput !== 'undefined' && midiInput.enabled && midiInput.port?.name) {
-        DOM.settingsInputStatus.textContent = '🎹 ' + midiInput.port.name;
-      } else if (typeof state !== 'undefined' && state.micSuspended) {
-        DOM.settingsInputStatus.textContent = '🎙️ ' + t('micStandby');
-      } else {
-        DOM.settingsInputStatus.textContent = '🎙️ ' + t('micInput');
-      }
-      // BLE button only when Web Bluetooth is supported (Chrome/Edge desktop, Android Chrome)
-      const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
-      DOM.settingsBleBtn.style.display = bleSupported ? '' : 'none';
-      // Reset session is only meaningful when audio is alive — disable on title.
-      const running = !!(state && state.running);
-      /** @type {HTMLButtonElement} */ (DOM.settingsResetBtn).disabled = !running;
-      DOM.settingsResetBtn.style.opacity = running ? '' : '.45';
-      DOM.settingsResetBtn.style.cursor = running ? 'pointer' : 'not-allowed';
-    }
-
-    DOM.settingsBtn.addEventListener('click', openSettings);
-    DOM.settingsCloseBtn.addEventListener('click', closeSettings);
-    DOM.settingsPanel.addEventListener('click', (e) => {
-      if (e.target === DOM.settingsPanel) closeSettings();
-    });
+    // Settings panel — Phase 0d batch 3: extracted to
+    // packages/web/src/settings-panel.ts. The shell wires the DOM bag +
+    // shared state refs (prefs, practice, state, midiInput) and forwards
+    // the few cross-module callbacks (rescanMidi, connectBleMidi,
+    // showSessionSummary). We forward-declare openSettings /
+    // closeSettings / refreshSettingsPanel because the ESC handler
+    // (line ~1865) and other call sites reference them by short name;
+    // the createSettingsPanel call site lower in the file rebinds them
+    // (search "settings-panel wire-up").
+    /** @type {() => void} */
+    let openSettings = () => {};
+    /** @type {() => void} */
+    let closeSettings = () => {};
+    /** @type {() => void} */
+    let refreshSettingsPanel = () => {};
     // Single, ordered ESC handler for every modal. Highest-z first so the
     // topmost layer pops first; if the user is currently typing inside an
     // <input> / <textarea> we let the browser's native ESC handling run
@@ -1879,48 +1846,11 @@
       }
     });
 
-    // Debounce localStorage writes — slider drag fires `input` per pixel
-    // (~50 events end-to-end) and each was hitting JSON.stringify + setItem.
-    /** @type {ReturnType<typeof setTimeout>|null} */
-    let _audioOffsetSaveTimer = null;
-    DOM.audioOffsetSlider.addEventListener('input', () => {
-      const v = parseInt(/** @type {HTMLInputElement} */ (DOM.audioOffsetSlider).value, 10);
-      // Bail on NaN — `practiceRealElapsedMs` would propagate NaN through
-      // every `elapsed - audioOffsetMs` subtraction for the rest of the
-      // session, breaking lane + cursor + scoring.
-      if (!Number.isFinite(v)) return;
-      prefs.audioOffsetMs = v;
-      if (typeof practice !== 'undefined') practice.audioOffsetMs = v;
-      DOM.audioOffsetVal.textContent = String(v);
-      DOM.audioOffsetAuto.textContent = '';
-      if (_audioOffsetSaveTimer) clearTimeout(_audioOffsetSaveTimer);
-      _audioOffsetSaveTimer = setTimeout(savePrefs, 250);
-    });
-    DOM.audioOffsetReset.addEventListener('click', () => {
-      prefs.audioOffsetMs = null;
-      savePrefs();
-      // Re-trigger auto-detect on next session start; meanwhile use the default.
-      if (typeof practice !== 'undefined') practice.audioOffsetMs = DEFAULT_AUDIO_OFFSET_MS;
-      refreshAudioOffsetUI();
-    });
-
-    DOM.settingsRescanBtn.addEventListener('click', () => {
-      // 明示的な再スキャン = dismiss 状態を解除して再エンゲージ
-      if (typeof rescanMidi === 'function') rescanMidi();
-      closeSettings();
-    });
-    DOM.settingsBleBtn.addEventListener('click', () => {
-      if (typeof connectBleMidi === 'function') {
-        connectBleMidi().finally(() => {
-          refreshSettingsPanel();
-        });
-      }
-      closeSettings();
-    });
-    DOM.settingsResetBtn.addEventListener('click', () => {
-      closeSettings();
-      if (state.running && typeof showSessionSummary === 'function') showSessionSummary();
-    });
+    // settings-panel wire-up moved below — see "settings-panel wire-up".
+    // Reason: createSettingsPanel needs `practice`, `midiInput`, and
+    // `DEFAULT_AUDIO_OFFSET_MS` which are declared further down the file.
+    // The forward-declared placeholders above are reassigned at the
+    // bottom-anchored call site (search for the matching marker comment).
 
     // updateDebugOverlay() reads state.debugMode each frame, so applyDebug
     // must keep prefs.debug and state.debugMode in lockstep.
@@ -5510,6 +5440,47 @@
           alert(t('alertBleConnectFailedFmt', { v: e.message }));
         }
       }
+    }
+
+    // ─── settings-panel wire-up ──────────────────────────────────────
+    // Settings-panel modal lifecycle + audio-offset slider + rescan/BLE/
+    // reset buttons — Phase 0d batch 3: extracted to
+    // packages/web/src/settings-panel.ts. Wired here (after practice,
+    // midiInput, rescanMidi, connectBleMidi are all in scope) and
+    // re-binds the forward-declared `openSettings` / `closeSettings` /
+    // `refreshSettingsPanel` placeholders earlier in the file so call
+    // sites (ESC handler, refreshSettingsPanel from showSessionSummary)
+    // keep working.
+    {
+      const _settings = SettingsPanel.createSettingsPanel({
+        dom: /** @type {import('./settings-panel').SettingsPanelDom} */ ({
+          panel: DOM.settingsPanel,
+          openBtn: DOM.settingsBtn,
+          closeBtn: DOM.settingsCloseBtn,
+          audioOffsetSlider: DOM.audioOffsetSlider,
+          audioOffsetVal: DOM.audioOffsetVal,
+          audioOffsetAuto: DOM.audioOffsetAuto,
+          audioOffsetReset: DOM.audioOffsetReset,
+          rescanBtn: DOM.settingsRescanBtn,
+          bleBtn: DOM.settingsBleBtn,
+          resetBtn: DOM.settingsResetBtn,
+          inputStatus: DOM.settingsInputStatus,
+        }),
+        prefs,
+        practice,
+        state,
+        midiInput,
+        defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
+        savePrefs,
+        t,
+        modalFocus,
+        rescanMidi: () => { void rescanMidi(); },
+        connectBleMidi: () => connectBleMidi(),
+        showSessionSummary: () => showSessionSummary(),
+      });
+      openSettings = _settings.open;
+      closeSettings = _settings.close;
+      refreshSettingsPanel = _settings.refresh;
     }
 
     // ========================================
