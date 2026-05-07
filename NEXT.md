@@ -6,15 +6,15 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08**. Phase 0d batches 7a / 7b / 7c / 7d / 8 / 10
-landed as a long event-wiring + render + scoring extraction run. `legacy-app.js`
-is now **6,720 lines** (down from 7,225 at session start; 505 lines extracted in
-six sub-batches). New modules: `theme-controls.ts` (-42 / +17 tests),
-`practice-flow.ts` (-46 / +21 tests), `song-panel-controls.ts` (-10 / +12
-tests), `song-panel-render.ts` (-118 / +31 tests), `practice-tick.ts` (-93 / +20
-tests), `result-card.ts` (-213 line block / +27 tests). **1,052 tests across
-both packages** (786 core, 266 web; +128 from this session). `pnpm verify` clean
-across 5 packages.
+Last refreshed: **2026-05-08**. Phase 0d batches 7a / 7b / 7c / 7d / 8 / 10 / 11
+landed as a long event-wiring + render + scoring + summary extraction run.
+`legacy-app.js` is now **6,565 lines** (down from 7,225 at session start; 660
+lines extracted in seven sub-batches). New modules: `theme-controls.ts` (-42 /
++17 tests), `practice-flow.ts` (-46 / +21 tests), `song-panel-controls.ts` (-10
+/ +12 tests), `song-panel-render.ts` (-118 / +31 tests), `practice-tick.ts` (-93
+/ +20 tests), `result-card.ts` (-213 / +27 tests), `session-summary.ts` (-193 /
++17 tests). **1,069 tests across both packages** (786 core, 283 web; +145 from
+this session). `pnpm verify` clean across 5 packages.
 
 ---
 
@@ -82,11 +82,12 @@ across 5 packages.
 | 58  | `web/song-panel-render.ts`    | 31    | `packages/web/src/song-panel-render.ts`         |
 | 59  | `web/practice-tick.ts`        | 20    | `packages/web/src/practice-tick.ts`             |
 | 60  | `web/result-card.ts`          | 27    | `packages/web/src/result-card.ts`               |
+| 61  | `web/session-summary.ts`      | 17    | `packages/web/src/session-summary.ts`           |
 
-**Status: 1,052/1,052 tests green (786 core + 266 web), 0 lint errors, 0 type
+**Status: 1,069/1,069 tests green (786 core + 283 web), 0 lint errors, 0 type
 errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 6,720 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
-so far: ≈2,280 lines moved out of the shell across 12 sub-batches.
+`legacy-app.js`: 6,565 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
+so far: ≈2,435 lines moved out of the shell across 13 sub-batches.
 
 ---
 
@@ -94,11 +95,11 @@ so far: ≈2,280 lines moved out of the shell across 12 sub-batches.
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently **6,720 lines**. Goal: ≤200 lines, with each carved-out
+The shell is currently **6,565 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-Batches 1-10 all landed cleanly. Remaining batches in order of size / ease:
+Batches 1-11 all landed cleanly. Remaining batches in order of size / ease:
 
 - [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
 - [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
@@ -134,6 +135,11 @@ Batches 1-10 all landed cleanly. Remaining batches in order of size / ease:
       declared placeholders + thunked practice-tick wiring so the deps DAG stays
       acyclic even though result-card is declared after the practice-tick
       wire-up.
+- [x] `web/session-summary.ts` — saveBestScores + renderSessionSummaryText +
+      showSessionSummary + drawRadarChart (landed batch 11, -193 lines, +17
+      tests). The shared formatTime / updatePlayTime / setupHiDPICanvas helpers
+      stay in legacy-app.js (used by both result-card and the loop) under a
+      'Shared helpers' header right above the wire-up.
 - [ ] `web/render-loop.ts` — `loop()` frame composer (~240 lines). Hardest
       remaining batch: ~50 deps (every render layer + state + MIDI + practice
       tick). Recommend sub-batching by render phase (background fade +
