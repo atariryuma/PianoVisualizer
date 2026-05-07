@@ -4997,13 +4997,31 @@
       if (!wasMidiOn && audioCtx && !state.micSuspended) {
         suspendMic();
       }
+      // Bug-fix (2026-05-07): explicitly call port.open() before binding the
+      // handler. The Web MIDI spec says assigning onmidimessage implicitly
+      // opens, but Web MIDI Browser's polyfill doesn't always honor that —
+      // pre-paired BLE-MIDI keyboards ended up attached but silent. The
+      // explicit open() is a no-op when the port is already open, so it's
+      // safe to call unconditionally. The promise can reject (rare); we
+      // bind the handler regardless and let onstatechange trigger a
+      // re-attach if it really did fail.
+      try {
+        const openResult = /** @type {{open?: () => Promise<unknown>}} */ (port).open?.();
+        if (openResult && typeof openResult.catch === 'function') {
+          openResult.catch((e) => console.warn('[MIDI] port.open() rejected:',
+            e instanceof Error ? e.message : String(e)));
+        }
+      } catch (e) {
+        console.warn('[MIDI] port.open() threw:', e instanceof Error ? e.message : String(e));
+      }
       port.onmidimessage = onMidiMessageHandler;
       setInputIndicator();
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
       DOM.micMeter?.classList.remove('visible');
       stopMidiAutoRescan();
       showHitChip('good', t('midiConnectedFmt', { v: port.name || 'MIDI' }));
-      console.log('[MIDI] connected: ' + port.name);
+      console.log('[MIDI] connected: ' + port.name + ' (state=' + port.state
+        + ' connection=' + port.connection + ')');
       return true;
     }
 
@@ -5050,11 +5068,27 @@
           console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
             + ' state=' + p.state + ' connection=' + p.connection);
         }
+        // Two-pass attach — first pass requires `state === 'connected'`
+        // (the strict, by-the-spec attempt). If nothing attaches, try
+        // again ignoring state. Web MIDI Browser sometimes reports a
+        // pre-paired BLE-MIDI keyboard with state='unknown' or 'pending'
+        // until the page actively opens it; the second pass picks those
+        // up. attachMidiPort still rejects virtual/system ports, so this
+        // doesn't loosen the safety filter.
         let attached = false;
         for (const port of allPorts) {
           if (port.state === 'connected' && attachMidiPort(port)) {
             attached = true;
             break;
+          }
+        }
+        if (!attached) {
+          for (const port of allPorts) {
+            if (attachMidiPort(port)) {
+              console.log('[MIDI] attached non-connected port (WMB quirk): ' + port.name);
+              attached = true;
+              break;
+            }
           }
         }
         // Bug-fix (2026-05-07): when the user opens the page BEFORE
@@ -5188,8 +5222,17 @@
           }
           return false;
         }
+        // Two-pass attach (same rationale as initWebMIDI): strict by-spec
+        // first, then loose pass for WMB's pre-paired BLE quirk where a
+        // visible port may report state='unknown' until first open().
         for (const port of ports) {
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
+        }
+        for (const port of ports) {
+          if (!midiInput.enabled && attachMidiPort(port)) {
+            console.log('[MIDI] rescan attached non-connected port (WMB quirk): ' + port.name);
+            return true;
+          }
         }
         if (!silent) {
           showIntroDiag(() => setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect')));
@@ -5259,10 +5302,14 @@
           return;
         }
         // Periodically force a fresh MIDIAccess. WMB caches port enumeration
-        // and re-pairing doesn't always re-fire statechange. Force every 5
-        // ticks (~12.5s in the 2.5s window, ~5s in the 1s window).
+        // and re-pairing doesn't always re-fire statechange. In the fast
+        // phase (1s ticks during the first 30s) force every 2 ticks so a
+        // pre-paired keyboard surfaces within ~2s. After the fast window
+        // we only force every 5 ticks to keep CPU low for background polls.
         _midiRescanTickCount++;
-        const force = _midiRescanTickCount % 5 === 0;
+        const elapsedNow = performance.now() - _midiRescanStartedAt;
+        const forceEvery = elapsedNow < 30_000 ? 2 : 5;
+        const force = _midiRescanTickCount % forceEvery === 0;
         if (force) {
           console.log('[MIDI] auto-rescan: forcing fresh MIDIAccess (tick=' + _midiRescanTickCount + ')');
           ensureMidiAccess(true).catch(() => {});
