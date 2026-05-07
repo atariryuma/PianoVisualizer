@@ -44,6 +44,7 @@ import * as RenderFrame from './render-frame';
 import * as DevMode from './dev-mode';
 import * as RenderMid from './render-mid';
 import * as RenderLate from './render-late';
+import * as PracticeLane from './practice-lane';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -75,6 +76,7 @@ declare global {
     DevMode: typeof DevMode;
     RenderMid: typeof RenderMid;
     RenderLate: typeof RenderLate;
+    PracticeLane: typeof PracticeLane;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -161,6 +163,8 @@ declare global {
   var RenderMid: typeof import('./render-mid');
 
   var RenderLate: typeof import('./render-late');
+
+  var PracticeLane: typeof import('./practice-lane');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -190,6 +194,7 @@ declare global {
 (globalThis as unknown as Window).DevMode = DevMode;
 (globalThis as unknown as Window).RenderMid = RenderMid;
 (globalThis as unknown as Window).RenderLate = RenderLate;
+(globalThis as unknown as Window).PracticeLane = PracticeLane;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

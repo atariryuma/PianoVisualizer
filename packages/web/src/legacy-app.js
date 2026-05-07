@@ -3979,10 +3979,13 @@
       const timings = PianoCore.computePracticeTimings(practiceBeatMs());
       COUNT_IN_MS = timings.countInMs;
       LANE_LOOKAHEAD_MS = timings.laneLookaheadMs;
-      // _laneOpts is a hot-path singleton — refresh in lockstep so the first
-      // frame's countdown + descent rate match the new section's tempo.
-      _laneOpts.laneLookaheadMs = LANE_LOOKAHEAD_MS;
-      _laneOpts.countInMs = COUNT_IN_MS;
+      // Practice-lane scaffolding is a hot-path singleton inside
+      // practice-lane.ts — refresh in lockstep so the first frame's
+      // countdown + descent rate match the new section's tempo.
+      _practiceLane.setTimings({
+        laneLookaheadMs: LANE_LOOKAHEAD_MS,
+        countInMs: COUNT_IN_MS,
+      });
     }
     // Asymmetric hit windows: early presses are punished much harder than late
     // ones. Pedagogical reason — kids should learn to *wait for the beat*, not
@@ -5816,150 +5819,64 @@
     //   Lane is split into LH (left half) and RH (right half). Notes fall from the top
     //   toward the hit line. Time-to-pixel scale = (laneHeight - 40) / LANE_LOOKAHEAD_MS.
     // ========================================
-    // Practice lane drawer — Phase 0b.3: delegated to @piano/core.
-    // The view + timing + opts triple is rebuilt per frame from legacy
-    // closures so call sites pass nothing changed. core mutates the
-    // view.laneDrawFromIdx cursor in-place each frame.
-    /** @param {number} timeMs */
-    function drawPracticeLane(timeMs) {
-      if (!practice.enabled) return;
-      const osmdVisible = !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible'));
-      const kbReserve = midiInput.enabled ? (kbHeight + kbSafeBottom + 16) : 60;
-
-      // === Per-frame cursor sync ===
-      // Sits OSMD's cursor on the note we're currently working on, using
-      // (measureIdx, inBarQuarters) → setOsmdCursorToNote walks OSMD's
-      // iterator natively. No shadow step counter, no parallel timeline.
-      //
-      // Which note is "current":
-      // - rhythm/listen: the latest note whose timeMs <= real elapsed.
-      // - guided: practice.currentNoteIdx (kept in sync by updatePractice
-      //   as the kid resolves notes).
-      //
-      // Between two consecutive notes the cursor stays on the earlier
-      // one — we don't synthesise rest-step movement (intermediate steps
-      // aren't uniformly spaced in time on multi-voice scores, so any
-      // synthesised pacing would visibly drift).
-      if (osmdVisible && practice.sectionNotes.length > 0) {
-        const notes = practice.sectionNotes;
-        let targetIdx;
-        if (practice.mode === 'guided') {
-          targetIdx = Math.min(practice.currentNoteIdx | 0, notes.length - 1);
-        } else {
-          const elapsed = practiceRealElapsedMs();
-          let pIdx = (practice._cursorScanIdx ?? 0) | 0;
-          if (pIdx >= notes.length || notes[pIdx].timeMs > elapsed) pIdx = 0;
-          while (pIdx + 1 < notes.length && notes[pIdx + 1].timeMs <= elapsed) pIdx++;
-          practice._cursorScanIdx = pIdx;
-          targetIdx = pIdx;
-        }
-        if (targetIdx !== practice._lastCursorNoteIdx) {
-          const note = notes[targetIdx];
-          if (note) {
-            osmdAdapter.cursorTo(note.measureIdx, note.inBarQuarters);
-            osmdScrollToCursor();
-          }
-          practice._lastCursorNoteIdx = targetIdx;
-        }
-      }
-
-      // Lane region. cachedOsmdRect is refreshed by syncLayout +
-      // ResizeObserver, so this loop avoids a per-frame
-      // getBoundingClientRect() (which would force synchronous layout).
-      let laneLeft = 0;
-      let laneWidth = W;
-      let laneTopOverride;
-      if (osmdVisible && cachedOsmdRect.height > 0) {
-        if (currentLayoutMode === 'phone-landscape') {
-          laneLeft = Math.round(cachedOsmdRect.right + 8);
-          // Subtract safeRight so notes near the right edge don't fall into
-          // the home-indicator / notch zone on iPhones held landscape.
-          laneWidth = Math.max(160, W - laneLeft - 4 - safeRight);
-          laneTopOverride = Math.round(cachedOsmdRect.top);
-        } else {
-          laneTopOverride = Math.round(cachedOsmdRect.bottom + 12);
-        }
-      }
-      // View aliases practice slice in place — laneDrawFromIdx mutation by
-      // lane.ts flows back through the persistent reference. Hoisted instead
-      // of re-allocated per frame.
-      _laneView.sectionNotes = practice.sectionNotes;
-      if (practice.handRanges) _laneView.handRanges = practice.handRanges;
-      _laneView.laneDrawFromIdx = practice.laneDrawFromIdx ?? 0;
-      _laneView.currentNoteIdx = practice.currentNoteIdx;
-      _laneView.isBoss = !!currentSong.sections[practice.sectionIdx].isBoss;
-      _laneTiming.elapsedMs = practiceElapsedMs();
-      _laneTiming.realElapsedMs = practiceRealElapsedMs();
-      _laneTiming.nowMs = timeMs;
-      _laneOpts.screenW = laneWidth;
-      _laneOpts.screenH = H;
-      _laneOpts.osmdVisible = osmdVisible;
-      _laneOpts.laneTopOverride = laneTopOverride;
-      _laneOpts.kbReserve = kbReserve;
-      const translated = laneLeft !== 0;
-      if (translated) {
-        ctx.save();
-        ctx.translate(laneLeft, 0);
-      }
-      PianoCore.drawPracticeLane(ctx, _laneView, _laneTiming, _laneOpts);
-      if (translated) ctx.restore();
-      // Thread the amortized cursor back so subsequent frames don't re-scan.
-      practice.laneDrawFromIdx = _laneView.laneDrawFromIdx;
-    }
-    // Hoisted lane-draw scaffolding (see drawPracticeLane). Persistent objects
-    // avoid 60 fps allocations + give the JIT stable hidden classes.
-    // Honour the synesthesia toggle: when off, fall back to the active theme's
-    // cyclic palette so the lane tiles match the keyboard's resting colors
-    // (rainbow lane while synesthesia is OFF was a leak from before).
-    /** @param {number} m */
-    const _laneNoteRestingColor = (m) => {
-      if (state.useSynesthesiaMode) {
-        return CONFIG.NOTE_COLORS[CONFIG.NOTE_NAMES[m % 12]] || '#fff';
-      }
-      return noteThemeColor(m);
-    };
-    // Persistent _laneView reference — drawPracticeLane mutates
-    // laneDrawFromIdx in place each frame, so the legacy code re-uses one
-    // object instead of re-allocating. sectionNotes / handRanges start
-    // null and get populated at section build (line ~6205); the cast pins
-    // the type to LaneViewState for the call site.
-    /** @type {import('@piano/core').LaneViewState} */
-    const _laneView = /** @type {any} */ ({
-      enabled: true,
-      sectionNotes: [],
-      handRanges: { lhMin: 48, lhMax: 60, rhMin: 60, rhMax: 72 },
-      laneDrawFromIdx: 0,
-      currentNoteIdx: 0,
-      isBoss: false,
-    });
-    const _laneTiming = { elapsedMs: 0, realElapsedMs: 0, nowMs: 0 };
-    // Localized strings are refreshed on `langchange` (see refreshLaneOptsI18n)
-    // so the per-frame draw doesn't pay for t() lookups.
-    /** @type {{screenW:number, screenH:number, osmdVisible:boolean, laneTopOverride: number|undefined, kbReserve:number, laneLookaheadMs:number, countInMs:number, hitWindowEarlyMs:number, hitWindowMs:number, perfectMs:number, laneLabelL:string, laneLabelR:string, countInGoLabel:string, midiToPitchName:(midi:number)=>string, noteRestingColor:(midi:number)=>string}} */
-    const _laneOpts = {
-      screenW: 0,
-      screenH: 0,
-      osmdVisible: false,
-      /** @type {number|undefined} */
-      laneTopOverride: undefined,
-      kbReserve: 0,
+    // Practice lane wire-up (Phase 0d batch 15)
+    // ========================================
+    // drawPracticeLane + lane view/opts/timing scaffolding moved to
+    // packages/web/src/practice-lane.ts. The shell wraps the factory
+    // result so the legacy short name stays callable from the loop +
+    // render-late deps without churn.
+    const _practiceLane = PracticeLane.createPracticeLane({
+      ctx,
+      practice: /** @type {import('./practice-lane').PracticeLanePracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      state: /** @type {import('./practice-lane').PracticeLaneStateRef} */ (
+        /** @type {any} */ (state)
+      ),
+      midiInput,
+      getLayout: () => ({
+        W,
+        H,
+        kbHeight,
+        kbSafeBottom,
+        safeRight,
+        currentLayoutMode,
+        cachedOsmdRect: /** @type {import('./practice-lane').PracticeLaneOsmdRect} */ (
+          cachedOsmdRect
+        ),
+        osmdContainerVisible:
+          !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
+      }),
+      getCurrentSong: () => /** @type {any} */ (currentSong),
+      osmdAdapter,
+      osmdScrollToCursor,
+      practiceElapsedMs,
+      practiceRealElapsedMs,
+      noteThemeColor,
+      midiToPitchName,
+      noteColors: CONFIG.NOTE_COLORS,
+      noteNames: CONFIG.NOTE_NAMES,
       laneLookaheadMs: LANE_LOOKAHEAD_MS,
       countInMs: COUNT_IN_MS,
       hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
       hitWindowMs: HIT_WINDOW_MS,
       perfectMs: PERFECT_MS,
-      laneLabelL: '',
-      laneLabelR: '',
-      countInGoLabel: '',
-      midiToPitchName,
-      noteRestingColor: _laneNoteRestingColor,
-    };
-    function refreshLaneOptsI18n() {
-      _laneOpts.laneLabelL = t('laneLeft');
-      _laneOpts.laneLabelR = t('laneRight');
-      _laneOpts.countInGoLabel = t('countInGo');
+      drawPracticeLane: PianoCore.drawPracticeLane,
+      laneLabelL: t('laneLeft'),
+      laneLabelR: t('laneRight'),
+      countInGoLabel: t('countInGo'),
+    });
+    /** @param {number} timeMs */
+    function drawPracticeLane(timeMs) {
+      _practiceLane.draw(timeMs);
     }
-    refreshLaneOptsI18n();
+    function refreshLaneOptsI18n() {
+      _practiceLane.setLabels({
+        laneLabelL: t('laneLeft'),
+        laneLabelR: t('laneRight'),
+        countInGoLabel: t('countInGo'),
+      });
+    }
     window.addEventListener('langchange', refreshLaneOptsI18n);
 
     /** @param {CanvasRenderingContext2D} c @param {number} x @param {number} y @param {number} w @param {number} h @param {number} r */
