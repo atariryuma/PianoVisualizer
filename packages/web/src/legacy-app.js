@@ -2658,42 +2658,47 @@
         updatePractice(timeMs, false, 0);
       }
 
-      if (timeMs - state.noteShowTimeMs > CONFIG.NOTE_DISPLAY_DURATION_MS) {
-        DOM.noteDisplay.classList.remove('visible');
-      }
+      // Phase 0d batch 9b: note-display fade + ambient particle spawn
+      // + spectrum bars moved to packages/web/src/render-mid.ts. The
+      // silence gate (`smoothEnergy > 0.03`) still lives in the caller
+      // so silent frames skip the spectrum work entirely.
+      RenderMid.tickNoteDisplayFade(timeMs, {
+        noteDisplayEl: DOM.noteDisplay,
+        state: /** @type {import('./render-mid').RenderMidStateRef} */ (
+          /** @type {any} */ (state)
+        ),
+        noteDisplayDurationMs: CONFIG.NOTE_DISPLAY_DURATION_MS,
+      });
 
-      if (state.smoothEnergy < 0.04 && Math.random() > (1 - CONFIG.AMBIENT_PARTICLE_CHANCE - state.flow * 0.003)) {
-        const cols = theme.colors;
-        if (particles.length < CONFIG.MAX_PARTICLES) {
-          // 3D environment particles
-          // Random X (-W..2W), Random Y (below screen?), Random Z (deep)
-          const px = (Math.random() - 0.2) * W * 1.4 - (W * 0.2);
-          const py = H + 20;
-          const pz = (Math.random() - 0.5) * 600; // deep field
+      RenderMid.spawnAmbientParticle({
+        state: /** @type {import('./render-mid').RenderMidStateRef} */ (
+          /** @type {any} */ (state)
+        ),
+        theme,
+        screen: { W, H },
+        particles: /** @type {import('./render-mid').ParticlesArray} */ (
+          /** @type {any} */ (particles)
+        ),
+        maxParticles: CONFIG.MAX_PARTICLES,
+        ambientChance: CONFIG.AMBIENT_PARTICLE_CHANCE,
+        Particle: /** @type {import('./render-mid').ParticleCtor} */ (
+          /** @type {any} */ (Particle)
+        ),
+      });
 
-          particles.push(new Particle(
-            px, py, pz,
-            cols[Math.floor(Math.random() * cols.length)],
-            1 + Math.random() * (1 + state.flow * 0.03),
-            (Math.random() - 0.5) * 0.3, -0.3 - Math.random() * 0.5 - state.flow * 0.005, (Math.random() - 0.5) * 0.5,
-            200 + Math.random() * 100, 'circle'
-          ));
-        }
-      }
-
-      // Frequency spectrum bars — Phase 0b.3: delegated to @piano/core.
-      // Caller still owns the analyser + the silence gate (smoothEnergy > 0.03)
-      // so silent frames skip the work entirely.
       if (analyser && state.smoothEnergy > 0.03) {
-        const binHz = audioCtx.sampleRate / analyser.fftSize;
-        PianoCore.drawSpectrumBars(ctx, dataArray, {
-          screenW: W,
-          screenH: H,
-          startBin: Math.floor(CONFIG.PIANO_FREQ_MIN / binHz),
-          endBin: Math.floor(CONFIG.PIANO_FREQ_MAX / binHz),
+        RenderMid.runSpectrumBars({
+          ctx,
+          dataArray,
+          sampleRate: audioCtx.sampleRate,
+          fftSize: analyser.fftSize,
+          pianoFreqMin: CONFIG.PIANO_FREQ_MIN,
+          pianoFreqMax: CONFIG.PIANO_FREQ_MAX,
           barCount: CONFIG.BAR_COUNT,
           themeColors: theme.colors,
           flow: state.flow,
+          screen: { W, H },
+          drawSpectrumBars: PianoCore.drawSpectrumBars,
         });
       }
 
