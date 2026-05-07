@@ -284,6 +284,18 @@ describe('createResultCard — completePracticeSection', () => {
     expect(deps.practice.pendingHolds.clear).toHaveBeenCalled();
   });
 
+  it('bails when currentSong.sections[sectionIdx] is undefined (caught by dev-mode bench)', () => {
+    const deps = makeDeps();
+    deps.practice.sectionIdx = 99; // out of range → undefined
+    deps.practice.mode = 'listen';
+    createResultCard(deps).completePracticeSection();
+    // Defensive guard means we DO clean up _completing but skip the
+    // scoring + render path — don't throw, don't write _lastResult.
+    expect(deps.practice._completing).toBe(false);
+    expect(deps.practice._lastResult).toBeNull();
+    expect(deps.dom.sectionResult.classList.contains('visible')).toBe(false);
+  });
+
   it('listen mode skips scoring + just renders the result modal', () => {
     const deps = makeDeps();
     deps.practice.mode = 'listen';

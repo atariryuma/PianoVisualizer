@@ -232,7 +232,16 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.practice._completing = false;
       return;
     }
+    // Defensive: sections[] may be empty if loadCurrentScore hasn't
+    // resolved yet, or if practice.sectionIdx drifted out of range
+    // (e.g. result-card fired between selectSong and loadCurrentScore).
+    // Without this guard the legacy code threw "Cannot read .id of
+    // undefined" at runtime — the dev-mode benchmark caught it.
     const sec = currentSong.sections[deps.practice.sectionIdx];
+    if (!sec) {
+      deps.practice._completing = false;
+      return;
+    }
     const isFullSong = deps.practice.mode === 'listen' && deps.practice.fullSongMode;
 
     // Listen mode: no scoring, no progress mutation, no unlocks. Hide
