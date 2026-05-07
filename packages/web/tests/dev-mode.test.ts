@@ -196,7 +196,7 @@ describe('createDevMode — self-test runner', () => {
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
-    const panel = document.querySelector('.dev-mode-selftest') as HTMLElement;
+    const panel = document.querySelector('.dev-mode-suite') as HTMLElement;
     expect(panel).not.toBeNull();
     // 4 test rows + 1 summary
     const rows = panel.querySelectorAll('div > div');
@@ -383,5 +383,72 @@ describe('createDevMode — copy report', () => {
     copyBtn.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(copyBtn.textContent).toBe('✅ Copied');
+  });
+});
+
+// ─── 🎯 Benchmark suite ──────────────────────────────────────────────
+
+describe('createDevMode — benchmark suite', () => {
+  beforeEach(() => {
+    localStorage.setItem('pianoViz_dev', '1');
+  });
+
+  it('hides the 🎯 button when no benchmarks are provided', () => {
+    createDevMode(makeDeps());
+    const labels = Array.from(document.querySelectorAll('.dev-mode-toolbar button')).map(
+      (b) => b.textContent
+    );
+    expect(labels).not.toContain('🎯 Benchmark');
+  });
+
+  it('shows the 🎯 button when benchmarks are provided', () => {
+    createDevMode(makeDeps({ benchmarks: [{ name: 'b1', run: async () => true }] }));
+    const labels = Array.from(document.querySelectorAll('.dev-mode-toolbar button')).map(
+      (b) => b.textContent
+    );
+    expect(labels).toContain('🎯 Benchmark');
+  });
+
+  it('runs benchmark suite + reports timing in the detail line', async () => {
+    createDevMode(
+      makeDeps({
+        benchmarks: [
+          {
+            name: 'slow-pass',
+            run: () => new Promise((r) => setTimeout(() => r(true), 30)),
+          },
+        ],
+      })
+    );
+    const benchBtn = Array.from(document.querySelectorAll('.dev-mode-toolbar button')).find(
+      (b) => b.textContent === '🎯 Benchmark'
+    ) as HTMLButtonElement;
+    benchBtn.click();
+    await new Promise((r) => setTimeout(r, 60));
+    const panel = document.querySelector('.dev-mode-suite') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.dataset.kind).toBe('benchmark');
+    expect(panel.textContent).toMatch(/\d+ms/);
+    expect(panel.textContent).toContain('1 / 1 passed');
+  });
+
+  it('benchmark report is labeled "## Benchmark" in the Copy report', async () => {
+    const reads: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: (s: string) => (reads.push(s), Promise.resolve()) },
+    });
+    createDevMode(makeDeps({ benchmarks: [{ name: 'b1', run: async () => true }] }));
+    const benchBtn = Array.from(document.querySelectorAll('.dev-mode-toolbar button')).find(
+      (b) => b.textContent === '🎯 Benchmark'
+    ) as HTMLButtonElement;
+    benchBtn.click();
+    await new Promise((r) => setTimeout(r, 20));
+    const copyBtn = Array.from(document.querySelectorAll('.dev-mode-toolbar button')).find(
+      (b) => b.textContent === '📋 Copy'
+    ) as HTMLButtonElement;
+    copyBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reads[0]).toContain('## Benchmark — 1 / 1 passed');
   });
 });

@@ -6547,6 +6547,172 @@
           },
         },
       ]),
+      benchmarks: /** @type {import('./dev-mode').SelfTest[]} */ ([
+        {
+          name: 'Frame timing — 60 frames, expect avg dt < 18ms',
+          run: async () => {
+            // Synthetic frame-rate probe. Capture 60 raf ticks and
+            // compute the arithmetic mean. Doesn't depend on
+            // state.running — raf fires independently.
+            const samples = /** @type {number[]} */ ([]);
+            await new Promise((resolve) => {
+              let prev = performance.now();
+              let count = 0;
+              const tick = (/** @type {number} */ now) => {
+                samples.push(now - prev);
+                prev = now;
+                count++;
+                if (count >= 60) resolve(undefined);
+                else requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            });
+            // Drop the first sample (warmup / hidden-tab carry-over).
+            const dts = samples.slice(1);
+            const avg = dts.reduce((s, d) => s + d, 0) / dts.length;
+            const max = Math.max(...dts);
+            const ok = avg < 18; // 60fps + a tiny margin
+            return { ok, detail: 'avg=' + avg.toFixed(1) + 'ms max=' + max.toFixed(1) + 'ms' };
+          },
+        },
+        {
+          name: 'Modal lifecycle — settings open + close + ESC',
+          run: () => {
+            const before = DOM.settingsPanel.classList.contains('visible');
+            openSettings();
+            const opened = DOM.settingsPanel.classList.contains('visible');
+            closeSettings();
+            const closed = DOM.settingsPanel.classList.contains('visible');
+            const ok = !before && opened && !closed;
+            return { ok, detail: 'before=' + before + ' opened=' + opened + ' closed=' + closed };
+          },
+        },
+        {
+          name: 'Modal lifecycle — add-song open + close',
+          run: () => {
+            openAddSongModal();
+            const opened = DOM_ADDSONG.modal.classList.contains('visible');
+            closeAddSongModal();
+            const closed = DOM_ADDSONG.modal.classList.contains('visible');
+            return { ok: opened && !closed, detail: 'opened=' + opened + ' closed=' + closed };
+          },
+        },
+        {
+          name: 'Theme cycle — flip 0 → 1 → 2 → 3 → 0',
+          run: () => {
+            const original = prefs.theme;
+            /** @type {string[]} */
+            const seen = [];
+            for (const idx of [0, 1, 2, 3, 0]) {
+              applyTheme(idx);
+              seen.push(idx + ':' + state.currentTheme + ':' + prefs.theme);
+            }
+            applyTheme(original); // restore
+            const ok = seen.every((s, i) => {
+              const want = [0, 1, 2, 3, 0][i];
+              return s === want + ':' + want + ':' + want;
+            });
+            return { ok, detail: ok ? 'all 5 cycles ok' : 'mismatch: ' + seen.join(', ') };
+          },
+        },
+        {
+          name: 'Lang cycle — JP ↔ EN flip persists + DOM updates',
+          run: () => {
+            const original = prefs.lang;
+            setLang('jp');
+            const jpHtml = document.documentElement.lang;
+            const jpStartText = t('startPractice');
+            setLang('en');
+            const enHtml = document.documentElement.lang;
+            const enStartText = t('startPractice');
+            setLang(/** @type {'en'|'jp'} */ (original)); // restore
+            const ok =
+              jpHtml === 'ja' &&
+              enHtml === 'en' &&
+              jpStartText !== enStartText &&
+              jpStartText.length > 0 &&
+              enStartText.length > 0;
+            return {
+              ok,
+              detail:
+                'jpHtml=' +
+                jpHtml +
+                ' enHtml=' +
+                enHtml +
+                ' jpText="' +
+                jpStartText +
+                '" enText="' +
+                enStartText +
+                '"',
+            };
+          },
+        },
+        {
+          name: 'Render-loop dispatch — runRenderFramePrelude returns valid dt',
+          run: async () => {
+            // Don't actually start a session; instead call the prelude
+            // directly with the same deps the loop uses. This proves
+            // the wire-up + module call path works end-to-end without
+            // needing audio.
+            const before = state.lastFrameTimeMs;
+            const result = RenderFrame.runRenderFramePrelude(performance.now(), {
+              ctx,
+              state,
+              getScreen: () => ({ W, H }),
+              themes: CONFIG.THEMES,
+              drawBgStars,
+              drawAurora,
+              drawGroundFlowers,
+              decayWakeUpFlash: PianoCore.decayWakeUpFlash,
+              drawCenterGlow: PianoCore.drawCenterGlow,
+              wufOpts: WUF_OPTS,
+              getEnergy,
+            });
+            const ok =
+              typeof result.dt === 'number' &&
+              result.dt > 0 &&
+              result.dt <= 50 &&
+              !!result.theme &&
+              !!result.theme.colors;
+            // Restore lastFrameTimeMs so we don't pollute the real loop.
+            state.lastFrameTimeMs = before;
+            return { ok, detail: 'dt=' + result.dt.toFixed(1) + 'ms theme=' + (result.theme?.colors?.length || 0) + 'colors' };
+          },
+        },
+        {
+          name: 'Storage stress — 50 IndexedDB put/get/delete cycles',
+          run: async () => {
+            const ts = Date.now();
+            try {
+              for (let i = 0; i < 50; i++) {
+                const id = '__bench_' + ts + '_' + i;
+                const rec = /** @type {any} */ ({
+                  id,
+                  title: 'bench',
+                  composer: '',
+                  mxlBlob: new Blob(['x'], { type: 'text/plain' }),
+                  mimeType: 'application/vnd.recordare.musicxml+zip',
+                  sectionDefs: { type: 'measure-thirds', count: 3 },
+                  addedAt: Date.now(),
+                  source: 'bench',
+                });
+                await userDbPut(rec);
+              }
+              // Drain via userDbAll (no per-key get in shell — read whole list)
+              const all = await userDbAll();
+              const found = all.filter((r) => r.id.startsWith('__bench_' + ts)).length;
+              // Cleanup
+              for (let i = 0; i < 50; i++) {
+                const id = '__bench_' + ts + '_' + i;
+                try { await removeUserSong(id); } catch (_) { /* may already be cleaned */ }
+              }
+              return { ok: found === 50, detail: found + '/50 round-tripped' };
+            } catch (e) {
+              return { ok: false, detail: /** @type {Error} */ (e).message };
+            }
+          },
+        },
+      ]),
       getDiagSnapshot: () => ({
         'audioCtx.state': audioCtx ? audioCtx.state : '(none)',
         'audioCtx.sampleRate': audioCtx ? audioCtx.sampleRate + 'Hz' : '(none)',

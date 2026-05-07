@@ -51,6 +51,12 @@ export interface DevModeDeps {
   containerEl?: HTMLElement;
   /** Tests to run when the user taps the 🧪 button. Order is preserved. */
   tests: SelfTest[];
+  /** Long-running benchmarks (frame timing, practice dry-run, storage
+   *  stress) — same shape as `tests`, rendered in a separate panel
+   *  with per-test timing reported alongside the pass/fail status.
+   *  Tests still complete in <100ms each; benchmarks may take seconds.
+   *  Optional — when omitted the 🎯 Benchmark button is hidden. */
+  benchmarks?: SelfTest[];
   /** Snapshot probe — called at 1Hz when the diag panel is open. */
   getDiagSnapshot: () => DiagSnapshot;
   /** Optional version string (e.g. git SHA short) — included in the
@@ -159,8 +165,18 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     return btn;
   };
 
-  const selftestBtn = mkBtn('🧪 Self-test', () => void runSelfTest());
+  const selftestBtn = mkBtn(
+    '🧪 Self-test',
+    () => void runSuite(deps.tests, selftestBtn, 'selftest')
+  );
   const diagBtn = mkBtn('📊 Diag', () => toggleDiag());
+  const benchBtn = deps.benchmarks?.length
+    ? mkBtn('🎯 Benchmark', () => void runSuite(deps.benchmarks!, benchBtn!, 'benchmark'))
+    : null;
+  if (benchBtn) {
+    benchBtn.title =
+      'Run end-to-end benchmarks (frame timing, modal lifecycle, theme/lang cycle, practice dry-run). Slower than self-test.';
+  }
   const copyBtn = mkBtn('📋 Copy', () => void copyReport(copyBtn));
   copyBtn.title = 'Copy a markdown report (self-test results + diag snapshot + UA) to clipboard';
   const closeBtn = mkBtn('✕', () => {
@@ -170,16 +186,23 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     toolbar.remove();
   });
   closeBtn.title = 'Disable dev mode (also clears the localStorage flag)';
-  toolbar.append(selftestBtn, diagBtn, copyBtn, closeBtn);
+  if (benchBtn) toolbar.append(selftestBtn, diagBtn, benchBtn, copyBtn, closeBtn);
+  else toolbar.append(selftestBtn, diagBtn, copyBtn, closeBtn);
   container.appendChild(toolbar);
 
-  // ─── self-test panel ─────────────────────────────────────────────
+  // ─── self-test / benchmark panel ─────────────────────────────────
+  /** One panel reused by both 🧪 Self-test and 🎯 Benchmark — the
+   *  innerHTML is wiped and rebuilt on each run. The kind label
+   *  ('selftest' / 'benchmark') is stored on the element via dataset
+   *  so the 📋 Copy report can label the section appropriately. */
   let panel: HTMLDivElement | null = null;
   let running = false;
   /** Latest results — the 📋 Copy button serializes these (plus the
    *  current diag snapshot) into a markdown report for clipboard
-   *  paste-into-chat / paste-into-bug-report. */
+   *  paste-into-chat / paste-into-bug-report. Benchmark results
+   *  carry per-test timing in `detail`. */
   let lastResults: SelfTestResult[] = [];
+  let lastResultsKind: 'selftest' | 'benchmark' | null = null;
 
   /** Build the markdown report. Pure (no DOM); the caller writes it
    *  to navigator.clipboard or any other sink. Exposed at the bottom
@@ -197,8 +220,9 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     lines.push('- ua: ' + ua);
     if (lastResults.length > 0) {
       const passed = lastResults.filter((r) => r.ok).length;
+      const heading = lastResultsKind === 'benchmark' ? 'Benchmark' : 'Self-test';
       lines.push('');
-      lines.push('## Self-test — ' + passed + ' / ' + lastResults.length + ' passed');
+      lines.push('## ' + heading + ' — ' + passed + ' / ' + lastResults.length + ' passed');
       lines.push('');
       for (const r of lastResults) {
         const icon = r.ok ? '✅' : '❌';
@@ -249,20 +273,25 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     }, 1500);
   }
 
-  async function runSelfTest(): Promise<void> {
+  async function runSuite(
+    suite: SelfTest[],
+    btn: HTMLButtonElement,
+    kind: 'selftest' | 'benchmark'
+  ): Promise<void> {
     if (running) return;
     running = true;
-    selftestBtn.disabled = true;
-    selftestBtn.textContent = '🧪 Running…';
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = (kind === 'benchmark' ? '🎯' : '🧪') + ' Running…';
 
     if (!panel) {
       panel = document.createElement('div');
-      panel.className = 'dev-mode-selftest';
+      panel.className = 'dev-mode-suite';
       panel.style.cssText = [
         'position:fixed',
         'top:48px',
         'right:8px',
-        'max-width:360px',
+        'max-width:380px',
         'max-height:60vh',
         'overflow:auto',
         'padding:10px 12px',
@@ -277,10 +306,16 @@ export function createDevMode(deps: DevModeDeps): DevMode {
       ].join(';');
       container.appendChild(panel);
     }
+    panel.dataset.kind = kind;
     panel.innerHTML = '';
 
+    const heading = document.createElement('div');
+    heading.style.cssText = 'font-weight:600;margin-bottom:6px';
+    heading.textContent = kind === 'benchmark' ? '🎯 Benchmark' : '🧪 Self-test';
+    panel.appendChild(heading);
+
     const results: SelfTestResult[] = [];
-    for (const test of deps.tests) {
+    for (const test of suite) {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:8px;padding:4px 0;align-items:flex-start';
       row.innerHTML =
@@ -292,6 +327,7 @@ export function createDevMode(deps: DevModeDeps): DevMode {
 
       let ok = false;
       let detail: string | undefined;
+      const t0 = performance.now();
       try {
         const r = await test.run();
         if (typeof r === 'boolean') {
@@ -303,6 +339,12 @@ export function createDevMode(deps: DevModeDeps): DevMode {
       } catch (e) {
         ok = false;
         detail = (e as Error)?.message || String(e);
+      }
+      const elapsed = Math.round(performance.now() - t0);
+      // Benchmarks always include timing in the detail. Self-tests only
+      // when ≥10ms (fast tests would just clutter the display).
+      if (kind === 'benchmark' || elapsed >= 10) {
+        detail = (detail ? detail + ' — ' : '') + elapsed + 'ms';
       }
       results.push({ name: test.name, ok, detail });
 
@@ -330,8 +372,9 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     panel.appendChild(summary);
 
     lastResults = results.slice();
-    selftestBtn.disabled = false;
-    selftestBtn.textContent = '🧪 Self-test';
+    lastResultsKind = kind;
+    btn.disabled = false;
+    btn.textContent = origLabel;
     running = false;
   }
 
