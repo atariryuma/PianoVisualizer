@@ -953,32 +953,12 @@
     /** @type {MediaStreamAudioSourceNode | null} v13: rewireable source between gainNode and the live mic */
     let micSourceNode = null;
 
-    const MIC_CONSTRAINTS = {
-      audio: {
-        autoGainControl: false,
-        noiseSuppression: false,
-        echoCancellation: false,
-        sampleRate: { ideal: 48000 }
-      }
-    };
-
-    // Pinned to 48000 Hz so AirPods (which flip between 24kHz input and 48kHz
-    // output) don't cause stutter when the mic activates. Browsers do automatic
-    // resampling — we eat the SRC cost in exchange for stability.
-    // WebKit Bug 154538 (open as of 2025) confirms the underlying flip persists.
-    const AUDIO_SAMPLE_RATE = 48000;
-
-    function createAudioContext() {
-      const Ctor = window.AudioContext || /** @type {typeof AudioContext} */ (
-        /** @type {any} */ (window).webkitAudioContext
-      );
-      try {
-        return new Ctor({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: 'interactive' });
-      } catch (e) {
-        // Some older Safaris reject the options bag — fall back to default ctor.
-        return new Ctor();
-      }
-    }
+    // Phase 0d batch 5: audio context + graph builder live in
+    // packages/web/src/audio-init.ts. Aliases keep the short identifiers
+    // working at all the legacy callsites unchanged.
+    const MIC_CONSTRAINTS = AudioInit.MIC_CONSTRAINTS;
+    const AUDIO_SAMPLE_RATE = AudioInit.AUDIO_SAMPLE_RATE;
+    const createAudioContext = AudioInit.createAudioContext;
 
     async function initAudio() {
       console.log("Initializing Audio...");
@@ -4329,90 +4309,75 @@
       return true;
     }
 
-    // Reconnect the audio graph after a fresh AudioContext: rebuild gain +
-    // both analysers, re-wire the mic source if it's still alive. Used by
-    // visibilitychange recovery and devicechange (AirPods plug/unplug).
+    // Phase 0d batch 5: graph builder + recovery seam live in
+    // packages/web/src/audio-init.ts. The shell exposes mutators so the
+    // module can replace the audio nodes atomically while the rest of
+    // the legacy code keeps reading the short identifiers.
     /** @param {MediaStream|null} prevMicStream */
     function rebuildAudioGraph(prevMicStream) {
-      gainNode = audioCtx.createGain();
-      gainNode.gain.setValueAtTime(state.micSuspended ? 0 : 1.0, audioCtx.currentTime);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = CONFIG.FFT_SIZE;
-      analyser.smoothingTimeConstant = CONFIG.SMOOTHING;
-      gainNode.connect(analyser);
-      dataArray = new Uint8Array(analyser.frequencyBinCount);
-      freqArray = new Float32Array(analyser.fftSize);
-      onsetAnalyser = audioCtx.createAnalyser();
-      onsetAnalyser.fftSize = CONFIG.ONSET_FFT_SIZE;
-      onsetAnalyser.smoothingTimeConstant = CONFIG.ONSET_SMOOTHING;
-      gainNode.connect(onsetAnalyser);
-      onsetDataArray = new Uint8Array(onsetAnalyser.frequencyBinCount);
-      if (prevMicStream && prevMicStream.active) {
-        try {
-          micSourceNode = audioCtx.createMediaStreamSource(prevMicStream);
-          micSourceNode.connect(gainNode);
-        } catch (e) { /* stream may have died; user can re-permit */ }
-      }
+      const graph = AudioInit.buildAudioGraph(audioCtx, prevMicStream, {
+        fftSize: CONFIG.FFT_SIZE,
+        smoothing: CONFIG.SMOOTHING,
+        onsetFftSize: CONFIG.ONSET_FFT_SIZE,
+        onsetSmoothing: CONFIG.ONSET_SMOOTHING,
+      }, !!state.micSuspended);
+      gainNode = graph.gainNode;
+      analyser = graph.analyser;
+      onsetAnalyser = graph.onsetAnalyser;
+      dataArray = graph.dataArray;
+      freqArray = graph.freqArray;
+      onsetDataArray = graph.onsetDataArray;
+      micSourceNode = graph.micSourceNode;
       // Reset per-frame onset state — old prevSpectrum was sized to the old context.
       state.prevSpectrum = null;
       state.spectralFluxHistory = [];
     }
 
-    // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone does
-    // NOT recover audio after iOS backgrounds the page — the only reliable fix
-    // is closing the context and creating a fresh one. We keep the same mic
-    // MediaStream (it survives backgrounding) and re-wire it.
-    /** @type {Promise<void>|null} */
-    let _audioRecovering = null;
-    async function recoverAudioContext() {
-      if (!audioCtx) return;
-      // Re-entrancy guard: a devicechange + visibilitychange firing in the
-      // same tick would otherwise both close the context and rebuild the
-      // graph in parallel, causing the second invocation to close the new
-      // context the first one just installed.
-      if (_audioRecovering) return _audioRecovering;
-      _audioRecovering = (async () => {
-        try {
-          const prevStream = micStream;
-          // Disconnect old graph nodes before close — on iOS WKWebView,
-          // native MediaStreamSource refs can survive a closed context if
-          // not explicitly disconnected.
-          try { gainNode?.disconnect(); } catch (_) {}
-          try { micSourceNode?.disconnect(); } catch (_) {}
-          try { analyser?.disconnect(); } catch (_) {}
-          try { onsetAnalyser?.disconnect(); } catch (_) {}
-          try { await audioCtx.close(); } catch (_) {}
-          audioCtx = createAudioContext();
-          if (audioCtx.state === 'suspended') {
-            try { await audioCtx.resume(); } catch (_) {}
-          }
-          rebuildAudioGraph(prevStream);
-          // We deliberately do NOT touch Tone.js here. A previous attempt
-          // to call `Tone.setContext(audioCtx)` and null tonePiano /
-          // toneMetronome looked clean, but in Tone 14.8.x the swap leaves
-          // `Tone.context.currentTime` reading the *page-lifetime* clock
-          // rather than the new AudioContext's freshly-created clock.
-          // Once the user starts a new practice section after recovery,
-          // `practice.startAudioTime = Tone.now()` resolves to a small
-          // lead, but every subsequent `Tone.context.currentTime` read in
-          // `practiceRealElapsedMs` returns 30–60 s — elapsed jumps that
-          // far ahead and listen mode auto-fires hundreds of notes at
-          // section start.
-          // iOS WKWebView contract: post-background the audio engine is
-          // dead until the page reloads. Stop the active section so the
-          // lane stops scrolling against a stale clock; the kid still
-          // sees the visual pipeline (mic + canvas) come back to life.
-          if (practice.enabled) {
-            practice.enabled = false;
-            try { stopPracticeAudio(); } catch (_) {}
-          }
-          console.log('[AUDIO] context recreated @' + audioCtx.sampleRate + 'Hz');
-        } finally {
-          _audioRecovering = null;
+    // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone
+    // does NOT recover audio after iOS backgrounds the page — the only
+    // reliable fix is closing the context and creating a fresh one. The
+    // recovery closure (re-entrancy guard + node-disconnect → close →
+    // rebuild) lives in audio-init.ts. The shell hands it readers/writers
+    // for the audio nodes + the after-recovery hooks (Tone.js note: do
+    // NOT call `Tone.setContext` here — see audio-init.ts comment).
+    const _audioRecovery = AudioInit.createAudioRecovery({
+      getSnapshot: () => ({
+        audioCtx, gainNode, analyser, onsetAnalyser, micSourceNode, micStream
+      }),
+      applyContext: (newCtx, graph) => {
+        audioCtx = newCtx;
+        gainNode = graph.gainNode;
+        analyser = graph.analyser;
+        onsetAnalyser = graph.onsetAnalyser;
+        dataArray = graph.dataArray;
+        freqArray = graph.freqArray;
+        onsetDataArray = graph.onsetDataArray;
+        micSourceNode = graph.micSourceNode;
+      },
+      isMicSuspended: () => !!state.micSuspended,
+      config: {
+        fftSize: CONFIG.FFT_SIZE,
+        smoothing: CONFIG.SMOOTHING,
+        onsetFftSize: CONFIG.ONSET_FFT_SIZE,
+        onsetSmoothing: CONFIG.ONSET_SMOOTHING,
+      },
+      resetOnsetState: () => {
+        state.prevSpectrum = null;
+        state.spectralFluxHistory = [];
+      },
+      onAfterRecovery: () => {
+        // iOS WKWebView contract: post-background the audio engine is
+        // dead until the page reloads. Stop the active section so the
+        // lane stops scrolling against a stale Tone.js clock; the kid
+        // still sees the visual pipeline (mic + canvas) come back to life.
+        if (practice.enabled) {
+          practice.enabled = false;
+          try { stopPracticeAudio(); } catch (_) {}
         }
-      })();
-      return _audioRecovering;
-    }
+      },
+    });
+    /** @returns {Promise<void>} */
+    function recoverAudioContext() { return _audioRecovery.recover(); }
 
     // AirPods / headphone unplug switches sample rate (24/48 flip). The cleanest
     // recovery is to recreate the context — same as visibility recovery.
