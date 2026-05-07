@@ -11,8 +11,11 @@ the top of `packages/web/src/legacy-app.js`. Residual TS error count: **1,041 �
 0** (-100%). Tag: `phase-0c.5-done`. The 7,624-line legacy shell type-checks
 under `pnpm typecheck` as part of the regular verify cycle — regressions error
 at typecheck time, no silent re-introduction possible. Wakelock first leaf
-extraction landed (`packages/web/src/wakelock.ts`). 786/786 vitest cases green;
-`pnpm verify` clean across 5 packages.)
+extraction landed (`packages/web/src/wakelock.ts`). Vitest infra in
+`@piano/web` + 46 unit tests for the 3 typed shell modules (audio-scheduler,
+note-extractor, wakelock) closed Phase 0c.5's testing gap. **832 tests across
+both packages**; `pnpm verify` clean across 5 packages. CI green; deployed to
+<https://atariryuma.github.io/PianoVisualizer/>.)
 
 ---
 
@@ -67,6 +70,7 @@ extraction landed (`packages/web/src/wakelock.ts`). 786/786 vitest cases green;
 | 45  | `@param` sweep (60+ helpers)  | —     | `packages/web/src/legacy-app.js`                |
 | 46  | Phase 0c.5 — `// @ts-check`   | —     | `packages/web/src/legacy-app.js` (top of file)  |
 | 47  | `web/wakelock.ts`             | —     | `packages/web/src/wakelock.ts`                  |
+| 48  | web tests (3 shell modules)   | 46    | `packages/web/tests/*.test.ts`                  |
 
 **Status: 786/786 tests green, 0 lint errors, 0 type errors, 0 residual TS
 errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
