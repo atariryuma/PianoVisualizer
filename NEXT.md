@@ -6,15 +6,15 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0d batch 4 — i18n wire-up — landed.
-`legacy-app.js` is now **7,538 lines** (was 7,840 before this batch, -301). The
-legacy 320-line `T_STRINGS` literal + `t()` lookup were swapped for a 20-line
-`PianoCore.createT()` closure. Five formerly-missing keys (`addSongRename`,
-`addSongRenamePromptTitle`, `addSongRenamePromptComposer`, `diagMidiWaiting`,
-`tipMidiWaiting`) were added to `@piano/core`'s `T_STRINGS` table — fixes a
-latent bug where two MIDI-status tooltips showed their literal key names. **872
-tests across both packages** (786 core + 86 web); `pnpm verify` clean across 5
-packages.)
+Last refreshed: **2026-05-07** (Phase 0d batch 5 — `audio-init.ts` — landed
+alongside the listen-mode 全曲再生 feature. `legacy-app.js` is now **7,591
+lines** (batch 5 alone shaved 28 lines; the full-song feature added 88 lines net
+for the listen-mode whole-song-playback toggle). New typed module
+`packages/web/src/audio-init.ts` exports `MIC_CONSTRAINTS`, `AUDIO_SAMPLE_RATE`,
+`createAudioContext()`, `buildAudioGraph()`, and `createAudioRecovery(deps)` —
+the WebKit Bug 237878/261554 recovery seam now has its own focused file with
+explicit tests. **893 tests across both packages** (786 core + 107 web);
+`pnpm verify` clean across 5 packages.)
 
 ---
 
@@ -73,10 +73,13 @@ packages.)
 | 49  | `web/section-editor.ts`       | 20    | `packages/web/src/section-editor.ts`            |
 | 50  | `web/settings-panel.ts`       | 20    | `packages/web/src/settings-panel.ts`            |
 | 51  | i18n wire-up via `createT`    | —     | `packages/web/src/legacy-app.js` (-301 lines)   |
+| 52  | `web/audio-init.ts`           | 21    | `packages/web/src/audio-init.ts`                |
+| 53  | feat: 全曲再生 listen toggle  | —     | `packages/web/src/legacy-app.js` (+88 lines)    |
 
-**Status: 872/872 tests green (786 core + 86 web), 0 lint errors, 0 type errors,
-0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 7,538 lines (was 7,840 before batch 4, was 9,000+ at Phase 0a).
+**Status: 893/893 tests green (786 core + 107 web), 0 lint errors, 0 type
+errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
+`legacy-app.js`: 7,591 lines (was 9,000+ at Phase 0a). Batch 5 saved 28 lines;
+the parallel-developed listen-mode 全曲再生 feature added 88 net lines.
 
 ---
 
@@ -84,18 +87,26 @@ packages.)
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently **7,538 lines**. Goal: ≤200 lines, with each carved-out
+The shell is currently **7,591 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-Batches 1-4 all landed cleanly. Remaining batches in order of size / ease:
+Batches 1-5 all landed cleanly. Remaining batches in order of size / ease:
 
 - [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
 - [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
 - [x] i18n wire-up via `PianoCore.createT()` (landed batch 4, -301 lines)
-- [ ] `web/audio-init.ts` — getUserMedia + AudioContext + visibility-recovery
-      seam (~250 lines, mid)
-- [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid)
+- [x] `web/audio-init.ts` — AudioContext factory + recovery seam (landed batch
+      5, -28 lines, +21 tests). Note: `initAudio` / `acquireMic` / `suspendMic`
+      / `resumeMic` and the devicechange + visibilitychange listeners
+      deliberately stayed in the shell — they're tied to the state-machine and
+      reach into too many shell-private vars to extract without churning every
+      audio-node read across the rest of the file.
+- [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid).
+      Self-contained around `DOM_ADDSONG` (line ~6825) and the
+      `openAddSongModal` / `renderAddSongLibrary` / `renderAddSongMyList`
+      helpers. Also naturally bundles `renderUserSongButtons` (line ~7074) + the
+      rename/delete flows.
 - [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical)
 - [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
 - [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
