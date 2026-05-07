@@ -84,12 +84,11 @@ packages.)
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently 7,708 lines. Goal: ≤200 lines, with each carved-out
+The shell is currently **7,538 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-Wakelock landed in this session (commit `fa479f4`). Remaining batches in order
-of size / ease:
+Batches 1-4 all landed cleanly. Remaining batches in order of size / ease:
 
 - [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
 - [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
@@ -128,8 +127,29 @@ and delete each tagged block. Universal MIDI improvements that sit next to the
 WMB blocks (auto-rescan poller, visibility-resume re-enumeration, badge waiting
 state, manual rescan tap) STAY — those help every platform.
 
-**Note for next agent / picking up from `phase-0c.5-done`**: the wakelock
-extraction commit (`fa479f4`) is the canonical pattern. Replicate:
+**Note for next agent — audio-init is next, but read this first**: the four
+batches that landed (wakelock, section-editor, settings-panel, i18n) followed
+the same deps-injection pattern. `audio-init` is harder than its predecessors
+because the audio nodes (`audioCtx`, `gainNode`, `analyser`, `dataArray`,
+`freqArray`, `onsetAnalyser`, `onsetDataArray`) are read from many callsites
+across the shell, not just `initAudio` + `recoverAudioContext`. Two viable
+shapes:
+
+1. **Return-and-assign**: `createAudio(deps)` returns the seven node handles for
+   the shell to assign to its `let` locals. Clean for first-init but
+   `recoverAudioContext` mutates `audioCtx` mid-session — it would need to live
+   in the same module and accept a mutable-ref bag for the nodes it re-creates.
+2. **Mutable-ref bag throughout**: pass `{ audioCtx, gainNode, ... }` in/out;
+   shell reads `nodes.audioCtx` everywhere. Bigger callsite churn but cleaner
+   ownership.
+
+Either way, **iPad A/B is mandatory before pushing**: AudioContext recreation on
+`visibilitychange` and `devicechange` (mkpts 4367..4445 in the current shell) is
+the highest-stakes seam in the whole app. WebKit Bugs 237878 + 261554 mean any
+half-working recovery results in dead audio post-background.
+
+The wakelock extraction commit (`fa479f4`) is the canonical pattern for the
+mechanical parts. Replicate:
 
 1. Read the legacy code block in `legacy-app.js`.
 2. Create `packages/web/src/<name>.ts` with explicit exports and
