@@ -452,3 +452,166 @@ describe('createDevMode — benchmark suite', () => {
     expect(reads[0]).toContain('## Benchmark — 1 / 1 passed');
   });
 });
+
+// ─── ?autorun + ?webhook URL params (headless harness fixtures) ──────
+//
+// These two params power `pnpm bench`: the headless runner spawns
+// vite preview, opens `?dev=1&autorun=bench&webhook=...`, the page
+// auto-clicks the bench button + POSTs the markdown report to the
+// vite plugin, the runner polls and prints. The tests below pin the
+// in-page half of that contract.
+
+describe('createDevMode — ?autorun URL param', () => {
+  beforeEach(() => {
+    localStorage.setItem('pianoViz_dev', '1');
+    history.pushState({}, '', '/');
+  });
+  afterEach(() => {
+    history.pushState({}, '', '/');
+  });
+
+  it('?autorun=bench auto-clicks the 🎯 Benchmark button', async () => {
+    history.pushState({}, '', '/?dev=1&autorun=bench');
+    const ran: string[] = [];
+    createDevMode(
+      makeDeps({
+        benchmarks: [
+          {
+            name: 'autorun-probe',
+            run: async () => {
+              ran.push('autorun-probe');
+              return true;
+            },
+          },
+        ],
+      })
+    );
+    // setTimeout(0) → wait one macrotask, then drain microtasks
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(ran).toContain('autorun-probe');
+    const panel = document.querySelector('.dev-mode-suite') as HTMLElement;
+    expect(panel?.dataset.kind).toBe('benchmark');
+  });
+
+  it('?autorun=selftest auto-clicks the 🧪 Self-test button', async () => {
+    history.pushState({}, '', '/?dev=1&autorun=selftest');
+    const ran: string[] = [];
+    createDevMode(
+      makeDeps({
+        tests: [
+          {
+            name: 'autorun-st',
+            run: async () => {
+              ran.push('autorun-st');
+              return true;
+            },
+          },
+        ],
+      })
+    );
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(ran).toContain('autorun-st');
+  });
+
+  it('no autorun → no suite is fired automatically', async () => {
+    history.pushState({}, '', '/?dev=1');
+    const ran: string[] = [];
+    createDevMode(
+      makeDeps({
+        benchmarks: [
+          {
+            name: 'should-not-run',
+            run: async () => {
+              ran.push('did-run');
+              return true;
+            },
+          },
+        ],
+      })
+    );
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(ran).toEqual([]);
+  });
+
+  it('?autorun=bench is a no-op when no benchmarks are wired', async () => {
+    history.pushState({}, '', '/?dev=1&autorun=bench');
+    expect(() => createDevMode(makeDeps())).not.toThrow();
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector('.dev-mode-suite')).toBeNull();
+  });
+});
+
+describe('createDevMode — ?webhook URL param', () => {
+  let originalFetch: typeof fetch;
+  beforeEach(() => {
+    localStorage.setItem('pianoViz_dev', '1');
+    originalFetch = globalThis.fetch;
+    history.pushState({}, '', '/');
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    history.pushState({}, '', '/');
+  });
+
+  it('POSTs the markdown report to the webhook URL after a suite completes', async () => {
+    const calls: Array<{ url: string; body: string; method: string; type: string }> = [];
+    globalThis.fetch = (async (url: string, init: RequestInit = {}) => {
+      calls.push({
+        url: String(url),
+        body: String(init.body ?? ''),
+        method: String(init.method ?? 'GET'),
+        type: String((init.headers as Record<string, string>)?.['Content-Type'] ?? ''),
+      });
+      return new Response('stored', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    history.pushState(
+      {},
+      '',
+      '/?dev=1&autorun=bench&webhook=' + encodeURIComponent('http://x/__bench/result')
+    );
+    createDevMode(
+      makeDeps({
+        versionLabel: 'test 2026-05-08',
+        benchmarks: [{ name: 'wh-probe', run: async () => true }],
+      })
+    );
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5));
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].url).toBe('http://x/__bench/result');
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].type).toContain('text/markdown');
+    expect(calls[0].body).toContain('# Piano Visualizer — dev-mode report');
+    expect(calls[0].body).toContain('## Benchmark — 1 / 1 passed');
+    expect(calls[0].body).toContain('build: test 2026-05-08');
+  });
+
+  it('webhook fetch error surfaces a visible message, does not throw', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+
+    history.pushState({}, '', '/?dev=1&autorun=bench&webhook=http://nope/x');
+    createDevMode(makeDeps({ benchmarks: [{ name: 'b', run: async () => true }] }));
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5));
+
+    const panel = document.querySelector('.dev-mode-suite') as HTMLElement;
+    expect(panel.textContent).toContain('webhook failed');
+    expect(panel.textContent).toContain('ECONNREFUSED');
+  });
+
+  it('no webhook param → fetch is not called', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response('ok', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    history.pushState({}, '', '/?dev=1&autorun=bench');
+    createDevMode(makeDeps({ benchmarks: [{ name: 'b', run: async () => true }] }));
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5));
+
+    expect(calls).toBe(0);
+  });
+});

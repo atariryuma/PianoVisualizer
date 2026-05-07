@@ -53,3 +53,10 @@ packages/plugins/*/ios/build/
 # Audit / scratch
 docs/LICENSES/_drafts/
 tmp_probe.log
+
+# Headless bench harness output (regenerated each `pnpm bench` run)
+.last-bench-report.md
+packages/web/.last-bench-report.md
+
+# Claude Code internal scheduled-task lock
+.claude/scheduled_tasks.lock

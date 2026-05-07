@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
+import { benchPlugin } from './vite-bench-plugin';
 
 // Best-effort short SHA — `git rev-parse --short HEAD` on the build
 // host. Falls back to '(dev)' if git isn't available (e.g. CI tarball
@@ -71,6 +72,11 @@ export default defineConfig(({ mode }) => ({
     port: 8443,
   },
   plugins: [
+    // Bench harness — exposes /__bench/{result,last,clear} on the dev
+    // + preview servers. Pairs with dev-mode's `?webhook=URL` so a
+    // headless script can drive a benchmark run end-to-end without
+    // human input.
+    benchPlugin(),
     // Skip SW entirely on Capacitor builds — SW + WKWebView reload don't
     // play well. For web builds during the dev/prod transition we keep
     // VitePWA generating a manifest + workbox-cached service worker,

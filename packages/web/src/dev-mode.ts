@@ -133,6 +133,17 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     };
   }
 
+  // Read URL params for autorun + webhook (when present, the harness
+  // becomes a headless-friendly fixture: the browser auto-runs the
+  // requested suite and POSTs the markdown report to the webhook URL,
+  // so a CI script can wake an open page + collect results without
+  // human input).
+  const params = new URLSearchParams(
+    typeof window !== 'undefined' && window.location?.search ? window.location.search : ''
+  );
+  const autorun = params.get('autorun'); // 'bench' | 'selftest' | null
+  const webhook = params.get('webhook'); // URL or null
+
   // ─── toolbar ─────────────────────────────────────────────────────
   const toolbar = document.createElement('div');
   toolbar.className = 'dev-mode-toolbar';
@@ -376,6 +387,32 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     btn.disabled = false;
     btn.textContent = origLabel;
     running = false;
+
+    // Webhook POST — when the URL had `?webhook=URL`, ship the report
+    // automatically. Used by the headless bench harness so an external
+    // script can open the page + collect results without human input.
+    if (webhook) {
+      const report = composeReport();
+      try {
+        await fetch(webhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+          body: report,
+          // mode:cors so a cross-origin webhook (different port) works
+          // with the dev plugin's permissive CORS handling.
+          mode: 'cors',
+        });
+      } catch (e) {
+        // Surface the error in the panel so a webhook-config bug is
+        // visible to the developer reading the autorun output.
+        if (panel) {
+          const err = document.createElement('div');
+          err.style.cssText = 'margin-top:6px;color:#ff8a9a;font-size:11px';
+          err.textContent = 'webhook failed: ' + ((e as Error)?.message || String(e));
+          panel.appendChild(err);
+        }
+      }
+    }
   }
 
   // ─── diag panel ──────────────────────────────────────────────────
@@ -432,6 +469,15 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     };
     refresh();
     diagInterval = setInterval(refresh, 1000);
+  }
+
+  // Autorun — when URL has ?autorun=bench / ?autorun=selftest, fire
+  // the corresponding suite once on a microtask break (so the page's
+  // own boot finishes laying out the toolbar before we click).
+  if (autorun === 'bench' && deps.benchmarks?.length && benchBtn) {
+    setTimeout(() => benchBtn.click(), 0);
+  } else if (autorun === 'selftest') {
+    setTimeout(() => selftestBtn.click(), 0);
   }
 
   return {
