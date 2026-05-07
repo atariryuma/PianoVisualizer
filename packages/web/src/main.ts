@@ -29,6 +29,7 @@ import * as PianoCore from '@piano/core';
 import * as AudioScheduler from './audio-scheduler';
 import * as NoteExtractor from './note-extractor';
 import * as PianoWakeLock from './wakelock';
+import * as SectionEditor from './section-editor';
 
 declare global {
   interface Window {
@@ -39,6 +40,7 @@ declare global {
     AudioScheduler: typeof AudioScheduler;
     NoteExtractor: typeof NoteExtractor;
     PianoWakeLock: typeof PianoWakeLock;
+    SectionEditor: typeof SectionEditor;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -95,6 +97,8 @@ declare global {
   var NoteExtractor: typeof import('./note-extractor');
 
   var PianoWakeLock: typeof import('./wakelock');
+
+  var SectionEditor: typeof import('./section-editor');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -109,6 +113,7 @@ declare global {
 (globalThis as unknown as Window).AudioScheduler = AudioScheduler;
 (globalThis as unknown as Window).NoteExtractor = NoteExtractor;
 (globalThis as unknown as Window).PianoWakeLock = PianoWakeLock;
+(globalThis as unknown as Window).SectionEditor = SectionEditor;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

@@ -37,13 +37,13 @@ importers:
         version: 8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
       vitest:
         specifier: ^2.1.5
-        version: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
+        version: 2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2)
 
   packages/core:
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.5
-        version: 2.1.9(vitest@2.1.9(@types/node@22.19.17)(terser@5.46.2))
+        version: 2.1.9(vitest@2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2))
       fake-indexeddb:
         specifier: ^6.0.1
         version: 6.2.5
@@ -55,7 +55,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.5
-        version: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
+        version: 2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2)
 
   packages/mobile:
     dependencies:
@@ -178,6 +178,9 @@ importers:
       '@vite-pwa/assets-generator':
         specifier: ^0.2.6
         version: 0.2.6
+      happy-dom:
+        specifier: ^15.11.0
+        version: 15.11.7
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -189,7 +192,7 @@ importers:
         version: 0.21.2(@vite-pwa/assets-generator@0.2.6)(vite@5.4.21(@types/node@22.19.17)(terser@5.46.2))(workbox-build@7.4.1)(workbox-window@7.4.1)
       vitest:
         specifier: ^2.1.5
-        version: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
+        version: 2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2)
 
 packages:
 
@@ -2804,6 +2807,10 @@ packages:
     engines: {node: '>=0.4.7'}
     hasBin: true
 
+  happy-dom@15.11.7:
+    resolution: {integrity: sha512-KyrFvnl+J9US63TEzwoiJOQzZBJY7KgBushJA8X61DMbNsH+2ONkDuLDnCnwUiPTF42tLoEmrPyoqbenVA5zrg==}
+    engines: {node: '>=18.0.0'}
+
   hard-rejection@2.1.0:
     resolution: {integrity: sha512-VIZB+ibDhx7ObhAe7OVtoEbuP4h/MuOTHJ+J8h/eBXotJYl0fBgR72xDFCKgIh22OJZIOVNxBMWuhAr10r8HdA==}
     engines: {node: '>=6'}
@@ -4643,6 +4650,14 @@ packages:
 
   webidl-conversions@4.0.2:
     resolution: {integrity: sha512-YQ+BmxuTgd6UXZW3+ICGfyqRyHXVlD5GtQr5+qjiNW7bF0cqrzX500HVXPBOvgXb5YnzDd+h0zqyv61KUD7+Sg==}
+
+  webidl-conversions@7.0.0:
+    resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+    engines: {node: '>=12'}
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
@@ -6528,7 +6543,7 @@ snapshots:
       - bare-buffer
       - react-native-b4a
 
-  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@22.19.17)(terser@5.46.2))':
+  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -6542,7 +6557,7 @@ snapshots:
       std-env: 3.10.0
       test-exclude: 7.0.2
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
+      vitest: 2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -8020,6 +8035,12 @@ snapshots:
       wordwrap: 1.0.0
     optionalDependencies:
       uglify-js: 3.19.3
+
+  happy-dom@15.11.7:
+    dependencies:
+      entities: 4.5.0
+      webidl-conversions: 7.0.0
+      whatwg-mimetype: 3.0.0
 
   hard-rejection@2.1.0: {}
 
@@ -9973,7 +9994,7 @@ snapshots:
       fsevents: 2.3.3
       terser: 5.46.2
 
-  vitest@2.1.9(@types/node@22.19.17)(terser@5.46.2):
+  vitest@2.1.9(@types/node@22.19.17)(happy-dom@15.11.7)(terser@5.46.2):
     dependencies:
       '@vitest/expect': 2.1.9
       '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.19.17)(terser@5.46.2))
@@ -9997,6 +10018,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.17
+      happy-dom: 15.11.7
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -10011,6 +10033,10 @@ snapshots:
   webidl-conversions@3.0.1: {}
 
   webidl-conversions@4.0.2: {}
+
+  webidl-conversions@7.0.0: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-url@5.0.0:
     dependencies:

@@ -7185,87 +7185,16 @@
     //   inputs (1-based), validates monotonic & in-range, persists back.
     //   Section names are auto (Part 1/2/3) — naming UI is YAGNI for now.
     // ========================================
-    let _sectionEditingId = null;
-    /** @param {string} songId */
-    async function openSectionEditor(songId) {
-      const db = await openUserDb();
-      const rec = await new Promise((res, rej) => {
-        const tx = db.transaction(USER_DB_STORE, 'readonly');
-        const r = tx.objectStore(USER_DB_STORE).get(songId);
-        r.onsuccess = () => res(r.result);
-        r.onerror = () => rej(r.error);
-      });
-      if (!rec) return;
-      _sectionEditingId = songId;
-      // Re-use cached xmlText from add-time if present; otherwise unzip on demand.
-      let xmlText = rec.xmlText;
-      if (!xmlText) {
-        const isMxl = rec.mimeType !== 'application/vnd.recordare.musicxml+xml';
-        try {
-          xmlText = isMxl ? await unzipMxlToXmlText(rec.mxlBlob) : await rec.mxlBlob.text();
-        } catch (e) {
-          alert('Failed to read score: ' + e.message);
-          return;
-        }
-      }
-      const meta = parseMusicXmlMetadata(xmlText);
-      const total = meta.measureCount;
-      DOM_SECEDIT.help.textContent = t('sectionEditHelp', { v: total });
-      DOM_SECEDIT.rows.innerHTML = '';
-      const labels = ['userSecA1', 'userSecB', 'userSecA2'];
-      for (let i = 0; i < 3; i++) {
-        const def = rec.sectionDefs[i] || { startMeasure: Math.floor(i * total / 3) };
-        const row = document.createElement('div');
-        row.className = 'sec-edit-row';
-        row.innerHTML = `<label></label><input type="number" min="1" step="1">`;
-        const label = /** @type {HTMLLabelElement} */ (row.querySelector('label'));
-        label.textContent = t(labels[i]);
-        const input = /** @type {HTMLInputElement} */ (row.querySelector('input'));
-        input.value = String((def.startMeasure || 0) + 1);   // 1-based for users
-        input.max = String(total);
-        if (i === 0) { input.disabled = true; input.value = '1'; }   // first section always starts at measure 1
-        DOM_SECEDIT.rows.appendChild(row);
-      }
-      DOM_SECEDIT.error.textContent = '';
-      DOM_SECEDIT._totalMeasures = total;
-      DOM_SECEDIT._record = rec;
-      DOM_SECEDIT.modal.classList.add('visible');
-      modalFocus.open(DOM_SECEDIT.modal);
-    }
-    function closeSectionEditor() {
-      DOM_SECEDIT.modal.classList.remove('visible');
-      modalFocus.close(DOM_SECEDIT.modal);
-      _sectionEditingId = null;
-    }
-
-    async function saveSectionEditor() {
-      const inputs = DOM_SECEDIT.rows.querySelectorAll('input[type=number]');
-      const total = DOM_SECEDIT._totalMeasures;
-      const vals = Array.from(inputs).map(i => parseInt(/** @type {HTMLInputElement} */ (i).value, 10) - 1);   // back to 0-based
-      if (vals.some(v => Number.isNaN(v) || v < 0 || v >= total)
-          || vals[0] !== 0
-          || vals[1] <= vals[0] || vals[2] <= vals[1]) {
-        DOM_SECEDIT.error.textContent = t('sectionEditError');
-        return;
-      }
-      const rec = DOM_SECEDIT._record;
-      if (!rec) return;
-      rec.sectionDefs = [
-        { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: vals[0], isBoss: false },
-        { id: 'B',  nameKey: 'userSecB',  descKey: 'userSecBdesc',  startMeasure: vals[1], isBoss: false },
-        { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', startMeasure: vals[2], isBoss: true  }
-      ];
-      await userDbPut(rec);
-      // Update in-memory song so an immediately-following selectSong picks up the
-      // new boundaries without a page reload. Force a re-extract on next load.
-      const song = SONGS[rec.id];
-      if (song) {
-        song.sectionDefs = rec.sectionDefs;
-        song._loaded = false;
-        song.sections = [];
-      }
-      closeSectionEditor();
-    }
+    // Section-editor — Phase 0d batch 2: extracted to
+    // packages/web/src/section-editor.ts. The actual createSectionEditor()
+    // call lives further down where DOM_SECEDIT is built; here we just
+    // forward-declare placeholder bindings so call sites can name the
+    // short identifiers. The placeholders are reassigned at the
+    // createSectionEditor() call site (search "section-editor wire-up").
+    /** @type {(songId: string) => Promise<void>} */
+    let openSectionEditor = async () => {};
+    /** @type {() => void} */
+    let closeSectionEditor = () => {};
 
     // Inject user-song buttons into the start screen, between the hardcoded songs
     // and the "+ Add" button. Re-rendered after every add/remove.
@@ -7376,8 +7305,13 @@
     // earlier in the file (search "Single, ordered ESC handler"). No
     // duplicate listener here.
 
-    // Section-editor modal wiring
-    /** @type {Record<string, HTMLElement> & {_totalMeasures: number, _record: import('@piano/core').UserSongRecord|null}} */
+    // ─── section-editor wire-up ─────────────────────────────────────
+    // DOM bag remains the shell's authoritative reference for the ESC
+    // handler's "is the modal visible?" check (line ~1860). The module
+    // owns its own internal state (totalMeasures + the in-flight record);
+    // those used to live on DOM_SECEDIT as `_totalMeasures` / `_record`
+    // but are now closure-private inside section-editor.ts.
+    /** @type {Record<string, HTMLElement>} */
     const DOM_SECEDIT = /** @type {any} */ ({
       modal: document.getElementById('sectionEditModal'),
       help: document.getElementById('sectionEditHelp'),
@@ -7386,15 +7320,42 @@
       cancelBtn: document.getElementById('sectionEditCancelBtn'),
       saveBtn: document.getElementById('sectionEditSaveBtn'),
       closeBtn: document.getElementById('sectionEditCloseBtn'),
-      _totalMeasures: 0,
-      _record: null
     });
-    DOM_SECEDIT.cancelBtn?.addEventListener('click', closeSectionEditor);
-    DOM_SECEDIT.closeBtn?.addEventListener('click', closeSectionEditor);
-    DOM_SECEDIT.saveBtn?.addEventListener('click', saveSectionEditor);
-    DOM_SECEDIT.modal?.addEventListener('click', (e) => {
-      if (e.target === DOM_SECEDIT.modal) closeSectionEditor();
-    });
+    {
+      const _sectionEditor = SectionEditor.createSectionEditor({
+        dom: /** @type {import('./section-editor').SectionEditorDom} */ ({
+          modal: DOM_SECEDIT.modal,
+          help: DOM_SECEDIT.help,
+          rows: DOM_SECEDIT.rows,
+          error: DOM_SECEDIT.error,
+          cancelBtn: DOM_SECEDIT.cancelBtn,
+          saveBtn: DOM_SECEDIT.saveBtn,
+          closeBtn: DOM_SECEDIT.closeBtn,
+        }),
+        openUserDb,
+        userDbStoreName: USER_DB_STORE,
+        unzipMxlToXmlText,
+        userDbPut,
+        t,
+        modalFocus,
+        // Update in-memory SONGS so a selectSong() right after save picks
+        // up the new boundaries without a page reload. Force re-extract
+        // on next load (clears the cached sections + lowers _loaded).
+        onSaved: (rec) => {
+          const song = SONGS[rec.id];
+          if (song) {
+            song.sectionDefs = rec.sectionDefs;
+            song._loaded = false;
+            song.sections = [];
+          }
+        },
+      });
+      // Re-bind the forward-declared placeholders. The original const-
+      // bindings live at the top of the file; ESC handler / user-songs
+      // ✕ button / "Edit Sections" all close over those names.
+      openSectionEditor = _sectionEditor.open;
+      closeSectionEditor = _sectionEditor.close;
+    }
 
     // ========================================
     // Export / import — back up entire user library to one JSON file
