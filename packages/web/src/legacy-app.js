@@ -1490,6 +1490,16 @@
     let completePracticeSection = () => {};
     /** @type {() => void} */
     let renderResultCard = () => {};
+    // Session-summary placeholders — Phase 0d batch 11. Reassigned at
+    // createSessionSummary() wire-up below. Settings-panel deps already
+    // pass `() => showSessionSummary()` (a thunk) so the late binding
+    // works through that path; langchange listener also late-binds.
+    /** @type {() => void} */
+    let showSessionSummary = () => {};
+    /** @type {(animate: boolean) => void} */
+    let renderSessionSummaryText = (_animate) => {};
+    /** @type {(combo: number, flow: number) => import('./session-summary').BestScores} */
+    let saveBestScores = (_c, _f) => /** @type {import('./session-summary').BestScores} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
     // Single, ordered ESC handler for every modal. Highest-z first so the
     // topmost layer pops first; if the user is currently typing inside an
     // <input> / <textarea> we let the browser's native ESC handling run
@@ -2783,118 +2793,21 @@
     }
 
     // ========================================
-    // v11: localStorage Best Scores
-    // ========================================
-    const BEST_DEFAULT = { bestCombo: 0, peakFlow: 0, totalSessions: 0 };
-    /** @returns {BestScoresShape} */
-    function loadBestScores() { return loadJSON('pianoViz_best', { ...BEST_DEFAULT }); }
-    /** @param {number} combo @param {number} flow */
-    function saveBestScores(combo, flow) {
-      const best = loadBestScores();
-      best.bestCombo = Math.max(best.bestCombo, combo);
-      best.peakFlow = Math.max(best.peakFlow, Math.round(flow));
-      best.totalSessions++;
-      saveJSON('pianoViz_best', best);
-      return best;
-    }
-
-    // ========================================
-    // v11: Format Time (mm:ss)
+    // Shared helpers (kept in shell — used by both the session-summary
+    // module + the per-frame loop / other render call sites).
     // ========================================
     // formatTime — Phase 0b: delegated to @piano/core/util/format.
     const formatTime = PianoCore.formatTime;
-
-    // ========================================
-    // v11: Update Play Time Display
-    // ========================================
     /** @param {number} timeMs */
     function updatePlayTime(timeMs) {
-      if (state.sessionStartTimeMs > 0) {
+      if (DOM.playTime) {
         DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
       }
     }
-
-    // ========================================
-    // v11: Session Reset
-    // ========================================
-    // Re-render only the localized parts of the session summary. Pure: reads
-    // from `state._lastSummary` cache + current i18n. Used by both the initial
-    // show (with animation) and language toggle (without \u2014 we don't want a
-    // stagger replay).
-    /** @param {boolean} animate */
-    function renderSessionSummaryText(animate) {
-      const s = state._lastSummary;
-      if (!s) return;
-      DOM.sumCombo.textContent = String(s.bestCombo);
-      DOM.sumStage.textContent = stageLabel(CONFIG.STAGES[s.stageIdx]) || '-';
-      DOM.sumTime.textContent = formatTime(s.elapsed);
-
-      const total = CONFIG.QUESTS.length;
-      const sortedQuests = CONFIG.QUESTS.slice().sort((a, b) => {
-        const aDone = s.completedQuests.includes(a.id) ? 0 : 1;
-        const bDone = s.completedQuests.includes(b.id) ? 0 : 1;
-        return aDone - bDone;
-      });
-      let badgeHtml = '';
-      for (let i = 0; i < sortedQuests.length; i++) {
-        const q = sortedQuests[i];
-        const done = s.completedQuests.includes(q.id);
-        const cls = done ? 'sq-badge done' : 'sq-badge undone';
-        const icon = done ? '\u2B50' : '\u2B1C';
-        badgeHtml += '<div class="' + cls + '" style="animation-delay:' + (i * 0.25) + 's">' +
-          '<span class="badge-icon">' + icon + '</span>' +
-          '<span>' + t(q.nameKey) + '</span></div>';
-      }
-      if (s.completedQuests.length === total) {
-        badgeHtml += '<div class="sq-all-clear" style="animation-delay:' + (total * 0.25) + 's">' +
-          t('sumAllClear') + '</div>';
-      } else {
-        badgeHtml += '<div style="margin-top:6px;font-size:.75rem;color:rgba(255,255,255,.4);animation-delay:' +
-          (total * 0.25) + 's">' + t('sumQuestProgressFmt', { n: s.completedQuests.length, total }) + '</div>';
-      }
-      DOM.sumQuestList.innerHTML = badgeHtml;
-
-      if (animate) {
-        requestAnimationFrame(() => {
-          const badges = DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear');
-          badges.forEach((b, i) => setTimeout(() => b.classList.add('animate-in'), i * 250));
-        });
-      } else {
-        // On lang re-render, surface badges immediately without re-staggering.
-        DOM.sumQuestList.querySelectorAll('.sq-badge, .sq-all-clear').forEach(b => b.classList.add('animate-in'));
-      }
-
-      DOM.sumBest.textContent = t('sumBestFmt', {
-        combo: s.bestStat.bestCombo,
-        flow: s.bestStat.peakFlow,
-        n: s.bestStat.totalSessions
-      });
-    }
-
-    function showSessionSummary() {
-      const elapsed = performance.now() - state.sessionStartTimeMs;
-      const best = saveBestScores(state.bestCombo, state.peakFlow);
-      state._lastSummary = {
-        bestCombo: state.bestCombo,
-        stageIdx: state.currentStage,
-        elapsed,
-        completedQuests: state.completedQuests.slice(),
-        bestStat: best
-      };
-      renderSessionSummaryText(true);
-
-      DOM.sessionSummary.classList.add('visible');
-
-      // Draw radar chart with animated grow-in
-      drawRadarChart(
-        /** @type {HTMLCanvasElement} */ (DOM.radarChart),
-        ['Stability', 'Rhythm', 'Dynamics'],
-        [state.stabilityScore, state.rhythmScore, state.dynamicsScore]
-      );
-    }
-
-    // Sizes a canvas to the given CSS pixels with backing store scaled by devicePixelRatio,
-    // then returns the 2D context with the DPR transform pre-applied.
+    // Sizes a canvas to the given CSS pixels with backing store scaled
+    // by devicePixelRatio, then returns the 2D context with the DPR
+    // transform pre-applied. Shared by result-card.drawHistoryChart and
+    // session-summary.drawRadarChart via deps.setupHiDPICanvas.
     /** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h */
     function setupHiDPICanvas(canvas, w, h) {
       const c = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
@@ -2907,108 +2820,40 @@
       return c;
     }
 
-    /** @param {HTMLCanvasElement} canvas @param {string[]} labels @param {number[]} values */
-    function drawRadarChart(canvas, labels, values) {
-      const size = 200;
-      const c = setupHiDPICanvas(canvas, size, size);
-
-      const cx = size / 2;
-      const cy = size / 2;
-      const R = 70;   // max radius
-      const axes = labels.length;
-      const angleStep = (Math.PI * 2) / axes;
-      const startAngle = -Math.PI / 2; // top
-
-      /** @param {number} axisIndex @param {number} value */
-      function getPoint(axisIndex, value) {
-        const angle = startAngle + axisIndex * angleStep;
-        return {
-          x: cx + Math.cos(angle) * R * value,
-          y: cy + Math.sin(angle) * R * value
-        };
-      }
-
-      let progress = 0;
-      const duration = 800; // ms
-      const startTime = performance.now();
-
-      /** @param {number} now */
-      function frame(now) {
-        progress = Math.min(1, (now - startTime) / duration);
-        const ease = 1 - Math.pow(1 - progress, 3); // ease out cubic
-        c.clearRect(0, 0, size, size);
-
-        // Draw grid rings (3 levels: 33%, 66%, 100%)
-        c.strokeStyle = 'rgba(255,255,255,0.08)';
-        c.lineWidth = 1;
-        for (let level = 1; level <= 3; level++) {
-          const r = R * (level / 3);
-          c.beginPath();
-          for (let i = 0; i <= axes; i++) {
-            const p = getPoint(i % axes, level / 3);
-            if (i === 0) c.moveTo(p.x, p.y);
-            else c.lineTo(p.x, p.y);
-          }
-          c.closePath();
-          c.stroke();
-        }
-
-        // Draw axis lines
-        c.strokeStyle = 'rgba(255,255,255,0.12)';
-        for (let i = 0; i < axes; i++) {
-          const p = getPoint(i, 1);
-          c.beginPath();
-          c.moveTo(cx, cy);
-          c.lineTo(p.x, p.y);
-          c.stroke();
-        }
-
-        // Draw data polygon (animated)
-        c.beginPath();
-        for (let i = 0; i <= axes; i++) {
-          const v = values[i % axes] * ease;
-          const p = getPoint(i % axes, v);
-          if (i === 0) c.moveTo(p.x, p.y);
-          else c.lineTo(p.x, p.y);
-        }
-        c.closePath();
-        c.fillStyle = 'rgba(255, 215, 0, 0.15)';
-        c.fill();
-        c.strokeStyle = 'rgba(255, 215, 0, 0.7)';
-        c.lineWidth = 2;
-        c.stroke();
-
-        // Draw data points
-        for (let i = 0; i < axes; i++) {
-          const v = values[i] * ease;
-          const p = getPoint(i, v);
-          c.beginPath();
-          c.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-          c.fillStyle = '#ffd700';
-          c.fill();
-        }
-
-        // Draw labels with percentage
-        c.font = '11px sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        for (let i = 0; i < axes; i++) {
-          const angle = startAngle + i * angleStep;
-          const labelR = R + 22;
-          const lx = cx + Math.cos(angle) * labelR;
-          const ly = cy + Math.sin(angle) * labelR;
-          const pct = Math.round(values[i] * 100 * ease);
-          c.fillStyle = 'rgba(255,255,255,0.7)';
-          c.fillText(labels[i], lx, ly - 7);
-          c.fillStyle = '#ffd700';
-          c.font = 'bold 12px sans-serif';
-          c.fillText(pct + '%', lx, ly + 7);
-          c.font = '11px sans-serif';
-        }
-
-        if (progress < 1) requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
+    // ========================================
+    // Session summary modal — Phase 0d batch 11 wire-up
+    // ========================================
+    // saveBestScores + renderSessionSummaryText + showSessionSummary
+    // + drawRadarChart now live in packages/web/src/session-summary.ts.
+    // The shell wraps the factory result in the legacy short names so
+    // settings-panel deps + the langchange listener stay unchanged.
+    {
+      const _sessionSummary = SessionSummary.createSessionSummary({
+        dom: /** @type {import('./session-summary').SessionSummaryDom} */ ({
+          sessionSummary: DOM.sessionSummary,
+          sumCombo: DOM.sumCombo,
+          sumStage: DOM.sumStage,
+          sumTime: DOM.sumTime,
+          sumQuestList: DOM.sumQuestList,
+          sumBest: DOM.sumBest,
+          radarChart: /** @type {HTMLCanvasElement} */ (DOM.radarChart),
+        }),
+        state: /** @type {import('./session-summary').SessionSummaryStateRef} */ (
+          /** @type {any} */ (state)
+        ),
+        config: /** @type {import('./session-summary').SessionSummaryConfig} */ (
+          /** @type {any} */ (CONFIG)
+        ),
+        loadJSON,
+        saveJSON,
+        stageLabel,
+        formatTime,
+        t,
+        setupHiDPICanvas,
+      });
+      saveBestScores = _sessionSummary.saveBestScores;
+      renderSessionSummaryText = _sessionSummary.renderSessionSummaryText;
+      showSessionSummary = _sessionSummary.showSessionSummary;
     }
 
     function resetSession() {
