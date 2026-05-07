@@ -2544,58 +2544,27 @@
       if (!state.running) return;
       requestAnimationFrame(loop);
 
-      const dt = state.lastFrameTimeMs > 0 ? Math.min(timeMs - state.lastFrameTimeMs, 50) : 16;
-      state.lastFrameTimeMs = timeMs;
-
-      const theme = CONFIG.THEMES[state.currentTheme];
-      const energy = getEnergy();
-      state.smoothEnergy += (energy - state.smoothEnergy) * 0.15;
-
-      const [br, bg2, bb] = theme.bg;
-      const fadeRate = 0.08 + 0.06 * (1 - state.flow / 100);
-      ctx.fillStyle = 'rgba(' + br + ',' + bg2 + ',' + bb + ',' + fadeRate + ')';
-      ctx.fillRect(0, 0, W, H);
-
-      drawBgStars(timeMs);
-      drawAurora(timeMs);
-      drawGroundFlowers(timeMs);
-
-      // Wake-up flash overlay — frame-rate-independent decay via core.
-      if (state.inputFlash > 0.01) {
-        ctx.fillStyle = `rgba(255, 255, 255, ${state.inputFlash})`;
-        ctx.fillRect(0, 0, W, H);
-      }
-      PianoCore.decayWakeUpFlash(state, dt / 1000, WUF_OPTS);
-
-      // v9: Glow pulse effect (from encouragement)
-      const glowExtra = state.glowPulseIntensity;
-      if (glowExtra > 0.01) {
-        state.glowPulseIntensity *= 0.96; // decay
-      }
-
-      // Center radial halo — Phase 0b.3: delegated to @piano/core.
-      PianoCore.drawCenterGlow(ctx, {
-        screenW: W,
-        screenH: H,
-        smoothEnergy: state.smoothEnergy,
-        flow: state.flow,
-        glowExtra,
-        glowPrefix: theme.glow,
+      // Phase 0d batch 9a: frame setup + atmospheric layers + wake-up
+      // flash + glow pulse + center glow + shimmer overlay live in
+      // packages/web/src/render-frame.ts. Returns the dt + theme + glow
+      // value the rest of the loop needs.
+      const { dt, theme } = RenderFrame.runRenderFramePrelude(timeMs, {
+        ctx,
+        state: /** @type {import('./render-frame').RenderFrameStateRef} */ (
+          /** @type {any} */ (state)
+        ),
+        getScreen: () => ({ W, H }),
+        themes: /** @type {ReadonlyArray<import('./render-frame').RenderFrameTheme>} */ (
+          /** @type {any} */ (CONFIG.THEMES)
+        ),
+        drawBgStars,
+        drawAurora,
+        drawGroundFlowers,
+        decayWakeUpFlash: PianoCore.decayWakeUpFlash,
+        drawCenterGlow: PianoCore.drawCenterGlow,
+        wufOpts: WUF_OPTS,
+        getEnergy,
       });
-
-      // v9: Shimmer effect
-      if (state.shimmerPhase >= 0) {
-        const shimmerAge = timeMs - state.shimmerStartMs;
-        if (shimmerAge < 1500) {
-          const shimmerAlpha = 0.08 * Math.sin(shimmerAge * 0.02) * (1 - shimmerAge / 1500);
-          if (shimmerAlpha > 0) {
-            ctx.fillStyle = 'rgba(255,255,255,' + shimmerAlpha + ')';
-            ctx.fillRect(0, 0, W, H);
-          }
-        } else {
-          state.shimmerPhase = -1;
-        }
-      }
 
       let isGoodNote = false;
       // v13: Skip the entire mic processing pipeline when the mic is suspended
