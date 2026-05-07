@@ -6707,25 +6707,10 @@
       if (startBtn) startBtn.textContent = t(practice.mode === 'listen' ? 'startListening' : 'startPractice');
     }
 
-    document.querySelectorAll('#handRow .hand-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const h = btn.getAttribute('data-hand');
-        practice.handFilter = (h === 'L' || h === 'R') ? h : null;
-        document.querySelectorAll('#handRow .hand-btn').forEach((b) => b.classList.toggle('active', b === btn));
-      });
-    });
-
-    document.querySelectorAll('#modeRow .hand-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const m = btn.getAttribute('data-mode');
-        if (m === 'listen' || m === 'guided' || m === 'rhythm') practice.mode = m;
-        renderSongPanel();
-      });
-    });
-
-    DOM.ghostToggle?.addEventListener('click', () => { practice.ghostOn = !practice.ghostOn; renderSongPanel(); });
-    DOM.metronomeToggle?.addEventListener('click', () => { practice.metronomeOn = !practice.metronomeOn; renderSongPanel(); });
-    DOM.fullSongToggle?.addEventListener('click', () => { practice.fullSongMode = !practice.fullSongMode; renderSongPanel(); });
+    // Phase 0d batch 7c: hand picker + mode picker + practice toggles
+    // (ghost / metronome / full-song) + songBack moved to
+    // packages/web/src/song-panel-controls.ts. Wired below in one
+    // createSongPanelControls() call (search "song-panel wire-up").
 
     // v13: Central invariant — whenever audio is alive and we are NOT on the title
     // screen, the global UI (theme bar with the home button + flow gauge HUD) must
@@ -6785,14 +6770,24 @@
       alert(t('audioInitFailedFmt', { v: msg }));
     }
 
-    DOM.songBack.addEventListener('click', () => {
-      // selectSong is only ever wired from the title screen (the practice-song
-      // buttons + user-song list + auto-select after Add-Song import all sit
-      // under startScreen), so Back must return to the title — even when
-      // state.running is true. The earlier "if running, just hide the panel"
-      // path landed users on the bare Free Play canvas after
-      // Title → Song → Back, contradicting the Back intent.
-      returnToTitle();
+    // ─── song-panel wire-up ─────────────────────────────────────────
+    // Ties together the song-panel buttons that were extracted into
+    // packages/web/src/song-panel-controls.ts (hand row, mode row,
+    // ghost / metronome / full-song toggles, songBack).
+    SongPanelControls.createSongPanelControls({
+      dom: {
+        ghostToggle: DOM.ghostToggle,
+        metronomeToggle: DOM.metronomeToggle,
+        fullSongToggle: DOM.fullSongToggle,
+        songBack: DOM.songBack,
+      },
+      practice: /** @type {import('./song-panel-controls').SongPanelPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      renderSongPanel,
+      // Thunk so the placeholder-then-reassigned `returnToTitle` reads
+      // its live binding at click time (after createPracticeFlow runs).
+      returnToTitle: () => returnToTitle(),
     });
 
     DOM.songStart.addEventListener('click', async () => {
