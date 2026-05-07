@@ -1491,6 +1491,21 @@
     let closeSettings = () => {};
     /** @type {() => void} */
     let refreshSettingsPanel = () => {};
+    // Section-editor + user-songs UI placeholders (Phase 0d batches 2 + 6).
+    // Both modals' lifecycle lives in their respective .ts modules; the
+    // placeholders here let the ESC handler + cross-cutting callsites
+    // reference the short names without TDZ surprises. Reassigned at the
+    // bottom-anchored wire-up site (search for "user-songs wire-up").
+    /** @type {(songId: string) => Promise<void>} */
+    let openSectionEditor = async () => {};
+    /** @type {() => void} */
+    let closeSectionEditor = () => {};
+    /** @type {() => void} */
+    let openAddSongModal = () => {};
+    /** @type {() => void} */
+    let closeAddSongModal = () => {};
+    /** @type {() => void} */
+    let renderUserSongButtons = () => {};
     // Single, ordered ESC handler for every modal. Highest-z first so the
     // topmost layer pops first; if the user is currently typing inside an
     // <input> / <textarea> we let the browser's native ESC handling run
@@ -4178,10 +4193,17 @@
     // Song's quarter-note duration at the kid's chosen tempo. Falls back to a
     // gentle 72 BPM @ 60% if the score hasn't yielded a tempo yet.
     // practiceBeatMs / count-in derivation — Phase 0b: delegated to @piano/core.
+    // Full-song listen forces 100% (see buildFullSongNotes) so the count-in
+    // beats and lane lookahead match the actual playback speed instead of the
+    // user's section-listen tempoPct selection.
+    function effectiveTempoPct() {
+      if (practice.mode === 'listen' && practice.fullSongMode) return 100;
+      return practice.tempoPct || 100;
+    }
     function practiceBeatMs() {
       return PianoCore.practiceBeatMs(
         (currentSong && currentSong.bpm) || 72,
-        practice.tempoPct || 100
+        effectiveTempoPct()
       );
     }
     function recomputePracticeTimings() {
@@ -5702,9 +5724,16 @@
     // start anchor is the song's first note (t0) instead of a section boundary,
     // so every section flows back-to-back without resync gaps. Section-only
     // scoring/unlocks intentionally don't apply here — listen mode is read-only.
+    //
+    // Tempo is locked to 100%: full-song listen is the "performance" experience,
+    // and a slowed-down whole song feels off (4 minutes of half-speed Für Elise).
+    // Kids who want to study slowly should pick a single section in section
+    // listen — that path keeps practice.tempoPct so 60% / 75% / 90% all work
+    // there. Tempo unlocks also don't gate listening: the full song is always
+    // the "real thing", so they can hear the goal from day 1.
     /** @returns {OsmdLikeNote[]} */
     function buildFullSongNotes() {
-      const speedFactor = 100 / practice.tempoPct;
+      const speedFactor = 1;   // hardcoded — see comment above
       const handFilter = practice.handFilter;
       /** @type {OsmdLikeNote[]} */
       const out = [];
@@ -5849,7 +5878,10 @@
       DOM.ptbSection.textContent = isFullSong
         ? t(currentSong.titleKey)
         : t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-      DOM.ptbTempo.textContent = '🥁 ' + practice.tempoPct + '%';
+      // Full-song listen plays at the score's written tempo regardless of the
+      // user's tempoPct selection (see buildFullSongNotes). Reflect that in the
+      // HUD so the kid doesn't see "🥁 60%" while hearing the song at 100%.
+      DOM.ptbTempo.textContent = '🥁 ' + (isFullSong ? 100 : practice.tempoPct) + '%';
       // Exclude _filtered notes from the progress count (they are auto-skipped).
       practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
       DOM.ptbProgress.textContent = '0 / ' + practice._sectionTargetCount;
@@ -6586,13 +6618,19 @@
         DOM.streakCal.appendChild(cell);
       }
 
+      // Full-song listen always plays at 100% (see buildFullSongNotes comment).
+      // Compute it up front so the BPM hint + tempo buttons agree on what the
+      // kid will actually hear when they tap Start.
+      const tempoLockedToFull = practice.mode === 'listen' && practice.fullSongMode;
+      const displayedTempoPct = tempoLockedToFull ? 100 : practice.tempoPct;
+
       // Show the score's source BPM so the user knows why two versions of the
       // same piece can feel different at the same tempo% (e.g. one Für Elise
       // encoded at ♩=72, another at ♩=120 → "60%" means very different speeds).
       if (DOM.songBpmHint) {
         if (currentSong._loaded && currentSong.bpm) {
           const bpm = Math.round(currentSong.bpm);
-          const effective = Math.round(bpm * (practice.tempoPct || 100) / 100);
+          const effective = Math.round(bpm * (displayedTempoPct || 100) / 100);
           DOM.songBpmHint.textContent = '♩ = ' + bpm + ' → ' + effective;
           DOM.songBpmHint.classList.toggle('rescaled', !!currentSong._bpmRescaled);
         } else {
@@ -6604,19 +6642,28 @@
       const tempos = [60, 75, 90, 100];
       for (const t of tempos) {
         const btn = document.createElement('button');
-        btn.className = 'tempo-btn' + (t === practice.tempoPct ? ' active' : '') + (sp.unlockedTempos[t] ? '' : ' locked');
+        // Full-song listen forces 100% regardless of unlock progression — the
+        // tempo row dims as a whole and only the 100% button reads as "active".
+        const isActive = tempoLockedToFull ? (t === 100) : (t === practice.tempoPct);
+        const isLocked = tempoLockedToFull ? (t !== 100) : !sp.unlockedTempos[t];
+        btn.className = 'tempo-btn' + (isActive ? ' active' : '') + (isLocked ? ' locked' : '');
         // Lock indicator now lives in CSS (.tempo-btn.locked::after) so the
         // disabled state reads as a designed UI, not a "60% 🔒" emoji
         // pasted after the percent.
         btn.textContent = t + '%';
-        btn.disabled = !sp.unlockedTempos[t];
-        if (!sp.unlockedTempos[t]) btn.setAttribute('aria-label', t + '% locked');
+        btn.disabled = isLocked;
+        if (isLocked) btn.setAttribute('aria-label', t + '% locked');
         btn.onclick = () => {
-          if (!sp.unlockedTempos[t]) return;
+          if (isLocked) return;
           practice.tempoPct = t;
           renderSongPanel();
         };
         DOM.tempoRow.appendChild(btn);
+      }
+      // Dim the tempo row in full-song listen so the kid can tell the choice
+      // is locked. The 100% button stays visually active inside the dimmed row.
+      if (DOM.tempoRow) {
+        DOM.tempoRow.style.opacity = tempoLockedToFull ? '0.55' : '';
       }
 
       DOM.sectionList.innerHTML = '';
@@ -6872,8 +6919,12 @@
     });
 
     // ========================================
-    // Add-song modal — file / URL / curated library
+    // Add-song modal + Section editor — Phase 0d batches 2, 6 wire-up
     // ========================================
+    // Both modals' DOM bags stay in the shell because the global ESC
+    // handler reads them via `typeof DOM_X !== 'undefined'`. The modal
+    // logic + event handlers + export/import all live in
+    // packages/web/src/user-songs-ui.ts and section-editor.ts respectively.
     /** @type {Record<string, HTMLElement> & {tabs: NodeListOf<Element>, bodies: NodeListOf<Element>}} */
     const DOM_ADDSONG = /** @type {any} */ ({
       modal: document.getElementById('addSongModal'),
@@ -6882,357 +6933,21 @@
       tabs: document.querySelectorAll('.add-song-tab'),
       bodies: document.querySelectorAll('.add-song-tab-body'),
       libraryList: document.getElementById('addSongLibraryList'),
+      libraryStatus: document.getElementById('addSongLibraryStatus'),
+      librarySearch: document.getElementById('addSongLibrarySearch'),
       fileInput: document.getElementById('addSongFileInput'),
       pdCheckbox: document.getElementById('addSongPdCheckbox'),
       urlInput: document.getElementById('addSongUrlInput'),
       fetchBtn: document.getElementById('addSongFetchBtn'),
       status: document.getElementById('addSongStatus'),
       myList: document.getElementById('addSongMyList'),
-      userSongList: document.getElementById('userSongList')
+      userSongList: document.getElementById('userSongList'),
+      exportBtn: document.getElementById('addSongExportBtn'),
+      importBtn: document.getElementById('addSongImportBtn'),
+      importInput: document.getElementById('addSongImportInput'),
     });
 
-    /** @param {string} msg @param {boolean} [isError] */
-    function setAddSongStatus(msg, isError) {
-      DOM_ADDSONG.status.textContent = msg || '';
-      DOM_ADDSONG.status.classList.toggle('error', !!isError);
-    }
-    function openAddSongModal() {
-      DOM_ADDSONG.modal.classList.add('visible');
-      renderAddSongLibrary();
-      renderAddSongMyList();
-      setAddSongStatus('');
-      // Kick off a (possibly cached) API fetch in the background so the full
-      // catalog replaces the seed list once available.
-      ensureLibraryLoaded();
-      modalFocus.open(DOM_ADDSONG.modal);
-    }
-    function closeAddSongModal() {
-      DOM_ADDSONG.modal.classList.remove('visible');
-      modalFocus.close(DOM_ADDSONG.modal);
-    }
-
-    /** @type {Promise<unknown>|null} */
-    let _libraryLoadPromise = null;
-    /** @param {boolean} [force] */
-    function ensureLibraryLoaded(force) {
-      if (_libraryLoadPromise && !force) return _libraryLoadPromise;
-      const statusEl = document.getElementById('addSongLibraryStatus');
-      if (statusEl) statusEl.textContent = t('addSongLibraryLoading');
-      _libraryLoadPromise = fetchLibrary(force)
-        .then(entries => {
-          if (entries.length > 0) {
-            ONLINE_LIBRARY = entries;
-            renderAddSongLibrary();
-            if (statusEl) statusEl.textContent = t('addSongLibraryCount', { n: entries.length });
-          }
-          return entries;
-        })
-        .catch(err => {
-          console.warn('[Library] fetch failed:', err.message);
-          if (statusEl) statusEl.textContent = t('addSongLibraryOffline');
-          return [];
-        })
-        .finally(() => { _libraryLoadPromise = null; });
-      return _libraryLoadPromise;
-    }
-
-    // Pick the best display label for a library entry given current language.
-    // JP labels exist for the 69 pinned scores; falls back to ASCII label
-    // for anything not in the table (e.g. future additions before the JP
-    // map is updated).
-    /** @param {{label:string, labelJp?:string|null}} item */
-    function libraryDisplayLabel(item) {
-      if (prefs.lang === 'jp' && item.labelJp) return item.labelJp;
-      return item.label;
-    }
-
-    function renderAddSongLibrary() {
-      DOM_ADDSONG.libraryList.innerHTML = '';
-      const search = (/** @type {HTMLInputElement|null} */ (document.getElementById('addSongLibrarySearch'))?.value || '').toLowerCase();
-      // Search matches both EN and JP labels so kids can type in either script.
-      const filtered = search
-        ? ONLINE_LIBRARY.filter(it =>
-            (it.label || '').toLowerCase().includes(search) ||
-            (it.labelJp || '').toLowerCase().includes(search))
-        : ONLINE_LIBRARY;
-      for (const item of filtered) {
-        const row = document.createElement('div');
-        row.className = 'lib-row';
-        // Build icon + label spans with textContent — `item.icon` originates
-        // from the library catalog JSON; if a future entry (or a tampered
-        // imported library) carries HTML in `icon`, innerHTML interpolation
-        // would execute it.
-        const iconSpan = document.createElement('span');
-        iconSpan.className = 'lib-icon';
-        iconSpan.textContent = item.icon || '🎼';
-        const labelSpan = document.createElement('span');
-        labelSpan.className = 'lib-label';
-        labelSpan.textContent = libraryDisplayLabel(item);
-        row.appendChild(iconSpan);
-        row.appendChild(labelSpan);
-        row.addEventListener('click', async () => {
-          if (row.classList.contains('busy')) return;
-          row.classList.add('busy');
-          setAddSongStatus(t('addSongFetch') + '…');
-          try {
-            // Pass JP fields when available so the saved record carries the
-            // localized title/composer separately from the auto-derived ASCII one.
-            const rec = await addUserSongFromUrl(item.url, {
-              source: 'library',
-              titleOverride: prefs.lang === 'jp' && item.titleJp ? item.titleJp : item.label,
-              composerOverride: prefs.lang === 'jp' && item.composerJp ? item.composerJp : undefined
-            });
-            setAddSongStatus(t('addSongAdded'));
-            renderAddSongMyList();
-            renderUserSongButtons();
-            setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
-          } catch (e) {
-            setAddSongStatus(t('addSongFailed', { v: e.message }), true);
-          } finally {
-            row.classList.remove('busy');
-          }
-        });
-        DOM_ADDSONG.libraryList.appendChild(row);
-      }
-      if (filtered.length === 0) {
-        DOM_ADDSONG.libraryList.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.4);padding:8px">—</div>';
-      }
-    }
-
-    function renderAddSongMyList() {
-      DOM_ADDSONG.myList.innerHTML = '';
-      const userSongs = Object.values(SONGS).filter(s => s._isUser);
-      if (userSongs.length === 0) {
-        DOM_ADDSONG.myList.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.4);padding:6px 0">—</div>';
-        return;
-      }
-      for (const song of userSongs) {
-        const row = document.createElement('div');
-        row.className = 'my-row';
-        const subParts = [];
-        if (song._userComposer) subParts.push(song._userComposer);
-        const sub = subParts.join(' · ');
-        // 3 compact icon-only action buttons (✎ rename / ✂ edit-sections /
-        // ✕ delete). The text labels were "✎ 名前を変更" / "✎ 章を編集" /
-        // "削除" — three full-width pills that crowded the row. Now each
-        // is a 32px icon with a localized title for hover / aria-label
-        // for assistive tech. createElement + textContent (not innerHTML)
-        // so a tampered import file with HTML in `song.icon` can't execute.
-        const iconEl = document.createElement('span');
-        iconEl.className = 'my-icon';
-        iconEl.textContent = song.icon || '🎵';
-        const labelEl = document.createElement('span');
-        labelEl.className = 'my-label';
-        labelEl.textContent = song._userTitle || song.id;
-        const renameBtnEl = document.createElement('button');
-        renameBtnEl.className = 'my-action-btn my-rename';
-        renameBtnEl.type = 'button';
-        renameBtnEl.textContent = '✎';
-        const editBtnEl = document.createElement('button');
-        editBtnEl.className = 'my-action-btn my-edit';
-        editBtnEl.type = 'button';
-        editBtnEl.textContent = '✂';
-        const removeBtnEl = document.createElement('button');
-        removeBtnEl.className = 'my-action-btn my-delete';
-        removeBtnEl.type = 'button';
-        removeBtnEl.textContent = '✕';
-        row.appendChild(iconEl);
-        row.appendChild(labelEl);
-        row.appendChild(renameBtnEl);
-        row.appendChild(editBtnEl);
-        row.appendChild(removeBtnEl);
-        if (sub) {
-          const sb = document.createElement('span');
-          sb.className = 'my-sub';
-          sb.textContent = sub;
-          labelEl.appendChild(sb);
-        }
-        const renameBtn = renameBtnEl;
-        const editBtn = editBtnEl;
-        const removeBtn = removeBtnEl;
-        renameBtn.title = t('addSongRename');
-        renameBtn.setAttribute('aria-label', t('addSongRename'));
-        editBtn.title = t('addSongEditSections');
-        editBtn.setAttribute('aria-label', t('addSongEditSections'));
-        removeBtn.title = t('addSongRemove');
-        removeBtn.setAttribute('aria-label', t('addSongRemove'));
-        renameBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const newTitle = prompt(t('addSongRenamePromptTitle'), song._userTitle || '');
-          if (newTitle == null) return; // cancel
-          const trimmedTitle = newTitle.trim();
-          if (!trimmedTitle) return;
-          const newComposer = prompt(t('addSongRenamePromptComposer'), song._userComposer || '');
-          if (newComposer == null) return; // cancel
-          try {
-            await renameUserSong(song.id, trimmedTitle, newComposer.trim());
-          } catch (err) {
-            console.error('renameUserSong failed', err);
-            setAddSongStatus(t('addSongFailed', { v: (err && err.message) || 'rename' }), true);
-            return;
-          }
-          renderAddSongMyList();
-          renderUserSongButtons();
-          // If the renamed song is currently displayed in the song panel header,
-          // refresh its title/composer text too.
-          if (currentSong && currentSong.id === song.id) {
-            DOM.songTitle.textContent = t(currentSong.titleKey);
-            DOM.songComposer.textContent = t(currentSong.composerKey);
-          }
-        });
-        editBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openSectionEditor(song.id);
-        });
-        removeBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (!confirm(t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
-          try {
-            await removeUserSong(song.id);
-          } catch (err) {
-            console.error('removeUserSong failed', err);
-            setAddSongStatus(t('addSongFailed', { v: (err && err.message) || 'delete' }), true);
-            return;
-          }
-          renderAddSongMyList();
-          renderUserSongButtons();
-        });
-        DOM_ADDSONG.myList.appendChild(row);
-      }
-    }
-
-    // ========================================
-    // Section editor — manual override of auto-detected boundaries
-    //   Loads the song record from IndexedDB, presents 3 editable startMeasure
-    //   inputs (1-based), validates monotonic & in-range, persists back.
-    //   Section names are auto (Part 1/2/3) — naming UI is YAGNI for now.
-    // ========================================
-    // Section-editor — Phase 0d batch 2: extracted to
-    // packages/web/src/section-editor.ts. The actual createSectionEditor()
-    // call lives further down where DOM_SECEDIT is built; here we just
-    // forward-declare placeholder bindings so call sites can name the
-    // short identifiers. The placeholders are reassigned at the
-    // createSectionEditor() call site (search "section-editor wire-up").
-    /** @type {(songId: string) => Promise<void>} */
-    let openSectionEditor = async () => {};
-    /** @type {() => void} */
-    let closeSectionEditor = () => {};
-
-    // Inject user-song buttons into the start screen, between the hardcoded songs
-    // and the "+ Add" button. Re-rendered after every add/remove.
-    // Each tile carries an in-place ✕ delete button (CSS in app.css under
-    // `#userSongList .mode-btn .my-remove`) so users can prune broken / wrong
-    // songs without diving into the add-song modal — important escape hatch
-    // when a song fails to load and the user just wants it gone.
-    function renderUserSongButtons() {
-      DOM_ADDSONG.userSongList.innerHTML = '';
-      const userSongs = Object.values(SONGS).filter(s => s._isUser);
-      for (const song of userSongs) {
-        const btn = document.createElement('button');
-        btn.className = 'mode-btn primary practice-song-btn';
-        btn.setAttribute('data-song', song.id);
-        btn.style.position = 'relative';
-        const labelText = (song.icon || '🎵') + ' ' + (song._userTitle || song.id);
-        btn.innerHTML = `<span class="mode-btn-label"></span>
-          <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
-          <button class="my-remove" type="button" aria-label="delete">✕</button>`;
-        const labelEl = btn.querySelector('.mode-btn-label');
-        if (labelEl) labelEl.textContent = labelText;
-        btn.addEventListener('click', () => selectSong(song.id));
-        const removeBtn = /** @type {HTMLButtonElement|null} */ (btn.querySelector('.my-remove'));
-        if (!removeBtn) continue;
-        removeBtn.title = t('addSongRemove');
-        removeBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (!confirm(t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
-          try {
-            await removeUserSong(song.id);
-          } catch (err) {
-            console.error('removeUserSong failed', err);
-            alert((err && err.message) || 'Delete failed');
-            return;
-          }
-          renderUserSongButtons();
-          if (DOM_ADDSONG.modal.classList.contains('visible')) renderAddSongMyList();
-        });
-        DOM_ADDSONG.userSongList.appendChild(btn);
-      }
-    }
-
-    DOM_ADDSONG.btn?.addEventListener('click', openAddSongModal);
-    DOM_ADDSONG.closeBtn?.addEventListener('click', closeAddSongModal);
-    DOM_ADDSONG.modal?.addEventListener('click', (e) => {
-      if (e.target === DOM_ADDSONG.modal) closeAddSongModal();
-    });
-
-    DOM_ADDSONG.tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const which = tab.getAttribute('data-tab');
-        DOM_ADDSONG.tabs.forEach(t => t.classList.toggle('active', t === tab));
-        DOM_ADDSONG.bodies.forEach(b => {
-          /** @type {HTMLElement} */ (b).hidden = b.getAttribute('data-tab-body') !== which;
-        });
-        setAddSongStatus('');
-      });
-    });
-
-    // Library search — debounce-free is fine, list is in-memory and small (~91 items).
-    document.getElementById('addSongLibrarySearch')?.addEventListener('input', () => {
-      renderAddSongLibrary();
-    });
-
-    DOM_ADDSONG.fileInput?.addEventListener('change', async (e) => {
-      const target = /** @type {HTMLInputElement} */ (e.target);
-      const file = target.files?.[0];
-      if (!file) return;
-      if (!(/** @type {HTMLInputElement} */ (DOM_ADDSONG.pdCheckbox)).checked) {
-        setAddSongStatus(t('addSongPdAttest'), true);
-        return;
-      }
-      setAddSongStatus(t('addSongFetch') + '…');
-      try {
-        const rec = await addUserSongFromBlob(file, { filename: file.name, source: 'upload' });
-        setAddSongStatus(t('addSongAdded'));
-        renderAddSongMyList();
-        renderUserSongButtons();
-        setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
-      } catch (err) {
-        setAddSongStatus(t('addSongFailed', { v: err.message }), true);
-      } finally {
-        /** @type {HTMLInputElement} */ (DOM_ADDSONG.fileInput).value = '';   // allow re-picking same filename
-      }
-    });
-
-    DOM_ADDSONG.fetchBtn?.addEventListener('click', async () => {
-      const urlInput = /** @type {HTMLInputElement} */ (DOM_ADDSONG.urlInput);
-      const url = (urlInput.value || '').trim();
-      if (!url) return;
-      setAddSongStatus(t('addSongFetch') + '…');
-      /** @type {HTMLButtonElement} */ (DOM_ADDSONG.fetchBtn).disabled = true;
-      try {
-        const rec = await addUserSongFromUrl(url, { source: 'url' });
-        setAddSongStatus(t('addSongAdded'));
-        urlInput.value = '';
-        renderAddSongMyList();
-        renderUserSongButtons();
-        setTimeout(() => { closeAddSongModal(); selectSong(rec.id); }, 450);
-      } catch (err) {
-        setAddSongStatus(t('addSongFailed', { v: err.message }), true);
-      } finally {
-        /** @type {HTMLButtonElement} */ (DOM_ADDSONG.fetchBtn).disabled = false;
-      }
-    });
-
-    // ESC handling is consolidated into a single document-level listener
-    // earlier in the file (search "Single, ordered ESC handler"). No
-    // duplicate listener here.
-
-    // ─── section-editor wire-up ─────────────────────────────────────
-    // DOM bag remains the shell's authoritative reference for the ESC
-    // handler's "is the modal visible?" check (line ~1860). The module
-    // owns its own internal state (totalMeasures + the in-flight record);
-    // those used to live on DOM_SECEDIT as `_totalMeasures` / `_record`
-    // but are now closure-private inside section-editor.ts.
+    // Section-editor DOM bag — kept in the shell for the same reason.
     /** @type {Record<string, HTMLElement>} */
     const DOM_SECEDIT = /** @type {any} */ ({
       modal: document.getElementById('sectionEditModal'),
@@ -7243,6 +6958,8 @@
       saveBtn: document.getElementById('sectionEditSaveBtn'),
       closeBtn: document.getElementById('sectionEditCloseBtn'),
     });
+
+    // ─── section-editor wire-up ─────────────────────────────────────
     {
       const _sectionEditor = SectionEditor.createSectionEditor({
         dom: /** @type {import('./section-editor').SectionEditorDom} */ ({
@@ -7261,8 +6978,7 @@
         t,
         modalFocus,
         // Update in-memory SONGS so a selectSong() right after save picks
-        // up the new boundaries without a page reload. Force re-extract
-        // on next load (clears the cached sections + lowers _loaded).
+        // up the new boundaries without a page reload.
         onSaved: (rec) => {
           const song = SONGS[rec.id];
           if (song) {
@@ -7272,146 +6988,64 @@
           }
         },
       });
-      // Re-bind the forward-declared placeholders. The original const-
-      // bindings live at the top of the file; ESC handler / user-songs
-      // ✕ button / "Edit Sections" all close over those names.
       openSectionEditor = _sectionEditor.open;
       closeSectionEditor = _sectionEditor.close;
     }
 
-    // ========================================
-    // Export / import — back up entire user library to one JSON file
-    //   Blobs are base64-encoded (FileReader.readAsDataURL → strip prefix).
-    //   Designed for "rebuild on a new iPad after a reset" — file size ≈
-    //   sum of .mxl sizes × 1.33 (base64 overhead). 50 songs ≈ ~3 MB.
-    // ========================================
-    /** @param {Blob} blob @returns {Promise<string>} */
-    function blobToDataUrl(blob) {
-      return new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => {
-          // readAsDataURL always yields a string result; the FileReader.result
-          // type is the wider `string | ArrayBuffer | null` because the same
-          // FileReader can be used for readAsArrayBuffer.
-          resolve(/** @type {string} */ (r.result));
-        };
-        r.onerror = () => reject(r.error);
-        r.readAsDataURL(blob);
+    // ─── user-songs wire-up ─────────────────────────────────────────
+    {
+      const _userSongs = UserSongsUi.createUserSongsUi({
+        dom: /** @type {import('./user-songs-ui').UserSongsUiDom} */ ({
+          modal: DOM_ADDSONG.modal,
+          btn: DOM_ADDSONG.btn,
+          closeBtn: DOM_ADDSONG.closeBtn,
+          tabs: DOM_ADDSONG.tabs,
+          bodies: DOM_ADDSONG.bodies,
+          libraryList: DOM_ADDSONG.libraryList,
+          libraryStatus: DOM_ADDSONG.libraryStatus,
+          librarySearch: DOM_ADDSONG.librarySearch,
+          fileInput: DOM_ADDSONG.fileInput,
+          pdCheckbox: DOM_ADDSONG.pdCheckbox,
+          urlInput: DOM_ADDSONG.urlInput,
+          fetchBtn: DOM_ADDSONG.fetchBtn,
+          status: DOM_ADDSONG.status,
+          myList: DOM_ADDSONG.myList,
+          userSongList: DOM_ADDSONG.userSongList,
+          exportBtn: DOM_ADDSONG.exportBtn,
+          importBtn: DOM_ADDSONG.importBtn,
+          importInput: DOM_ADDSONG.importInput,
+        }),
+        songs: SONGS,
+        getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
+        getLibrary: () => ONLINE_LIBRARY,
+        setLibrary: (entries) => { ONLINE_LIBRARY = entries; },
+        fetchLibrary,
+        addUserSongFromBlob,
+        addUserSongFromUrl,
+        renameUserSong,
+        removeUserSong,
+        registerUserSong,
+        userDbAll,
+        userDbPut,
+        unzipMxlToXmlText,
+        autoSectionDefs: PianoCore.autoSectionDefs,
+        // Thunk so a future reorder of the section-editor wire-up can't
+        // capture a stale placeholder reference.
+        openSectionEditor: (id) => openSectionEditor(id),
+        selectSong,
+        getCurrentSong: () => currentSong,
+        refreshSongPanelHeader: () => {
+          if (!currentSong) return;
+          DOM.songTitle.textContent = t(currentSong.titleKey);
+          DOM.songComposer.textContent = t(currentSong.composerKey);
+        },
+        t,
+        modalFocus,
       });
+      openAddSongModal = _userSongs.open;
+      closeAddSongModal = _userSongs.close;
+      renderUserSongButtons = _userSongs.renderUserSongButtons;
     }
-    /** @param {string} dataUrl */
-    async function dataUrlToBlob(dataUrl) {
-      const res = await fetch(dataUrl);
-      return res.blob();
-    }
-
-    async function exportUserLibrary() {
-      const all = await userDbAll();
-      if (all.length === 0) {
-        setAddSongStatus(t('myLibrary') + ' — 0', true);
-        return;
-      }
-      /** @type {{version:number, exportedAt:string, songs:Array<Omit<import('@piano/core').UserSongRecord, 'mxlBlob'> & {mxlDataUrl:string}>}} */
-      const out = { version: 1, exportedAt: new Date().toISOString(), songs: [] };
-      for (const rec of all) {
-        out.songs.push({
-          id: rec.id,
-          title: rec.title,
-          composer: rec.composer,
-          mimeType: rec.mimeType,
-          sectionDefs: rec.sectionDefs,
-          addedAt: rec.addedAt,
-          source: rec.source,
-          mxlDataUrl: await blobToDataUrl(rec.mxlBlob)
-        });
-      }
-      const json = JSON.stringify(out);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'piano-visualizer-library-' + new Date().toISOString().slice(0, 10) + '.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    }
-
-    /** @param {Blob} file */
-    async function importUserLibrary(file) {
-      const text = await file.text();
-      let parsed;
-      try { parsed = JSON.parse(text); }
-      catch (e) { throw new Error('Invalid JSON: ' + e.message); }
-      if (!parsed.songs || !Array.isArray(parsed.songs)) throw new Error('Missing songs[]');
-      // Reject unknown major schema versions — silently dropping fields from a
-      // future v2 file is worse than failing loudly.
-      if (parsed.version != null && parsed.version > 1) {
-        throw new Error('Library version ' + parsed.version + ' not supported (this build expects v1)');
-      }
-      // Track new IDs so a mid-import quota-exceeded / IO failure can roll
-      // back, leaving IndexedDB and the in-memory SONGS map consistent.
-      const addedIds = [];
-      try {
-        for (const s of parsed.songs) {
-          if (!s.mxlDataUrl) continue;
-          // Don't clobber if id already exists — assign a fresh id so
-          // re-importing is idempotent and never destroys a song the user
-          // might have edited.
-          let id = s.id;
-          if (SONGS[id]) {
-            id = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-          }
-          const blob = await dataUrlToBlob(s.mxlDataUrl);
-          const rec = {
-            id,
-            title: s.title || 'Imported',
-            composer: s.composer || '',
-            mxlBlob: blob,
-            mimeType: s.mimeType || 'application/vnd.recordare.musicxml+zip',
-            sectionDefs: s.sectionDefs || autoSectionDefs(await blob.text(), 1),
-            addedAt: s.addedAt || Date.now(),
-            source: 'import'
-          };
-          await userDbPut(rec);
-          await registerUserSong(rec);
-          addedIds.push(id);
-        }
-        return addedIds.length;
-      } catch (err) {
-        // Rollback partial import so the user isn't left with half a library
-        // they can't easily clean up. Best-effort — failures here are logged
-        // but don't mask the original cause.
-        for (const id of addedIds) {
-          try { await removeUserSong(id); } catch (e) {
-            console.warn('[import-rollback] removeUserSong failed:', id, e && e.message);
-          }
-        }
-        throw err;
-      }
-    }
-
-    document.getElementById('addSongExportBtn')?.addEventListener('click', () => {
-      exportUserLibrary().catch(e => setAddSongStatus(t('addSongFailed', { v: e.message }), true));
-    });
-    document.getElementById('addSongImportBtn')?.addEventListener('click', () => {
-      /** @type {HTMLInputElement|null} */ (document.getElementById('addSongImportInput'))?.click();
-    });
-    document.getElementById('addSongImportInput')?.addEventListener('change', async (e) => {
-      const target = /** @type {HTMLInputElement} */ (e.target);
-      const file = target.files?.[0];
-      if (!file) return;
-      try {
-        const n = await importUserLibrary(file);
-        setAddSongStatus(t('addSongImportDone', { n }));
-        renderAddSongMyList();
-        renderUserSongButtons();
-      } catch (err) {
-        setAddSongStatus(t('addSongFailed', { v: err.message }), true);
-      } finally {
-        target.value = '';
-      }
-    });
 
     // Hydrate user-added songs at startup so they appear in the picker without
     // requiring the kid to open the add-song modal first.
