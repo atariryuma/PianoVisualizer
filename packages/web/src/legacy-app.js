@@ -5104,103 +5104,38 @@
     const KB_BLACK = PianoCore.KB_BLACK;
     const KB_BLACK_LEFT_WHITE_IDX = PianoCore.KB_BLACK_LEFT_WHITE_IDX;
 
-    function drawMidiKeyboard() {
-      PianoCore.drawMidiKeyboard(ctx, midiState, {
-        screenW: W,
-        screenH: H,
-        kbHeight,
-        kbSafeBottom,
-        noteThemeColor,
-        sustainLabel: t('sustainLabel'),
-        // Practice cue: highlight the next-up key(s) so the kid sees which key
-        // to press without taking their eyes off the keyboard. Disabled in
-        // listen mode (the song plays itself) and in free play (no schedule).
-        hintNotes: buildKeyboardHintNotes(),
-        nowMs: performance.now(),
-      });
-    }
-
-    // Build the next-up keyboard hint set from the practice schedule. The
-    // "primary" hint is the very next note (gets the down-arrow); chord-mates
-    // within ±CHORD_MATE_TOLERANCE_MS share the highlight at lower intensity
-    // so they stay visually subordinate. Returns null when there's nothing to
-    // highlight (avoids pointless map churn from the keyboard renderer).
-    function buildKeyboardHintNotes() {
-      if (!practice.enabled || practice.mode === 'listen') return null;
-      const notes = practice.sectionNotes;
-      let idx = practice.currentNoteIdx;
-      while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
-      if (idx >= notes.length) return null;
-      const cur = notes[idx];
-      const out = new Map();
-      out.set(cur.midi, { hand: cur.hand, primary: true });
-      for (let i = idx + 1; i < notes.length; i++) {
-        const m = notes[i];
-        if (m.timeMs - cur.timeMs > CHORD_MATE_TOLERANCE_MS) break;
-        if (m.hit || m.missed || m._filtered) continue;
-        if (!out.has(m.midi)) out.set(m.midi, { hand: m.hand, primary: false });
-      }
-      return out;
-    }
-
-    // MIDI sustained-note beams — Phase 0b.3: delegated to
-    // @piano/core/render/midi-beams. The pure draw function takes the canvas
-    // ctx, midiState (duck-typed as MidiBeamsView), and the layout / color
-    // adapters from the legacy shell.
+    // Phase 0d batch 16: drawMidiKeyboard / drawMidiBeams /
+    // drawMidiChordDisplay / buildKeyboardHintNotes moved to
+    // packages/web/src/midi-render.ts. The shell wraps the factory
+    // result in the legacy short names so the loop wire-up stays
+    // unchanged.
+    const _midiRender = MidiRender.createMidiRender({
+      ctx,
+      midiState: /** @type {import('./midi-render').MidiRenderMidiState} */ (
+        /** @type {any} */ (midiState)
+      ),
+      practice: /** @type {import('./midi-render').MidiRenderPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      getLayout: () => ({ W, H, kbHeight, kbSafeBottom }),
+      drawMidiKeyboard: PianoCore.drawMidiKeyboard,
+      drawMidiBeams: PianoCore.drawMidiBeams,
+      midiToScreenX,
+      noteThemeColor,
+      chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
+      shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
+      sustainLabel: t('sustainLabel'),
+    });
+    /** @returns {void} */
+    function drawMidiKeyboard() { _midiRender.drawKeyboard(); }
     /** @param {number} timeMs */
-    function drawMidiBeams(timeMs) {
-      PianoCore.drawMidiBeams(ctx, midiState, {
-        kbTop: H - kbHeight - kbSafeBottom,
-        timeMs,
-        midiToScreenX,
-        noteThemeColor,
-      });
-    }
-
-    // Chord-name display. Free play celebrates with a big centered label;
-    // practice puts it small and quiet just above the keyboard so it doesn't fight the lane/score.
+    function drawMidiBeams(timeMs) { _midiRender.drawBeams(timeMs); }
     /** @param {number} timeMs */
-    function drawMidiChordDisplay(timeMs) {
-      if (!midiState.lastChordName) return;
-      const age = timeMs - midiState.lastChordTimeMs;
-      if (age > 1800) return;
-      const t = age / 1800;
-      const alpha = (t < 0.12) ? (t / 0.12) : Math.max(0, 1 - (t - 0.12) / 0.88);
-      ctx.save();
-      // shadowBlur on text forces software rasterization on iOS Safari /
-      // low-tier devices. Gate by PERF_PROFILE so the chord-name display
-      // doesn't drag low-tier framerates while it fades in/out for 1.8 s.
-      const useShadow = CONFIG.SHADOW_BLUR_ENABLED;
-      if (practice.enabled) {
-        // Quiet variant: just above the keyboard, small, fade-only.
-        const yPos = H - kbHeight - kbSafeBottom - 22;
-        ctx.translate(W / 2, yPos);
-        ctx.fillStyle = 'rgba(255, 220, 140, ' + (alpha * 0.75).toFixed(3) + ')';
-        ctx.font = '500 ' + Math.round(Math.min(28, W * 0.022)) + 'px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        if (useShadow) {
-          ctx.shadowColor = 'rgba(255, 200, 80, 0.5)';
-          ctx.shadowBlur = 10;
-        }
-        ctx.fillText(midiState.lastChordName, 0, 0);
-        ctx.restore();
-        return;
-      }
-      const scale = 0.9 + 0.18 * Math.sin(Math.min(t, 1) * Math.PI);
-      ctx.translate(W / 2, H * 0.42);
-      ctx.scale(scale, scale);
-      ctx.fillStyle = 'rgba(255, 230, 150, ' + alpha + ')';
-      ctx.font = 'bold ' + Math.round(Math.min(72, W * 0.06)) + 'px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      if (useShadow) {
-        ctx.shadowColor = 'rgba(255, 200, 80, 0.8)';
-        ctx.shadowBlur = 24;
-      }
-      ctx.fillText(midiState.lastChordName, 0, 0);
-      ctx.restore();
-    }
+    function drawMidiChordDisplay(timeMs) { _midiRender.drawChordDisplay(timeMs); }
+    // Refresh the sustainLabel on language change.
+    window.addEventListener('langchange', () =>
+      _midiRender.setLabels({ sustainLabel: t('sustainLabel') })
+    );
 
     // Median of the recent high-confidence pitches. Used to neutralize YIN's
     // single-frame octave errors at the moment of onset.

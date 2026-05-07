@@ -94,7 +94,7 @@ export interface PracticeLaneOsmdAdapter {
  *  pass the live PianoCore.drawPracticeLane reference without a cast.
  *  The internal call passes our own typed objects, so this stays safe
  *  in practice. */
- 
+
 export type DrawPracticeLaneFn = (
   ctx: CanvasRenderingContext2D,
   view: any,
