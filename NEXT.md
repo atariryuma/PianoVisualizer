@@ -6,16 +6,15 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0d batches 7a + 7b — `theme-controls.ts`
-
-- `practice-flow.ts` — landed as the first sub-batches of the event-wiring
-  extraction. `legacy-app.js` is now **7,137 lines**. Batch 7a pulled out the
-  theme bar (theme dots + synesthesia toggle + lang toggle, -42 lines, +17
-  tests). Batch 7b pulled out the practice-flow controls (ptbQuit /
-  ptbToggleOsmd / result-card / sumClose / 🏠 Title buttons / returnToTitle
-- the re-entrancy-guarded transitionToSection, -46 lines, +21 tests). **962
-  tests across both packages** (786 core + 176 web, +38 from batches 7a + 7b);
-  `pnpm verify` clean across 5 packages.)
+Last refreshed: **2026-05-07**. Phase 0d batches 7a / 7b (`theme-controls.ts`,
+`practice-flow.ts`) landed as the first sub-batches of the event-wiring
+extraction. `legacy-app.js` is now **7,137 lines**. Batch 7a pulled out the
+theme bar — theme dots, synesthesia toggle, lang toggle (-42 lines, +17 tests).
+Batch 7b pulled out the practice-flow controls — ptbQuit, ptbToggleOsmd,
+result-card, sumClose, 🏠 Title buttons, returnToTitle, the re-entrancy-guarded
+transitionToSection (-46 lines, +21 tests). **962 tests across both packages**
+(786 core, 176 web; the +38 from this session's two sub-batches). `pnpm verify`
+clean across 5 packages.
 
 ---
 
