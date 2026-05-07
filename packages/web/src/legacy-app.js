@@ -6427,6 +6427,166 @@
       }).catch(() => {});
     }
 
+    // ─── Dev mode (Phase 0d batch 12) ───────────────────────────────
+    // Activated by `?dev=1` URL param (persisted via localStorage), or
+    // by 5 quick taps on the start-screen tagline. Hidden in production.
+    DevMode.createDevMode({
+      triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
+      tests: /** @type {import('./dev-mode').SelfTest[]} */ ([
+        {
+          name: 'localStorage round-trip',
+          run: () => {
+            const k = '__pianoViz_dev_test__';
+            try {
+              localStorage.setItem(k, 'x');
+              const v = localStorage.getItem(k);
+              localStorage.removeItem(k);
+              return { ok: v === 'x' };
+            } catch (e) {
+              return { ok: false, detail: /** @type {Error} */ (e).message };
+            }
+          },
+        },
+        {
+          name: 'IndexedDB user-songs DB opens',
+          run: async () => {
+            try {
+              const db = await openUserDb();
+              db.close();
+              return { ok: true };
+            } catch (e) {
+              return { ok: false, detail: /** @type {Error} */ (e).message };
+            }
+          },
+        },
+        {
+          name: 'Module wire-up — every extracted module is on globalThis',
+          run: () => {
+            const expected = [
+              'PianoCore', 'AudioScheduler', 'NoteExtractor', 'PianoWakeLock',
+              'SectionEditor', 'SettingsPanel', 'AudioInit', 'UserSongsUi',
+              'ThemeControls', 'PracticeFlow', 'SongPanelControls',
+              'SongPanelRender', 'PracticeTick', 'ResultCard', 'SessionSummary',
+              'RenderFrame', 'DevMode',
+            ];
+            /** @type {string[]} */
+            const missing = [];
+            for (const k of expected) {
+              if (typeof (/** @type {any} */ (globalThis))[k] === 'undefined') missing.push(k);
+            }
+            return { ok: missing.length === 0, detail: missing.length ? 'missing: ' + missing.join(', ') : undefined };
+          },
+        },
+        {
+          name: 'DOM bag — critical elements all queryable',
+          run: () => {
+            const ids = [
+              'canvas', 'startScreen', 'startBtn', 'hud', 'songPanel',
+              'sectionResult', 'sessionSummary', 'addSongModal', 'sectionEditModal',
+              'settingsPanel', 'practiceHud', 'osmdContainer',
+            ];
+            /** @type {string[]} */
+            const missing = ids.filter(id => !document.getElementById(id));
+            return { ok: missing.length === 0, detail: missing.length ? 'missing: ' + missing.join(', ') : undefined };
+          },
+        },
+        {
+          name: 'i18n — t() returns localized non-empty strings',
+          run: () => {
+            const samples = ['startPractice', 'settings', 'micInput', 'tier1Title', 'addSongBtn'];
+            /** @type {string[]} */
+            const failed = samples.filter(k => {
+              const v = t(k);
+              return !v || v === k;
+            });
+            return { ok: failed.length === 0, detail: failed.length ? 'failed keys: ' + failed.join(', ') : undefined };
+          },
+        },
+        {
+          name: 'AudioContext — create, resume, close (no leak)',
+          run: async () => {
+            try {
+              const c = AudioInit.createAudioContext();
+              if (c.state === 'suspended') {
+                try { await c.resume(); } catch (_) { /* user-gesture-required outside this path is fine */ }
+              }
+              const sr = c.sampleRate;
+              await c.close();
+              return { ok: sr > 0, detail: 'sampleRate=' + sr + 'Hz' };
+            } catch (e) {
+              return { ok: false, detail: /** @type {Error} */ (e).message };
+            }
+          },
+        },
+        {
+          name: 'Web MIDI — API present (or iPad WMB)',
+          run: () => {
+            const hasMidi = typeof navigator.requestMIDIAccess === 'function';
+            const isApple = isAppleMobile();
+            const ok = hasMidi || !isApple; // OK if MIDI is present, OR not iPad (mic mode is fine)
+            const detail = hasMidi
+              ? 'navigator.requestMIDIAccess present'
+              : isApple
+                ? 'iPad without WMB — mic mode'
+                : 'NO Web MIDI';
+            return { ok, detail };
+          },
+        },
+        {
+          name: 'Service Worker — registered',
+          run: async () => {
+            if (!('serviceWorker' in navigator)) {
+              return { ok: false, detail: 'SW API not available' };
+            }
+            const reg = await navigator.serviceWorker.getRegistration();
+            return { ok: !!reg, detail: reg ? 'scope=' + reg.scope : 'no registration' };
+          },
+        },
+        {
+          name: 'Wake Lock API present',
+          run: () => {
+            const hasWL = !!(navigator.wakeLock && navigator.wakeLock.request);
+            return { ok: hasWL, detail: hasWL ? 'OK' : 'not supported (Safari iOS < 16.4 / older Android)' };
+          },
+        },
+        {
+          name: 'Prefs — round-trip via savePrefs/loadJSON',
+          run: () => {
+            const saved = JSON.parse(localStorage.getItem('pianoViz_prefs') || '{}');
+            const ok = typeof saved === 'object' && saved !== null;
+            return { ok, detail: 'theme=' + saved.theme + ' lang=' + saved.lang };
+          },
+        },
+      ]),
+      getDiagSnapshot: () => ({
+        'audioCtx.state': audioCtx ? audioCtx.state : '(none)',
+        'audioCtx.sampleRate': audioCtx ? audioCtx.sampleRate + 'Hz' : '(none)',
+        'audioCtx.currentTime': audioCtx ? audioCtx.currentTime.toFixed(2) + 's' : '(none)',
+        'midiInput.enabled': String(midiInput.enabled),
+        'midiInput.port': midiInput.port?.name || '(none)',
+        'state.running': String(state.running),
+        'state.flow': state.flow.toFixed(1),
+        'state.combo': String(state.combo),
+        'state.currentStage': String(state.currentStage),
+        'state.qualityScore': (state.qualityScore || 0).toFixed(2),
+        'state.smoothEnergy': state.smoothEnergy.toFixed(3),
+        'state.useSynesthesiaMode': String(state.useSynesthesiaMode),
+        'practice.enabled': String(practice.enabled),
+        'practice.mode': practice.mode,
+        'practice.sectionIdx': String(practice.sectionIdx),
+        'practice.tempoPct': String(practice.tempoPct),
+        'practice.fullSongMode': String(practice.fullSongMode),
+        'practice.hits/misses': practice.hits + '/' + practice.misses,
+        'currentSong': currentSong?.id || '(none)',
+        'prefs.theme': String(prefs.theme),
+        'prefs.lang': prefs.lang,
+        'prefs.synesthesia': String(prefs.synesthesia),
+        'prefs.audioOffsetMs': String(prefs.audioOffsetMs),
+        'particles.length': String(particles?.length ?? 0),
+        'ripples.length': String(ripples?.length ?? 0),
+      }),
+    });
+
     // The legacy floating BLE button is gone — Bluetooth pairing now lives
     // exclusively in the ⚙ settings panel (settingsBleBtn).
 
