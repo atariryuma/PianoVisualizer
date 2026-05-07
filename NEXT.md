@@ -6,15 +6,14 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07**. Phase 0d batches 7a / 7b (`theme-controls.ts`,
-`practice-flow.ts`) landed as the first sub-batches of the event-wiring
-extraction. `legacy-app.js` is now **7,137 lines**. Batch 7a pulled out the
-theme bar — theme dots, synesthesia toggle, lang toggle (-42 lines, +17 tests).
-Batch 7b pulled out the practice-flow controls — ptbQuit, ptbToggleOsmd,
-result-card, sumClose, 🏠 Title buttons, returnToTitle, the re-entrancy-guarded
-transitionToSection (-46 lines, +21 tests). **962 tests across both packages**
-(786 core, 176 web; the +38 from this session's two sub-batches). `pnpm verify`
-clean across 5 packages.
+Last refreshed: **2026-05-08**. Phase 0d batches 7a / 7b / 7c / 7d / 8 landed as
+a long event-wiring + render extraction run. `legacy-app.js` is now **6,921
+lines** (down from 7,225 at session start; 304 lines extracted in five
+sub-batches). New modules: `theme-controls.ts` (-42 / +17 tests),
+`practice-flow.ts` (-46 / +21 tests), `song-panel-controls.ts` (-10 / +12
+tests), `song-panel-render.ts` (-118 / +31 tests), `practice-tick.ts` (-93 / +20
+tests). **1,025 tests across both packages** (786 core, 239 web; +101 from this
+session). `pnpm verify` clean across 5 packages.
 
 ---
 
@@ -79,11 +78,13 @@ clean across 5 packages.
 | 55  | `web/theme-controls.ts`       | 17    | `packages/web/src/theme-controls.ts`            |
 | 56  | `web/practice-flow.ts`        | 21    | `packages/web/src/practice-flow.ts`             |
 | 57  | `web/song-panel-controls.ts`  | 12    | `packages/web/src/song-panel-controls.ts`       |
+| 58  | `web/song-panel-render.ts`    | 31    | `packages/web/src/song-panel-render.ts`         |
+| 59  | `web/practice-tick.ts`        | 20    | `packages/web/src/practice-tick.ts`             |
 
-**Status: 974/974 tests green (786 core + 188 web), 0 lint errors, 0 type
+**Status: 1,025/1,025 tests green (786 core + 239 web), 0 lint errors, 0 type
 errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 7,132 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
-so far: ≈1,870 lines moved out of the shell across 9 sub-batches.
+`legacy-app.js`: 6,921 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
+so far: ≈2,080 lines moved out of the shell across 11 sub-batches.
 
 ---
 
@@ -91,11 +92,11 @@ so far: ≈1,870 lines moved out of the shell across 9 sub-batches.
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently **7,137 lines**. Goal: ≤200 lines, with each carved-out
+The shell is currently **6,921 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-Batches 1-7b all landed cleanly. Remaining batches in order of size / ease:
+Batches 1-8 all landed cleanly. Remaining batches in order of size / ease:
 
 - [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
 - [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
@@ -119,10 +120,26 @@ Batches 1-7b all landed cleanly. Remaining batches in order of size / ease:
       initAudio, showRunningUI, initBgStars, requestAnimationFrame(loop), and
       startPracticeSection, which are practice-tick / render-loop batch
       concerns.
-- [ ] More event-wiring sub-batches (~1300 lines remain). Heterogeneous — keep
-      sub-batching by feature surface (ptbInput, BLE/MIDI listeners that can
-      detach without touching the audio pipeline, OSMD events, lane-touch
-      handlers).
+- [x] `web/song-panel-render.ts` — the 150-line renderSongPanel (header / streak
+      / BPM hint / tempo row / section list / mode + hand active / toggle
+      visibility / start-button copy) (landed batch 7d, -118 lines, +31 tests).
+- [x] `web/practice-tick.ts` — per-frame updatePractice hot path: diag log,
+      auto-mark missed / auto-advance, mic-onset matching, cursor skip, progress
+      HUD, section-complete + 600ms grace timer with race-guard (landed batch 8,
+      -93 lines, +20 tests).
+- [ ] `web/render-loop.ts` — `loop()` frame composer (~240 lines). Hardest
+      remaining batch: ~50 deps (every render layer + state + MIDI + practice
+      tick). Recommend sub-batching by render phase (background fade +
+      bg-stars + aurora + ground flowers; center-glow + spectrum; ripples +
+      beams + particles + keyboard; HUD + practice lane) rather than one mega
+      extraction.
+- [ ] `web/result-card.ts` — renderResultCard + completePracticeSection +
+      drawHistoryChart (~270 lines). Heavy scoring + unlocks coupling but
+      well-bounded around the result modal.
+- [ ] More event-wiring sub-batches (~1100 lines remain). Highest-ROI
+      candidates: ptbInput (MIDI rescan toggle); songStart + startBtn (boot
+      coupling, currently tied to initAudio + requestAnimationFrame(loop));
+      BLE-MIDI listener cluster; OSMD click-to-seek in lane code.
 - [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
 - [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
 
