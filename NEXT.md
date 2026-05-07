@@ -6,14 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0d batch 5 — `audio-init.ts` — landed
-alongside the listen-mode 全曲再生 feature. `legacy-app.js` is now **7,591
-lines** (batch 5 alone shaved 28 lines; the full-song feature added 88 lines net
-for the listen-mode whole-song-playback toggle). New typed module
-`packages/web/src/audio-init.ts` exports `MIC_CONSTRAINTS`, `AUDIO_SAMPLE_RATE`,
-`createAudioContext()`, `buildAudioGraph()`, and `createAudioRecovery(deps)` —
-the WebKit Bug 237878/261554 recovery seam now has its own focused file with
-explicit tests. **893 tests across both packages** (786 core + 107 web);
+Last refreshed: **2026-05-07** (Phase 0d batch 6 — `user-songs-ui.ts` — landed.
+`legacy-app.js` is now **7,225 lines** (was 7,591 before batch 6, -366). The
+Add/Manage Songs modal + start-screen tiles + library export/import all moved
+into a typed module; both DOM bags (`DOM_ADDSONG` + `DOM_SECEDIT`) and the
+forward-declared placeholders got consolidated into one clean wire-up block.
+**924 tests across both packages** (786 core + 138 web, +31 from batch 6);
 `pnpm verify` clean across 5 packages.)
 
 ---
@@ -75,11 +73,12 @@ explicit tests. **893 tests across both packages** (786 core + 107 web);
 | 51  | i18n wire-up via `createT`    | —     | `packages/web/src/legacy-app.js` (-301 lines)   |
 | 52  | `web/audio-init.ts`           | 21    | `packages/web/src/audio-init.ts`                |
 | 53  | feat: 全曲再生 listen toggle  | —     | `packages/web/src/legacy-app.js` (+88 lines)    |
+| 54  | `web/user-songs-ui.ts`        | 31    | `packages/web/src/user-songs-ui.ts`             |
 
-**Status: 893/893 tests green (786 core + 107 web), 0 lint errors, 0 type
+**Status: 924/924 tests green (786 core + 138 web), 0 lint errors, 0 type
 errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 7,591 lines (was 9,000+ at Phase 0a). Batch 5 saved 28 lines;
-the parallel-developed listen-mode 全曲再生 feature added 88 net lines.
+`legacy-app.js`: 7,225 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
+so far: ≈1,775 lines moved out of the shell across 6 batches.
 
 ---
 
@@ -87,11 +86,11 @@ the parallel-developed listen-mode 全曲再生 feature added 88 net lines.
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently **7,591 lines**. Goal: ≤200 lines, with each carved-out
+The shell is currently **7,225 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-Batches 1-5 all landed cleanly. Remaining batches in order of size / ease:
+Batches 1-6 all landed cleanly. Remaining batches in order of size / ease:
 
 - [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
 - [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
@@ -102,12 +101,13 @@ Batches 1-5 all landed cleanly. Remaining batches in order of size / ease:
       deliberately stayed in the shell — they're tied to the state-machine and
       reach into too many shell-private vars to extract without churning every
       audio-node read across the rest of the file.
-- [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid).
-      Self-contained around `DOM_ADDSONG` (line ~6825) and the
-      `openAddSongModal` / `renderAddSongLibrary` / `renderAddSongMyList`
-      helpers. Also naturally bundles `renderUserSongButtons` (line ~7074) + the
-      rename/delete flows.
-- [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical)
+- [x] `web/user-songs-ui.ts` — Add/Manage Songs modal + start-screen tiles +
+      library export/import (landed batch 6, -366 lines, +31 tests).
+- [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical).
+      Probably the biggest mechanical win left, but heterogeneous — consider
+      sub-batching by feature surface (HUD buttons / lane-touch handlers /
+      start-screen wiring / OSMD events / etc.) rather than one monolithic
+      event-wiring.ts.
 - [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
 - [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
 
