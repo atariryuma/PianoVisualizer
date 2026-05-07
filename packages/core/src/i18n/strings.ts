@@ -126,9 +126,14 @@ export const T_STRINGS: TranslationTable = {
   back: { en: 'Back', jp: 'もどる' },
   startPractice: { en: '▶ Start practice', jp: '▶ れんしゅうスタート' },
   startListening: { en: '🎧 Start listening', jp: '🎧 きいてみる' },
-  // Listen-mode result
+  // Listen-mode "play the whole song through" toggle (only shown when mode === 'listen')
+  playFullSong: { en: '🎵 Play full song', jp: '🎵 全曲再生' },
+  fullSongLabel: { en: 'Full song', jp: '曲全体' },
+  // Listen-mode result (per-section vs full song variants)
   listenedTitle: { en: '🎧 Nicely listened!', jp: '🎧 さいごまで聴けたね！' },
   listenedMsg: { en: 'Now try playing along.', jp: 'つぎは弾いてみよう。' },
+  listenedFullTitle: { en: '🎧 You heard the whole song!', jp: '🎧 曲を聴き終わりました！' },
+  listenedFullMsg: { en: 'Try playing it now.', jp: 'つぎは弾いてみよう。' },
   tryPlayingNow: { en: '▶ Try playing', jp: '▶ 弾いてみる' },
   // Practice HUD
   score: { en: 'Score', jp: '楽譜' },

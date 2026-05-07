@@ -67,6 +67,7 @@
      * @property {'guided'|'rhythm'|'listen'} mode
      * @property {boolean} ghostOn
      * @property {boolean} metronomeOn
+     * @property {boolean} fullSongMode               Listen-only: play every section back-to-back.
      * @property {number} startAudioTime              Tone.now() at section start.
      * @property {OsmdLikeNote[]} sectionNotes        Active section's note list.
      * @property {number} currentNoteIdx              Next-to-resolve idx in sectionNotes.
@@ -88,7 +89,7 @@
      * @property {number} [_lastCursorNoteIdx]        Last cursor-walked target.
      * @property {number} [_dbgNextLog]               Next ms timestamp at which to emit a debug log.
      * @property {number} [_sectionTargetCount]       Total scoreable notes in active section.
-     * @property {{mode:string, secId:string, stars:number, unlockedTempo:number|null, unlockedSecKey:string|null, streakDays:number|null}|null} [_lastResult]
+     * @property {{mode:string, secId:string, stars:number, unlockedTempo:number|null, unlockedSecKey:string|null, streakDays:number|null, fullSong?:boolean}|null} [_lastResult]
      * @property {number} [laneDrawFromIdx]           Amortized cursor for lane-render culling.
      * @property {{lhMin:number, lhMax:number, rhMin:number, rhMax:number}} [handRanges]
      */
@@ -729,6 +730,8 @@
       ghostRow: document.getElementById('ghostRow'),
       metronomeToggle: document.getElementById('metronomeToggle'),
       metronomeRow: document.getElementById('metronomeRow'),
+      fullSongToggle: document.getElementById('fullSongToggle'),
+      fullSongRow: document.getElementById('fullSongRow'),
       songBack: document.getElementById('songBack'),
       songStart: document.getElementById('songStart'),
       practiceHud: document.getElementById('practiceHud'),
@@ -4226,6 +4229,11 @@
       mode: 'guided',
       ghostOn: false,
       metronomeOn: false,
+      // Listen-only: when true, startPracticeSection builds a timeline that
+      // concatenates every section so the song plays straight through. Hidden
+      // (and ignored) for guided / rhythm — those modes still drive a single
+      // section at a time so scoring + unlocks remain section-scoped.
+      fullSongMode: false,
       // Single audio-clock reference — locks visuals to Tone.js scheduled events.
       // elapsed_ms = (Tone.now() - startAudioTime) * 1000
       startAudioTime: 0,
@@ -5690,6 +5698,45 @@
       return out;
     }
 
+    // Listen-mode "全曲再生" timeline. Same shape as buildSectionNotes but the
+    // start anchor is the song's first note (t0) instead of a section boundary,
+    // so every section flows back-to-back without resync gaps. Section-only
+    // scoring/unlocks intentionally don't apply here — listen mode is read-only.
+    /** @returns {OsmdLikeNote[]} */
+    function buildFullSongNotes() {
+      const speedFactor = 100 / practice.tempoPct;
+      const handFilter = practice.handFilter;
+      /** @type {OsmdLikeNote[]} */
+      const out = [];
+      const songNotes = currentSong.notes ?? [];
+      if (!songNotes.length) return out;
+      // Anchor on the first note so the count-in lands right before it. Using
+      // sections[0].startSec instead would leave silence before the first
+      // attack on songs whose first section header sits a beat or two early.
+      let t0 = Infinity;
+      for (const n of songNotes) if (n.timeSec < t0) t0 = n.timeSec;
+      if (!isFinite(t0)) t0 = 0;
+      for (const n of songNotes) {
+        const filtered = !!handFilter && n.hand !== handFilter;
+        out.push({
+          hand: n.hand,
+          midi: n.midi,
+          timeSec: n.timeSec,
+          durSec: n.durSec,
+          timeMs: (n.timeSec - t0) * 1000 * speedFactor + COUNT_IN_MS,
+          durMs: n.durSec * 1000 * speedFactor,
+          measureIdx: n.measureIdx,
+          inBarQuarters: n.inBarQuarters,
+          cursorJump: n.cursorJump,
+          hit: filtered,
+          missed: false,
+          _filtered: filtered
+        });
+      }
+      out.sort((a, b) => a.timeMs - b.timeMs);
+      return out;
+    }
+
     // Per-hand MIDI range used by the lane drawer to map pitch → x-position.
     // Computed once per section so the hot path doesn't re-scan every frame.
     /** @param {OsmdLikeNote[]} sectionNotes */
@@ -5727,11 +5774,15 @@
       recomputePracticeTimings();
 
       const sec = currentSong.sections[sectionIdx];
+      // Full-song listen takes over the timeline shape but keeps sectionIdx
+      // pointing at the first section so OSMD's cursor + the result-card
+      // banner have a sensible starting anchor.
+      const isFullSong = practice.mode === 'listen' && practice.fullSongMode;
 
       // Reset all per-section state
       practice.enabled = true;
-      practice.sectionIdx = sectionIdx;
-      practice.sectionNotes = buildSectionNotes(sectionIdx);
+      practice.sectionIdx = isFullSong ? 0 : sectionIdx;
+      practice.sectionNotes = isFullSong ? buildFullSongNotes() : buildSectionNotes(sectionIdx);
       // ---------- DIAG: section playback notes ----------
       // Verifies that the per-section playback timeline (timeMs values that
       // drive the lane + the cursor sync) was built from the song notes
@@ -5793,8 +5844,11 @@
       state.combo = 0;
       state.bestCombo = 0;
 
-      // HUD
-      DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+      // HUD — show the song title in full-song listen so the kid sees what
+      // they're listening to instead of the (now-irrelevant) first-section name.
+      DOM.ptbSection.textContent = isFullSong
+        ? t(currentSong.titleKey)
+        : t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
       DOM.ptbTempo.textContent = '🥁 ' + practice.tempoPct + '%';
       // Exclude _filtered notes from the progress count (they are auto-skipped).
       practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
@@ -5805,8 +5859,14 @@
       setInputIndicator();
       requestWakeLock();
 
-      // Section banner — flies in to celebrate the start
-      showSectionBanner(sec);
+      // Section banner — flies in to celebrate the start. Full-song listen
+      // gets a single banner with the song's title rather than the first
+      // section's name (the kid is hearing the whole song, not just Intro).
+      if (isFullSong) {
+        showSectionBanner({ nameKey: currentSong.titleKey });
+      } else {
+        showSectionBanner(sec);
+      }
 
       // Position OSMD's cursor at the section's first note. cursorTo
       // handles the backward-seek case internally (resets first if the
@@ -6244,15 +6304,25 @@
     function renderResultCard() {
       const r = practice._lastResult;
       if (!r) return;
-      const sec = currentSong?.sections?.find(s => s.id === r.secId);
-      if (!sec) return;
+      // Full-song listen has no per-section anchor — fall back to the song
+      // title for the subtitle line.
+      const secLookup = currentSong?.sections?.find(s => s.id === r.secId);
+      if (!r.fullSong && !secLookup) return;
 
       if (r.mode === 'listen') {
-        DOM.resTitle.textContent = t('listenedTitle');
-        DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+        DOM.resTitle.textContent = t(r.fullSong ? 'listenedFullTitle' : 'listenedTitle');
+        let subtitle;
+        if (r.fullSong) {
+          subtitle = t(currentSong.titleKey);
+        } else {
+          // !r.fullSong → secLookup is defined (early return guarantees it).
+          const s = /** @type {NonNullable<typeof secLookup>} */ (secLookup);
+          subtitle = t(s.nameKey) + (s.isBoss ? ' 👑' : '');
+        }
+        DOM.resSectionName.textContent = subtitle;
         DOM.resStars.style.display = 'none';
         document.querySelectorAll('#sectionResult .result-stat').forEach(el => { /** @type {HTMLElement} */ (el).style.display = 'none'; });
-        DOM.resMsg.textContent = t('listenedMsg');
+        DOM.resMsg.textContent = t(r.fullSong ? 'listenedFullMsg' : 'listenedMsg');
         DOM.resUnlock.textContent = '';
         if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
         DOM.resNext.style.display = 'none';
@@ -6261,6 +6331,9 @@
       }
 
       // Rhythm/guided result.
+      // Past this point we always have a real section (rhythm/guided never
+      // sets fullSong, so the early return above guarantees secLookup).
+      const sec = /** @type {NonNullable<typeof secLookup>} */ (secLookup);
       DOM.resStars.style.display = '';
       document.querySelectorAll('#sectionResult .result-stat').forEach(el => { /** @type {HTMLElement} */ (el).style.display = ''; });
       if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
@@ -6282,13 +6355,16 @@
       practice.pendingHolds.clear();
 
       const sec = currentSong.sections[practice.sectionIdx];
+      const isFullSong = practice.mode === 'listen' && practice.fullSongMode;
 
       // Listen mode: no scoring, no progress mutation, no unlocks. Hide all
       // score rows/stars and offer a "Try playing" button that switches the
       // kid into Guided on the same section — natural pedagogical flow.
+      // Full-song listen takes the same branch but stamps `fullSong: true`
+      // so renderResultCard swaps to the "曲を聴き終わりました" copy.
       if (practice.mode === 'listen') {
         practice._lastResult = {
-          mode: 'listen', secId: sec.id,
+          mode: 'listen', secId: sec.id, fullSong: isFullSong,
           stars: 0, unlockedTempo: null, unlockedSecKey: null, streakDays: null,
         };
         renderResultCard();
@@ -6602,8 +6678,19 @@
       DOM.ghostToggle.classList.toggle('on', practice.ghostOn);
       DOM.metronomeToggle.classList.toggle('on', practice.metronomeOn);
       const showRhythmOpts = practice.mode === 'rhythm';
+      const showListenOpts = practice.mode === 'listen';
       if (DOM.ghostRow) DOM.ghostRow.style.display = showRhythmOpts ? '' : 'none';
       if (DOM.metronomeRow) DOM.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
+      if (DOM.fullSongRow) DOM.fullSongRow.style.display = showListenOpts ? '' : 'none';
+      if (DOM.fullSongToggle) DOM.fullSongToggle.classList.toggle('on', practice.fullSongMode);
+      // Full-song mode ignores the section picker — visually dim it so the kid
+      // understands the choice doesn't matter; clicks still work (re-tapping
+      // jumps the highlight) but they have no effect on listen-from-the-top.
+      const sectionListDimmed = showListenOpts && practice.fullSongMode;
+      if (DOM.sectionList) {
+        DOM.sectionList.style.opacity = sectionListDimmed ? '0.4' : '';
+        DOM.sectionList.style.pointerEvents = sectionListDimmed ? 'none' : '';
+      }
       // Start button copy: Listen mode reads as "Start listening" instead of "Start practice".
       const startBtn = DOM.songStart;
       if (startBtn) startBtn.textContent = t(practice.mode === 'listen' ? 'startListening' : 'startPractice');
@@ -6627,6 +6714,7 @@
 
     DOM.ghostToggle?.addEventListener('click', () => { practice.ghostOn = !practice.ghostOn; renderSongPanel(); });
     DOM.metronomeToggle?.addEventListener('click', () => { practice.metronomeOn = !practice.metronomeOn; renderSongPanel(); });
+    DOM.fullSongToggle?.addEventListener('click', () => { practice.fullSongMode = !practice.fullSongMode; renderSongPanel(); });
 
     // v13: Central invariant — whenever audio is alive and we are NOT on the title
     // screen, the global UI (theme bar with the home button + flow gauge HUD) must
