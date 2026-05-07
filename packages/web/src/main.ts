@@ -37,6 +37,7 @@ import * as ThemeControls from './theme-controls';
 import * as PracticeFlow from './practice-flow';
 import * as SongPanelControls from './song-panel-controls';
 import * as SongPanelRender from './song-panel-render';
+import * as PracticeTick from './practice-tick';
 
 declare global {
   interface Window {
@@ -55,6 +56,7 @@ declare global {
     PracticeFlow: typeof PracticeFlow;
     SongPanelControls: typeof SongPanelControls;
     SongPanelRender: typeof SongPanelRender;
+    PracticeTick: typeof PracticeTick;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -127,6 +129,8 @@ declare global {
   var SongPanelControls: typeof import('./song-panel-controls');
 
   var SongPanelRender: typeof import('./song-panel-render');
+
+  var PracticeTick: typeof import('./practice-tick');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -149,6 +153,7 @@ declare global {
 (globalThis as unknown as Window).PracticeFlow = PracticeFlow;
 (globalThis as unknown as Window).SongPanelControls = SongPanelControls;
 (globalThis as unknown as Window).SongPanelRender = SongPanelRender;
+(globalThis as unknown as Window).PracticeTick = PracticeTick;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

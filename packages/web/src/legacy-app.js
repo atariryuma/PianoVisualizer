@@ -5976,125 +5976,32 @@
     }
 
     // ========================================
-    // Per-frame practice tick
+    // Per-frame practice tick — Phase 0d batch 8 wire-up
     // ========================================
-    /** @param {number} timeMs @param {boolean} isOnsetNote @param {number=} pitchHz */
-    function updatePractice(timeMs, isOnsetNote, pitchHz) {
-      if (!practice.enabled) return;
-      const elapsed = practiceElapsedMs();
-      const notes = practice.sectionNotes;
-      const len = notes.length;
-
-      // ---------- DIAG: live playback tick (1 / sec) ----------
-      // Compact snapshot — just enough to verify cursor/note alignment in
-      // real time. Heavy load-time DIAGs are in dumpLoadDiagnostics().
-      if (REMOTE_LOG_ENABLED && len > 0) {
-        if (!practice._dbgNextLog || timeMs >= practice._dbgNextLog) {
-          practice._dbgNextLog = timeMs + 1000;
-          let expIdx = -1;
-          for (let i = 0; i < len; i++) {
-            if (notes[i].timeMs > elapsed) break;
-            expIdx = i;
-          }
-          const exp = expIdx >= 0 ? notes[expIdx] : null;
-          const next = expIdx + 1 < len ? notes[expIdx + 1] : null;
-          let hit = 0, miss = 0, pend = 0;
-          for (const n of notes) {
-            if (n._filtered) continue;
-            if (n.hit) hit++; else if (n.missed) miss++; else pend++;
-          }
-          // Read current cursor measure straight from OSMD's iterator —
-          // the iterator is the source of truth now, no shadow counter.
-          const curM = osmd?.cursor?.iterator?.CurrentMeasureIndex ?? -1;
-          remoteLog('[DIAG/play.tick] t=' + elapsed.toFixed(0) + 'ms' +
-            ' mode=' + practice.mode +
-            ' | progress hit=' + hit + ' miss=' + miss + ' pend=' + pend + '/' + len +
-            ' curIdx=' + practice.currentNoteIdx +
-            ' | exp=' + (exp
-              ? '{i=' + expIdx + ' t=' + exp.timeMs.toFixed(0) +
-                ' m=' + exp.measureIdx + ' q=' + (exp.inBarQuarters ?? 0).toFixed(2) +
-                ' midi=' + exp.midi + n_state(exp) + ' dt=' + (elapsed - exp.timeMs).toFixed(0) + '}'
-              : 'none') +
-            ' next=' + (next
-              ? '{i=' + (expIdx + 1) + ' t=' + next.timeMs.toFixed(0) +
-                ' m=' + next.measureIdx + ' q=' + (next.inBarQuarters ?? 0).toFixed(2) +
-                ' midi=' + next.midi + ' in=' + (next.timeMs - elapsed).toFixed(0) + '}'
-              : 'none') +
-            ' | cursor m=' + curM);
-        }
-      }
-
-      // 1. Mark missed notes (hit window expired) — RHYTHM MODE ONLY.
-      //    Guided waits for the kid; Listen plays itself, so neither auto-misses.
-      if (practice.mode === 'rhythm') {
-        for (let i = practice.currentNoteIdx; i < len; i++) {
-          const n = notes[i];
-          if (n.hit || n.missed) continue;
-          if (elapsed > n.timeMs + HIT_WINDOW_MS) {
-            n.missed = true;
-            practice.misses++;
-            practice.sectionCombo = 0;
-            showHitChip('miss', t('missChip'));
-          }
-          if (n.timeMs - elapsed > HIT_WINDOW_MS) break;
-        }
-      } else if (practice.mode === 'listen') {
-        // Listen mode auto-advances the cursor as the song plays so the lane
-        // and OSMD stay in sync with the audio. We mark notes as `hit` (not
-        // missed) so the per-frame skip-past loop walks the cursor forward
-        // without the rhythm-mode penalty path.
-        for (let i = practice.currentNoteIdx; i < len; i++) {
-          const n = notes[i];
-          if (n.hit || n.missed) continue;
-          if (elapsed >= n.timeMs) n.hit = true;
-          else break;
-        }
-      }
-
-      // 2. Match an incoming mic onset. While a MIDI keyboard is connected, mic is
-      //    fully suppressed for *scoring* — sustained piano sound, ambient noise,
-      //    or the kid's voice between MIDI presses can otherwise credit a wrong
-      //    note (especially under the chord-forgiveness forward-search).
-      //    Visualizer effects keep their own recency window (see drawMidiBeams path).
-      if (!midiInput.enabled && isOnsetNote && pitchHz != null && pitchHz > 0) {
-        const stablePitch = medianRecentPitch() || pitchHz;
-        const detectedMidi = Math.round(12 * Math.log2(stablePitch / 440) + 69);
-        matchNoteOnset(detectedMidi, false);
-      }
-
-      // 3. Skip past resolved notes. The OSMD cursor follows currentNoteIdx
-      //    via the per-frame sync in drawPracticeLane — no need to nudge it
-      //    here (chord notes share an iterator step, so successive
-      //    setOsmdCursorToNote calls within a chord are no-ops anyway).
-      while (practice.currentNoteIdx < len &&
-        (notes[practice.currentNoteIdx].hit || notes[practice.currentNoteIdx].missed)) {
-        practice.currentNoteIdx++;
-      }
-
-      // 5. Progress UI (rate-limited) — exclude the other hand in one-hand mode
-      if (timeMs - practice._lastProgUpdate > 100) {
-        practice._lastProgUpdate = timeMs;
-        const target = practice._sectionTargetCount || len;
-        DOM.ptbProgress.textContent = (practice.hits + practice.misses) + ' / ' + target;
-      }
-
-      // 6. Section complete?
-      let isComplete = practice.currentNoteIdx >= len;
-      if (!isComplete && practice.mode !== 'guided') {
-        const last = notes[len - 1];
-        isComplete = !!(last && elapsed > last.timeMs + last.durMs + HIT_WINDOW_MS + 400);
-      }
-      if (!practice._completing && isComplete) {
-        practice._completing = true;
-        // Race guard: if the user taps "quit" / Home during this 600 ms, we
-        // disabled practice but the timer would still fire and credit the
-        // section. Re-check practice.enabled at fire time.
-        practice._completionTimer = setTimeout(() => {
-          practice._completionTimer = null;
-          if (practice.enabled && practice._completing) completePracticeSection();
-        }, 600);
-      }
-    }
+    // updatePractice implementation lives in
+    // packages/web/src/practice-tick.ts. The shell wraps the factory
+    // result in the legacy short name and the render-loop calls it
+    // each frame while practice is active.
+    const updatePractice = PracticeTick.createPracticeTick({
+      dom: { ptbProgress: DOM.ptbProgress },
+      practice: /** @type {import('./practice-tick').PracticeTickPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      midiInput: /** @type {import('./practice-tick').PracticeTickMidiInput} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      getOsmd: () => /** @type {any} */ (typeof osmd !== 'undefined' ? osmd : null),
+      practiceElapsedMs,
+      hitWindowMs: HIT_WINDOW_MS,
+      medianRecentPitch,
+      matchNoteOnset,
+      showHitChip,
+      t,
+      completePracticeSection,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      remoteLog,
+      noteStateLabel: n_state,
+    });
 
     // ========================================
     // Draw falling notes lane
