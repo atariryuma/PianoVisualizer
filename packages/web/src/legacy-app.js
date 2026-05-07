@@ -1481,6 +1481,15 @@
     // creating a circular dep on practice-flow.ts before the wire-up.
     /** @type {() => void} */
     let returnToTitle = () => {};
+    // Result-card placeholder — Phase 0d batch 10. Reassigned after
+    // createResultCard() runs near the bottom of the file. The
+    // practice-tick wire-up captures `completePracticeSection` via a
+    // thunk so the live binding is looked up at section-complete time,
+    // not at IIFE-eval time (which would hit TDZ).
+    /** @type {() => void} */
+    let completePracticeSection = () => {};
+    /** @type {() => void} */
+    let renderResultCard = () => {};
     // Single, ordered ESC handler for every modal. Highest-z first so the
     // topmost layer pops first; if the user is currently typing inside an
     // <input> / <textarea> we let the browser's native ESC handling run
@@ -5997,7 +6006,10 @@
       matchNoteOnset,
       showHitChip,
       t,
-      completePracticeSection,
+      // Thunk so the live binding (reassigned after createResultCard
+      // runs further down) is read at section-complete time, not at
+      // wire-up time (which would hit TDZ on the placeholder above).
+      completePracticeSection: () => completePracticeSection(),
       remoteLogEnabled: REMOTE_LOG_ENABLED,
       remoteLog,
       noteStateLabel: n_state,
@@ -6201,264 +6213,51 @@
     const resolveResultTier = PianoCore.resolveResultTier;
     const computeUnlocks = PianoCore.computeUnlocks;
 
-    // Apply localized text + visibility based on a cached result context. Called
-    // from completePracticeSection AND from the langchange listener so the card
-    // can re-render in the new language without re-computing scores/unlocks.
-    function renderResultCard() {
-      const r = practice._lastResult;
-      if (!r) return;
-      // Full-song listen has no per-section anchor — fall back to the song
-      // title for the subtitle line.
-      const secLookup = currentSong?.sections?.find(s => s.id === r.secId);
-      if (!r.fullSong && !secLookup) return;
-
-      if (r.mode === 'listen') {
-        DOM.resTitle.textContent = t(r.fullSong ? 'listenedFullTitle' : 'listenedTitle');
-        let subtitle;
-        if (r.fullSong) {
-          subtitle = t(currentSong.titleKey);
-        } else {
-          // !r.fullSong → secLookup is defined (early return guarantees it).
-          const s = /** @type {NonNullable<typeof secLookup>} */ (secLookup);
-          subtitle = t(s.nameKey) + (s.isBoss ? ' 👑' : '');
-        }
-        DOM.resSectionName.textContent = subtitle;
-        DOM.resStars.style.display = 'none';
-        document.querySelectorAll('#sectionResult .result-stat').forEach(el => { /** @type {HTMLElement} */ (el).style.display = 'none'; });
-        DOM.resMsg.textContent = t(r.fullSong ? 'listenedFullMsg' : 'listenedMsg');
-        DOM.resUnlock.textContent = '';
-        if (DOM.resHistoryWrap) DOM.resHistoryWrap.classList.add('hidden');
-        DOM.resNext.style.display = 'none';
-        if (DOM.resTryPlay) DOM.resTryPlay.style.display = '';
-        return;
-      }
-
-      // Rhythm/guided result.
-      // Past this point we always have a real section (rhythm/guided never
-      // sets fullSong, so the early return above guarantees secLookup).
-      const sec = /** @type {NonNullable<typeof secLookup>} */ (secLookup);
-      DOM.resStars.style.display = '';
-      document.querySelectorAll('#sectionResult .result-stat').forEach(el => { /** @type {HTMLElement} */ (el).style.display = ''; });
-      if (DOM.resTryPlay) DOM.resTryPlay.style.display = 'none';
-      const tier = resolveResultTier(r.stars);
-      DOM.resTitle.textContent = t(tier.titleKey);
-      DOM.resSectionName.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-      DOM.resMsg.textContent = t(tier.msgKey);
-      let unlockedMsg = '';
-      if (r.unlockedTempo)   unlockedMsg += t('tempoUnlockedFmt', { v: r.unlockedTempo });
-      if (r.unlockedSecKey)  unlockedMsg += t('sectionUnlockedFmt', { v: t(r.unlockedSecKey) });
-      if (r.streakDays)      unlockedMsg += t('streakDaysFmt', { v: r.streakDays });
-      DOM.resUnlock.textContent = unlockedMsg.trim();
-    }
-
-    function completePracticeSection() {
-      practice.enabled = false;
-      stopPracticeAudio();
-      releaseWakeLock();
-      practice.pendingHolds.clear();
-
-      const sec = currentSong.sections[practice.sectionIdx];
-      const isFullSong = practice.mode === 'listen' && practice.fullSongMode;
-
-      // Listen mode: no scoring, no progress mutation, no unlocks. Hide all
-      // score rows/stars and offer a "Try playing" button that switches the
-      // kid into Guided on the same section — natural pedagogical flow.
-      // Full-song listen takes the same branch but stamps `fullSong: true`
-      // so renderResultCard swaps to the "曲を聴き終わりました" copy.
-      if (practice.mode === 'listen') {
-        practice._lastResult = {
-          mode: 'listen', secId: sec.id, fullSong: isFullSong,
-          stars: 0, unlockedTempo: null, unlockedSecKey: null, streakDays: null,
-        };
-        renderResultCard();
-        DOM.sectionResult.classList.add('visible');
-        practice._completing = false;
-        return;
-      }
-      const total = practice._sectionTargetCount || 0;
-      const accPct = total > 0 ? Math.round((practice.hits / total) * 100) : 0;
-      const timingPct = practice.hits > 0 ? Math.round((practice.timingScoreSum / practice.hits) * 100) : 0;
-      const durPct = practice.durationScoredCount > 0
-        ? Math.round((practice.durationScoreSum / practice.durationScoredCount) * 100)
-        : null;
-      const stars = computeStars(accPct, timingPct, durPct);
-
-      // Save to progress (per-song)
-      const sp = songProg();
-      const prog = sp.sections[sec.id] || { stars: 0, bestPct: 0 };
-      if (stars > prog.stars) prog.stars = stars;
-      if (accPct > prog.bestPct) prog.bestPct = accPct;
-      sp.sections[sec.id] = prog;
-
-      recordPracticeDay();
-
-      // Decide which unlocks fire (pure, in @piano/core), then persist them.
-      // The result is the *facts* (which tempo / which section / streak count)
-      // so renderResultCard can re-build the localized message on language
-      // change without re-running the gating logic.
-      /** @type {Record<string, string>} */
-      const sectionNameKeys = {};
-      for (const s of currentSong.sections) sectionNameKeys[s.id] = s.nameKey;
-      const unlocks = computeUnlocks({
-        stars,
-        tempoPct: practice.tempoPct,
-        sectionId: sec.id,
-        sectionIds: SECTION_IDS,
-        sectionNameKeys,
-        unlockedTempos: sp.unlockedTempos,
-        unlockedSections: sp.unlockedSections,
-        streakCount: practice.progress?.streakCount ?? 0,
-      });
-      const { unlockedTempo, unlockedSecKey, streakDays } = unlocks;
-      if (unlockedTempo != null) sp.unlockedTempos[unlockedTempo] = true;
-      if (unlockedSecKey != null) {
-        const nextSec = SECTION_IDS[SECTION_IDS.indexOf(sec.id) + 1];
-        sp.unlockedSections[nextSec] = true;
-      }
-
-      if (!sp.history[sec.id]) sp.history[sec.id] = [];
-      const histArr = /** @type {Array<{d:number, a:number, t:number, s:number}>} */ (sp.history[sec.id]);
-      histArr.push({ d: Date.now(), a: accPct, t: timingPct, s: stars });
-      if (histArr.length > 8) histArr.shift();
-      const sectionHistory = histArr;
-
-      savePracticeProgress();
-
-      // Snapshot context for renderResultCard (handles localized strings) +
-      // re-render on language change. Numeric / visibility state below isn't
-      // language-dependent so it stays imperative.
-      practice._lastResult = {
-        mode: practice.mode, secId: sec.id, stars,
-        unlockedTempo, unlockedSecKey, streakDays
-      };
-      renderResultCard();
-      DOM.resStars.innerHTML = '';
-      for (let i = 0; i < 3; i++) {
-        const span = document.createElement('span');
-        span.textContent = '★';
-        if (i >= stars) span.className = 'empty';
-        DOM.resStars.appendChild(span);
-      }
-      DOM.resAcc.textContent = accPct + '%';
-      DOM.resTiming.textContent = timingPct + '%';
-      if (durPct == null) {
-        if (DOM.resDurationRow) DOM.resDurationRow.style.display = 'none';
-      } else {
-        if (DOM.resDurationRow) DOM.resDurationRow.style.display = '';
-        DOM.resDuration.textContent = durPct + '%';
-      }
-      DOM.resCombo.textContent = String(practice.sectionBestCombo);
-
-      const nextIdx = SECTION_IDS.indexOf(sec.id) + 1;
-      const hasNext = nextIdx > 0 && nextIdx < SECTION_IDS.length
-        && songProg().unlockedSections[SECTION_IDS[nextIdx]];
-      DOM.resNext.style.display = hasNext ? '' : 'none';
-
-      // Big celebration
-      if (stars >= 3) {
-        effectGoldenBurst();
-        effectStarShower(8);
-      } else if (stars >= 2) {
-        effectFlowerBurst();
-        effectStarShower(5);
-      } else if (stars >= 1) {
-        effectStarShower(3);
-      }
-
-      if (sectionHistory.length >= 2) {
-        DOM.resHistoryWrap.classList.remove('hidden');
-        drawHistoryChart(/** @type {HTMLCanvasElement} */ (DOM.resHistoryChart), sectionHistory);
-      } else {
-        DOM.resHistoryWrap.classList.add('hidden');
-      }
-
-      DOM.sectionResult.classList.add('visible');
-      practice._completing = false;
-    }
-
-    // Growth chart — line graph of accuracy over the last 8 attempts.
-    /** @param {HTMLCanvasElement} canvas @param {Array<{d:number, a:number, t:number, s:number}>} history */
-    function drawHistoryChart(canvas, history) {
-      const w = 280, h = 80;
-      const c = setupHiDPICanvas(canvas, w, h);
-      c.clearRect(0, 0, w, h);
-      if (!history || history.length < 2) return;
-
-      const padX = 22, padTop = 12, padBottom = 18;
-      const innerW = w - padX * 2;
-      const innerH = h - padTop - padBottom;
-      const n = history.length;
-
-      // Grid (0/50/100%)
-      c.strokeStyle = 'rgba(255,255,255,0.08)';
-      c.lineWidth = 1;
-      for (let lvl = 0; lvl <= 2; lvl++) {
-        const y = padTop + (lvl / 2) * innerH;
-        c.beginPath(); c.moveTo(padX, y); c.lineTo(padX + innerW, y); c.stroke();
-      }
-
-      c.fillStyle = 'rgba(255,255,255,0.35)';
-      c.font = '9px sans-serif';
-      c.textAlign = 'right';
-      c.textBaseline = 'middle';
-      c.fillText('100%', padX - 4, padTop);
-      c.fillText('50',   padX - 4, padTop + innerH / 2);
-      c.fillText('0',    padX - 4, padTop + innerH);
-
-      /** @param {number} i */
-      const xAt = (i) => n === 1 ? padX + innerW / 2 : padX + (i / (n - 1)) * innerW;
-      /** @param {number} v */
-      const yAt = (v) => padTop + innerH * (1 - clamp01(v / 100));
-
-      c.strokeStyle = 'rgba(255, 215, 0, 0.85)';
-      c.lineWidth = 2;
-      c.beginPath();
-      for (let i = 0; i < n; i++) {
-        const x = xAt(i), y = yAt(history[i].a);
-        if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
-      }
-      c.stroke();
-
-      for (let i = 0; i < n; i++) {
-        const x = xAt(i), y = yAt(history[i].a);
-        c.beginPath();
-        c.arc(x, y, 3.2, 0, Math.PI * 2);
-        c.fillStyle = '#ffd700';
-        c.fill();
-        if (history[i].s >= 3) {
-          c.strokeStyle = 'rgba(255, 220, 80, 0.9)';
-          c.lineWidth = 1.5;
-          c.beginPath();
-          c.arc(x, y, 6, 0, Math.PI * 2);
-          c.stroke();
-        }
-      }
-
-      const last = history[n - 1];
-      const prev = history[n - 2];
-      const lastX = xAt(n - 1), lastY = yAt(last.a);
-      c.fillStyle = 'rgba(255,255,255,0.85)';
-      c.font = 'bold 11px sans-serif';
-      c.textAlign = 'right';
-      c.textBaseline = 'alphabetic';
-      const labelOffsetY = (lastY < padTop + 16) ? 14 : -6;
-      c.fillText(last.a + '%', lastX - 5, lastY + labelOffsetY);
-
-      const delta = last.a - prev.a;
-      let txt, col;
-      if (delta >= 3)       { txt = '↑ +' + delta + '%';            col = '#7eff8a'; }
-      else if (delta <= -3) { txt = '↓ ' + delta + '%';             col = '#ff8a9a'; }
-      else                  { txt = t('trendSimilar');         col = 'rgba(255,255,255,0.55)'; }
-      c.textAlign = 'left';
-      c.fillStyle = col;
-      c.font = 'bold 11px sans-serif';
-      c.fillText(txt, padX, h - 4);
-
-      c.textAlign = 'right';
-      c.fillStyle = 'rgba(255,255,255,0.45)';
-      c.font = '10px sans-serif';
-      c.fillText(t('growthChartFmt', { v: n }), padX + innerW, h - 4);
-    }
+    // ─── result-card wire-up (Phase 0d batch 10) ───────────────────
+    // renderResultCard + completePracticeSection + drawHistoryChart
+    // moved to packages/web/src/result-card.ts. The shell wraps the
+    // factory result so the legacy short names keep working at every
+    // callsite (langchange listener, practice-tick deps).
+    const _resultCard = ResultCard.createResultCard({
+      dom: /** @type {import('./result-card').ResultCardDom} */ ({
+        sectionResult: DOM.sectionResult,
+        resTitle: DOM.resTitle,
+        resSectionName: DOM.resSectionName,
+        resStars: DOM.resStars,
+        resAcc: DOM.resAcc,
+        resTiming: DOM.resTiming,
+        resDuration: DOM.resDuration,
+        resDurationRow: DOM.resDurationRow,
+        resCombo: DOM.resCombo,
+        resMsg: DOM.resMsg,
+        resUnlock: DOM.resUnlock,
+        resHistoryWrap: DOM.resHistoryWrap,
+        resHistoryChart: /** @type {HTMLCanvasElement} */ (DOM.resHistoryChart),
+        resNext: DOM.resNext,
+        resTryPlay: DOM.resTryPlay,
+      }),
+      practice: /** @type {import('./result-card').ResultCardPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      getCurrentSong: () => /** @type {any} */ (currentSong),
+      songProg: () => /** @type {any} */ (songProg()),
+      sectionIds: SECTION_IDS,
+      stopPracticeAudio,
+      releaseWakeLock,
+      recordPracticeDay,
+      savePracticeProgress,
+      computeStars,
+      resolveResultTier,
+      computeUnlocks,
+      effectGoldenBurst,
+      effectStarShower,
+      effectFlowerBurst,
+      setupHiDPICanvas,
+      clamp01,
+      t,
+    });
+    renderResultCard = _resultCard.renderResultCard;
+    completePracticeSection = _resultCard.completePracticeSection;
 
     // ========================================
     // Song panel UI building — Phase 0d batch 7d wire-up
