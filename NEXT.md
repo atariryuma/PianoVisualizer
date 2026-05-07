@@ -78,11 +78,12 @@ clean across 5 packages.
 | 54  | `web/user-songs-ui.ts`        | 31    | `packages/web/src/user-songs-ui.ts`             |
 | 55  | `web/theme-controls.ts`       | 17    | `packages/web/src/theme-controls.ts`            |
 | 56  | `web/practice-flow.ts`        | 21    | `packages/web/src/practice-flow.ts`             |
+| 57  | `web/song-panel-controls.ts`  | 12    | `packages/web/src/song-panel-controls.ts`       |
 
-**Status: 962/962 tests green (786 core + 176 web), 0 lint errors, 0 type
+**Status: 974/974 tests green (786 core + 188 web), 0 lint errors, 0 type
 errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 7,137 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
-so far: ≈1,860 lines moved out of the shell across 8 sub-batches.
+`legacy-app.js`: 7,132 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
+so far: ≈1,870 lines moved out of the shell across 9 sub-batches.
 
 ---
 
@@ -112,11 +113,16 @@ Batches 1-7b all landed cleanly. Remaining batches in order of size / ease:
 - [x] `web/practice-flow.ts` — ptbQuit / ptbToggleOsmd / result-card buttons /
       sumClose / 🏠 Title buttons / returnToTitle / transitionToSection (landed
       batch 7b, -46 lines, +21 tests).
-- [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical).
-      Probably the biggest mechanical win left, but heterogeneous — consider
-      sub-batching by feature surface (HUD buttons / lane-touch handlers /
-      start-screen wiring / OSMD events / etc.) rather than one monolithic
-      event-wiring.ts.
+- [x] `web/song-panel-controls.ts` — hand row + mode row + ghost / metronome /
+      full-song toggles + songBack (landed batch 7c, -10 lines, +12 tests).
+      Note: songStart + startBtn deliberately stayed in the shell — they pull in
+      initAudio, showRunningUI, initBgStars, requestAnimationFrame(loop), and
+      startPracticeSection, which are practice-tick / render-loop batch
+      concerns.
+- [ ] More event-wiring sub-batches (~1300 lines remain). Heterogeneous — keep
+      sub-batching by feature surface (ptbInput, BLE/MIDI listeners that can
+      detach without touching the audio pipeline, OSMD events, lane-touch
+      handlers).
 - [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
 - [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
 
