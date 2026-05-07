@@ -1,5 +1,22 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
+
+// Best-effort short SHA — `git rev-parse --short HEAD` on the build
+// host. Falls back to '(dev)' if git isn't available (e.g. CI tarball
+// extraction). Used by the dev-mode panel's 📋 Copy report so iPad-
+// pasted bug reports pin to a specific commit.
+function readGitSha(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return '(dev)';
+  }
+}
+const APP_VERSION = readGitSha();
+const BUILD_DATE = new Date().toISOString().slice(0, 10);
 
 // Phase 0b.3 (complete as of 2026-05-06): packages/web is the production
 // entry. The repo-root 3-file shell has been retired; legacy-app.js now
@@ -14,6 +31,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => ({
   root: __dirname,
   publicDir: 'public',
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __BUILD_DATE__: JSON.stringify(BUILD_DATE),
+  },
   // Relative `./` so the same build artifact works under any base path:
   //   - `/`                       (LAN dev via https_server.ps1, Capacitor wrapper)
   //   - `/PianoVisualizer/`       (GitHub Pages project URL)

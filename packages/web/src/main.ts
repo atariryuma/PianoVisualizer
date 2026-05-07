@@ -44,6 +44,12 @@ import * as RenderFrame from './render-frame';
 import * as DevMode from './dev-mode';
 
 declare global {
+  // Vite-injected build constants (see vite.config.ts `define`). Used by
+  // the dev-mode 📋 Copy report so paste-into-chat reports pin to a
+  // specific commit.
+  const __APP_VERSION__: string;
+  const __BUILD_DATE__: string;
+
   interface Window {
     Tone: typeof Tone;
     opensheetmusicdisplay: typeof opensheetmusicdisplay;

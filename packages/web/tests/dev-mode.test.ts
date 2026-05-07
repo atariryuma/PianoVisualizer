@@ -138,16 +138,21 @@ describe('createDevMode — when activated', () => {
     expect(toolbar.style.position).toBe('fixed');
   });
 
-  it('toolbar contains 🧪 self-test, 📊 diag, ✕ close buttons', () => {
+  it('toolbar contains 🧪 self-test, 📊 diag, 📋 copy, ✕ close buttons', () => {
     createDevMode(makeDeps());
     const buttons = document.querySelectorAll('.dev-mode-toolbar button');
-    expect(buttons.length).toBe(3);
-    expect(Array.from(buttons).map((b) => b.textContent)).toEqual(['🧪 Self-test', '📊 Diag', '✕']);
+    expect(buttons.length).toBe(4);
+    expect(Array.from(buttons).map((b) => b.textContent)).toEqual([
+      '🧪 Self-test',
+      '📊 Diag',
+      '📋 Copy',
+      '✕',
+    ]);
   });
 
   it('✕ button clears localStorage flag + removes toolbar', () => {
     createDevMode(makeDeps());
-    const closeBtn = document.querySelectorAll('.dev-mode-toolbar button')[2] as HTMLElement;
+    const closeBtn = document.querySelectorAll('.dev-mode-toolbar button')[3] as HTMLElement;
     closeBtn.click();
     expect(localStorage.getItem('pianoViz_dev')).toBeNull();
     expect(document.querySelector('.dev-mode-toolbar')).toBeNull();
@@ -293,5 +298,90 @@ describe('createDevMode — diag panel', () => {
     const panel = document.querySelector('.dev-mode-diag') as HTMLElement;
     expect(panel.innerHTML).toContain('&lt;script&gt;');
     expect(panel.innerHTML).not.toContain('<script>alert(1)</script>');
+  });
+});
+
+// ─── 📋 Copy report ──────────────────────────────────────────────────
+
+describe('createDevMode — copy report', () => {
+  beforeEach(() => {
+    localStorage.setItem('pianoViz_dev', '1');
+  });
+
+  function setupClipboard(): { reads: string[] } {
+    const reads: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (s: string) => {
+          reads.push(s);
+          return Promise.resolve();
+        },
+      },
+    });
+    return { reads };
+  }
+
+  it('copies a markdown report including version label + URL + UA', async () => {
+    const { reads } = setupClipboard();
+    createDevMode(
+      makeDeps({
+        versionLabel: 'abc1234 2026-05-08',
+        getDiagSnapshot: () => ({ 'state.flow': '12.3', 'practice.mode': 'guided' }),
+      })
+    );
+    const copyBtn = document.querySelectorAll('.dev-mode-toolbar button')[2] as HTMLElement;
+    copyBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reads.length).toBe(1);
+    const report = reads[0];
+    expect(report).toContain('# Piano Visualizer — dev-mode report');
+    expect(report).toContain('build: abc1234 2026-05-08');
+    expect(report).toContain('## Diag snapshot');
+    expect(report).toContain('state.flow: 12.3');
+    expect(report).toContain('practice.mode: guided');
+  });
+
+  it('reports "(not run yet)" before self-test runs', async () => {
+    const { reads } = setupClipboard();
+    createDevMode(makeDeps());
+    const copyBtn = document.querySelectorAll('.dev-mode-toolbar button')[2] as HTMLElement;
+    copyBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reads[0]).toContain('_(not run yet)_');
+  });
+
+  it('embeds last self-test results as bullet list with ✅ / ❌', async () => {
+    const { reads } = setupClipboard();
+    createDevMode(
+      makeDeps({
+        tests: [
+          { name: 'pass-a', run: async () => true },
+          { name: 'fail-b', run: async () => ({ ok: false, detail: 'oops' }) },
+        ],
+      })
+    );
+    // Run self-test first
+    const selftestBtn = document.querySelectorAll('.dev-mode-toolbar button')[0] as HTMLElement;
+    selftestBtn.click();
+    // Drain microtasks until results land
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    // Then click Copy
+    const copyBtn = document.querySelectorAll('.dev-mode-toolbar button')[2] as HTMLElement;
+    copyBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    const report = reads[0];
+    expect(report).toContain('## Self-test — 1 / 2 passed');
+    expect(report).toContain('- ✅ pass-a');
+    expect(report).toContain('- ❌ fail-b — oops');
+  });
+
+  it('button label flips to "✅ Copied" briefly after click', async () => {
+    setupClipboard();
+    createDevMode(makeDeps());
+    const copyBtn = document.querySelectorAll('.dev-mode-toolbar button')[2] as HTMLButtonElement;
+    copyBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(copyBtn.textContent).toBe('✅ Copied');
   });
 });

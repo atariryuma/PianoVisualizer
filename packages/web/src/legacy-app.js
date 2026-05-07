@@ -6432,6 +6432,13 @@
     // by 5 quick taps on the start-screen tagline. Hidden in production.
     DevMode.createDevMode({
       triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
+      // Vite-injected at build time (see packages/web/vite.config.ts
+      // `define`). Picks up the short git SHA + build date so the
+      // 📋 Copy report can identify which commit produced it.
+      versionLabel:
+        (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') +
+        ' ' +
+        (typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''),
       tests: /** @type {import('./dev-mode').SelfTest[]} */ ([
         {
           name: 'localStorage round-trip',

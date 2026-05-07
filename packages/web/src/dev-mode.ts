@@ -53,6 +53,10 @@ export interface DevModeDeps {
   tests: SelfTest[];
   /** Snapshot probe — called at 1Hz when the diag panel is open. */
   getDiagSnapshot: () => DiagSnapshot;
+  /** Optional version string (e.g. git SHA short) — included in the
+   *  copy-to-clipboard markdown report so an LLM / teammate reading
+   *  the paste can pin the build that produced it. */
+  versionLabel?: string;
 }
 
 export interface DevMode {
@@ -157,6 +161,8 @@ export function createDevMode(deps: DevModeDeps): DevMode {
 
   const selftestBtn = mkBtn('🧪 Self-test', () => void runSelfTest());
   const diagBtn = mkBtn('📊 Diag', () => toggleDiag());
+  const copyBtn = mkBtn('📋 Copy', () => void copyReport(copyBtn));
+  copyBtn.title = 'Copy a markdown report (self-test results + diag snapshot + UA) to clipboard';
   const closeBtn = mkBtn('✕', () => {
     localStorage.removeItem(DEV_FLAG_KEY);
     panel?.remove();
@@ -164,12 +170,84 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     toolbar.remove();
   });
   closeBtn.title = 'Disable dev mode (also clears the localStorage flag)';
-  toolbar.append(selftestBtn, diagBtn, closeBtn);
+  toolbar.append(selftestBtn, diagBtn, copyBtn, closeBtn);
   container.appendChild(toolbar);
 
   // ─── self-test panel ─────────────────────────────────────────────
   let panel: HTMLDivElement | null = null;
   let running = false;
+  /** Latest results — the 📋 Copy button serializes these (plus the
+   *  current diag snapshot) into a markdown report for clipboard
+   *  paste-into-chat / paste-into-bug-report. */
+  let lastResults: SelfTestResult[] = [];
+
+  /** Build the markdown report. Pure (no DOM); the caller writes it
+   *  to navigator.clipboard or any other sink. Exposed at the bottom
+   *  of the file as `buildReport` for direct testing. */
+  function composeReport(): string {
+    const ts = new Date().toISOString();
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '(no UA)';
+    const url = (typeof location !== 'undefined' && location.href) || '(no URL)';
+    const lines: string[] = [];
+    lines.push('# Piano Visualizer — dev-mode report');
+    lines.push('');
+    lines.push('- timestamp: ' + ts);
+    if (deps.versionLabel) lines.push('- build: ' + deps.versionLabel);
+    lines.push('- url: ' + url);
+    lines.push('- ua: ' + ua);
+    if (lastResults.length > 0) {
+      const passed = lastResults.filter((r) => r.ok).length;
+      lines.push('');
+      lines.push('## Self-test — ' + passed + ' / ' + lastResults.length + ' passed');
+      lines.push('');
+      for (const r of lastResults) {
+        const icon = r.ok ? '✅' : '❌';
+        lines.push('- ' + icon + ' ' + r.name + (r.detail ? ' — ' + r.detail : ''));
+      }
+    } else {
+      lines.push('');
+      lines.push('## Self-test');
+      lines.push('');
+      lines.push('_(not run yet)_');
+    }
+    lines.push('');
+    lines.push('## Diag snapshot');
+    lines.push('');
+    lines.push('```');
+    const snap = deps.getDiagSnapshot();
+    for (const [k, v] of Object.entries(snap)) {
+      lines.push(k + ': ' + v);
+    }
+    lines.push('```');
+    return lines.join('\n');
+  }
+
+  async function copyReport(btn: HTMLButtonElement): Promise<void> {
+    const text = composeReport();
+    const orig = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = '✅ Copied';
+    } catch {
+      // Fallback — execCommand is deprecated but still works on iOS WKWebView
+      // when the clipboard API is gated behind a permission prompt.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        btn.textContent = '✅ Copied';
+      } catch {
+        btn.textContent = '❌ Failed';
+      }
+      ta.remove();
+    }
+    setTimeout(() => {
+      btn.textContent = orig;
+    }, 1500);
+  }
 
   async function runSelfTest(): Promise<void> {
     if (running) return;
@@ -251,6 +329,7 @@ export function createDevMode(deps: DevModeDeps): DevMode {
     summary.style.color = passed === results.length ? '#7eff8a' : '#ff8a9a';
     panel.appendChild(summary);
 
+    lastResults = results.slice();
     selftestBtn.disabled = false;
     selftestBtn.textContent = '🧪 Self-test';
     running = false;
