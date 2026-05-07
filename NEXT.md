@@ -6,13 +6,16 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-07** (Phase 0d batch 6 — `user-songs-ui.ts` — landed.
-`legacy-app.js` is now **7,225 lines** (was 7,591 before batch 6, -366). The
-Add/Manage Songs modal + start-screen tiles + library export/import all moved
-into a typed module; both DOM bags (`DOM_ADDSONG` + `DOM_SECEDIT`) and the
-forward-declared placeholders got consolidated into one clean wire-up block.
-**924 tests across both packages** (786 core + 138 web, +31 from batch 6);
-`pnpm verify` clean across 5 packages.)
+Last refreshed: **2026-05-07** (Phase 0d batches 7a + 7b — `theme-controls.ts`
+
+- `practice-flow.ts` — landed as the first sub-batches of the event-wiring
+  extraction. `legacy-app.js` is now **7,137 lines**. Batch 7a pulled out the
+  theme bar (theme dots + synesthesia toggle + lang toggle, -42 lines, +17
+  tests). Batch 7b pulled out the practice-flow controls (ptbQuit /
+  ptbToggleOsmd / result-card / sumClose / 🏠 Title buttons / returnToTitle
+- the re-entrancy-guarded transitionToSection, -46 lines, +21 tests). **962
+  tests across both packages** (786 core + 176 web, +38 from batches 7a + 7b);
+  `pnpm verify` clean across 5 packages.)
 
 ---
 
@@ -74,11 +77,13 @@ forward-declared placeholders got consolidated into one clean wire-up block.
 | 52  | `web/audio-init.ts`           | 21    | `packages/web/src/audio-init.ts`                |
 | 53  | feat: 全曲再生 listen toggle  | —     | `packages/web/src/legacy-app.js` (+88 lines)    |
 | 54  | `web/user-songs-ui.ts`        | 31    | `packages/web/src/user-songs-ui.ts`             |
+| 55  | `web/theme-controls.ts`       | 17    | `packages/web/src/theme-controls.ts`            |
+| 56  | `web/practice-flow.ts`        | 21    | `packages/web/src/practice-flow.ts`             |
 
-**Status: 924/924 tests green (786 core + 138 web), 0 lint errors, 0 type
+**Status: 962/962 tests green (786 core + 176 web), 0 lint errors, 0 type
 errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 7,225 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
-so far: ≈1,775 lines moved out of the shell across 6 batches.
+`legacy-app.js`: 7,137 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
+so far: ≈1,860 lines moved out of the shell across 8 sub-batches.
 
 ---
 
@@ -86,11 +91,11 @@ so far: ≈1,775 lines moved out of the shell across 6 batches.
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently **7,225 lines**. Goal: ≤200 lines, with each carved-out
+The shell is currently **7,137 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
-Batches 1-6 all landed cleanly. Remaining batches in order of size / ease:
+Batches 1-7b all landed cleanly. Remaining batches in order of size / ease:
 
 - [x] `web/section-editor.ts` — section-edit modal (landed batch 2)
 - [x] `web/settings-panel.ts` — settings panel + persist (landed batch 3)
@@ -103,6 +108,11 @@ Batches 1-6 all landed cleanly. Remaining batches in order of size / ease:
       audio-node read across the rest of the file.
 - [x] `web/user-songs-ui.ts` — Add/Manage Songs modal + start-screen tiles +
       library export/import (landed batch 6, -366 lines, +31 tests).
+- [x] `web/theme-controls.ts` — theme bar + synesthesia toggle + lang toggle
+      (landed batch 7a, -42 lines, +17 tests).
+- [x] `web/practice-flow.ts` — ptbQuit / ptbToggleOsmd / result-card buttons /
+      sumClose / 🏠 Title buttons / returnToTitle / transitionToSection (landed
+      batch 7b, -46 lines, +21 tests).
 - [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical).
       Probably the biggest mechanical win left, but heterogeneous — consider
       sub-batching by feature surface (HUD buttons / lane-touch handlers /
