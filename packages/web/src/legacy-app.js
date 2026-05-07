@@ -4917,6 +4917,36 @@
     })();
     function isAppleMobile() { return _isAppleMobile; }
 
+    // ╔════════════════════════════════════════════════════════════════════╗
+    // ║ Web MIDI Browser (WMB) workarounds — TEMPORARY, scheduled for      ║
+    // ║ removal after Phase 1 (Capacitor native build).                    ║
+    // ║                                                                    ║
+    // ║ WMB is a third-party iOS app that polyfills the Web MIDI API in    ║
+    // ║ WebKit (which Apple has refused to implement — Bug 107250). Its    ║
+    // ║ polyfill has known quirks the spec doesn't cover; we work around   ║
+    // ║ them so Pages-deployed iPad users have a functional MIDI path.    ║
+    // ║                                                                    ║
+    // ║ Once `packages/plugins/capacitor-piano-midi/` ships in Phase 1     ║
+    // ║ (CoreMIDI on iOS, android.media.midi on Android), iPad users use  ║
+    // ║ the native app instead and these hacks become dead code.          ║
+    // ║                                                                    ║
+    // ║ Cleanup recipe (one-line grep + audit):                           ║
+    // ║   $ grep -nE "@WMB-WORKAROUND" packages/web/src/legacy-app.js     ║
+    // ║   then delete each tagged block. Each block carries enough        ║
+    // ║   context that removing it shouldn't require reading the rest of  ║
+    // ║   the file. The universal patterns it sits next to                ║
+    // ║   (auto-rescan poller, visibility-resume re-enumeration, badge    ║
+    // ║   waiting state, manual rescan-on-tap) STAY — those help every    ║
+    // ║   platform, not just WMB.                                          ║
+    // ║                                                                    ║
+    // ║ Marker count to remove (at this commit): 5 blocks                 ║
+    // ║   1. attachMidiPort()      — explicit port.open() call            ║
+    // ║   2. initWebMIDI()         — second-pass attach ignoring state    ║
+    // ║   3. rescanMidi()          — second-pass attach ignoring state    ║
+    // ║   4. _scheduleNextRescan() — every-2-tick force-fresh in fast win ║
+    // ║   5. (this header — leave or remove together)                     ║
+    // ╚════════════════════════════════════════════════════════════════════╝
+
     function setInputIndicator() {
       // v13: Toggle a body class so CSS can reserve bottom space for the
       // virtual keyboard (lifts #stageLabel, #noteDisplay, #debugOverlay).
@@ -4997,14 +5027,14 @@
       if (!wasMidiOn && audioCtx && !state.micSuspended) {
         suspendMic();
       }
-      // Bug-fix (2026-05-07): explicitly call port.open() before binding the
-      // handler. The Web MIDI spec says assigning onmidimessage implicitly
-      // opens, but Web MIDI Browser's polyfill doesn't always honor that —
-      // pre-paired BLE-MIDI keyboards ended up attached but silent. The
-      // explicit open() is a no-op when the port is already open, so it's
-      // safe to call unconditionally. The promise can reject (rare); we
-      // bind the handler regardless and let onstatechange trigger a
-      // re-attach if it really did fail.
+      // @WMB-WORKAROUND (Phase 0d): explicit port.open() before the
+      // handler bind. The Web MIDI spec says assigning onmidimessage
+      // implicitly opens, but Web MIDI Browser's polyfill doesn't always
+      // honor that — pre-paired BLE-MIDI keyboards end up attached but
+      // silent. open() on already-open ports is a spec-defined no-op so
+      // it's safe to call unconditionally; rejection (rare) is logged
+      // and we bind the handler anyway. Native iOS/Android (Capacitor)
+      // doesn't need this — CoreMIDI / android.media.midi own the open.
       try {
         const openResult = /** @type {{open?: () => Promise<unknown>}} */ (port).open?.();
         if (openResult && typeof openResult.catch === 'function') {
@@ -5014,6 +5044,7 @@
       } catch (e) {
         console.warn('[MIDI] port.open() threw:', e instanceof Error ? e.message : String(e));
       }
+      // /@WMB-WORKAROUND
       port.onmidimessage = onMidiMessageHandler;
       setInputIndicator();
       if (typeof refreshIntroHint === 'function') refreshIntroHint();
@@ -5068,13 +5099,9 @@
           console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
             + ' state=' + p.state + ' connection=' + p.connection);
         }
-        // Two-pass attach — first pass requires `state === 'connected'`
-        // (the strict, by-the-spec attempt). If nothing attaches, try
-        // again ignoring state. Web MIDI Browser sometimes reports a
-        // pre-paired BLE-MIDI keyboard with state='unknown' or 'pending'
-        // until the page actively opens it; the second pass picks those
-        // up. attachMidiPort still rejects virtual/system ports, so this
-        // doesn't loosen the safety filter.
+        // Strict pass — by-the-spec, attach only `state === 'connected'`.
+        // This is the "normal" path that fires on desktop Chrome, Steam Deck,
+        // Android Chrome, and the future Capacitor native build.
         let attached = false;
         for (const port of allPorts) {
           if (port.state === 'connected' && attachMidiPort(port)) {
@@ -5082,6 +5109,11 @@
             break;
           }
         }
+        // @WMB-WORKAROUND (Phase 0d): second-pass attach ignoring state.
+        // Web MIDI Browser sometimes reports a pre-paired BLE-MIDI keyboard
+        // with state='unknown' or 'pending' until the page actively opens
+        // it. attachMidiPort still rejects virtual/system ports, so this
+        // doesn't loosen the safety filter.
         if (!attached) {
           for (const port of allPorts) {
             if (attachMidiPort(port)) {
@@ -5091,6 +5123,7 @@
             }
           }
         }
+        // /@WMB-WORKAROUND
         // Bug-fix (2026-05-07): when the user opens the page BEFORE
         // connecting their keyboard in Web MIDI Browser, allPorts is []
         // and the legacy code did nothing — the user had to manually
@@ -5222,18 +5255,21 @@
           }
           return false;
         }
-        // Two-pass attach (same rationale as initWebMIDI): strict by-spec
-        // first, then loose pass for WMB's pre-paired BLE quirk where a
-        // visible port may report state='unknown' until first open().
+        // Strict pass — by-the-spec.
         for (const port of ports) {
           if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
         }
+        // @WMB-WORKAROUND (Phase 0d): same rationale as initWebMIDI's
+        // second-pass attach. WMB pre-paired BLE keyboards can show up with
+        // state='unknown' until first open(); attempt the loose pass here
+        // too so the rescan poller catches them.
         for (const port of ports) {
           if (!midiInput.enabled && attachMidiPort(port)) {
             console.log('[MIDI] rescan attached non-connected port (WMB quirk): ' + port.name);
             return true;
           }
         }
+        // /@WMB-WORKAROUND
         if (!silent) {
           showIntroDiag(() => setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect')));
         }
@@ -5302,13 +5338,16 @@
           return;
         }
         // Periodically force a fresh MIDIAccess. WMB caches port enumeration
-        // and re-pairing doesn't always re-fire statechange. In the fast
-        // phase (1s ticks during the first 30s) force every 2 ticks so a
-        // pre-paired keyboard surfaces within ~2s. After the fast window
-        // we only force every 5 ticks to keep CPU low for background polls.
+        // and re-pairing doesn't always re-fire statechange.
+        // @WMB-WORKAROUND (Phase 0d): the fast-window 2-tick force is
+        // tuned for WMB's stale-cache; on desktop browsers a 5-tick force
+        // is plenty (the spec-compliant statechange handles re-pair). When
+        // Phase 1 retires the WMB code path, drop the `forceEvery` ramp
+        // and just use a flat 5.
         _midiRescanTickCount++;
         const elapsedNow = performance.now() - _midiRescanStartedAt;
-        const forceEvery = elapsedNow < 30_000 ? 2 : 5;
+        const forceEvery = isAppleMobile() && elapsedNow < 30_000 ? 2 : 5;
+        // /@WMB-WORKAROUND
         const force = _midiRescanTickCount % forceEvery === 0;
         if (force) {
           console.log('[MIDI] auto-rescan: forcing fresh MIDIAccess (tick=' + _midiRescanTickCount + ')');

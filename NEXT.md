@@ -109,6 +109,21 @@ of size / ease:
 
 **DoD for Phase 0d**: `wc -l packages/web/src/legacy-app.js` ≤ 200.
 
+**WMB-workaround tagging note** (added 2026-05-07): the iPad / Web MIDI
+Browser-specific MIDI hacks in `legacy-app.js` are bracketed by
+`// @WMB-WORKAROUND` … `// /@WMB-WORKAROUND` markers. They're temporary
+scaffolding until Phase 1 ships the Capacitor native build (which uses
+`packages/plugins/capacitor-piano-midi/` instead of Web MIDI Browser). After
+Phase 1 lands, run
+
+```bash
+grep -nE "@WMB-WORKAROUND" packages/web/src/legacy-app.js
+```
+
+and delete each tagged block. Universal MIDI improvements that sit next to the
+WMB blocks (auto-rescan poller, visibility-resume re-enumeration, badge waiting
+state, manual rescan tap) STAY — those help every platform.
+
 **Note for next agent / picking up from `phase-0c.5-done`**: the wakelock
 extraction commit (`fa479f4`) is the canonical pattern. Replicate:
 

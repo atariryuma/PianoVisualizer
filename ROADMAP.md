@@ -125,6 +125,22 @@ the ratchet for Phase 0c is now codified as 0c.5 above.)
 
 Requires Mac + Xcode + Android Studio. Pure setup work.
 
+**Cleanup task on landing**: drop the WMB-specific MIDI workarounds from
+`legacy-app.js`. They were added 2026-05-07 to keep iPad / Pages users
+functional while the native build wasn't shipping yet, and are tagged for
+mechanical removal:
+
+```bash
+grep -nE "@WMB-WORKAROUND" packages/web/src/legacy-app.js
+# 4 blocks bracketed by `// @WMB-WORKAROUND ...` and `// /@WMB-WORKAROUND`
+# headers. Once Capacitor + the CoreMIDI plugin land, native iOS/Android
+# uses the plugin and Web MIDI Browser becomes irrelevant — desktop users
+# don't need these quirks. Each block deletes cleanly without touching
+# the universal patterns it sits next to (auto-rescan poller,
+# visibility-resume re-enumeration, badge waiting state, manual rescan
+# tap — those help every platform and STAY).
+```
+
 - [ ] `pnpm install` first run; commit `pnpm-lock.yaml`
 - [ ] `pnpm --filter @piano/mobile build:web` produces `dist/`
 - [ ] `cd packages/mobile && npx cap add ios` → commit `ios/`
