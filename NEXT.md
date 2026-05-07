@@ -72,8 +72,8 @@ both packages**; `pnpm verify` clean across 5 packages. CI green; deployed to
 | 47  | `web/wakelock.ts`             | —     | `packages/web/src/wakelock.ts`                  |
 | 48  | web tests (3 shell modules)   | 46    | `packages/web/tests/*.test.ts`                  |
 
-**Status: 786/786 tests green, 0 lint errors, 0 type errors, 0 residual TS
-errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
+**Status: 832/832 tests green (786 core + 46 web), 0 lint errors, 0 type errors,
+0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
 
 ---
 
@@ -81,7 +81,7 @@ errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently 7,623 lines. Goal: ≤200 lines, with each carved-out
+The shell is currently 7,708 lines. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; `pnpm verify` + iPad A/B between each.
 
