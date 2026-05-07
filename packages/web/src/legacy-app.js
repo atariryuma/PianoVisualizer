@@ -1475,6 +1475,12 @@
     let closeAddSongModal = () => {};
     /** @type {() => void} */
     let renderUserSongButtons = () => {};
+    // Practice-flow placeholder — Phase 0d batch 7b. Reassigned after
+    // createPracticeFlow() runs lower in the file. The songBack click
+    // handler closes over this binding to drive returnToTitle without
+    // creating a circular dep on practice-flow.ts before the wire-up.
+    /** @type {() => void} */
+    let returnToTitle = () => {};
     // Single, ordered ESC handler for every modal. Highest-z first so the
     // topmost layer pops first; if the user is currently typing inside an
     // <input> / <textarea> we let the browser's native ESC handling run
@@ -7027,70 +7033,54 @@
     // The legacy floating BLE button is gone — Bluetooth pairing now lives
     // exclusively in the ⚙ settings panel (settingsBleBtn).
 
-    DOM.ptbQuit.addEventListener('click', () => {
-      if (!practice.enabled && !practice._completing) return;
-      practice.enabled = false;
-      // Cancel the in-flight section-complete timer so a quit during the
-      // 600 ms grace doesn't credit progress for an abandoned section.
-      if (practice._completionTimer) {
-        clearTimeout(practice._completionTimer);
-        practice._completionTimer = null;
-        practice._completing = false;
-      }
-      stopPracticeAudio();
-      releaseWakeLock();
-      // Clear any keys still held when bailing out of practice mode.
-      midiState.activeNotes.clear();
-      midiState.sustainedNotes.clear();
-      practice.pendingHolds.clear();
-      DOM.practiceHud.classList.remove('visible');
-      DOM.osmdContainer.classList.remove('visible');
-      DOM.songPanel.classList.add('visible');
-      renderSongPanel();
+    // Phase 0d batch 7b: practice-flow controls (ptbQuit, ptbToggleOsmd,
+    // result-card buttons, sumClose, 🏠 Title buttons, returnToTitle)
+    // moved to packages/web/src/practice-flow.ts. The wire-up below
+    // attaches every listener and exposes returnToTitle + transitionToSection
+    // for the song-panel "Back" button + future module callsites.
+    const _practiceFlow = PracticeFlow.createPracticeFlow({
+      dom: /** @type {import('./practice-flow').PracticeFlowDom} */ ({
+        ptbQuit: DOM.ptbQuit,
+        ptbToggleOsmd: DOM.ptbToggleOsmd,
+        resQuit: DOM.resQuit,
+        resRetry: DOM.resRetry,
+        resTryPlay: document.getElementById('resTryPlay'),
+        resNext: DOM.resNext,
+        sumClose: DOM.sumClose,
+        homeBtn: DOM.homeBtn,
+        sumHome: DOM.sumHome,
+        resHome: DOM.resHome,
+        practiceHud: DOM.practiceHud,
+        osmdContainer: DOM.osmdContainer,
+        songPanel: DOM.songPanel,
+        sectionResult: DOM.sectionResult,
+        sessionSummary: DOM.sessionSummary,
+        hud: DOM.hud,
+        questDisplay: DOM.questDisplay,
+        micMeter: DOM.micMeter,
+        startScreen: DOM.startScreen,
+      }),
+      practice: /** @type {import('./practice-flow').PracticeFlowPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      state: /** @type {import('./practice-flow').PracticeFlowStateRef} */ (
+        /** @type {any} */ (state)
+      ),
+      midiState: /** @type {import('./practice-flow').PracticeFlowMidiRef} */ (
+        /** @type {any} */ (midiState)
+      ),
+      getCurrentSong: () => /** @type {any} */ (currentSong),
+      songProg: () => /** @type {any} */ (songProg()),
+      startPracticeSection,
+      renderSongPanel,
+      stopPracticeAudio,
+      releaseWakeLock,
+      hideIntroHint,
+      stopMidiAutoRescan,
+      resetSession,
     });
-
-    DOM.ptbToggleOsmd.addEventListener('click', () => {
-      DOM.osmdContainer.classList.toggle('visible');
-    });
-
-    DOM.resQuit.addEventListener('click', () => {
-      DOM.sectionResult.classList.remove('visible');
-      DOM.practiceHud.classList.remove('visible');
-      DOM.osmdContainer.classList.remove('visible');
-      DOM.songPanel.classList.add('visible');
-      renderSongPanel();
-    });
-    // `_practiceTransitioning` debounces double-tap on the result-card
-    // buttons. Without it, mashing Retry on a slow iPad enters
-    // `startPracticeSection` twice; the second call runs after the first's
-    // `await Tone.start()` resolves and re-enters the Tone.Transport
-    // cancel/stop/schedule block on top of incomplete cleanup.
-    let _practiceTransitioning = false;
-    /** @param {number} idx */
-    async function transitionToSection(idx) {
-      if (_practiceTransitioning) return;
-      _practiceTransitioning = true;
-      try { await startPracticeSection(idx); }
-      finally { _practiceTransitioning = false; }
-    }
-    DOM.resRetry.addEventListener('click', () => {
-      DOM.sectionResult.classList.remove('visible');
-      transitionToSection(practice.sectionIdx);
-    });
-    // Listen-mode → "Try playing" shortcut: same section, but switch to Guided.
-    document.getElementById('resTryPlay')?.addEventListener('click', () => {
-      DOM.sectionResult.classList.remove('visible');
-      practice.mode = 'guided';
-      transitionToSection(practice.sectionIdx);
-    });
-    DOM.resNext.addEventListener('click', () => {
-      const nextIdx = Math.min(practice.sectionIdx + 1, currentSong.sections.length - 1);
-      const nextId = currentSong.sections[nextIdx].id;
-      if (!songProg().unlockedSections[nextId]) return;
-      practice.sectionIdx = nextIdx;
-      DOM.sectionResult.classList.remove('visible');
-      transitionToSection(nextIdx);
-    });
+    returnToTitle = _practiceFlow.returnToTitle;
+    const transitionToSection = _practiceFlow.transitionToSection;
 
     // Initialize progress on load (so panel works without audio start)
     practice.progress = loadPracticeProgress();
@@ -7136,45 +7126,9 @@
       }
     });
 
-    // Summary close button listener
-    DOM.sumClose.addEventListener('click', () => {
-      DOM.sessionSummary.classList.remove('visible');
-      resetSession();
-    });
-
-    // v13: Back-to-title flow.
-    // Audio stays alive (re-init is slow on Safari). Pressing "Free Play" again
-    // from the title just unhides the visualizer.
-    function returnToTitle() {
-      if (practice.enabled || practice._completing) {
-        practice.enabled = false;
-        practice._completing = false;
-        if (practice._completionTimer) {
-          clearTimeout(practice._completionTimer);
-          practice._completionTimer = null;
-        }
-        try { stopPracticeAudio(); } catch (e) {}
-        try { releaseWakeLock(); } catch (e) {}
-      }
-      DOM.songPanel.classList.remove('visible');
-      DOM.sessionSummary.classList.remove('visible');
-      DOM.sectionResult.classList.remove('visible');
-      DOM.practiceHud.classList.remove('visible');
-      DOM.osmdContainer.classList.remove('visible');
-      DOM.hud.style.display = 'none';
-      DOM.questDisplay.classList.remove('visible'); // wipe stale free-play quest UI
-      hideIntroHint();
-      DOM.micMeter.classList.remove('visible');
-      stopMidiAutoRescan();
-      // タイトルに戻ったら dismiss 状態もリセット (次回起動で再度ガイド表示)
-      if (state.running) resetSession();
-      DOM.startScreen.style.display = 'flex';
-      document.body.classList.add('title-screen');
-    }
-
-    DOM.homeBtn.addEventListener('click', returnToTitle);
-    DOM.sumHome.addEventListener('click', returnToTitle);
-    DOM.resHome.addEventListener('click', returnToTitle);
+    // sumClose / homeBtn / sumHome / resHome listeners + the
+    // returnToTitle implementation moved to practice-flow.ts (Phase 0d
+    // batch 7b). The createPracticeFlow() call above wires them.
 
 // Phase 0c kickoff (2026-05-06): make this file a real ES module so
 // main.ts can import it without a `.d.ts` shim. Enables `allowJs: true`
