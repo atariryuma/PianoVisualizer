@@ -6680,6 +6680,141 @@
           },
         },
         {
+          name: 'Behavior — MIDI note injection drives visuals',
+          run: async () => {
+            // Simulate a MIDI note-on; verify midiState updates +
+            // visualizer spawns at least one ripple OR particle.
+            const baselineRipples = ripples.length;
+            const baselineParticles = particles.length;
+            const wasMidiEnabled = midiInput.enabled;
+            midiInput.enabled = true;
+            midiInput.lastEventTime = performance.now();
+            try {
+              onMidiNoteOn(60, 100);
+              const inActive = midiState.activeNotes.has(60);
+              // Wait 2 raf so any per-frame spawn paths fire.
+              await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+              const ripplesAfter = ripples.length;
+              const particlesAfter = particles.length;
+              onMidiNoteOff(60);
+              const cleared = !midiState.activeNotes.has(60);
+              const ok =
+                inActive && cleared && (ripplesAfter > baselineRipples || particlesAfter > baselineParticles);
+              return {
+                ok,
+                detail:
+                  'inActive=' + inActive +
+                  ' cleared=' + cleared +
+                  ' Δripples=' + (ripplesAfter - baselineRipples) +
+                  ' Δparticles=' + (particlesAfter - baselineParticles),
+              };
+            } finally {
+              midiInput.enabled = wasMidiEnabled;
+              try { onMidiNoteOff(60); } catch (_) { /* already off */ }
+            }
+          },
+        },
+        {
+          name: 'Behavior — Listen-mode completePracticeSection renders result card',
+          run: async () => {
+            // Save state we'll mutate
+            const saved = {
+              enabled: practice.enabled,
+              mode: practice.mode,
+              sectionNotes: practice.sectionNotes,
+              currentNoteIdx: practice.currentNoteIdx,
+              hits: practice.hits,
+              misses: practice.misses,
+              _sectionTargetCount: practice._sectionTargetCount,
+              _lastResult: practice._lastResult,
+              _completing: practice._completing,
+              fullSongMode: practice.fullSongMode,
+              sectionIdx: practice.sectionIdx,
+            };
+            const wasVisible = DOM.sectionResult.classList.contains('visible');
+            try {
+              practice.enabled = true;
+              practice.mode = 'listen';
+              practice.fullSongMode = false;
+              practice.sectionIdx = 0;
+              practice.sectionNotes = [];
+              practice.currentNoteIdx = 0;
+              practice.hits = 0;
+              practice.misses = 0;
+              practice._sectionTargetCount = 0;
+              practice._completing = false;
+              completePracticeSection();
+              const r = practice._lastResult;
+              const ok =
+                r != null &&
+                r.mode === 'listen' &&
+                DOM.sectionResult.classList.contains('visible');
+              return {
+                ok,
+                detail:
+                  'mode=' + (r?.mode || 'null') +
+                  ' visible=' + DOM.sectionResult.classList.contains('visible'),
+              };
+            } finally {
+              // Restore
+              DOM.sectionResult.classList.toggle('visible', wasVisible);
+              Object.assign(practice, saved);
+            }
+          },
+        },
+        {
+          name: 'Behavior — Canvas pixel sampling shows paint after a frame',
+          run: async () => {
+            // Run the frame prelude directly so we know the canvas was touched.
+            RenderFrame.runRenderFramePrelude(performance.now(), {
+              ctx,
+              state,
+              getScreen: () => ({ W, H }),
+              themes: CONFIG.THEMES,
+              drawBgStars,
+              drawAurora,
+              drawGroundFlowers,
+              decayWakeUpFlash: PianoCore.decayWakeUpFlash,
+              drawCenterGlow: PianoCore.drawCenterGlow,
+              wufOpts: WUF_OPTS,
+              getEnergy,
+            });
+            // Sample center pixel
+            try {
+              const px = ctx.getImageData(Math.floor(W / 2), Math.floor(H / 2), 1, 1);
+              const [r, g, b, a] = px.data;
+              // Expect *some* alpha — the bg-fade always paints the full
+              // screen with theme.bg at flow-derived alpha (≥ 0.08).
+              const ok = a > 0;
+              return { ok, detail: 'rgba=(' + r + ',' + g + ',' + b + ',' + a + ')' };
+            } catch (e) {
+              return { ok: false, detail: /** @type {Error} */ (e).message };
+            }
+          },
+        },
+        {
+          name: 'Behavior — i18n DOM walk (every [data-i18n] is translated)',
+          run: () => {
+            const els = document.querySelectorAll('[data-i18n]');
+            /** @type {string[]} */
+            const broken = [];
+            els.forEach((el) => {
+              const key = el.getAttribute('data-i18n');
+              if (!key) return;
+              const text = el.textContent || '';
+              // Translation should NOT equal the raw key, AND should be non-empty.
+              if (!text || text === key) broken.push(key);
+            });
+            const ok = els.length > 5 && broken.length === 0;
+            return {
+              ok,
+              detail:
+                'els=' + els.length + ' broken=' + broken.length +
+                (broken.length ? ' (' + broken.slice(0, 3).join(', ') + ')' : ''),
+            };
+          },
+        },
+        {
           name: 'Storage stress — 50 IndexedDB put/get/delete cycles',
           run: async () => {
             const ts = Date.now();
