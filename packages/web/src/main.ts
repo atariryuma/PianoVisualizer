@@ -33,6 +33,7 @@ import * as SectionEditor from './section-editor';
 import * as SettingsPanel from './settings-panel';
 import * as AudioInit from './audio-init';
 import * as UserSongsUi from './user-songs-ui';
+import * as ThemeControls from './theme-controls';
 
 declare global {
   interface Window {
@@ -47,6 +48,7 @@ declare global {
     SettingsPanel: typeof SettingsPanel;
     AudioInit: typeof AudioInit;
     UserSongsUi: typeof UserSongsUi;
+    ThemeControls: typeof ThemeControls;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -111,6 +113,8 @@ declare global {
   var AudioInit: typeof import('./audio-init');
 
   var UserSongsUi: typeof import('./user-songs-ui');
+
+  var ThemeControls: typeof import('./theme-controls');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -129,6 +133,7 @@ declare global {
 (globalThis as unknown as Window).SettingsPanel = SettingsPanel;
 (globalThis as unknown as Window).AudioInit = AudioInit;
 (globalThis as unknown as Window).UserSongsUi = UserSongsUi;
+(globalThis as unknown as Window).ThemeControls = ThemeControls;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

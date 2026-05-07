@@ -1344,69 +1344,38 @@
       window.dispatchEvent(new CustomEvent('langchange'));
     }
 
-    /** @param {string} lang */
-    function setLang(lang) {
-      prefs.lang = lang === 'jp' ? 'jp' : 'en';
-      savePrefs();
-      // Keep <html lang> in sync so screen readers announce the right voice.
-      // The HTML default is 'ja'; without this the en-flipped UI would still
-      // be read by a Japanese voice on iOS VoiceOver / NVDA.
-      document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
-      applyI18n();
-    }
+    // setLang moved to theme-controls.ts (Phase 0d batch 7a) — exposed
+    // as `_themeControls.setLang` after createThemeControls() runs below.
 
     // Stage label — Phase 0b.3: delegated to @piano/core.
     /** @param {ConfigShape['STAGES'][number]} stage */
     const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
 
-    /** @param {number} idx */
-    function applyTheme(idx) {
-      prefs.theme = idx;
-      state.currentTheme = idx;
-      document.querySelectorAll('.theme-dot').forEach(d => {
-        const isActive = parseInt(/** @type {HTMLElement} */ (d).dataset.theme || '') === idx;
-        d.classList.toggle('active', isActive);
-        d.setAttribute('aria-checked', isActive ? 'true' : 'false');
-      });
-    }
+    // Phase 0d batch 7a: theme bar + synesthesia toggle + lang toggle
+    // moved to packages/web/src/theme-controls.ts. The shell still owns
+    // `applyI18n()` and `refreshSettingsPanel()`; the controls module
+    // calls back into them via the deps object.
+    // refreshSettingsPanel + applyI18n are forward-declared below /
+    // already declared above; we wire them through a thunk so a future
+    // re-order can't capture stale placeholder refs.
+    const _themeControls = ThemeControls.createThemeControls({
+      prefs: /** @type {import('./theme-controls').ThemeControlsPrefs} */ (
+        /** @type {any} */ (prefs)
+      ),
+      state: /** @type {import('./theme-controls').ThemeControlsStateRef} */ (
+        /** @type {any} */ (state)
+      ),
+      savePrefs,
+      applyI18n: () => applyI18n(),
+      refreshSettingsPanel: () => refreshSettingsPanel(),
+    });
+    const applyTheme = _themeControls.applyTheme;
+    const applySynesthesia = _themeControls.applySynesthesia;
+    const setLang = _themeControls.setLang;
+    // Seed the UI from persisted prefs (the click handlers attached
+    // inside createThemeControls take care of subsequent updates).
     applyTheme(prefs.theme);
-    // Theme dots are role="radio" — accept Enter/Space too so a keyboard /
-    // assistive-tech user can pick a theme without a pointer.
-    /** @param {HTMLElement} d */
-    const onThemeDotActivate = (d) => {
-      applyTheme(parseInt(d.dataset.theme || ''));
-      savePrefs();
-    };
-    document.querySelectorAll('.theme-dot').forEach(d => {
-      d.addEventListener('click', () => onThemeDotActivate(/** @type {HTMLElement} */ (d)));
-      d.addEventListener('keydown', (e) => {
-        if (/** @type {KeyboardEvent} */ (e).key === 'Enter' || /** @type {KeyboardEvent} */ (e).key === ' ') {
-          e.preventDefault();
-          onThemeDotActivate(/** @type {HTMLElement} */ (d));
-        }
-      });
-    });
-
-    const synToggle = /** @type {HTMLElement} */ (document.getElementById('synesthesiaToggle'));
-    /** @param {boolean} on */
-    function applySynesthesia(on) {
-      prefs.synesthesia = on;
-      state.useSynesthesiaMode = on;
-      synToggle.classList.toggle('active', on);
-      synToggle.setAttribute('aria-checked', on ? 'true' : 'false');
-    }
     applySynesthesia(prefs.synesthesia);
-    const onSynToggle = () => {
-      applySynesthesia(!state.useSynesthesiaMode);
-      savePrefs();
-    };
-    synToggle.addEventListener('click', onSynToggle);
-    synToggle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        onSynToggle();
-      }
-    });
 
     // ========================================
     // Settings panel
@@ -1567,22 +1536,11 @@
       savePrefs();
     });
 
-    // Language toggle (en ↔ jp). Highlight current; click flips.
-    function refreshLangToggle() {
-      const btn = document.getElementById('langToggleBtn');
-      if (!btn) return;
-      btn.textContent = prefs.lang === 'jp' ? '🇯🇵 日本語' : '🇬🇧 EN';
-    }
-    document.getElementById('langToggleBtn')?.addEventListener('click', () => {
-      setLang(prefs.lang === 'jp' ? 'en' : 'jp');
-      refreshLangToggle();
-      refreshSettingsPanel();   // input status / audio offset use t()
-    });
-    // Apply persisted language at startup. The langchange event lets song
-    // panel / result screen re-render their dynamic text if they're visible.
+    // Language toggle wiring (en ↔ jp) lives in theme-controls.ts now.
+    // The shell still seeds the document language from persisted prefs on
+    // boot — applyI18n is the cross-cutting DOM walker, kept in shell.
     document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
     applyI18n();
-    refreshLangToggle();
     // Page loads on the title screen — body class drives the home-button hide
     // (no point in 🏠 when home is right here) and any future title-only styling.
     document.body.classList.add('title-screen');
