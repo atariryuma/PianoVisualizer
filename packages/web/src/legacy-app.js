@@ -2702,57 +2702,34 @@
         });
       }
 
-      // v13: MIDI sustained beams sit between background and particles.
-      if (midiInput.enabled && !practice.enabled) {
-        drawMidiBeams(timeMs);
-      }
-
-      // ripples[i].update() / .draw(ctx) are monkey-patched on the prototype
-      // earlier (see "Ripples — Phase 0b.3" + "Particle system" sections);
-      // the patches inject the closure deps so call sites stay positional.
-      // TS still sees the core types' original signatures (.update(opts) /
-      // .draw(ctx, opts)) — the casts pin the runtime arity.
-      let alive = 0;
-      for (let i = 0; i < ripples.length; i++) {
-        /** @type {() => void} */ (ripples[i].update).call(ripples[i]);
-        /** @type {(c:CanvasRenderingContext2D) => void} */ (ripples[i].draw).call(ripples[i], ctx);
-        if (ripples[i].life > 0) ripples[alive++] = ripples[i];
-      }
-      ripples.length = alive;
-
-      alive = 0;
-      for (let i = 0; i < particles.length; i++) {
-        particles[i].update();
-        /** @type {(c:CanvasRenderingContext2D) => void} */ (particles[i].draw).call(particles[i], ctx);
-        if (particles[i].life > 0 && alive < CONFIG.MAX_PARTICLES) particles[alive++] = particles[i];
-      }
-      particles.length = alive;
-
-      // Chord-name display — the function picks a layout per mode (big-centered for free play, small-above-keyboard for practice).
-      if (midiInput.enabled) {
-        drawMidiChordDisplay(timeMs);
-      }
-
-      // Virtual keyboard at the bottom — visible whenever MIDI is in use.
-      // In practice mode it provides a key-finding reference for kids; the lane
-      // sizing reserves the bottom strip for it.
-      if (midiInput.enabled) {
-        drawMidiKeyboard();
-      }
-
-      // v12: Practice mode lane (drawn on top of background, under HUD)
-      if (practice.enabled) {
-        drawPracticeLane(timeMs);
-      }
-
-      // Quests only tick during ACTIVE free-play. Without this gate the
-      // tracker would keep evaluating predicates while the user browses
-      // menus (start screen, song panel, session summary) — making
-      // questDisplay flicker on top of the wrong screen and progress
-      // accumulating in the background.
-      if (isFreeplayActive()) updateQuestState(timeMs);
-      updatePlayTime(timeMs);
-      updateDebugOverlay();
+      // Phase 0d batch 9c: late-frame draw + tail (MIDI beams,
+      // ripples + particles update/draw/cull, chord display, virtual
+      // keyboard, practice lane, quest + playtime + debug HUD) live
+      // in packages/web/src/render-late.ts.
+      RenderLate.runRenderLate(timeMs, {
+        ctx,
+        ripples: /** @type {import('./render-late').RippleArray} */ (
+          /** @type {any} */ (ripples)
+        ),
+        particles: /** @type {import('./render-late').ParticleArray} */ (
+          /** @type {any} */ (particles)
+        ),
+        midiInput: /** @type {import('./render-late').RenderLateMidiRef} */ (
+          /** @type {any} */ (midiInput)
+        ),
+        practice: /** @type {import('./render-late').RenderLatePracticeRef} */ (
+          /** @type {any} */ (practice)
+        ),
+        isFreeplayActive,
+        maxParticles: CONFIG.MAX_PARTICLES,
+        drawMidiBeams,
+        drawMidiChordDisplay,
+        drawMidiKeyboard,
+        drawPracticeLane,
+        updateQuestState,
+        updatePlayTime,
+        updateDebugOverlay,
+      });
     }
 
     // True only when the canvas / HUD is the front-most surface (i.e. the
