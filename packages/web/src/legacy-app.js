@@ -1471,10 +1471,31 @@
     let particles = [];
     const _coreParticleDraw = PianoCore.Particle.prototype.draw;
     PianoCore.Particle.prototype.draw = function (/** @type {CanvasRenderingContext2D} */ c) {
+      // [Bug fix 2026-05-09 — Issue 2 frame drops]
+      //
+      // useShadow gate had two conditions:
+      //   1. SHADOW_BLUR_ENABLED (perf-tier flag, true for high/mid)
+      //   2. particles.length < 300 (auto-disable above the cap)
+      //
+      // Server.log [DIAG-FRAME] analysis revealed dt=33-50ms spikes
+      // during active listen-mode playback with particles=159-380 —
+      // shadowBlur on the per-particle ctx is the dominant cost on
+      // Canvas2D (forces software raster on every render). Disabling
+      // shadowBlur during active practice cuts per-particle frame
+      // time roughly in half.
+      //
+      // Why only during practice: during free-play / on the title
+      // screen, the particle effects are the main visual interest
+      // and the kid isn't audio-sensitive. During practice the kid
+      // is focused on playing — they need stutter-free playback +
+      // count-in beeps, not shadow halos.
       return _coreParticleDraw.call(this, c, {
         screenW: W,
         screenH: H,
-        useShadow: CONFIG.SHADOW_BLUR_ENABLED && particles.length < 300,
+        useShadow:
+          CONFIG.SHADOW_BLUR_ENABLED &&
+          particles.length < 300 &&
+          !practice.enabled,
       });
     };
     const Particle = PianoCore.Particle;
@@ -1513,7 +1534,12 @@
       screenH: H,
       themeColors: CONFIG.THEMES[state.currentTheme].colors,
       flow: state.flow,
-      maxParticles: MAX_PARTICLES_3D,
+      // [Bug fix 2026-05-09 — Issue 2 frame drops] Hard-cap the
+      // burst pool at 200 during practice. Each note-hit spawns
+      // 5-30 particles; without this cap a 4-hits/sec listen run
+      // can chain to 600+ resident particles within 5 seconds and
+      // every render frame pushes 30-50ms.
+      maxParticles: practice.enabled ? 200 : MAX_PARTICLES_3D,
       overrideColor,
     });
     /** @param {number} screenX @param {number} screenY @param {number} count @param {number} energy @param {string=} overrideColor */
@@ -1531,7 +1557,12 @@
       themeColors: CONFIG.THEMES[state.currentTheme].colors,
       screenW: W,
       screenH: H,
-      maxParticles: MAX_PARTICLES_3D,
+      // [Bug fix 2026-05-09 — Issue 2 frame drops] Same 200-cap
+      // during practice as _spawnOpts above. Encouragement effects
+      // (golden-burst, shimmer, etc.) fire on combos and would
+      // otherwise burst 30-100 particles into an already-saturated
+      // pool.
+      maxParticles: practice.enabled ? 200 : MAX_PARTICLES_3D,
       state, // EffectGameState slice — effects mutate glowPulseIntensity, shimmerPhase, shimmerStartMs
     });
     const effectGlowPulse = () => PianoCore.effectGlowPulse(_effectDeps());
@@ -1570,9 +1601,14 @@
     };
     const _coreRippleDraw = PianoCore.Ripple.prototype.draw;
     PianoCore.Ripple.prototype.draw = function (/** @type {CanvasRenderingContext2D} */ c) {
+      // [Bug fix 2026-05-09 — Issue 2 frame drops] Same shadowBlur
+      // disable as Particle.draw above. Ripples spawn 1-3 per note
+      // hit during practice; with shadowBlur on each ripple costs
+      // 2-4ms; multi-ripple frames push past the 16.7 ms budget.
       return _coreRippleDraw.call(this, c, {
         flow: state.flow,
-        useShadow: CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15,
+        useShadow:
+          CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15 && !practice.enabled,
       });
     };
     const Ripple = PianoCore.Ripple;
@@ -2066,8 +2102,18 @@
           particles: /** @type {import('./render-mid').ParticlesArray} */ (
             /** @type {any} */ (particles)
           ),
-          maxParticles: CONFIG.MAX_PARTICLES,
-          ambientChance: CONFIG.AMBIENT_PARTICLE_CHANCE,
+          // [Bug fix 2026-05-09 — Issue 2 frame drops] During active
+          // practice, lower the cap to 200 so a note-hit burst can't
+          // chain into a 600+ particle frame. The render layer also
+          // disables shadowBlur during practice; the two together
+          // halve per-frame paint cost on Canvas2D. Outside practice
+          // (free-play / title), keep the full per-perf-tier cap so
+          // ambient atmosphere isn't degraded.
+          maxParticles: practice.enabled ? 200 : CONFIG.MAX_PARTICLES,
+          // [Bug fix 2026-05-09] Same idea — kill the per-frame
+          // ambient roll during practice so even idle frames don't
+          // accumulate sprites the kid doesn't notice anyway.
+          ambientChance: practice.enabled ? 0 : CONFIG.AMBIENT_PARTICLE_CHANCE,
           Particle: /** @type {import('./render-mid').ParticleCtor} */ (
             /** @type {any} */ (Particle)
           ),
