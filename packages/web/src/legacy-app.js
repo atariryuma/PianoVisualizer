@@ -4340,164 +4340,41 @@
       _midiRender.setLabels({ sustainLabel: t('sustainLabel') })
     );
 
-    // Median of the recent high-confidence pitches. Used to neutralize YIN's
-    // single-frame octave errors at the moment of onset.
-    function medianRecentPitch() {
-      const arr = state.recentPitches;
-      if (!arr || arr.length === 0) return 0;
-      const sorted = arr.slice().sort((a, b) => a - b);
-      return sorted[Math.floor(sorted.length / 2)];
-    }
-
-    // ========================================
-    // Shared match logic — funnel point for both mic and MIDI events.
-    // STRICT: only the currentNoteIdx (the very next expected note) is considered.
-    // We never skip ahead in the score, so playing a wrong note → MISS rather than
-    // accidentally crediting a same-pitch-class note further along the timeline.
-    // ========================================
+    // Phase 0d batch 36: practice scoring + timing cluster
+    // (medianRecentPitch / matchNoteOnset / finalizeNoteHold /
+    // practiceRealElapsedMs / practiceElapsedMs) moved to
+    // packages/web/src/practice-scoring.ts.
+    const _practiceScoring = PracticeScoring.createPracticeScoring({
+      state: /** @type {any} */ (state),
+      practice: /** @type {any} */ (practice),
+      tuning: {
+        hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
+        hitWindowMs: HIT_WINDOW_MS,
+        perfectMs: PERFECT_MS,
+        chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
+        durationMinTolMs: DURATION_MIN_TOL_MS,
+        durationTolFraction: DURATION_TOL_FRACTION,
+        countInMs: COUNT_IN_MS,
+      },
+      Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
+      showHitChip,
+      spawnBurst,
+      getScreen: () => ({ W, H }),
+      t,
+      midiToName,
+      remoteLog,
+    });
+    function medianRecentPitch() { return _practiceScoring.medianRecentPitch(); }
     /** @param {number} detectedMidi @param {boolean} isExact */
     function matchNoteOnset(detectedMidi, isExact) {
-      if (!practice.enabled) return false;
-      // Listen mode: the song plays itself, the kid is just watching/listening.
-      // Don't judge, score, or chip on input — let any incidental key-presses
-      // create free-play visuals (handled outside this function) but ignore here.
-      if (practice.mode === 'listen') return false;
-      const elapsed = practiceElapsedMs();
-      const notes = practice.sectionNotes;
-      // Eagerly skip past any already-resolved notes. The per-frame skip-past
-      // loop normally advances currentNoteIdx, but a chord played within a
-      // single frame would otherwise leave subsequent presses pointing at the
-      // already-hit cur and drop them silently.
-      let idx = practice.currentNoteIdx;
-      while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
-      practice.currentNoteIdx = idx;
-      if (idx >= notes.length) return false;
-      const cur = notes[idx];
-      if (!cur) return false;
-
-      const dtSigned = elapsed - cur.timeMs;   // +late, -early
-      const inWindow = practice.mode === 'guided'
-        ? true
-        : (dtSigned >= -HIT_WINDOW_EARLY_MS && dtSigned <= HIT_WINDOW_MS);
-      const dtCur = Math.abs(dtSigned);
-
-      // Find the played note inside the current chord cluster (cur and any
-      // simultaneous notes within ±CHORD_MATE_TOLERANCE_MS). Order within a chord
-      // is free — but each note must be physically pressed (no auto-credit).
-      let matched = null;
-      if (inWindow) {
-        if (cur.midi === detectedMidi) {
-          matched = cur;
-        } else {
-          for (let i = idx + 1; i < notes.length; i++) {
-            const m = notes[i];
-            const diff = m.timeMs - cur.timeMs;
-            if (diff > CHORD_MATE_TOLERANCE_MS) break;
-            if (m.hit || m.missed) continue;
-            if (m.midi === detectedMidi) { matched = m; break; }
-          }
-        }
-      }
-
-      remoteLog('[Match] in=' + detectedMidi
-        + (isExact ? ' (midi)' : ' (mic)')
-        + ' expected=' + cur.midi + '@' + Math.round(cur.timeMs - elapsed) + 'ms'
-        + ' mode=' + practice.mode
-        + ' result=' + (matched ? (matched === cur ? 'HIT' : 'HIT(chord-mate)') : 'wrong-note'));
-
-      if (!matched) {
-        if (practice.mode === 'guided') {
-          showHitChip('miss', t('youPlayedFmt', { v: midiToName(detectedMidi) }));
-        }
-        return false;
-      }
-
-      const dtSignedMatched = elapsed - matched.timeMs;
-      const dt = Math.abs(dtSignedMatched);
-      matched.hit = true;
-      matched.holdStartMs = performance.now();
-      practice.pendingHolds.set(detectedMidi, matched);
-      practice.hits++;
-      practice.sectionCombo++;
-      if (practice.sectionCombo > practice.sectionBestCombo) {
-        practice.sectionBestCombo = practice.sectionCombo;
-      }
-      // Guided mode: every onset is "perfect" (timing not graded). Rhythm mode:
-      // score linearly, but use the asymmetric window so an early press is judged
-      // against the smaller early window (steeper penalty).
-      const window = dtSignedMatched < 0 ? HIT_WINDOW_EARLY_MS : HIT_WINDOW_MS;
-      const ts = practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
-      practice.timingScoreSum += ts;
-      const isPerfect = practice.mode === 'guided' || dt < PERFECT_MS;
-      showHitChip(isPerfect ? 'perfect' : 'good', isPerfect ? t('perfect') : t('nice'));
-      state.flow = Math.min(100, state.flow + 6 + ts * 4);
-      state.combo++;
-      if (state.combo > state.bestCombo) state.bestCombo = state.combo;
-      spawnBurst(W * 0.5, H * 0.55, 8, 0.7 + ts * 0.5);
-      // OSMD cursor advancement is driven by the per-frame "skip past resolved
-      // notes" loop in updatePracticeFrame.
-      return true;
+      return _practiceScoring.matchNoteOnset(detectedMidi, isExact);
     }
-
-    // Note-length scoring (rhythm mode only): compare physical hold time to the
-    // written length. score = 1 at exact, 0 at full tolerance off.
     /** @param {number} detectedMidi */
     function finalizeNoteHold(detectedMidi) {
-      const matched = practice.pendingHolds.get(detectedMidi);
-      if (!matched) return;
-      practice.pendingHolds.delete(detectedMidi);
-      if (practice.mode !== 'rhythm') return;
-      if (!matched.holdStartMs || !matched.durMs) return;
-      const heldMs = performance.now() - matched.holdStartMs;
-      const expected = matched.durMs;
-      const tol = Math.max(DURATION_MIN_TOL_MS, expected * DURATION_TOL_FRACTION);
-      const score = Math.max(0, 1 - Math.abs(heldMs - expected) / tol);
-      practice.durationScoreSum += score;
-      practice.durationScoredCount++;
-      if (score < 0.4) {
-        showHitChip('miss', heldMs < expected ? t('tooShort') : t('tooLong'));
-      }
+      _practiceScoring.finalizeNoteHold(detectedMidi);
     }
-
-    // Single source of truth for "how far into the practice are we".
-    // In rhythm mode this is Tone's audio clock so it stays sample-accurate with
-    // scheduled events. In guided mode we freeze elapsed at the current note's time
-    // so the falling lane shows the next-up note parked at the hit line, with the
-    // upcoming queue displayed above it. The lane only moves when the kid plays
-    // correctly and currentNoteIdx advances.
-    function practiceRealElapsedMs() {
-      // Use the RAW AudioContext clock (currentTime) — NOT Tone.now(), which
-      // returns currentTime + lookAhead (~100 ms scheduler safety margin) and
-      // would shift the visual countdown ahead of the audible beeps by exactly
-      // that lookAhead. The 100 ms drift was the root cause of the
-      // count-in-vs-woodblock desync. startAudioTime itself is set via
-      // Tone.now() (the audio time at which beep 0 is scheduled to play), so
-      // currentTime - startAudioTime gives "audio seconds until/since the
-      // first beep" without lookAhead bias — negative during the pre-roll,
-      // zero exactly when beep 0 begins to be sample-emitted, and the kid
-      // hears it `outputLatency` later.
-      const raw = (typeof Tone !== 'undefined' && Tone.context)
-        ? (Tone.context.currentTime - practice.startAudioTime) * 1000
-        : performance.now() - (practice.startAudioTime * 1000);
-      // audioOffsetMs ≈ outputLatency: shifts the visual clock back so it
-      // matches what the kid actually hears (which is delayed by speaker
-      // buffering). Applied to both judging (so an on-the-beat press scores
-      // PERFECT) and lane visuals.
-      return raw - (practice.audioOffsetMs || 0);
-    }
-    function practiceElapsedMs() {
-      const realElapsed = practiceRealElapsedMs();
-      if (practice.mode === 'guided') {
-        // Real time during count-in so the 4-3-2-1 actually animates and notes
-        // descend visibly from the top of the lane to the hit line. After
-        // count-in we freeze at the current note's time so it parks at the hit
-        // line waiting for the kid to play.
-        if (realElapsed < COUNT_IN_MS) return realElapsed;
-        const cur = practice.sectionNotes[practice.currentNoteIdx];
-        return cur ? cur.timeMs : COUNT_IN_MS;
-      }
-      return realElapsed;
-    }
+    function practiceRealElapsedMs() { return _practiceScoring.practiceRealElapsedMs(); }
+    function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
 
     // Persisted practice progress — Phase 0c: pure schema/migration
     // logic delegated to @piano/core/state/practice-progress. The two
