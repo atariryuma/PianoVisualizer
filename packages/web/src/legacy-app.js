@@ -3352,163 +3352,47 @@
       PianoCore.dumpLoadDiagnostics(p, remoteLog);
     }
 
-    async function loadCurrentScore() {
-      // Data is loaded but the OSMD instance was nulled (right after a song switch).
-      // Re-run initOsmd only to redraw the score; note/section extraction is unnecessary.
-      if (currentSong._loaded) {
-        if (!osmd) await initOsmd();
-        return;
-      }
-      if (currentSong._loadingPromise) return currentSong._loadingPromise;
-      // Capture `currentSong` so a rapid second `selectSong()` mid-load can't
-      // make the IIFE write its results into the wrong song's record (would
-      // null another in-flight song's _loadingPromise, allowing concurrent
-      // duplicate loads).
-      const song = currentSong;
-      // Bail-out helper: a rapid `selectSong()` swap mid-load means the
-      // global OSMD instance + measure data now belong to a different song.
-      // Reading it past that point produces cross-song data corruption
-      // (foreign repeat structure into our note timeline, foreign measures
-      // into our cursor map). Returning false abandons the load gracefully.
-      const stillCurrent = () => currentSong === song;
-      song._loadingPromise = (async () => {
-        await initOsmd();
-        if (!stillCurrent()) return;
-
-        // Parse the raw XML for the authoritative timing model: per-measure
-        // tempo events (correctly normalized via beat-unit), time signatures,
-        // divisions, and anacrusis. We use this for ALL timing decisions —
-        // OSMD is consulted only for pitch/staff/cursor.
-        let scoreTiming = null;
-        try {
-          let text = song._xmlText;
-          if (!text && song.xmlUrl) {
-            const res = await fetch(song.xmlUrl);
-            if (!stillCurrent()) return;
-            if (res.ok) text = await res.text();
-          }
-          if (text) {
-            // Cache so fetchPlaybackOrder() reuses it instead of re-downloading
-            // (Android Chrome was occasionally hanging on the second blob: fetch).
-            song._xmlText = text;
-            scoreTiming = parseScoreTimingFromXml(text);
-          }
-        } catch (_) { /* non-fatal — extractNotesFromOsmd will fall back */ }
-        if (!stillCurrent()) return;
-        const xmlMeasureTiming = buildMeasureTimingFromXml(scoreTiming);
-
-        const extractRet = extractNotesFromOsmd(xmlMeasureTiming, scoreTiming);
-        const baseNotes = extractRet.notes;
-        const srcMeasureStartSec = extractRet.measureStartSec;
-        const osmdMeasureBpm = extractRet.measureBpm;
-        if (baseNotes.length === 0) throw new Error('No notes extracted from MusicXML');
-
-        // BPM divergence flag — true when OSMD's reading of <metronome
-        // beat-unit="eighth"> disagrees with the XML-canonical quarter BPM
-        // (OSMD's known limitation). Used by renderSongPanel to show the
-        // "✓" marker on the BPM hint, signaling that we corrected the score.
-        song._bpmRescaled = false;
-        if (scoreTiming && xmlMeasureTiming) {
-          const osmdBpm0 = osmdMeasureBpm[0] || 72;
-          const xmlBpm0 = scoreTiming.leadingQuarterBpm;
-          song._bpmRescaled = Math.abs(osmdBpm0 / xmlBpm0 - 1) > 0.05;
-        }
-
-        const measures = osmd.Sheet?.SourceMeasures || [];
-
-        // Parse the raw XML to discover the actual playback order. Reads the
-        // pre-decoded xmlText cached on the song record (avoids a re-fetch
-        // that could hang on blob: URLs of just-imported user songs).
-        let order;
-        try {
-          order = await fetchPlaybackOrder(song);
-          if (!stillCurrent()) return;
-          if (!order.length) order = measures.map((/** @type {unknown} */ _, /** @type {number} */ i) => i);
-        } catch (e) {
-          console.warn('Playback order parse failed, falling back to linear', e);
-          order = measures.map((/** @type {unknown} */ _, /** @type {number} */ i) => i);
-        }
-        const expanded = expandNotesByPlaybackOrder(baseNotes, order, measures, srcMeasureStartSec);
-
-        let totalSec = 0;
-        for (const n of expanded) {
-          const end = n.timeSec + n.durSec;
-          if (end > totalSec) totalSec = end;
-        }
-
-        // ExpandedNote shape is OsmdLikeNote-compatible — same midi/hand/
-        // timeSec/durSec/measureIdx/inBarQuarters fields. timeMs/durMs are
-        // computed downstream by buildSectionNotes per-section before the
-        // practice tick reads them; song.notes is only iterated by timeSec
-        // (see buildSectionNotes at line ~5837), so the missing-at-this-stage
-        // ms fields don't matter here.
-        song.notes = /** @type {OsmdLikeNote[]} */ (/** @type {unknown} */ (expanded));
-        song.totalSec = totalSec;
-        song.playbackOrder = order;
-        // Pass the per-source-measure start times so sections begin at the
-        // measure boundary (preserving any leading rest visually) instead of
-        // cropping to the first note's onset.
-        song.sections = buildSectionsFromDefs(
-          expanded, totalSec, song.sectionDefs ?? [], srcMeasureStartSec
-        );
-        // Capture the leading tempo so the count-in clicks match the song.
-        // Prefer the XML-parsed quarter BPM (authoritative — handles
-        // <metronome beat-unit="eighth"> correctly). Fall back to OSMD's
-        // per-measure TempoInBPM when XML parsing didn't yield a value.
-        let songBpm = 0;
-        if (scoreTiming && scoreTiming.leadingQuarterBpm) {
-          songBpm = scoreTiming.leadingQuarterBpm;
-        }
-        if (!songBpm) {
-          for (const m of measures) {
-            const v = m && m.TempoInBPM;
-            if (v && v > 0) { songBpm = v; break; }
-          }
-        }
-        song.bpm = songBpm || 72;
-        song._loaded = true;
-        console.log('[' + song.id + '] base=' + baseNotes.length
-          + ' expanded=' + expanded.length
-          + ' measures=' + measures.length
-          + ' playbackOrder=' + order.length
-          + ' total=' + totalSec.toFixed(1) + 's');
-
-        // ============================================================
-        // === Comprehensive load-time DIAG dump ======================
-        // ============================================================
-        // Verbose by design — only fires once per song-load. Use to
-        // verify file → notes pipeline at every stage. Levels:
-        //   [DIAG/song]    one-line song-level summary
-        //   [DIAG/measure] per-measure layout (first 8 + tempo changes)
-        //   [DIAG/cursor]  per-OSMD-step trace (first 20 + measure boundaries)
-        //   [DIAG/note]    first 12 + last 4 notes with full detail
-        //   [DIAG/tie]     tie-merge events (if any)
-        //   [DIAG/section] section construction details
-        if (REMOTE_LOG_ENABLED) {
-          // xmlMeasureTiming intentionally NOT passed — the diag dumper
-          // re-derives per-measure timing from scoreTiming, and the legacy
-          // shell's xmlMeasureTiming is a different shape than the dumper
-          // expects. Kept in scope here only for the shell's own use.
-          dumpLoadDiagnostics({
-            song,
-            scoreTiming,
-            extractRet,
-            baseNotes, expanded,
-            measures, order, totalSec,
-            measureStartSec: srcMeasureStartSec,
-            measureBpm: osmdMeasureBpm,
-          });
-        }
-        // Drop the cached xmlText now that notes/sections/cursor tables are
-        // built. For user songs the canonical text still lives on the
-        // IndexedDB record (record.xmlText) and the blob URL resolves;
-        // dropping the per-song JS-heap copy avoids piling up >5MB strings
-        // when several large user songs sit in SONGS at once.
-        song._xmlText = undefined;
-      })();
-      try { await song._loadingPromise; }
-      finally { song._loadingPromise = null; }
-    }
+    // Phase 0d batch 31: score-loading orchestrator (initOsmd → XML
+    // parse → notes extract → playback order → expand → sections →
+    // bpm → diag dump → drop xmlText) moved to
+    // packages/web/src/score-loader.ts. Race safety + in-flight
+    // dedupe live in the factory.
+    const _scoreLoader = ScoreLoader.createScoreLoader({
+      getCurrentSong: () =>
+        /** @type {import('./score-loader').ScoreLoaderSong | null} */ (
+          /** @type {any} */ (currentSong)
+        ),
+      initOsmd,
+      getOsmd: () => /** @type {any} */ (osmd),
+      parseScoreTimingFromXml,
+      buildMeasureTimingFromXml,
+      extractNotesFromOsmd: (xmlMeasureTiming, scoreTiming) =>
+        /** @type {import('./score-loader').ExtractResult} */ (
+          /** @type {any} */ (extractNotesFromOsmd(xmlMeasureTiming, scoreTiming))
+        ),
+      fetchPlaybackOrder: (forSong) => fetchPlaybackOrder(/** @type {any} */ (forSong)),
+      expandNotesByPlaybackOrder: (baseNotes, order, measures, srcMeasureStartSec) =>
+        /** @type {import('./score-loader').OsmdLikeNote[]} */ (
+          /** @type {any} */ (
+            expandNotesByPlaybackOrder(
+              /** @type {any} */ (baseNotes),
+              order,
+              /** @type {any} */ (measures),
+              srcMeasureStartSec
+            )
+          )
+        ),
+      buildSectionsFromDefs: (expanded, totalSec, sectionDefs, srcMeasureStartSec) =>
+        buildSectionsFromDefs(
+          /** @type {any} */ (expanded),
+          totalSec,
+          /** @type {any} */ (sectionDefs),
+          srcMeasureStartSec
+        ),
+      dumpLoadDiagnostics: (info) => dumpLoadDiagnostics(/** @type {any} */ (info)),
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+    });
+    async function loadCurrentScore() { await _scoreLoader.loadCurrentScore(); }
 
     // Manual scroll to keep the OSMD cursor visible inside its container.
     // Throttled to once per 100ms — for rapid passages (e.g. Turkish March 16th-note
