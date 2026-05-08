@@ -103,6 +103,46 @@ export interface RenderLoopDepsBuilders {
   buildLateDeps: () => RenderLateDeps;
 }
 
+/** Frame-drop watchdog config. When provided, the loop tracks a
+ *  ring of recent frame `dt` samples and fires `onDrop` whenever a
+ *  single frame exceeds `thresholdMs`. The callback receives
+ *  computed statistics + a free-form context object the shell
+ *  composes (particles count, audio state, etc.) so a server-side
+ *  log captures everything needed to root-cause stutter without a
+ *  re-deploy. Production: leave undefined (zero overhead). */
+export interface FrameDropWatchDeps {
+  /** Single-frame dt above which the watchdog fires. 33 ms ≈ 30 fps. */
+  thresholdMs: number;
+  /** Cool-down between fires (ms wall-clock) — without this a long
+   *  garbage-collection pause floods the log with one entry per
+   *  frame for the rest of the spike. */
+  cooldownMs: number;
+  /** Ring length for the rolling stats. 60 frames ≈ 1 second @60fps. */
+  ringLen: number;
+  /** Caller-composed context dump (particles count, audio state,
+   *  practice mode, etc.). Called only when the watchdog fires so
+   *  the cost only lands on the bad frame. */
+  getContext: () => Record<string, unknown>;
+  /** Fired once per spike. Receives the watchdog's own stats first
+   *  (dt, max60, p95_60), the caller's context second. Production
+   *  binds this to `console.log('[DIAG-FRAME] ...')`. */
+  onDrop: (stats: FrameDropStats, context: Record<string, unknown>) => void;
+}
+
+export interface FrameDropStats {
+  dt: number;
+  /** Wall-clock ms when the spike happened (rAF timestamp). */
+  timeMs: number;
+  /** Max dt across the recent ring. */
+  maxRecent: number;
+  /** Mean dt across the recent ring. */
+  meanRecent: number;
+  /** 95th percentile dt across the recent ring. */
+  p95Recent: number;
+  /** Number of ring samples used. */
+  samples: number;
+}
+
 export interface RenderLoopDeps {
   state: { running: boolean };
   modules: RenderLoopModules;
@@ -110,6 +150,8 @@ export interface RenderLoopDeps {
   /** Override for the rAF function — defaults to `requestAnimationFrame`.
    *  Tests inject a controllable shim. */
   raf?: (cb: (timeMs: number) => void) => unknown;
+  /** Optional dev/HTTPS-only watchdog — see FrameDropWatchDeps. */
+  frameDropWatch?: FrameDropWatchDeps;
 }
 
 export interface RenderLoop {
@@ -120,6 +162,54 @@ export interface RenderLoop {
 export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   const raf = deps.raf ?? ((cb) => requestAnimationFrame(cb));
 
+  // Frame-drop watchdog state — only allocated when configured. The
+  // ring is a plain Float64Array sized to ringLen, so the per-tick
+  // write is one indexed store + one mod increment. Zero-allocation
+  // hot path.
+  const watch = deps.frameDropWatch;
+  const ring = watch ? new Float64Array(watch.ringLen) : null;
+  let ringHead = 0;
+  let ringSize = 0;
+  let lastDropMs = -Infinity;
+
+  function recordFrameDt(timeMs: number, dt: number): void {
+    if (!watch || !ring) return;
+    ring[ringHead] = dt;
+    ringHead = (ringHead + 1) % ring.length;
+    if (ringSize < ring.length) ringSize++;
+
+    if (dt < watch.thresholdMs) return;
+    if (timeMs - lastDropMs < watch.cooldownMs) return;
+    lastDropMs = timeMs;
+
+    // Compute mean / max / p95 from the populated portion of the ring.
+    let max = 0;
+    let sum = 0;
+    const samples = ringSize;
+    const tmp = new Float64Array(samples);
+    for (let i = 0; i < samples; i++) {
+      const v = ring[i];
+      if (v > max) max = v;
+      sum += v;
+      tmp[i] = v;
+    }
+    tmp.sort();
+    const p95 = tmp[Math.min(samples - 1, Math.floor(samples * 0.95))];
+    const stats: FrameDropStats = {
+      dt,
+      timeMs,
+      maxRecent: max,
+      meanRecent: samples > 0 ? sum / samples : 0,
+      p95Recent: p95,
+      samples,
+    };
+    try {
+      watch.onDrop(stats, watch.getContext());
+    } catch {
+      /* watchdog must never crash the loop */
+    }
+  }
+
   function tick(timeMs: number): void {
     if (!deps.state.running) return;
     raf(tick);
@@ -129,6 +219,11 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       timeMs,
       deps.builders.buildFrameDeps(timeMs)
     );
+
+    // Record dt + fire watchdog if this is a spike. Done immediately
+    // after the prelude so the rest of the frame's work doesn't
+    // skew the next sample's dt.
+    recordFrameDt(timeMs, dt);
 
     // 2. Mic pipeline — YIN throttle + AGC + practice tick + spawn.
     const { isGoodNote } = deps.modules.MicPipeline.tickMicPipeline(

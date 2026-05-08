@@ -222,6 +222,26 @@ export function createStartPracticeSection(
     const song = deps.getCurrentSong();
     if (!song) return;
 
+    // [DIAG-FULLSONG] Entry snapshot — captures the state right before
+    // the fullSongMode branch is read so we can correlate stale flags
+    // with the wrong-timeline bug.
+    if (deps.remoteLogEnabled) {
+       
+      console.log(
+        '[DIAG-FULLSONG] startPracticeSection enter ' +
+          JSON.stringify({
+            songId: (song as { id?: string }).id,
+            sectionIdx,
+            mode: deps.practice.mode,
+            fullSongMode: deps.practice.fullSongMode,
+            enabled: deps.practice.enabled,
+            loaded: !!song._loaded,
+            xmlTextCached: !!(song as { _xmlText?: string })._xmlText,
+            sectionsLen: song.sections?.length || 0,
+          })
+      );
+    }
+
     if (!song._loaded) {
       try {
         await deps.loadCurrentScore();

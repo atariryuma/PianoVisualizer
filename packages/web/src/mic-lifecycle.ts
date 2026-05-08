@@ -124,7 +124,7 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
           deps.refreshIntroHint?.();
           if (deps.micMeterEl) deps.micMeterEl.classList.add('visible');
         }
-         
+
         console.log('[AUDIO] Mic acquired');
       } finally {
         acquiring = null;
@@ -162,7 +162,7 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
     // cleanly.
     deps.state.adaptiveSilenceRms = null;
     deps.state.recentPitches = [];
-     
+
     console.log('[AUDIO] Mic suspended (MIDI active)');
   }
 
@@ -172,7 +172,7 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
       await acquire();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-       
+
       console.warn('[AUDIO] Failed to resume mic:', msg || e);
     }
   }

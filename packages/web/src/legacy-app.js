@@ -970,6 +970,20 @@
         await audioCtx.resume();
         console.log("AudioContext resumed @" + audioCtx.sampleRate + "Hz");
       }
+      // [DIAG-AUDIOCTX] Watch for unexpected state transitions
+      // (suspended / interrupted) — these correlate with audio
+      // glitches and the playback-restart symptoms.
+      if (REMOTE_LOG_ENABLED) {
+        try {
+          audioCtx.onstatechange = () => {
+            console.log(
+              '[DIAG-AUDIOCTX] state=' + audioCtx.state +
+              ' sampleRate=' + audioCtx.sampleRate +
+              ' currentTime=' + (audioCtx.currentTime || 0).toFixed(3)
+            );
+          };
+        } catch (_e) { /* onstatechange may be readonly on some polyfills */ }
+      }
 
       // Audio graph (sourceless): gain → analyser, gain → onsetAnalyser.
       // The mic source is wired in separately so we can drop / re-acquire it
@@ -2066,6 +2080,43 @@
           updateDebugOverlay,
         }),
       },
+      // [DIAG-FRAME] Frame-drop watchdog. Only allocates the ring +
+      // fires logs when REMOTE_LOG_ENABLED (dev / HTTPS) — production
+      // pays nothing. Threshold 33 ms ≈ 30 fps; cooldown 1 s prevents
+      // a long GC pause from flooding the log. Context dump captures
+      // particles / ripples count, audioCtx state, Tone Transport
+      // position, practice mode + section, mic-suspended flag —
+      // everything we need to root-cause stutter without a re-deploy.
+      frameDropWatch: REMOTE_LOG_ENABLED
+        ? {
+            thresholdMs: 33,
+            cooldownMs: 1000,
+            ringLen: 60,
+            getContext: () => ({
+              particles: particles.length,
+              ripples: ripples.length,
+              sectionNotes: practice.sectionNotes ? practice.sectionNotes.length : 0,
+              currentNoteIdx: practice.currentNoteIdx,
+              practiceMode: practice.mode,
+              fullSongMode: practice.fullSongMode,
+              practiceEnabled: practice.enabled,
+              audioCtxState: audioCtx ? audioCtx.state : null,
+              audioCtxSampleRate: audioCtx ? audioCtx.sampleRate : null,
+              transportState:
+                typeof Tone !== 'undefined' && Tone.Transport ? Tone.Transport.state : null,
+              transportPosition:
+                typeof Tone !== 'undefined' && Tone.Transport ? Tone.Transport.position : null,
+              micSuspended: state.micSuspended,
+              flow: state.flow,
+              combo: state.combo,
+              sessionState: state.sessionState,
+            }),
+            onDrop: (stats, ctx) => {
+              // eslint-disable-next-line no-console
+              console.log('[DIAG-FRAME] drop ' + JSON.stringify({ ...stats, ...ctx }));
+            },
+          }
+        : undefined,
     });
     /** @param {number} timeMs */
     function loop(timeMs) { _renderLoop.tick(timeMs); }
@@ -2788,6 +2839,20 @@
         freqArray = graph.freqArray;
         onsetDataArray = graph.onsetDataArray;
         micSourceNode = graph.micSourceNode;
+        // [DIAG-AUDIOCTX] Re-bind the state listener onto the new
+        // context — the old one's onstatechange went away with it.
+        if (REMOTE_LOG_ENABLED) {
+          try {
+            audioCtx.onstatechange = () => {
+              console.log(
+                '[DIAG-AUDIOCTX] state=' + audioCtx.state +
+                ' sampleRate=' + audioCtx.sampleRate +
+                ' currentTime=' + (audioCtx.currentTime || 0).toFixed(3) +
+                ' (post-recovery)'
+              );
+            };
+          } catch (_e) { /* readonly polyfill */ }
+        }
       },
       isMicSuspended: () => !!state.micSuspended,
       config: {
@@ -3819,6 +3884,7 @@
       setupHiDPICanvas,
       clamp01,
       t,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
     });
     renderResultCard = _resultCard.renderResultCard;
     completePracticeSection = _resultCard.completePracticeSection;
@@ -3987,6 +4053,7 @@
         renderSongPanel: () => renderSongPanel(),
         initWebMIDI: () => { void initWebMIDI(); },
         loadCurrentScore: () => loadCurrentScore(),
+        remoteLogEnabled: REMOTE_LOG_ENABLED,
       })
     );
     /** @param {string} songId */

@@ -150,6 +150,11 @@ export interface ResultCardDeps {
   clamp01(v: number): number;
   /** i18n translator. */
   t(key: string, vars?: Record<string, string | number>): string;
+  /** When true, completePracticeSection writes a [DIAG-FULLSONG]
+   *  line on the listen+fullSong path so we can spot whether the
+   *  fullSongMode flag is being reset (or persisted into the next
+   *  selectSong). Production: false. */
+  remoteLogEnabled?: boolean;
 }
 
 export interface ResultCard {
@@ -251,6 +256,24 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // stamps `fullSong: true` so renderResultCard swaps to the
     // "曲を聴き終わりました" copy.
     if (deps.practice.mode === 'listen') {
+      // [DIAG-FULLSONG] Capture the moment the listen completion
+      // fires, including whether fullSongMode is still set after
+      // result-card display. The legacy code does NOT clear
+      // fullSongMode here — the log will show that flag persisting
+      // into the next selectSong.
+      if (deps.remoteLogEnabled) {
+         
+        console.log(
+          '[DIAG-FULLSONG] completePracticeSection listen ' +
+            JSON.stringify({
+              secId: sec.id,
+              fullSong: isFullSong,
+              practiceMode: deps.practice.mode,
+              fullSongMode: deps.practice.fullSongMode,
+              practiceEnabled: deps.practice.enabled,
+            })
+        );
+      }
       deps.practice._lastResult = {
         mode: 'listen',
         secId: sec.id,

@@ -66,6 +66,12 @@ export interface SelectSongDeps {
   renderSongPanel: () => void;
   initWebMIDI: () => void;
   loadCurrentScore: () => Promise<unknown>;
+
+  /** When true, writes a [DIAG-FULLSONG] line on every selectSong
+   *  call so we can correlate stale practice.fullSongMode flags with
+   *  song-switch failures. Production: false (zero cost). Dev /
+   *  HTTPS server: true. */
+  remoteLogEnabled?: boolean;
 }
 
 export interface SelectSong {
@@ -77,6 +83,32 @@ export function createSelectSong(deps: SelectSongDeps): SelectSong {
     selectSong(songId) {
       const song = deps.songs[songId];
       if (!song) return;
+
+      // [DIAG-FULLSONG] Snapshot at the song-switch boundary. This is
+      // the spot where stale practice.fullSongMode (left over from a
+      // prior listen+fullSong run) would carry into the next session.
+      // The mode reset below ('guided' on every selectSong) does NOT
+      // reset fullSongMode — the log will show whether that's
+      // happening in real reproductions.
+      if (deps.remoteLogEnabled) {
+        const prev = deps.getCurrentSong() as { id?: string } | null;
+         
+        console.log(
+          '[DIAG-FULLSONG] selectSong enter ' +
+            JSON.stringify({
+              prevId: prev ? prev.id : null,
+              nextId: songId,
+              switching: prev !== song,
+              practiceMode: (deps.practice as { mode?: string }).mode,
+              fullSongMode: (deps.practice as { fullSongMode?: boolean }).fullSongMode,
+              practiceEnabled: (deps.practice as { enabled?: boolean }).enabled,
+              sectionIdx: (deps.practice as { sectionIdx?: number }).sectionIdx,
+              running: deps.state.running,
+              hasOsmd: !!deps.getOsmd(),
+              loaded: !!(song as { _loaded?: boolean })._loaded,
+            })
+        );
+      }
 
       // Switching songs: drop the OSMD instance + manually clear the
       // container. osmd.clear() didn't remove the previous song's SVG
