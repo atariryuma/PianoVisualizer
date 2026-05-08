@@ -1298,64 +1298,12 @@
     // restores focus and removes the guard. Called from every open/close
     // pair so a keyboard / assistive-tech user can dismiss without a mouse
     // and never tab into the (visually obscured) page beneath.
-    const modalFocus = (() => {
-      const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-      /** @type {Array<{el:HTMLElement, prev:Element|null, onKey:(e:KeyboardEvent)=>void}>} */
-      const stack = [];
-      /** @param {HTMLElement} modalEl */
-      function trapHandler(modalEl) {
-        /** @param {KeyboardEvent} e */
-        return (e) => {
-          if (e.key !== 'Tab') return;
-          const items = modalEl.querySelectorAll(FOCUSABLE);
-          if (items.length === 0) return;
-          const first = /** @type {HTMLElement} */ (items[0]);
-          const last = /** @type {HTMLElement} */ (items[items.length - 1]);
-          if (e.shiftKey && document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        };
-      }
-      return {
-        /** @param {HTMLElement|null} modalEl */
-        open(modalEl) {
-          if (!modalEl) return;
-          const prev = document.activeElement;
-          const onKey = trapHandler(modalEl);
-          modalEl.addEventListener('keydown', /** @type {EventListener} */ (onKey));
-          stack.push({ el: modalEl, prev, onKey });
-          // Defer focus until the modal is laid out (display flips happen
-          // synchronously but querySelector inside a hidden tree is fine).
-          requestAnimationFrame(() => {
-            const first = /** @type {HTMLElement|null} */ (modalEl.querySelector(FOCUSABLE));
-            if (first) first.focus();
-          });
-        },
-        /** @param {HTMLElement|null} modalEl */
-        close(modalEl) {
-          // Pop the topmost matching entry — modals don't always close in
-          // strict LIFO (e.g. a section-edit modal can spawn from add-song)
-          // but the prev focus we want to restore is always the one we
-          // pushed for this specific modalEl.
-          for (let i = stack.length - 1; i >= 0; i--) {
-            if (stack[i].el === modalEl) {
-              const entry = stack[i];
-              stack.splice(i, 1);
-              entry.el.removeEventListener('keydown', entry.onKey);
-              const prev = /** @type {HTMLElement|null} */ (entry.prev);
-              if (prev && typeof prev.focus === 'function') {
-                try { prev.focus(); } catch (_) {}
-              }
-              return;
-            }
-          }
-        },
-      };
-    })();
+    // Phase 0d batch 47: 57-line tab-trap + restore-focus helper moved
+    // to packages/web/src/modal-focus.ts.
+    const modalFocus = ModalFocus.createModalFocus({
+      document,
+      requestAnimationFrame: (cb) => requestAnimationFrame(cb),
+    });
 
     // Settings panel — Phase 0d batch 3: extracted to
     // packages/web/src/settings-panel.ts. The shell wires the DOM bag +

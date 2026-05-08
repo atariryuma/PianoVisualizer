@@ -117,7 +117,7 @@ export function createQuestStateUpdate(deps: QuestUpdateDeps): QuestStateUpdate 
       if (result.completedThisTick) {
         const quest = deps.quests.find((q) => q.id === result.completedThisTick);
         if (!quest) return; // unknown id — defensive
-         
+
         console.log('Quest Completed: ' + deps.t(quest.nameKey));
         deps.dom.toastTitle.textContent = '✨ ' + deps.t(quest.nameKey) + ' ✨';
         deps.dom.toastSub.textContent =
