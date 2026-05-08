@@ -6,9 +6,10 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08** (active session). Layer C autonomous-bench
-landed. `legacy-app.js` is **6,794 lines**. **1,238 tests** (786 core + 452
-web). `pnpm verify` clean.
+Last refreshed: **2026-05-08 (cycle 2)**. 8 new typed modules + autonomous bench
+harness landed in this session. `legacy-app.js` is **6,675 lines** (was 6,861 at
+session start, **-186 lines net**). **1,358 tests** (786 core + 572 web; **+214
+tests this session**). `pnpm verify` clean.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -24,11 +25,21 @@ every commit.**
 **Recent batches (this session)**:
 
 - batch 17 — autonomous bench harness (vite plugin + puppeteer + dev-mode
-  autorun/webhook). +7 dev-mode tests, no shell change.
+  autorun/webhook). +7 dev-mode tests.
 - batch 18 — `mic-pipeline.ts`: YIN throttle + AGC + game-state + mic-driven
-  note spawn (-41 lines from shell, +28 tests).
+  note spawn (-41 lines, +28 tests).
 - batch 19 — `midi-handlers.ts`: onMidiNoteOn/Off/CC + spawnMidiNoteVisuals (-26
-  lines from shell, +29 tests).
+  lines, +29 tests).
+- batch 20 — `midi-indicator.ts`: badge + topbar pill + isAppleMobile + virtual
+  port filter (-54 lines, +33 tests).
+- batch 21 — `ble-midi-parser.ts`: BLE-MIDI 1.0 packet decoding (-32 lines, +19
+  tests). Pure parser, edge-case-heavy spec.
+- batch 22 — `midi-dispatch.ts`: byte-router with closure-captured BLE
+  redelivery dedupe (+22 tests). Dedupe state extracted out of shell scope.
+- batch 23 — `prefs-storage.ts`: localStorage wrapper + sanitizePrefs accept-
+  list with quota-exceeded debouncing (-24 lines, +21 tests).
+- batch 24 — `layout-detect.ts`: pure viewport classifier (-9 lines, +25 tests).
+  Pinned every named device the comments mention.
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -116,11 +127,17 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 69  | bench harness (autorun+wh)    | 7     | `packages/web/vite-bench-plugin.ts` + bench.mjs |
 | 70  | `web/mic-pipeline.ts`         | 28    | `packages/web/src/mic-pipeline.ts`              |
 | 71  | `web/midi-handlers.ts`        | 29    | `packages/web/src/midi-handlers.ts`             |
+| 72  | `web/midi-indicator.ts`       | 33    | `packages/web/src/midi-indicator.ts`            |
+| 73  | `web/ble-midi-parser.ts`      | 19    | `packages/web/src/ble-midi-parser.ts`           |
+| 74  | `web/midi-dispatch.ts`        | 22    | `packages/web/src/midi-dispatch.ts`             |
+| 75  | `web/prefs-storage.ts`        | 21    | `packages/web/src/prefs-storage.ts`             |
+| 76  | `web/layout-detect.ts`        | 25    | `packages/web/src/layout-detect.ts`             |
 
-**Status: 1,238/1,238 tests green (786 core + 452 web), 0 lint errors, 0 type
+**Status: 1,358/1,358 tests green (786 core + 572 web), 0 lint errors, 0 type
 errors, 0 residual TS errors. `pnpm verify` clean.** Bench: 11/11 passed, frame
-avg 7.0ms. `legacy-app.js`: 6,794 lines (was 9,000+ at Phase 0a; 6,861 at
-session start last cycle).
+avg 5.3-7.1ms across the session. `legacy-app.js`: 6,675 lines (was 9,000+ at
+Phase 0a; 6,861 at session start this cycle, -186 net across 7 shell-shrinking
+batches).
 
 ---
 
