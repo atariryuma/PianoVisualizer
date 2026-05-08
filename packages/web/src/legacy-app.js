@@ -4476,8 +4476,10 @@
     //   Same path also helps desktop Chrome users whose BLE-MIDI device isn't
     //   surfaced via Web MIDI.
     // ========================================
-    const BLE_MIDI_SERVICE = '03b80e5a-ede8-4b33-a751-6ce34ec4c700';
-    const BLE_MIDI_CHAR    = '7772e5db-3868-4112-a1a9-f2669d106bf3';
+    // BLE-MIDI service / characteristic UUIDs are re-exported from
+    // packages/web/src/ble-midi-connect.ts (single source of truth).
+    const BLE_MIDI_SERVICE = BleMidiConnect.BLE_MIDI_SERVICE;
+    const BLE_MIDI_CHAR    = BleMidiConnect.BLE_MIDI_CHAR;
 
     /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
     const bleMidi = /** @type {any} */ ({
@@ -4499,81 +4501,32 @@
       BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage);
     }
 
-    async function connectBleMidi() {
-      if (!navigator.bluetooth) {
-        alert(t('alertWebBluetoothUnsupported'));
-        return;
-      }
-      if (bleMidi.connected) return;
-      let device = null;
-      try {
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [BLE_MIDI_SERVICE] }],
-          optionalServices: [BLE_MIDI_SERVICE]
-        });
-        if (!device.gatt) throw new Error('BLE device exposes no GATT server');
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
-        const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
-        await ch.startNotifications();
-        ch.addEventListener('characteristicvaluechanged', (e) => {
-          // The double-cast through `unknown` is needed because TS doesn't
-          // think EventTarget overlaps with the BluetoothCharacteristic
-          // shape — they're nominally distinct interfaces.
-          // DataView.buffer is `ArrayBufferLike` (covers SharedArrayBuffer);
-          // BLE packets always come from a real ArrayBuffer (the GATT stack
-          // doesn't ship shared memory). Safe to narrow.
-          const target = /** @type {{value:DataView}} */ (/** @type {unknown} */ (
-            /** @type {Event} */ (e).target
-          ));
-          parseBleMidiPacket(/** @type {ArrayBuffer} */ (target.value.buffer));
-        });
-
-        bleMidi.device = device;
-        bleMidi.characteristic = ch;
-        bleMidi.connected = true;
-
-        midiInput.enabled = true;
-        midiInput.port = { name: device.name || 'BLE-MIDI' };
-        midiInput.lastEventTime = performance.now();
-        if (audioCtx && !state.micSuspended) suspendMic();
-        setInputIndicator();
-        if (typeof refreshIntroHint === 'function') refreshIntroHint();
-        DOM.micMeter?.classList.remove('visible');
-        showHitChip('good', t('midiConnectedFmt', { v: device.name || 'BLE-MIDI' }));
-        console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
-
-        // Track the disconnect handler so reconnect attempts don't stack
-        // multiple listeners on the same device instance.
-        const onGattDisconnect = () => {
-          bleMidi.connected = false;
-          bleMidi.characteristic = null;
-          midiInput.enabled = false;
-          midiInput.port = null;
-          setInputIndicator();
-          if (audioCtx && state.micSuspended) resumeMic();
-          if (bleMidi._disconnectHandler && bleMidi.device) {
-            try { bleMidi.device.removeEventListener('gattserverdisconnected', bleMidi._disconnectHandler); }
-            catch (_) {}
-          }
-          bleMidi._disconnectHandler = null;
-          console.log('[BLE-MIDI] disconnected');
-        };
-        bleMidi._disconnectHandler = onGattDisconnect;
-        device.addEventListener('gattserverdisconnected', onGattDisconnect);
-      } catch (e) {
-        // Cleanup on partial-failure path: if gatt.connect() succeeded but
-        // a later step (getPrimaryService, getCharacteristic, startNotifications)
-        // threw, the GATT connection is held open forever otherwise.
-        if (device && device.gatt && device.gatt.connected) {
-          try { device.gatt.disconnect(); } catch (_) {}
-        }
-        console.warn('[BLE-MIDI] connect failed:', e.message);
-        if (e.name !== 'NotFoundError') {
-          alert(t('alertBleConnectFailedFmt', { v: e.message }));
-        }
-      }
-    }
+    // Phase 0d batch 27: Web Bluetooth GATT connect path moved to
+    // packages/web/src/ble-midi-connect.ts. The forwarder keeps the
+    // legacy short name so the settings-panel BLE button + any other
+    // callsite stays unchanged.
+    const _bleConnect = BleMidiConnect.createBleMidiConnect({
+      bleMidi: /** @type {import('./ble-midi-connect').BleMidiState} */ (
+        /** @type {any} */ (bleMidi)
+      ),
+      midiInput: /** @type {import('./midi-ports').MidiPortsInputRef} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      hasAudioCtx: () => !!audioCtx,
+      state: { get micSuspended() { return state.micSuspended; }, set micSuspended(v) { state.micSuspended = v; } },
+      suspendMic,
+      resumeMic,
+      setInputIndicator,
+      refreshIntroHint: () =>
+        typeof refreshIntroHint === 'function' && refreshIntroHint(),
+      showHitChip: (kind, msg) => showHitChip(kind, msg),
+      micMeter: DOM.micMeter,
+      parsePacket: (buf) => parseBleMidiPacket(buf),
+      t,
+      alert: (msg) => alert(msg),
+      navigator,
+    });
+    async function connectBleMidi() { await _bleConnect.connect(); }
 
     // ─── settings-panel wire-up ──────────────────────────────────────
     // Settings-panel modal lifecycle + audio-offset slider + rescan/BLE/
