@@ -262,7 +262,6 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // fullSongMode here — the log will show that flag persisting
       // into the next selectSong.
       if (deps.remoteLogEnabled) {
-         
         console.log(
           '[DIAG-FULLSONG] completePracticeSection listen ' +
             JSON.stringify({
@@ -283,6 +282,16 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         unlockedSecKey: null,
         streakDays: null,
       };
+      // Bug fix (2026-05-08): clear fullSongMode after a fullSong
+      // listen completes so the toggle doesn't carry into the next
+      // selectSong. Without this, the next song's startPracticeSection
+      // saw stale `fullSongMode: true`, called buildFullSongNotes()
+      // which returned empty for some songs, and completePracticeSection
+      // re-fired immediately on a 0-note timeline. Diagnostic log
+      // (server.log [DIAG-FULLSONG]) confirmed this race in the wild.
+      if (isFullSong) {
+        deps.practice.fullSongMode = false;
+      }
       renderResultCard();
       deps.dom.sectionResult.classList.add('visible');
       deps.practice._completing = false;

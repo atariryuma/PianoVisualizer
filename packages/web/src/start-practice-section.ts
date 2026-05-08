@@ -226,7 +226,6 @@ export function createStartPracticeSection(
     // the fullSongMode branch is read so we can correlate stale flags
     // with the wrong-timeline bug.
     if (deps.remoteLogEnabled) {
-       
       console.log(
         '[DIAG-FULLSONG] startPracticeSection enter ' +
           JSON.stringify({
@@ -266,6 +265,32 @@ export function createStartPracticeSection(
     deps.practice.sectionNotes = isFullSong
       ? deps.buildFullSongNotes()
       : deps.buildSectionNotes(sectionIdx);
+
+    // Bug fix (2026-05-08): bail out instead of starting a 0-note
+    // session that would re-fire completePracticeSection on the very
+    // first tick (the practice loop's "all notes consumed" check
+    // would pass immediately). Caller already showed the song panel /
+    // result card, so disabling practice here just keeps the kid on
+    // the song panel — better than the 1-second flash through the
+    // result card we saw in server.log [DIAG-FULLSONG].
+    if (!deps.practice.sectionNotes.length) {
+      deps.practice.enabled = false;
+      if (deps.remoteLogEnabled) {
+         
+        console.log(
+          '[DIAG-FULLSONG] startPracticeSection ABORT — empty sectionNotes ' +
+            JSON.stringify({
+              songId: (song as { id?: string }).id,
+              isFullSong,
+              sectionIdx,
+              loaded: !!song._loaded,
+              songNotesLen: (song as unknown as { notes?: { length?: number } }).notes?.length || 0,
+              sectionsLen: song.sections?.length || 0,
+            })
+        );
+      }
+      return;
+    }
 
     if (deps.remoteLogEnabled && deps.practice.sectionNotes.length) {
       logSectionDiag(deps, sec, sectionIdx);

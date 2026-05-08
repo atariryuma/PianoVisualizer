@@ -25,6 +25,12 @@ export interface SelectSongStateRef {
 export interface SelectSongPracticeRef {
   progress?: unknown;
   mode: string;
+  /** Listen-only "全曲再生" toggle. Reset to false on every
+   *  selectSong so a fullSong run on song A doesn't carry the toggle
+   *  state into song B's startPracticeSection (where it would call
+   *  buildFullSongNotes on song B before its notes are fully built
+   *  and end the run instantly on a 0-note timeline). */
+  fullSongMode?: boolean;
 }
 
 export interface SelectSongDom {
@@ -92,7 +98,7 @@ export function createSelectSong(deps: SelectSongDeps): SelectSong {
       // happening in real reproductions.
       if (deps.remoteLogEnabled) {
         const prev = deps.getCurrentSong() as { id?: string } | null;
-         
+
         console.log(
           '[DIAG-FULLSONG] selectSong enter ' +
             JSON.stringify({
@@ -136,6 +142,12 @@ export function createSelectSong(deps: SelectSongDeps): SelectSong {
       deps.dom.songComposer.textContent = deps.t(song.composerKey);
       deps.practice.progress = deps.practice.progress || deps.loadPracticeProgress();
       deps.practice.mode = 'guided';
+      // Bug fix (2026-05-08): reset the fullSong toggle on every
+      // song switch as a defense in depth against stale state
+      // surviving the result-card fix in result-card.ts. A user who
+      // back-buttons mid-listen never hits completePracticeSection,
+      // so we have to rest fullSongMode here too.
+      deps.practice.fullSongMode = false;
       deps.dom.startScreen.style.display = 'none';
       deps.dom.songPanel.classList.add('visible');
       deps.dom.questDisplay.classList.remove('visible'); // free-play quest dots shouldn't peek through
