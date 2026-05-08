@@ -2843,9 +2843,9 @@
       // Drop the BLE-redelivery dedupe cache too; otherwise a long mic-only
       // session that included a stray MIDI note can theoretically swallow
       // the first MIDI note after a reconnect (same `(midi<<8)|velocity`
-      // happening to fall inside the 30 ms window).
-      _lastMidiNoteOnKey = -1;
-      _lastMidiNoteOnTime = 0;
+      // happening to fall inside the 30 ms window). Cache lives inside
+      // packages/web/src/midi-dispatch.ts since batch 22.
+      _midiDispatch.reset();
       remoteLog('[RESET] Session reset by user');
     }
 
@@ -4038,11 +4038,15 @@
     // verifyMidiAlive both use this so re-binding after a suspend produces
     // exactly the same routing.
     /** @param {MIDIMessageEvent} e */
-    function onMidiMessageHandler(e) {
-      if (e.data && e.data.length >= 2) {
-        dispatchMidiMessage(e.data[0], e.data[1], e.data.length > 2 ? e.data[2] : 0);
-      }
-    }
+    // Phase 0d batch 22: byte → handler dispatch (incl. BLE-redelivery
+    // dedupe) moved to packages/web/src/midi-dispatch.ts. The factory
+    // is created later in the file (after onMidiNoteOn / matchNoteOnset
+    // are in scope) and assigned to `_midiDispatch`. Forward-declared
+    // wrappers re-bind the legacy short names so this handler — which
+    // is wired onto port.onmidimessage at MIDI-attach time, before the
+    // factory is built — can call through.
+    /** @param {{data: ArrayLike<number>|null|undefined}} e */
+    function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
 
     // Verify the previously-attached MIDI port is still alive after the page
     // came back from background. iOS WMB silently kills the onmidimessage
@@ -4215,29 +4219,25 @@
     // same note-on to arrive twice within a few ms. That makes the practice
     // cursor advance twice for one keypress and the score get out of sync.
     // Drop identical note-ons within 30ms — well below human-playable speed.
-    let _lastMidiNoteOnKey = -1;
-    let _lastMidiNoteOnTime = 0;
+    // Phase 0d batch 22: MIDI byte router lives in
+    // packages/web/src/midi-dispatch.ts. The factory closes over the
+    // BLE-redelivery dedupe state; `_midiDispatch.reset()` is called
+    // from session reset to clear the dedupe cache.
+    const _midiDispatch = MidiDispatch.createMidiDispatch({
+      midiInput: /** @type {import('./midi-dispatch').MidiDispatchInputRef} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      practice: /** @type {import('./midi-dispatch').MidiDispatchPracticeRef} */ (
+        /** @type {any} */ (practice)
+      ),
+      pulseMidiBadge,
+      onMidiNoteOn,
+      onMidiNoteOff,
+      onMidiCC,
+      matchNoteOnset,
+    });
     /** @param {number} status @param {number} a @param {number} b */
-    function dispatchMidiMessage(status, a, b) {
-      const cmd = status & 0xF0;
-      const now = performance.now();
-      if (cmd === 0x90 && b > 0) {
-        const key = (a << 8) | b;
-        if (key === _lastMidiNoteOnKey && now - _lastMidiNoteOnTime < 30) return;
-        _lastMidiNoteOnKey = key;
-        _lastMidiNoteOnTime = now;
-      }
-      midiInput.lastEventTime = now;
-      if (cmd === 0x90 && b > 0) {
-        pulseMidiBadge();
-        onMidiNoteOn(a, b);
-        if (practice.enabled) matchNoteOnset(a, true);
-      } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
-        onMidiNoteOff(a);
-      } else if (cmd === 0xB0) {
-        onMidiCC(a, b);
-      }
-    }
+    function dispatchMidiMessage(status, a, b) { _midiDispatch.dispatch(status, a, b); }
 
     // Phase 0d batch 20: MIDI badge + topbar input pill + UA cache
     // + virtual-port filter moved to packages/web/src/midi-indicator.ts.
