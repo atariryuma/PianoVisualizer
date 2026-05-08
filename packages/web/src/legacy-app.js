@@ -4013,52 +4013,39 @@
       }
     });
 
+    // Phase 0d batch 54: 45-line selectSong moved to
+    // packages/web/src/select-song.ts. Mutable currentSong + osmd
+    // flow through getter/setter thunks; forward-declared
+    // showRunningUI / renderSongPanel / initWebMIDI / loadCurrentScore
+    // are also thunks so the factory builds before they're declared.
+    const _selectSong = SelectSong.createSelectSong(
+      /** @type {import('./select-song').SelectSongDeps} */ ({
+        songs: /** @type {any} */ (SONGS),
+        state: /** @type {any} */ (state),
+        practice: /** @type {any} */ (practice),
+        dom: {
+          osmdContainer: DOM.osmdContainer,
+          songTitle: DOM.songTitle,
+          songComposer: DOM.songComposer,
+          startScreen: DOM.startScreen,
+          songPanel: DOM.songPanel,
+          questDisplay: DOM.questDisplay,
+        },
+        getCurrentSong: () => /** @type {any} */ (currentSong),
+        setCurrentSong: (s) => { currentSong = /** @type {any} */ (s); },
+        getOsmd: () => osmd,
+        setOsmd: (o) => { osmd = /** @type {any} */ (o); },
+        clearHighlights: () => _osmdCursor.clearHighlights(),
+        t,
+        loadPracticeProgress: () => loadPracticeProgress(),
+        showRunningUI: () => showRunningUI(),
+        renderSongPanel: () => renderSongPanel(),
+        initWebMIDI: () => { void initWebMIDI(); },
+        loadCurrentScore: () => loadCurrentScore(),
+      })
+    );
     /** @param {string} songId */
-    function selectSong(songId) {
-      const song = SONGS[songId];
-      if (!song) return;
-      // Switching songs: drop the OSMD instance + manually clear the container.
-      // osmd.clear() didn't remove the previous song's SVG in our setup, so the
-      // new render was hidden underneath the stale children.
-      if (currentSong !== song) {
-        currentSong = song;
-        if (osmd) {
-          try { osmd.clear(); } catch (e) {}
-          osmd = null;
-        }
-        // Drop notehead-highlight refs before innerHTML='' detaches them —
-        // otherwise the cursor module's tracker holds dangling elements
-        // that the next highlightCurrentNotes() would still try to touch.
-        _osmdCursor.clearHighlights();
-        DOM.osmdContainer.innerHTML = '';
-      }
-      DOM.songTitle.textContent = t(song.titleKey);
-      DOM.songComposer.textContent = t(song.composerKey);
-      practice.progress = practice.progress || loadPracticeProgress();
-      practice.mode = 'guided';
-      DOM.startScreen.style.display = 'none';
-      DOM.songPanel.classList.add('visible');
-      DOM.questDisplay.classList.remove('visible'); // free-play quest dots shouldn't peek through
-      // Keep the invariant: if audio is already alive, the theme bar should be
-      // restored beneath the song panel so a subsequent "Back" lands the user
-      // on a visualizer with full controls (not a bare canvas).
-      if (state.running) showRunningUI();
-      // Clear any prior load error so the spinner shows on fresh attempts
-      // (e.g. user backed out then re-tapped the same song).
-      song._loadError = undefined;
-      renderSongPanel();
-      initWebMIDI();
-      // Capture `song` in the closures so a rapid second selectSong() can't
-      // pollute the new song's _loadError with the previous song's failure.
-      loadCurrentScore().then(() => {
-        song._loadError = undefined;
-        if (currentSong === song && DOM.songPanel.classList.contains('visible')) renderSongPanel();
-      }).catch((e) => {
-        console.error('preload', e);
-        song._loadError = (e && (e.message || String(e))) || 'Score load failed';
-        if (currentSong === song && DOM.songPanel.classList.contains('visible')) renderSongPanel();
-      });
-    }
+    function selectSong(songId) { _selectSong.selectSong(songId); }
 
     document.querySelectorAll('.practice-song-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
