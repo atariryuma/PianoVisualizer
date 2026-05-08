@@ -4964,98 +4964,72 @@
       DOM.noteDisplay.classList.add('visible');
     }
 
+    // Phase 0d batch 19: MIDI note-on / note-off / CC handlers +
+    // spawnMidiNoteVisuals moved to packages/web/src/midi-handlers.ts.
+    // The shell still owns the deps bag (closure refs) so legacy
+    // callsites of `onMidiNoteOn` / `onMidiNoteOff` / `onMidiCC` keep
+    // their existing function-name surface.
+    /** @returns {import('./midi-handlers').MidiHandlersDeps} */
+    function _midiHandlerDeps() {
+      return /** @type {import('./midi-handlers').MidiHandlersDeps} */ ({
+        state: /** @type {import('./midi-handlers').MidiHandlersState} */ (
+          /** @type {any} */ (state)
+        ),
+        midiState: /** @type {import('./midi-handlers').MidiHandlersMidiState} */ (
+          /** @type {any} */ (midiState)
+        ),
+        practice: /** @type {import('./midi-handlers').MidiHandlersPracticeRef} */ (
+          /** @type {any} */ (practice)
+        ),
+        midiToScreenX,
+        noteThemeColor,
+        synColorFor,
+        spawnBurst,
+        spawnStream,
+        ripples: /** @type {import('./midi-handlers').RipplesArray} */ (
+          /** @type {any} */ (ripples)
+        ),
+        Ripple: /** @type {import('./midi-handlers').RippleCtor} */ (
+          /** @type {any} */ (Ripple)
+        ),
+        hideIntroHint,
+        showNoteDisplay,
+        effectGlowPulse,
+        finalizeNoteHold,
+        applyOnsetToHistory: PianoCore.applyOnsetToHistory,
+        applyOnsetPitch: PianoCore.applyOnsetPitch,
+        applyOnsetToWindow: PianoCore.applyOnsetToWindow,
+        triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
+        qhOptsMidi: QH_OPTS_MIDI,
+        psOpts: PS_OPTS,
+        cwOpts: CW_OPTS,
+        wufOpts: WUF_OPTS,
+        config: {
+          NOTE_NAMES: CONFIG.NOTE_NAMES,
+          COMBO_WINDOW_MS: CONFIG.COMBO_WINDOW_MS,
+        },
+        getHeight: () => H,
+      });
+    }
+
     /** @param {number} midiNum @param {number} velocity @param {string=} synColor */
     function spawnMidiNoteVisuals(midiNum, velocity, synColor) {
-      hideIntroHint();
-      const v = Math.max(0.15, velocity / 127);
-      const color = synColor || noteThemeColor(midiNum);
-
-      const isLow = midiNum < 60;
-      const noteX = midiToScreenX(midiNum);
-      const baseY = isLow ? H * 0.65 : H * 0.35;
-      const noteY = baseY + (Math.random() - 0.5) * H * 0.08;
-
-      const burstCount = Math.floor(8 + v * 32 + state.flow * 0.15);
-      spawnBurst(noteX, noteY, burstCount, v * (1.1 + state.flow * 0.012), color);
-      ripples.push(new Ripple(noteX, noteY, color, 100 + v * 280 + state.flow * 1.2));
-      spawnStream(noteX, isLow ? H * 0.78 : H * 0.22, v, color);
-
-      // Drive flow/combo from MIDI directly so silent (headphone) practice still scores.
-      state.flow = Math.min(100, state.flow + 1.0 + v * 1.8);
-      // Reset combo on idle gap, mirroring the mic path at line ~2224. Without
-      // this, a kid who plays one note then walks away for 5 minutes returns
-      // to find the combo still climbing on the next press.
-      const now = performance.now();
-      if (state.lastGoodNoteTimeMs > 0 && (now - state.lastGoodNoteTimeMs) >= CONFIG.COMBO_WINDOW_MS) {
-        state.combo = 1;
-      } else {
-        state.combo += 1;
-      }
-      if (state.combo > state.bestCombo) state.bestCombo = state.combo;
-      state.lastGoodNoteTimeMs = now;
-      state.lastNoteTimeMs = now;
-
-      const noteName = CONFIG.NOTE_NAMES[midiNum % 12];
-      showNoteDisplay(noteName, noteName + (Math.floor(midiNum / 12) - 1), synColor, now);
-      if (state.flow < 10) PianoCore.triggerWakeUpFlash(state, WUF_OPTS);
+      MidiHandlers.spawnMidiNoteVisuals(midiNum, velocity, synColor, _midiHandlerDeps());
     }
 
     /** @param {number} midiNum @param {number} velocity */
     function onMidiNoteOn(midiNum, velocity) {
-      if (!state.running) return;
-      const now = performance.now();
-      const synColor = synColorFor(midiNum) ?? undefined;
-      midiState.activeNotes.set(midiNum, { velocity, onTimeMs: now, synColor });
-      midiState.sustainedNotes.delete(midiNum);
-
-      if (!practice.enabled) {
-        if (state.micSuspended) {
-          state.sessionState = 'performing';
-          state.sessionConfidence = Math.min(1, state.sessionConfidence + 0.15);
-        }
-        spawnMidiNoteVisuals(midiNum, velocity, synColor);
-
-        // Feed MIDI into quality histories so radar/quest reflect the real
-        // performance — mic may be silent (headphones) or noisy. CV is
-        // scale-invariant, so velocity/127 in [0,1] is comparable to mic RMS.
-        PianoCore.applyOnsetToHistory(state, now, velocity / 127, QH_OPTS_MIDI);
-
-        PianoCore.applyOnsetPitch(state, midiNum, PS_OPTS);
-        state.lastSilenceStartMs = -1;
-      }
-
-      const cw = PianoCore.applyOnsetToWindow(midiState, midiNum, now, CW_OPTS);
-      // Free-play also runs the glow effect; practice just shows the name quietly.
-      if (cw.emitted && !practice.enabled) effectGlowPulse();
+      MidiHandlers.onMidiNoteOn(midiNum, velocity, _midiHandlerDeps());
     }
 
     /** @param {number} midiNum */
     function onMidiNoteOff(midiNum) {
-      if (midiState.sustainOn) {
-        midiState.sustainedNotes.add(midiNum);
-      } else {
-        midiState.activeNotes.delete(midiNum);
-      }
-      // Duration scoring is anchored to physical key release (independent of
-      // the sustain pedal), so the kid can't mask short presses with sustain.
-      if (practice.enabled) finalizeNoteHold(midiNum);
+      MidiHandlers.onMidiNoteOff(midiNum, _midiHandlerDeps());
     }
 
     /** @param {number} cc @param {number} value */
     function onMidiCC(cc, value) {
-      if (cc !== 64) return;
-      const wasOn = midiState.sustainOn;
-      midiState.sustainOn = value >= 64;
-      if (wasOn && !midiState.sustainOn) {
-        // Pedal released: drop sustained keys with a soft fade ripple.
-        midiState.sustainedNotes.forEach(midiNum => {
-          const x = midiToScreenX(midiNum);
-          const y = midiNum < 60 ? H * 0.7 : H * 0.3;
-          ripples.push(new Ripple(x, y, noteThemeColor(midiNum), 60));
-          midiState.activeNotes.delete(midiNum);
-        });
-        midiState.sustainedNotes.clear();
-      }
+      MidiHandlers.onMidiCC(cc, value, _midiHandlerDeps());
     }
 
     // Virtual keyboard tables + drawer — Phase 0b.3: delegated to @piano/core.

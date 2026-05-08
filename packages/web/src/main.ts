@@ -47,6 +47,7 @@ import * as RenderLate from './render-late';
 import * as PracticeLane from './practice-lane';
 import * as MidiRender from './midi-render';
 import * as MicPipeline from './mic-pipeline';
+import * as MidiHandlers from './midi-handlers';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -81,6 +82,7 @@ declare global {
     PracticeLane: typeof PracticeLane;
     MidiRender: typeof MidiRender;
     MicPipeline: typeof MicPipeline;
+    MidiHandlers: typeof MidiHandlers;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -173,6 +175,8 @@ declare global {
   var MidiRender: typeof import('./midi-render');
 
   var MicPipeline: typeof import('./mic-pipeline');
+
+  var MidiHandlers: typeof import('./midi-handlers');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -205,6 +209,7 @@ declare global {
 (globalThis as unknown as Window).PracticeLane = PracticeLane;
 (globalThis as unknown as Window).MidiRender = MidiRender;
 (globalThis as unknown as Window).MicPipeline = MicPipeline;
+(globalThis as unknown as Window).MidiHandlers = MidiHandlers;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`
