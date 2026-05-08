@@ -57,6 +57,7 @@ import * as MidiPorts from './midi-ports';
 import * as MidiRescan from './midi-rescan';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as ViewportLayout from './viewport-layout';
+import * as OsmdInit from './osmd-init';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -101,6 +102,7 @@ declare global {
     MidiRescan: typeof MidiRescan;
     BleMidiConnect: typeof BleMidiConnect;
     ViewportLayout: typeof ViewportLayout;
+    OsmdInit: typeof OsmdInit;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -213,6 +215,8 @@ declare global {
   var BleMidiConnect: typeof import('./ble-midi-connect');
 
   var ViewportLayout: typeof import('./viewport-layout');
+
+  var OsmdInit: typeof import('./osmd-init');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -255,6 +259,7 @@ declare global {
 (globalThis as unknown as Window).MidiRescan = MidiRescan;
 (globalThis as unknown as Window).BleMidiConnect = BleMidiConnect;
 (globalThis as unknown as Window).ViewportLayout = ViewportLayout;
+(globalThis as unknown as Window).OsmdInit = OsmdInit;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

@@ -3231,107 +3231,21 @@
     /** @type {Promise<any> | null} */
     let _osmdInitPromise = null;
 
+    // Phase 0d batch 29: OSMD ctor + load + render + repetition
+    // activation + cursor show/reset moved to packages/web/src/osmd-init.ts.
+    // The shell still owns the `osmd` ref because many other callsites
+    // (extractNotesFromOsmd, osmdScrollToCursor, setOsmdCursorToNote,
+    // clearNoteHighlights, highlightCurrentNotes, drawPracticeLane)
+    // read it directly.
+    const _osmdInit = OsmdInit.createOsmdInit({
+      opensheetmusicdisplay:
+        typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
+      getCurrentSong: () => /** @type {any} */ (currentSong),
+    });
     async function initOsmd() {
-      if (osmd) return osmd;
-      if (_osmdInitPromise) return _osmdInitPromise;
-      if (typeof opensheetmusicdisplay === 'undefined') {
-        throw new Error('OSMD library not loaded');
-      }
-      _osmdInitPromise = (async () => {
-        const inst = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmdContainer', {
-          drawTitle: false,
-          drawSubtitle: false,
-          drawComposer: false,
-          drawCredits: false,
-          drawPartNames: false,
-          // OSMD throws "Can't call GetWidth on an unformatted note" for some
-          // print-object="no" notes in dense scores (still reproduces in 1.9.9).
-          // Skipping hidden notes at the renderer level avoids the layout-cache miss.
-          drawHiddenNotes: false,
-          // autoResize:true wires a window-resize handler that re-runs
-          // render() OUTSIDE our retry try/catch. La Campanella throws
-          // UnformattedNote inside calculatePedals on every resize → Uncaught
-          // pollution + occasional broken layout. Disable; our #osmdContainer
-          // has fixed positioning so CSS handles viewport changes for kid use.
-          autoResize: false,
-          backend: 'svg',
-          // Thin playhead (type 1, ThinLeft). Type 0's wide block anchors to
-          // OSMD's time-slot edge, which slides around per-note depending on
-          // accidentals / voice-entry rules — kids couldn't tell which
-          // notehead was sounding. The active notehead is colored separately
-          // by highlightCurrentNotes().
-          cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: false }]
-        });
-        // Disable pedal rendering — OSMD's calculatePedals path used to throw
-        // UnformattedNote on Liszt / Chopin scores that mark every chord with
-        // sustain. We don't visually need pedals for the practice flow.
-        try { inst.EngravingRules.RenderPedals = false; }
-        catch (e) { console.warn('[OSMD] could not disable pedal render: ' + e.message); }
-        // OSMD 1.9.6+ made cursor.next() follow repetitions (e.g. play through
-        // |: ... :| twice via the iterator). Our own fetchPlaybackOrder() +
-        // expandNotesByPlaybackOrder() pipeline already unfolds repeats by
-        // re-parsing the raw XML, so we ASK OSMD to keep the legacy 1.8.x
-        // behavior (one linear walk through the score). Without this, the
-        // iterator would visit the same measure twice and notes' inBarQuarters
-        // values would alias across passes, breaking cursor positioning.
-        try { inst.EngravingRules.CursorIgnoreRepetitions = true; }
-        catch (_) { /* older OSMD: option doesn't exist, behavior is the same */ }
-        // OSMD's load() accepts both .mxl URLs (zipped) and plain MusicXML URLs.
-        // User-added songs may carry either; fall back to whichever is present.
-        await inst.load(currentSong.mxlUrl || currentSong.xmlUrl);
-
-        // Activate all Repetition objects so the iterator actually performs back-jumps.
-        // OSMD attaches each Repetition to the measures' FirstRepetitionInstructions /
-        // LastRepetitionInstructions, not necessarily to Sheet.Repetitions. Walk every
-        // measure and collect unique parentRepetition references.
-        const repSet = new Set();
-        const measures = inst.Sheet?.SourceMeasures || [];
-        for (const m of measures) {
-          for (const list of [m.FirstRepetitionInstructions, m.LastRepetitionInstructions]) {
-            if (!list) continue;
-            for (const ri of list) {
-              if (ri && ri.parentRepetition) repSet.add(ri.parentRepetition);
-            }
-          }
-        }
-        for (const r of repSet) {
-          if (typeof r.UserNumberOfRepetitions === 'number' && r.UserNumberOfRepetitions < 2) {
-            r.UserNumberOfRepetitions = Math.max(2, r.NumberOfRepetitions || 2);
-          }
-        }
-        console.log('[OSMD] measures=' + measures.length
-          + ' repetitions=' + repSet.size
-          + ' Sheet.Repetitions=' + (inst.Sheet?.Repetitions?.length || 0));
-
-        // render() can throw GetWidth on first pass for complex scores. A
-        // second attempt usually succeeds because the first pass populated
-        // VexFlow's internal layout caches. Both throws → continue with the
-        // partial SVG (extractNotesFromOsmd has its own per-step try/catch).
-        let renderOk = false;
-        for (let attempt = 0; attempt < 2 && !renderOk; attempt++) {
-          try {
-            inst.render();
-            renderOk = true;
-          } catch (e) {
-            console.warn('[OSMD] render attempt ' + (attempt + 1) + ' failed: ' + e.message);
-          }
-        }
-        if (!renderOk) {
-          console.warn('[OSMD] both render attempts failed — continuing with partial state');
-        }
-        // Cursor show/reset are graphical operations that re-query unformatted
-        // notes; wrap individually so a cursor failure doesn't kill the load.
-        if (inst.cursor) {
-          try { inst.cursor.show(); }
-          catch (e) { console.warn('[OSMD] cursor.show failed: ' + e.message); }
-          try { inst.cursor.reset(); }
-          catch (e) { console.warn('[OSMD] cursor.reset failed: ' + e.message); }
-        }
-        osmd = inst;
-        return osmd;
-      })();
-      try { return await _osmdInitPromise; }
-      finally { _osmdInitPromise = null; }
+      const inst = await _osmdInit.initOsmd();
+      osmd = /** @type {any} */ (inst);
+      return osmd;
     }
 
     // Tied-note coalescer — Phase 0c: delegated to
