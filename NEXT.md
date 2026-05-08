@@ -6,12 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2 final)**. **15 new typed modules** plus
-the autonomous bench harness landed in this session. `legacy-app.js` is now
-**6,189 lines** (was 6,861 at session start, **−672 net** — biggest
-single-session reduction in the project's history). **1,515 tests** total (786
-core, 729 web; **+371 this session**). `pnpm verify` clean. Bench **11/11
-passing across every commit**, frame avg 5.2–7.1 ms.
+Last refreshed: **2026-05-08 (cycle 2 + Phase 0d follow-on)**. **19 new typed
+modules** plus the autonomous bench harness landed across the session.
+`legacy-app.js` is now **5,945 lines** (was 6,861 at session start, **−916 net**
+— biggest single-session reduction in the project's history). **1,598 tests**
+total (786 core, 812 web; **+454 this session**). `pnpm verify` clean. Bench
+**11/11 passing across every commit**, frame avg 5.2–7.1 ms.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -62,8 +62,17 @@ every commit.**
   tests.
 - batch 31 — `score-loader.ts`: 156-line loadCurrentScore orchestrator (init →
   XML parse → notes extract → playback order → expand → sections → bpm → diag →
-  drop xmlText), race-safe via stillCurrent thunk on every await boundary
-  (**-116 lines**, +22 tests). **Biggest single batch of the cycle.**
+  drop xmlText), race-safe via stillCurrent thunk on every await boundary (-116
+  lines, +22 tests).
+- batch 32 — `osmd-cursor.ts`: 5 OSMD cursor functions (scroll/reset/clear/
+  highlight/setCursorToNote) into one factory with closure-captured throttle +
+  highlight tracker (**-125 lines**, +24 tests). **Biggest single batch.**
+- batch 33 — `practice-tone-audio.ts`: lazy Tone.js synth instantiation +
+  count-in scheduling + Transport-stop teardown (-26 lines, +17 tests).
+- batch 34 — `section-notes.ts`: buildSectionNotes / buildFullSongNotes /
+  computeHandRanges (-72 lines, +23 tests). Pure-ish builders.
+- batch 35 — `intro-hint-ui.ts`: showHitChip + intro hint state machine +
+  audio-init alert (-21 lines, +19 tests).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -163,11 +172,15 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 81  | `web/osmd-init.ts`            | 21    | `packages/web/src/osmd-init.ts`                 |
 | 82  | `web/render-loop.ts`          | 13    | `packages/web/src/render-loop.ts`               |
 | 83  | `web/score-loader.ts`         | 22    | `packages/web/src/score-loader.ts`              |
+| 84  | `web/osmd-cursor.ts`          | 24    | `packages/web/src/osmd-cursor.ts`               |
+| 85  | `web/practice-tone-audio.ts`  | 17    | `packages/web/src/practice-tone-audio.ts`       |
+| 86  | `web/section-notes.ts`        | 23    | `packages/web/src/section-notes.ts`             |
+| 87  | `web/intro-hint-ui.ts`        | 19    | `packages/web/src/intro-hint-ui.ts`             |
 
-**Status: 1,515/1,515 tests green (786 core + 729 web), 0 lint errors, 0 type
+**Status: 1,598/1,598 tests green (786 core + 812 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
-avg 5.2–7.1 ms. `legacy-app.js`: 6,189 lines (was 9,000+ at Phase 0a; 6,861 at
-session start this cycle, **−672 net** across 14 shell-shrinking batches + 1
+avg 5.2–7.1 ms. `legacy-app.js`: 5,945 lines (was 9,000+ at Phase 0a; 6,861 at
+session start this cycle, **−916 net** across 18 shell-shrinking batches + 1
 architectural batch — biggest single-session reduction in the project's
 history).
 
