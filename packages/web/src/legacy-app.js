@@ -3434,15 +3434,7 @@
     // Surface a quiet "waiting for MIDI" hint so users on iPad / WMB know
     // the app is actively listening for their keyboard, not silently broken.
     // Cleared by attachMidiPort's existing refreshIntroHint() call.
-    function showMidiWaitingHint() {
-      if (!isAppleMobile() || !navigator.requestMIDIAccess) return;
-      // Only show once per session — re-shows would noise up the lifecycle.
-      if (state._midiWaitingShown) return;
-      state._midiWaitingShown = true;
-      showIntroDiag(() =>
-        setIntroHintDiagnostic(t('diagMidiWaiting') || 'Waiting for MIDI…',
-          t('diagWmbHint') || 'Pair your keyboard in Web MIDI Browser, then return here.'));
-    }
+    function showMidiWaitingHint() { _introDiag.showMidiWaitingHint(); }
 
     // MIDI rescan — two-stage connection attempt:
     // (1) connect via the normal filter; (2) if that fails, force-connect ignoring the virtual filter.
@@ -3505,21 +3497,23 @@
     // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
     // か再スキャンの明示的な操作までは再表示しない。
     /** @param {string} line1 @param {string} [line2] */
-    function setIntroHintDiagnostic(line1, line2) {
-      if (!DOM.introHint) return;
-      const sub = line2 ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' + line2 + '</span>' : '';
-      DOM.introHint.innerHTML = line1 + sub;
-      DOM.introHint.classList.add('visible');
-    }
-    // Each callsite that produces a diagnostic with localized strings should
-    // wrap its call in showIntroDiag(() => setIntroHintDiagnostic(t(...), ...))
-    // so a language toggle can re-run the same closure with fresh translations.
+    // Phase 0d batch 50: 22-line intro-hint diagnostic system
+    // (set / show / clear / showMidiWaitingHint) moved to
+    // packages/web/src/intro-diag.ts.
+    const _introDiag = IntroDiag.createIntroDiag(
+      /** @type {import('./intro-diag').IntroDiagDeps} */ ({
+        state: /** @type {any} */ (state),
+        introHintEl: DOM.introHint,
+        isAppleMobile: () => isAppleMobile(),
+        hasRequestMIDIAccess: () => !!navigator.requestMIDIAccess,
+        t,
+      })
+    );
+    /** @param {string} line1 @param {string} [line2] */
+    function setIntroHintDiagnostic(line1, line2) { _introDiag.setDiagnostic(line1, line2); }
     /** @param {() => void} thunk */
-    function showIntroDiag(thunk) {
-      state.lastIntroDiag = thunk;
-      thunk();
-    }
-    function clearIntroDiagCache() { state.lastIntroDiag = null; }
+    function showIntroDiag(thunk) { _introDiag.showDiag(thunk); }
+    function clearIntroDiagCache() { _introDiag.clearCache(); }
 
     // Phase 0d batch 26: auto-rescan poller (ramped cadence + WMB
     // force-fresh quirks) lives in midi-rescan.ts. Forwarders keep
