@@ -66,6 +66,7 @@ import * as SectionNotes from './section-notes';
 import * as IntroHintUi from './intro-hint-ui';
 import * as PracticeScoring from './practice-scoring';
 import * as PracticeProgress from './practice-progress';
+import * as ShellHelpers from './shell-helpers';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -119,6 +120,7 @@ declare global {
     IntroHintUi: typeof IntroHintUi;
     PracticeScoring: typeof PracticeScoring;
     PracticeProgress: typeof PracticeProgress;
+    ShellHelpers: typeof ShellHelpers;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -249,6 +251,8 @@ declare global {
   var PracticeScoring: typeof import('./practice-scoring');
 
   var PracticeProgress: typeof import('./practice-progress');
+
+  var ShellHelpers: typeof import('./shell-helpers');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -300,6 +304,7 @@ declare global {
 (globalThis as unknown as Window).IntroHintUi = IntroHintUi;
 (globalThis as unknown as Window).PracticeScoring = PracticeScoring;
 (globalThis as unknown as Window).PracticeProgress = PracticeProgress;
+(globalThis as unknown as Window).ShellHelpers = ShellHelpers;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

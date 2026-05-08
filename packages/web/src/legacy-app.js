@@ -2617,20 +2617,12 @@
         DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
       }
     }
-    // Sizes a canvas to the given CSS pixels with backing store scaled
-    // by devicePixelRatio, then returns the 2D context with the DPR
-    // transform pre-applied. Shared by result-card.drawHistoryChart and
-    // session-summary.drawRadarChart via deps.setupHiDPICanvas.
+    // setupHiDPICanvas moved to packages/web/src/shell-helpers.ts (batch 38).
     /** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h */
     function setupHiDPICanvas(canvas, w, h) {
-      const c = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = w + 'px';
-      canvas.style.height = h + 'px';
-      c.setTransform(dpr, 0, 0, dpr, 0, 0);
-      return c;
+      return /** @type {CanvasRenderingContext2D} */ (
+        ShellHelpers.setupHiDPICanvas(canvas, w, h)
+      );
     }
 
     // ========================================
@@ -4424,17 +4416,15 @@
       _practiceToneAudio.scheduleCountIn(startAudioTime);
     }
 
-    /** @param {number} midi */
-    function notePitchClass(midi) { return ((midi % 12) + 12) % 12; }
-    /** @param {number} midi */
-    function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
-    // DIAG helper — short note state suffix for tick logs.
+    // Phase 0d batch 38: note-utility helpers (notePitchClass /
+    // midiToFreq / n_state / midiToPitchName / midiToName) moved to
+    // packages/web/src/shell-helpers.ts. JP/EN note-names table stays
+    // in the shell since langchange mutates `activeNoteNames` from
+    // outside this cluster.
+    const notePitchClass = ShellHelpers.notePitchClass;
+    const midiToFreq = ShellHelpers.midiToFreq;
     /** @param {OsmdLikeNote} n */
-    function n_state(n) {
-      if (n.hit) return ' HIT';
-      if (n.missed) return ' MISS';
-      return '';
-    }
+    function n_state(n) { return ShellHelpers.noteStateLabel(n); }
     // Japanese-mode note names. Kids in JP music ed read ド/レ/ミ on the staff,
     // so when prefs.lang === 'jp' we surface those instead of C/D/E. Octave
     // numbers stay as digits — a Japanese kid's textbook also uses C4-style
@@ -4444,9 +4434,9 @@
     // doesn't re-evaluate the prefs.lang ternary 25× per frame.
     let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
     /** @param {number} midi */
-    function midiToPitchName(midi) { return activeNoteNames[notePitchClass(midi)]; }
+    function midiToPitchName(midi) { return ShellHelpers.midiToPitchName(midi, activeNoteNames); }
     /** @param {number} midi */
-    function midiToName(midi) { return midiToPitchName(midi) + (Math.floor(midi / 12) - 1); }
+    function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
 
     // ========================================
     // Section build + start
