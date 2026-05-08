@@ -4376,36 +4376,33 @@
     function practiceRealElapsedMs() { return _practiceScoring.practiceRealElapsedMs(); }
     function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
 
-    // Persisted practice progress — Phase 0c: pure schema/migration
-    // logic delegated to @piano/core/state/practice-progress. The two
-    // localStorage I/O wrappers stay here (loadJSON / saveJSON are
-    // legacy shell helpers).
+    // Phase 0d batch 37: persisted practice progress (load /
+    // save / per-song lookup / daily-streak record) moved to
+    // packages/web/src/practice-progress.ts. The factory wraps
+    // PianoCore's pure reducers + the prefs-storage adapter.
     const defaultSongProgress = PianoCore.defaultSongProgress;
+    const dateKey = PianoCore.formatDateKey;
+    const _practiceProgress = PracticeProgress.createPracticeProgress({
+      storage: _prefsStore,
+      core: /** @type {any} */ ({
+        migrateAndDefaultProgress: PianoCore.migrateAndDefaultProgress,
+        getSongProgress: PianoCore.getSongProgress,
+        recordPracticeDay: PianoCore.recordPracticeDay,
+        formatDateKey: PianoCore.formatDateKey,
+      }),
+      practice: /** @type {any} */ (practice),
+    });
+    /** @returns {import('@piano/core').PracticeProgress} */
     function loadPracticeProgress() {
-      return PianoCore.migrateAndDefaultProgress(loadJSON('pianoViz_practice_v1', null));
-    }
-    function savePracticeProgress() { saveJSON('pianoViz_practice_v1', practice.progress); }
-    // Always returns the per-song state, lazily creating it on first access.
-    // Practice progress is loaded synchronously at startup so `practice.progress`
-    // is non-null whenever this is called; the bang-cast captures that invariant.
-    function songProg() {
-      return PianoCore.getSongProgress(
-        /** @type {import('@piano/core').PracticeProgress} */ (practice.progress),
-        currentSong.id
+      return /** @type {import('@piano/core').PracticeProgress} */ (
+        /** @type {any} */ (_practiceProgress.load())
       );
     }
-    // Daily-streak math — Phase 0b.3: delegated to @piano/core/state/streak.
-    // The reducer mutates practice.progress in place (it has the same shape
-    // as StreakState — `streakDays` + `streakCount`), so the persistence
-    // layer keeps writing the same JSON blob.
-    const dateKey = PianoCore.formatDateKey;
-    const todayKey = () => PianoCore.formatDateKey(new Date());
-    const STREAK_OPTS = { maxDays: 60 };
-    function recordPracticeDay() {
-      if (!practice.progress) return;
-      PianoCore.recordPracticeDay(practice.progress, todayKey(), STREAK_OPTS);
-      savePracticeProgress();
+    function savePracticeProgress() { _practiceProgress.save(); }
+    function songProg() {
+      return /** @type {any} */ (_practiceProgress.songProg(currentSong.id));
     }
+    function recordPracticeDay() { _practiceProgress.recordPracticeDay(); }
 
     // ========================================
     // Tone.js helpers
