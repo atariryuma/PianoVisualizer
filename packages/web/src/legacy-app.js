@@ -1766,64 +1766,36 @@
     const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
 
     /** @param {number} timeMs */
-    function updateQuestState(timeMs) {
-      const result = PianoCore.applyQuestTick(
-        _questState,
-        state, // observation slice; quest.condition reads state.combo, state.flow, etc.
-        timeMs,
-        CONFIG.QUESTS,
-        _questOpts
-      );
-      if (!result) return; // throttled
-
-      // A quest just completed \u2014 fire the celebration UI
-      if (result.completedThisTick) {
-        const quest = CONFIG.QUESTS.find((q) => q.id === result.completedThisTick);
-        if (!quest) return; // unknown quest id \u2014 defensive, shouldn't happen
-        console.log('Quest Completed: ' + t(quest.nameKey));
-        DOM.toastTitle.textContent = '\u2728 ' + t(quest.nameKey) + ' \u2728';
-        DOM.toastSub.textContent =
-          quest.reward + ' (' + _questState.completedIds.length + '/' + CONFIG.QUESTS.length + ')';
-        DOM.questToast.classList.remove('show');
-        void DOM.questToast.offsetWidth; // force reflow to restart animation
-        DOM.questToast.classList.add('show');
-        DOM.questLabel.textContent = t('questClearedFmt', { v: t(quest.nameKey) });
-        effectGoldenBurst();
-        spawnBurst(W / 2, H / 2, 20, 1.5, '#ffd700');
-        state.activeQuestId = null;
-        setTimeout(() => DOM.questToast.classList.remove('show'), 2600);
-      }
-
-      // Mirror tracker state back to legacy fields for outside readers.
-      state.lastQuestCheckMs =
-        _questState.lastCheckMs === -Infinity ? 0 : _questState.lastCheckMs;
-
-      // Build dot progress display + active label
-      let dotsHtml = '';
-      for (let i = 0; i < CONFIG.QUESTS.length; i++) {
-        const q = CONFIG.QUESTS[i];
-        const done = _questState.completedIds.includes(q.id);
-        const cls = done
-          ? 'quest-dot done'
-          : q.id === result.firstUndone && !result.completedThisTick
-          ? 'quest-dot current'
-          : 'quest-dot';
-        dotsHtml += '<div class="' + cls + '" title="' + t(q.nameKey) + '"></div>';
-      }
-      DOM.questDots.innerHTML = dotsHtml;
-      DOM.questDisplay.classList.add('visible');
-
-      if (result.allDone) {
-        DOM.questLabel.textContent = t('questAllClearFmt', { n: CONFIG.QUESTS.length });
-        state.activeQuestId = QUEST_ALL_DONE;
-        return;
-      }
-      if (!result.completedThisTick) {
-        const firstQ = CONFIG.QUESTS.find((q) => q.id === result.firstUndone);
-        if (firstQ) DOM.questLabel.textContent = t('questTargetFmt', { v: t(firstQ.descKey) });
-      }
-      state.activeQuestId = result.firstUndone;
-    }
+    // Phase 0d batch 46: 58-line quest-state per-frame reducer +
+    // celebration UI dispatcher moved to packages/web/src/
+    // quest-state-update.ts.
+    const _questStateUpdate = QuestStateUpdate.createQuestStateUpdate(
+      /** @type {import('./quest-state-update').QuestUpdateDeps} */ ({
+        state: /** @type {any} */ (state),
+        trackerState: /** @type {any} */ (_questState),
+        quests: CONFIG.QUESTS,
+        allDoneSentinel: QUEST_ALL_DONE,
+        applyQuestTick: PianoCore.applyQuestTick,
+        observation: state, // quest.condition reads state.combo, state.flow, etc.
+        questOpts: _questOpts,
+        dom: {
+          toastTitle: DOM.toastTitle,
+          toastSub: DOM.toastSub,
+          questToast: DOM.questToast,
+          questLabel: DOM.questLabel,
+          questDots: DOM.questDots,
+          questDisplay: DOM.questDisplay,
+        },
+        t,
+        spawnBurst,
+        effectGoldenBurst,
+        getScreen: () => ({ W, H }),
+        setTimeout: (fn, ms) => setTimeout(fn, ms),
+        toastHideMs: 2600,
+      })
+    );
+    /** @param {number} timeMs */
+    function updateQuestState(timeMs) { _questStateUpdate.tick(timeMs); }
 
     // ========================================
     // Quality Scoring — simplified for kids
