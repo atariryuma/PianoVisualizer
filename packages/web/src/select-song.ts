@@ -132,7 +132,6 @@ export function createSelectSong(deps: SelectSongDeps): SelectSong {
           }
         })
         .catch((e: unknown) => {
-           
           console.error('preload', e);
           const msg = e instanceof Error ? e.message : String(e);
           song._loadError = msg || 'Score load failed';

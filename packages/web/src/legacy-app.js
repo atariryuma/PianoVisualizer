@@ -2667,28 +2667,27 @@
     // Full-song listen forces 100% (see buildFullSongNotes) so the count-in
     // beats and lane lookahead match the actual playback speed instead of the
     // user's section-listen tempoPct selection.
-    function effectiveTempoPct() {
-      if (practice.mode === 'listen' && practice.fullSongMode) return 100;
-      return practice.tempoPct || 100;
-    }
-    function practiceBeatMs() {
-      return PianoCore.practiceBeatMs(
-        (currentSong && currentSong.bpm) || 72,
-        effectiveTempoPct()
-      );
-    }
-    function recomputePracticeTimings() {
-      const timings = PianoCore.computePracticeTimings(practiceBeatMs());
-      COUNT_IN_MS = timings.countInMs;
-      LANE_LOOKAHEAD_MS = timings.laneLookaheadMs;
-      // Practice-lane scaffolding is a hot-path singleton inside
-      // practice-lane.ts — refresh in lockstep so the first frame's
-      // countdown + descent rate match the new section's tempo.
-      _practiceLane.setTimings({
-        laneLookaheadMs: LANE_LOOKAHEAD_MS,
-        countInMs: COUNT_IN_MS,
-      });
-    }
+    // Phase 0d batch 55: practice-timing trio (effectiveTempoPct +
+    // practiceBeatMs + recomputePracticeTimings) + showSectionBanner
+    // moved to packages/web/src/practice-timings.ts.
+    const _practiceTimings = PracticeTimings.createPracticeTimings(
+      /** @type {import('./practice-timings').PracticeTimingsDeps} */ ({
+        getPractice: () => /** @type {any} */ (practice),
+        getCurrentSong: () => /** @type {any} */ (currentSong),
+        fns: {
+          practiceBeatMs: PianoCore.practiceBeatMs,
+          computePracticeTimings: PianoCore.computePracticeTimings,
+        },
+        setCountInMs: (ms) => { COUNT_IN_MS = ms; },
+        setLaneLookaheadMs: (ms) => { LANE_LOOKAHEAD_MS = ms; },
+        getPracticeLane: () => /** @type {any} */ (_practiceLane),
+        sectionBannerEl: DOM.sectionBanner,
+        t,
+      })
+    );
+    function effectiveTempoPct() { return _practiceTimings.effectiveTempoPct(); }
+    function practiceBeatMs() { return _practiceTimings.practiceBeatMs(); }
+    function recomputePracticeTimings() { _practiceTimings.recomputePracticeTimings(); }
     // Asymmetric hit windows: early presses are punished much harder than late
     // ones. Pedagogical reason — kids should learn to *wait for the beat*, not
     // anticipate it; reaction-lag is also natural and partly compensates for
@@ -2762,13 +2761,7 @@
     // Section banner
     // ========================================
     /** @param {{nameKey:string, isBoss?:boolean}} sec */
-    function showSectionBanner(sec) {
-      if (!DOM.sectionBanner) return;
-      DOM.sectionBanner.textContent = (sec.isBoss ? '👑 ' : '') + t(sec.nameKey);
-      DOM.sectionBanner.classList.remove('show');
-      void DOM.sectionBanner.offsetWidth;   // restart animation
-      DOM.sectionBanner.classList.add('show');
-    }
+    function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
 
     // Screen Wake Lock — Phase 0d: extracted to packages/web/src/wakelock.ts.
     // The shell calls requestWakeLock() at start-of-session / page-resume and
