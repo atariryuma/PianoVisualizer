@@ -6,12 +6,37 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2 + extended, batches 39-50)**. **34 new
-typed modules** plus the autonomous bench harness landed across the session.
-`legacy-app.js` is now **5,100 lines** (was 6,861 at session start, **−1,761
-net** — pacing toward Phase 0e DoD). **1,878 tests** total (786 core, 1,092 web;
-**+734 this session**). `pnpm verify` clean. Bench **11/11 passing across every
-commit**, frame avg 5.2–7.2 ms.
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-56 + Issue 1/2 fix
+detour)**. `legacy-app.js` is now **4,898 lines** (was 5,100 at the previous
+NEXT refresh, **−202 across 6 batches** while a 5-commit bug-fix detour also
+landed in-between). **1,995 tests** total (786 core, 1,209 web; **+117 this
+cycle: 109 from batches 51-56 + 6 from bug-fix tests + 2 from the Issue 2 polish
+gate**). `pnpm verify` clean.
+
+**Bug-fix detour landed 2026-05-08/09** — mid-session user reported Issue 1
+("after fullSong listen, switching song fails to load") + Issue 2 ("frame
+drops + audio glitches during playback"). Root-caused via `[DIAG-*]` remote-log
+instrumentation, then surgically fixed:
+
+- `1d2da2e` — diag instrumentation (no fix). DIAG-FULLSONG / DIAG-AUDIOCTX /
+  DIAG-FRAME logs forwarded to server.log via REMOTE_LOG_ENABLED gate.
+- `b1dbf51` — Issue 1 layer 1: reset `practice.fullSongMode = false` in
+  `selectSong` + result-card listen-completion + guard empty `sectionNotes` in
+  `start-practice-section`.
+- `a8aab47` — Issue 1 layer 2: xml-first OSMD URL preference (some user `.mxl`
+  files have non-standard inner XML names that OSMD's container reader drops
+  silently); verbose 0-notes error.
+- `093f53a` — Issue 1 layer 3: OSMD `loadedUrl` tracking + reload on URL
+  change + post-load empty-Sheet sanity check; idempotent `initAudio` (reuse
+  existing AudioContext, don't orphan Tone.js binding); throw on
+  `expandNotesByPlaybackOrder` empty-measures to stop NaN propagation.
+- `a2b6aec` — Issue 2 main fix: cap particles at 200 + disable shadowBlur + skip
+  ambient spawn during practice. Reduced in-playback drops from 10 → 5
+  (server.log A/B).
+- `83a8afb` — Issue 2 final polish: pause MIDI auto-rescan during practice
+  (residual dt=50ms ticks every 5th poll cycle were
+  `requestMIDIAccess({force:true})` stalls — kid won't plug in a keyboard
+  mid-song). +2 tests.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -116,6 +141,23 @@ every commit.**
 - batch 50 — `intro-diag.ts`: setIntroHintDiagnostic + showIntroDiag + clear +
   showMidiWaitingHint with iPad/WMB once-per-session guard, isAppleMobile +
   hasRequestMIDIAccess held by deps (-6 lines, +13 tests).
+- batch 51 — `user-songs-store.ts`: IDB-backed user library CRUD + JSON
+  export/import (-93 lines, +23 tests).
+- batch 52 — `online-library.ts`: MuseTrainer GitHub catalog cluster —
+  LIBRARY_PINNED_SHA + 69-entry JP override table + cache (-99 lines, +20
+  tests).
+- batch 53 — `playback-order.ts`: `fetchPlaybackOrder` +
+  `expandNotesByPlaybackOrder` generic over note + order shapes (-48 lines, +12
+  tests; +2 NaN-guard tests added in 093f53a Issue 1 fix).
+- batch 54 — `select-song.ts`: 45-line song-switch orchestrator. Mutable
+  currentSong/osmd flow through getter/setter thunks; held the fullSongMode
+  reset bug fix (-31 lines, +18 tests).
+- batch 55 — `practice-timings.ts`: effectiveTempoPct, practiceBeatMs,
+  recomputePracticeTimings, showSectionBanner with TDZ-safe getPractice /
+  getPracticeLane thunks (-37 lines, +17 tests).
+- batch 56 — `mic-lifecycle.ts`: acquire / suspend / resume with concurrency
+  lock; getter/setter thunks for the 4 audio-node mutable refs (audioCtx /
+  gainNode / micStream / micSourceNode) (-45 lines, +19 tests).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -209,7 +251,7 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 75  | `web/prefs-storage.ts`          | 21    | `packages/web/src/prefs-storage.ts`             |
 | 76  | `web/layout-detect.ts`          | 25    | `packages/web/src/layout-detect.ts`             |
 | 77  | `web/midi-ports.ts`             | 37    | `packages/web/src/midi-ports.ts`                |
-| 78  | `web/midi-rescan.ts`            | 25    | `packages/web/src/midi-rescan.ts`               |
+| 78  | `web/midi-rescan.ts`            | 27    | `packages/web/src/midi-rescan.ts`               |
 | 79  | `web/ble-midi-connect.ts`       | 18    | `packages/web/src/ble-midi-connect.ts`          |
 | 80  | `web/viewport-layout.ts`        | 21    | `packages/web/src/viewport-layout.ts`           |
 | 81  | `web/osmd-init.ts`              | 21    | `packages/web/src/osmd-init.ts`                 |
@@ -234,12 +276,18 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 100 | `web/session-reset.ts`          | 18    | `packages/web/src/session-reset.ts`             |
 | 101 | `web/user-songs-mxl.ts`         | 12    | `packages/web/src/user-songs-mxl.ts`            |
 | 102 | `web/intro-diag.ts`             | 13    | `packages/web/src/intro-diag.ts`                |
+| 103 | `web/user-songs-store.ts`       | 23    | `packages/web/src/user-songs-store.ts`          |
+| 104 | `web/online-library.ts`         | 20    | `packages/web/src/online-library.ts`            |
+| 105 | `web/playback-order.ts`         | 14    | `packages/web/src/playback-order.ts`            |
+| 106 | `web/select-song.ts`            | 18    | `packages/web/src/select-song.ts`               |
+| 107 | `web/practice-timings.ts`       | 17    | `packages/web/src/practice-timings.ts`          |
+| 108 | `web/mic-lifecycle.ts`          | 19    | `packages/web/src/mic-lifecycle.ts`             |
 
-**Status: 1,878/1,878 tests green (786 core + 1,092 web), 0 lint errors, 0 type
+**Status: 1,995/1,995 tests green (786 core + 1,209 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
-avg 5.2–7.2 ms. `legacy-app.js`: 5,100 lines (was 9,000+ at Phase 0a; 6,861 at
-session start this cycle, **−1,761 net** across 33 shell-shrinking batches + 1
-architectural batch).
+avg 5.2–7.2 ms. `legacy-app.js`: **4,898 lines** (was 9,000+ at Phase 0a; 6,861
+at this cycle's start, **−1,963 net** across 39 shell-shrinking batches + 1
+architectural batch + 5 bug-fix commits).
 
 ---
 
@@ -247,7 +295,7 @@ architectural batch).
 
 ## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
 
-The shell is currently **6,683 lines**. Goal: ≤200 lines, with each carved-out
+The shell is currently **4,898 lines**. Goal: ≤200 lines, with each carved-out
 module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
 extraction lands as a separate commit; iPad verification now runs via the in-app
 **🧪 Self-test** at `?dev=1` (no manual A/B checklist needed for the mechanical
