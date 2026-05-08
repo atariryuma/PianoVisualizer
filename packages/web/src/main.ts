@@ -52,6 +52,7 @@ import * as MidiIndicator from './midi-indicator';
 import * as BleMidiParser from './ble-midi-parser';
 import * as MidiDispatch from './midi-dispatch';
 import * as PrefsStorage from './prefs-storage';
+import * as LayoutDetect from './layout-detect';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -91,6 +92,7 @@ declare global {
     BleMidiParser: typeof BleMidiParser;
     MidiDispatch: typeof MidiDispatch;
     PrefsStorage: typeof PrefsStorage;
+    LayoutDetect: typeof LayoutDetect;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -193,6 +195,8 @@ declare global {
   var MidiDispatch: typeof import('./midi-dispatch');
 
   var PrefsStorage: typeof import('./prefs-storage');
+
+  var LayoutDetect: typeof import('./layout-detect');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -230,6 +234,7 @@ declare global {
 (globalThis as unknown as Window).BleMidiParser = BleMidiParser;
 (globalThis as unknown as Window).MidiDispatch = MidiDispatch;
 (globalThis as unknown as Window).PrefsStorage = PrefsStorage;
+(globalThis as unknown as Window).LayoutDetect = LayoutDetect;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

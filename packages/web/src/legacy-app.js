@@ -1179,20 +1179,11 @@
     // frame; calling getBoundingClientRect() per-frame instead would force a
     // synchronous layout flush at 60fps.
     const cachedOsmdRect = { top: 0, right: 0, bottom: 0, height: 0, width: 0 };
+    // Phase 0d batch 24: pure viewport classifier moved to
+    // packages/web/src/layout-detect.ts. Forwarder reads the live
+    // window dimensions so existing callsites stay unchanged.
     function detectLayout() {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const longest = Math.max(w, h);
-      // Desktop: explicitly wide. Catches landscape iPad Pro 12.9 (1366×1024).
-      if (w >= 1200) return 'desktop';
-      // Tablet: longest edge ≥ 900 covers iPad Air/mini/Pro in either
-      // orientation (768×1024, 820×1180, 834×1194, 1024×1366) without
-      // demoting them to phone in portrait.
-      if (longest >= 900 && Math.min(w, h) >= 600) return 'tablet';
-      // Phone landscape: short height + landscape AND not desktop-class width.
-      // The w<1024 cap stops 1199×500 desktop windows from being misclassified.
-      if (w > h && h <= 520 && w < 1024) return 'phone-landscape';
-      return 'phone-portrait';
+      return LayoutDetect.detectLayout(window.innerWidth, window.innerHeight);
     }
     /** @param {Element|null} el */
     function measureBottom(el) {
