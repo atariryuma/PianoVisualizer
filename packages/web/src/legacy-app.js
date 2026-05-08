@@ -4696,45 +4696,13 @@
     // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
     // use we ignore timestamps and extract MIDI messages of types we care about.
     /** @param {ArrayBuffer} buf */
+    // Phase 0d batch 21: BLE-MIDI 1.0 packet decoding moved to
+    // packages/web/src/ble-midi-parser.ts. The shell wraps it in a
+    // 1-line forwarder so the BLE characteristic listener keeps the
+    // unchanged callsite (`parseBleMidiPacket(buf)`).
+    /** @param {ArrayBuffer} buf */
     function parseBleMidiPacket(buf) {
-      const data = new Uint8Array(buf);
-      if (data.length < 3) return;
-      let runningStatus = 0;
-      // Skip header byte at index 0; first timestamp at index 1.
-      for (let i = 1; i < data.length; ) {
-        // Each MIDI event in a BLE-MIDI packet is preceded by a timestamp byte
-        // (high bit set). Running-status events may follow without a new timestamp.
-        if (data[i] & 0x80) {
-          // Could be timestamp or status. Per spec, in a multi-event packet a
-          // timestamp byte (followed by status) precedes each event. Skip it.
-          i++;
-          if (i >= data.length) break;
-          // Now data[i] should be a status or running data
-          if (data[i] & 0x80) {
-            runningStatus = data[i];
-            i++;
-          }
-        }
-        if (runningStatus === 0) { i++; continue; }
-        const cmd = runningStatus & 0xF0;
-        // 2-data-byte messages
-        if (cmd === 0x80 || cmd === 0x90 || cmd === 0xB0 || cmd === 0xA0 || cmd === 0xE0) {
-          if (i + 1 >= data.length) break;
-          const a = data[i] & 0x7F;
-          const b = data[i + 1] & 0x7F;
-          dispatchMidiMessage(runningStatus, a, b);
-          i += 2;
-        } else if (cmd === 0xC0 || cmd === 0xD0) {
-          if (i >= data.length) break;
-          i++;
-        } else if (runningStatus === 0xF0) {
-          while (i < data.length && data[i] !== 0xF7) i++;
-          if (i < data.length) i++;
-          runningStatus = 0;
-        } else {
-          i++;
-        }
-      }
+      BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage);
     }
 
     async function connectBleMidi() {
