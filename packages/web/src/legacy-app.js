@@ -2335,185 +2335,46 @@
     // the cached `record.xmlText` if present, else lazily unzipped here and
     // written back to IndexedDB so subsequent loads are instant). This sidesteps
     // OSMD's blob-MIME-detection issue on Android Chrome.
-    /** @param {import('@piano/core').UserSongRecord} record */
-    async function registerUserSong(record) {
-      const isMxl = (record.mimeType !== 'application/vnd.recordare.musicxml+xml');
-      let xmlText = record.xmlText;
-      if (isMxl && !xmlText) {
-        // Lazy migration: existing records (added before this fix) didn't
-        // cache xmlText. Unzip on the fly now and persist for next time.
-        try {
-          xmlText = await unzipMxlToXmlText(record.mxlBlob);
-          record.xmlText = xmlText;
-          try { await userDbPut(record); } catch (e) { /* DB save best-effort */ }
-        } catch (e) {
-          console.warn('[UserSongs] mxl unzip failed for ' + record.id + ': ' + e.message);
-        }
-      } else if (!isMxl && !xmlText) {
-        // Plain .musicxml/.xml record — unwrap to text so the load path is uniform.
-        try { xmlText = await record.mxlBlob.text(); } catch (e) { /* fallthrough */ }
-      }
-      // Always present OSMD with a plain-XML blob URL when we could read xmlText;
-      // fall back to the raw blob URL only if unzip failed.
-      let url;
-      if (xmlText) {
-        url = URL.createObjectURL(new Blob([xmlText], { type: 'application/vnd.recordare.musicxml+xml' }));
-      } else {
-        url = URL.createObjectURL(record.mxlBlob);
-      }
-      /** @type {SongRec} */
-      const song = /** @type {any} */ ({
-        id: record.id,
-        titleKey: '__userTitle:' + record.id,   // resolved by t() override below
-        composerKey: '__userComposer:' + record.id,
-        icon: '🎵',
-        // After unzip, the song carries an xml URL whether the source was .mxl or .xml.
-        // The few branches that key off "is this a user .mxl?" use _isUser instead now.
-        mxlUrl: '',  // user songs have no .mxl URL — checked via _isUser
-        xmlUrl: url,
-        // Propagate the unzipped xmlText so loadCurrentScore's parseScore
-        // pass + fetchPlaybackOrder both reuse it instead of re-fetching the
-        // blob: URL — Android Chrome was occasionally hanging on the second
-        // blob fetch of a just-imported user song.
-        _xmlText: xmlText || undefined,
-        sectionDefs: record.sectionDefs,
-        notes: null, totalSec: 0, sections: [], playbackOrder: [],
-        _loaded: false, _loadingPromise: null,
-        _isUser: true,
-        _userTitle: record.title || record.id,
-        _userComposer: record.composer || ''
-      });
-      SONGS[record.id] = song;
-      return song;
-    }
-
-    async function loadUserSongs() {
-      try {
-        const all = await userDbAll();
-        for (const rec of all) await registerUserSong(rec);
-        return all.length;
-      } catch (e) {
-        console.warn('[UserSongs] load failed:', e.message);
-        return 0;
-      }
-    }
-
-    // Add a song from a Blob (file upload or fetched URL). The MIME hint helps
-    // distinguish .mxl (zip) from .musicxml/.xml (plain text). On success the
-    // song is registered AND persisted; the returned song id can be selectSong'd.
-    /** @param {Blob} blob @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
-    async function addUserSongFromBlob(blob, opts) {
-      opts = opts || {};
-      const isMxl = blob.type === 'application/vnd.recordare.musicxml+zip'
-                  || (opts.filename || '').toLowerCase().endsWith('.mxl')
-                  || blob.size > 0 && (await blob.slice(0, 2).text()) === 'PK';
-      const xmlText = isMxl ? await unzipMxlToXmlText(blob) : await blob.text();
-      const meta = parseMusicXmlMetadata(xmlText);
-      if (meta.measureCount < 1) throw new Error('Score has no measures');
-      const id = 'usr_' + Date.now().toString(36) + '_'
-        + Math.random().toString(36).slice(2, 7);
-      const sectionDefs = autoSectionDefs(xmlText, meta.measureCount);
-      /** @type {import('@piano/core').UserSongRecord} */
-      const record = {
-        id,
-        title: opts.titleOverride || meta.title || (opts.filename || 'Untitled').replace(/\.[^.]+$/, ''),
-        composer: opts.composerOverride || meta.composer || '',
-        mxlBlob: blob,
-        // Cached so registerUserSong + section-editor reload don't have to
-        // re-unzip on every app start. Same xml the score is rendered from.
-        xmlText,
-        mimeType: isMxl ? 'application/vnd.recordare.musicxml+zip'
-                        : 'application/vnd.recordare.musicxml+xml',
-        sectionDefs,
-        addedAt: Date.now(),
-        source: opts.source || 'upload'
-      };
-      await userDbPut(record);
-      await registerUserSong(record);
-      return record;
-    }
-
+    // Phase 0d batch 51: 175-line user-songs persistence cluster
+    // (registerUserSong / loadUserSongs / addUserSongFromBlob /
+    // addUserSongFromUrl / renameUserSong / removeUserSong) moved to
+    // packages/web/src/user-songs-store.ts.
     const USER_SONG_URL_TIMEOUT_MS = 30000;
-    const USER_SONG_MAX_BYTES = 20 * 1024 * 1024;  // 20 MB
+    const USER_SONG_MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+    const _userSongs = UserSongsStore.createUserSongsStore(
+      /** @type {import('./user-songs-store').UserSongsStoreDeps} */ ({
+        userDb: /** @type {any} */ (_userDb),
+        userDbStoreName: USER_DB_STORE,
+        unzipMxlToXmlText: /** @type {any} */ (unzipMxlToXmlText),
+        fns: {
+          parseMusicXmlMetadata: /** @type {any} */ (parseMusicXmlMetadata),
+          autoSectionDefs: /** @type {any} */ (autoSectionDefs),
+        },
+        songs: /** @type {any} */ (SONGS),
+        getPractice: () => /** @type {any} */ (practice),
+        savePracticeProgress: () => savePracticeProgress(),
+        urlTimeoutMs: USER_SONG_URL_TIMEOUT_MS,
+        maxBytes: USER_SONG_MAX_BYTES,
+        fetch: (...args) => fetch(...args),
+        AbortController,
+        setTimeout: (fn, ms) => setTimeout(fn, ms),
+        clearTimeout: (id) => clearTimeout(/** @type {any} */ (id)),
+        url: URL,
+        now: () => Date.now(),
+        random: () => Math.random(),
+      })
+    );
+    /** @param {import('@piano/core').UserSongRecord} record */
+    async function registerUserSong(record) { return _userSongs.register(/** @type {any} */ (record)); }
+    async function loadUserSongs() { return _userSongs.loadAll(); }
+    /** @param {Blob} blob @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
+    async function addUserSongFromBlob(blob, opts) { return /** @type {any} */ (_userSongs.addFromBlob(blob, opts)); }
     /** @param {string} url @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
-    async function addUserSongFromUrl(url, opts) {
-      opts = opts || {};
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), USER_SONG_URL_TIMEOUT_MS);
-      let res;
-      try {
-        res = await fetch(url, { mode: 'cors', signal: ctrl.signal });
-      } catch (e) {
-        if (e && e.name === 'AbortError') {
-          throw new Error('Download timed out (30s) — check connection and try again');
-        }
-        throw e;
-      } finally {
-        clearTimeout(timer);
-      }
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching ' + url);
-      const declared = parseInt(res.headers.get('content-length') || '0', 10);
-      if (declared && declared > USER_SONG_MAX_BYTES) {
-        throw new Error('File too large (' + Math.round(declared / 1024 / 1024) + ' MB; max 20 MB)');
-      }
-      const blob = await res.blob();
-      if (blob.size > USER_SONG_MAX_BYTES) {
-        throw new Error('File too large (' + Math.round(blob.size / 1024 / 1024) + ' MB; max 20 MB)');
-      }
-      // Robust filename derivation (URL constructor handles bare hostnames,
-      // query strings, and fragments uniformly; the previous split() chain
-      // returned an empty string for `https://host` and broke meta lookup).
-      let filename = opts.filename;
-      if (!filename) {
-        try {
-          const path = new URL(url).pathname;
-          filename = path.substring(path.lastIndexOf('/') + 1) || 'untitled.mxl';
-        } catch (_) {
-          filename = 'untitled.mxl';
-        }
-      }
-      return addUserSongFromBlob(blob, { ...opts, filename, source: opts.source || 'url' });
-    }
-
-    // Update an existing user-song's display title + composer. Persists to
-    // IndexedDB and patches the in-memory SONGS entry so the next render
-    // (My library / start-screen tile / song panel header) picks it up
-    // without needing a reload. Caller passes already-validated strings.
+    async function addUserSongFromUrl(url, opts) { return /** @type {any} */ (_userSongs.addFromUrl(url, opts)); }
     /** @param {string} id @param {string} newTitle @param {string} newComposer */
-    async function renameUserSong(id, newTitle, newComposer) {
-      const db = await openUserDb();
-      const rec = await new Promise((res, rej) => {
-        const tx = db.transaction(USER_DB_STORE, 'readonly');
-        const r = tx.objectStore(USER_DB_STORE).get(id);
-        r.onsuccess = () => res(r.result);
-        r.onerror = () => rej(r.error);
-      });
-      if (!rec) throw new Error('Song not found: ' + id);
-      rec.title = newTitle;
-      rec.composer = newComposer;
-      await userDbPut(rec);
-      const song = SONGS[id];
-      if (song) {
-        song._userTitle = newTitle;
-        song._userComposer = newComposer;
-      }
-    }
-
+    async function renameUserSong(id, newTitle, newComposer) { return _userSongs.rename(id, newTitle, newComposer); }
     /** @param {string} id */
-    async function removeUserSong(id) {
-      await userDbDelete(id);
-      const song = SONGS[id];
-      if (song) {
-        if (song.mxlUrl?.startsWith('blob:')) URL.revokeObjectURL(song.mxlUrl);
-        if (song.xmlUrl?.startsWith('blob:')) URL.revokeObjectURL(song.xmlUrl);
-        delete SONGS[id];
-      }
-      // Also drop any per-song progress (otherwise the localStorage row leaks forever).
-      if (practice.progress?.songs?.[id]) {
-        delete practice.progress.songs[id];
-        savePracticeProgress();
-      }
-    }
+    async function removeUserSong(id) { return _userSongs.remove(id); }
 
     // ========================================
     // Online library — MuseTrainer full catalog via GitHub API
