@@ -16,11 +16,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  createCanvasResize,
   createViewportLayout,
   decideBgStarsAction,
   makeCachedOsmdRect,
   measureBottom,
+  type BgStarsField,
   type CachedOsmdRect,
+  type CanvasResizeDeps,
 } from '../src/viewport-layout';
 
 beforeEach(() => {
@@ -271,3 +274,217 @@ describe('createViewportLayout — getCurrentLayoutMode', () => {
     expect(vl.getCurrentLayoutMode()).toBe('tablet');
   });
 });
+
+// ─── createCanvasResize (Phase 0d batch 59) ───────────────────────
+
+interface ResizeFx {
+  cr: ReturnType<typeof createCanvasResize>;
+  canvas: HTMLCanvasElement;
+  ctx: { setTransform: ReturnType<typeof vi.fn> };
+  initBackgroundSpy: ReturnType<typeof vi.fn>;
+  setRunning: (b: boolean) => void;
+  setSize: (w: number, h: number, dpr?: number) => void;
+  setSafeAreas: (
+    vals: Partial<{
+      safeBottom: number;
+      safeLeft: number;
+      safeRight: number;
+    }>
+  ) => void;
+}
+
+function makeCanvasResizeFixture(over: Partial<CanvasResizeDeps> = {}): ResizeFx {
+  const canvas = document.createElement('canvas');
+  const ctx = { setTransform: vi.fn() };
+  const win = { innerWidth: 1024, innerHeight: 768, devicePixelRatio: 1 };
+  let safeBottom = 0;
+  let safeLeft = 0;
+  let safeRight = 0;
+  let running = false;
+  const starCount = 30;
+  const stars = (n: number) => Array.from({ length: n }, (_, i) => ({ x: i, y: i }));
+  const initBackgroundSpy = vi.fn(({ starCount: sc }: { starCount: number }) => ({
+    stars: stars(sc),
+  }));
+  const cr = createCanvasResize({
+    canvas,
+    ctx: ctx as unknown as CanvasRenderingContext2D,
+    isRunning: () => running,
+    getStarCount: () => starCount,
+    initBackground: initBackgroundSpy as unknown as CanvasResizeDeps['initBackground'],
+    win,
+    getComputedStyle: () =>
+      ({
+        getPropertyValue(name: string) {
+          if (name === '--safe-bottom') return String(safeBottom);
+          if (name === '--safe-left') return String(safeLeft);
+          if (name === '--safe-right') return String(safeRight);
+          return '';
+        },
+      }) as unknown as CSSStyleDeclaration,
+    ...over,
+  });
+  return {
+    cr,
+    canvas,
+    ctx,
+    initBackgroundSpy,
+    setRunning: (b) => {
+      running = b;
+    },
+    setSize: (w, h, dpr) => {
+      win.innerWidth = w;
+      win.innerHeight = h;
+      if (dpr !== undefined) win.devicePixelRatio = dpr;
+    },
+    setSafeAreas: ({ safeBottom: sb, safeLeft: sl, safeRight: sr }) => {
+      if (sb !== undefined) safeBottom = sb;
+      if (sl !== undefined) safeLeft = sl;
+      if (sr !== undefined) safeRight = sr;
+    },
+  };
+}
+
+describe('createCanvasResize — resize()', () => {
+  it('writes canvas device-px width/height + DPR transform', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(1024, 768, 2);
+    fx.cr.resize();
+    expect(fx.canvas.width).toBe(2048);
+    expect(fx.canvas.height).toBe(1536);
+    expect(fx.ctx.setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0);
+  });
+
+  it('returns the freshly-measured dimensions in CSS px', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(800, 600);
+    const d = fx.cr.resize();
+    expect(d.W).toBe(800);
+    expect(d.H).toBe(600);
+  });
+
+  it('reads safe-area insets via getComputedStyle (with +4 px pad on bottom)', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(800, 600);
+    fx.setSafeAreas({ safeBottom: 12, safeLeft: 8, safeRight: 6 });
+    const d = fx.cr.resize();
+    expect(d.kbSafeBottom).toBe(16);
+    expect(d.safeLeft).toBe(8);
+    expect(d.safeRight).toBe(6);
+  });
+
+  it('clamps kbHeight to [38, 56]', () => {
+    const tiny = makeCanvasResizeFixture();
+    tiny.setSize(800, 100); // 100*0.065 = 6.5, clamped up to 38
+    expect(tiny.cr.resize().kbHeight).toBe(38);
+
+    const huge = makeCanvasResizeFixture();
+    huge.setSize(800, 2000); // 2000*0.065 = 130, clamped down to 56
+    expect(huge.cr.resize().kbHeight).toBe(56);
+
+    const mid = makeCanvasResizeFixture();
+    mid.setSize(800, 800); // 800*0.065 = 52
+    expect(mid.cr.resize().kbHeight).toBe(52);
+  });
+
+  it('falls back to dpr=1 when devicePixelRatio is missing', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(640, 480, 0); // 0 → falsy → fallback
+    fx.cr.resize();
+    expect(fx.canvas.width).toBe(640);
+    expect(fx.ctx.setTransform).toHaveBeenCalledWith(1, 0, 0, 1, 0, 0);
+  });
+});
+
+describe('createCanvasResize — bg-stars decisions', () => {
+  it('does not init bg-stars when isRunning=false (boot path)', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(800, 600);
+    fx.cr.resize(); // running=false
+    expect(fx.initBackgroundSpy).not.toHaveBeenCalled();
+    expect(fx.cr.getBgStars()).toBeNull();
+  });
+
+  it('initBgStars() seeds the field even when not running', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(800, 600);
+    fx.cr.resize();
+    fx.cr.initBgStars();
+    expect(fx.initBackgroundSpy).toHaveBeenCalledWith({
+      screenW: 800,
+      screenH: 600,
+      starCount: 30,
+    });
+    const bg = fx.cr.getBgStars();
+    expect(bg).not.toBeNull();
+    expect(bg!.stars.length).toBe(30);
+  });
+
+  it('reinits when running + dimensions change >25%', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(800, 600);
+    fx.cr.resize();
+    fx.cr.initBgStars();
+    fx.setRunning(true);
+    fx.initBackgroundSpy.mockClear();
+    fx.setSize(1500, 600); // +87% width → reinit
+    fx.cr.resize();
+    expect(fx.initBackgroundSpy).toHaveBeenCalledOnce();
+  });
+
+  it('scales (no reinit) when running + dimensions change <=25%', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(1000, 600);
+    fx.cr.resize();
+    fx.cr.initBgStars();
+    const before = fx.cr.getBgStars()!.stars.map((s) => ({ x: s.x, y: s.y }));
+    fx.setRunning(true);
+    fx.initBackgroundSpy.mockClear();
+    fx.setSize(1100, 660); // +10% → scale, both axes
+    fx.cr.resize();
+    expect(fx.initBackgroundSpy).not.toHaveBeenCalled();
+    const after = fx.cr.getBgStars()!.stars;
+    // Stars should be scaled by sx=1100/1000=1.1, sy=660/600=1.1.
+    expect(after[1].x).toBeCloseTo(before[1].x * 1.1, 5);
+    expect(after[1].y).toBeCloseTo(before[1].y * 1.1, 5);
+  });
+
+  it('reinits when running but bg field never seeded (first running call)', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(800, 600);
+    fx.cr.resize(); // boot: running=false, no bg
+    fx.setRunning(true);
+    fx.cr.resize(); // running: bg=null → action=reinit
+    expect(fx.initBackgroundSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('createCanvasResize — getDimensions', () => {
+  it('returns zeros before first resize', () => {
+    const fx = makeCanvasResizeFixture();
+    const d = fx.cr.getDimensions();
+    expect(d.W).toBe(0);
+    expect(d.H).toBe(0);
+  });
+
+  it('returns the most recent values after resize()', () => {
+    const fx = makeCanvasResizeFixture();
+    fx.setSize(1024, 768);
+    fx.cr.resize();
+    const d1 = fx.cr.getDimensions();
+    expect(d1.W).toBe(1024);
+    fx.setSize(2048, 1536);
+    fx.cr.resize();
+    const d2 = fx.cr.getDimensions();
+    expect(d2.W).toBe(2048);
+    // getDimensions returns the same in-place ref each call — useful
+    // for the shell's `const d = _canvasResize.getDimensions()` boot
+    // pattern.
+    expect(d1).toBe(d2);
+  });
+});
+
+// Suppress unused-var lint on the imported BgStarsField type — it's
+// re-exported for shell wire-up but not directly referenced in tests.
+const _unused: BgStarsField | null = null;
+void _unused;

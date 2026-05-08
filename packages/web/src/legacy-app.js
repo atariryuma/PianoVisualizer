@@ -1104,6 +1104,12 @@
     // ========================================
     // Canvas
     // ========================================
+    // Phase 0d batch 59: canvas resize + bg-stars maybeReinit + the
+    // initBgStars factory all moved into viewport-layout.ts. The
+    // shell keeps `let W` / `let H` / etc. as shadow vars so the 50+
+    // existing reads across legacy-app.js don't have to thread the
+    // dimensions bag through; they're updated from the factory's
+    // returned snapshot after each resize() call.
     /** @type {number} canvas width in CSS pixels */
     let W = 0;
     /** @type {number} canvas height in CSS pixels */
@@ -1113,48 +1119,26 @@
     let kbHeight = 50;
     let safeLeft = 0;
     let safeRight = 0;
-    let _bgStarsPrevW = 0, _bgStarsPrevH = 0;
+    const _canvasResize = ViewportLayout.createCanvasResize({
+      canvas: /** @type {HTMLCanvasElement} */ (DOM.canvas),
+      ctx,
+      isRunning: () => !!state.running,
+      getStarCount: () => PERF_PROFILE.bgStarCount,
+      initBackground: (opts) =>
+        /** @type {import('./viewport-layout').BgStarsField} */ (
+          /** @type {any} */ (PianoCore.initBackground(opts))
+        ),
+    });
     function resize() {
-      const dpr = window.devicePixelRatio || 1;
-      const prevW = _bgStarsPrevW;
-      const prevH = _bgStarsPrevH;
-      W = window.innerWidth;
-      H = window.innerHeight;
-      const canvas = /** @type {HTMLCanvasElement} */ (DOM.canvas);
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // Cached so the per-frame draw can skip getComputedStyle / Math.min/max.
-      const cs = getComputedStyle(document.documentElement);
-      /** @param {string} name */
-      const readPx = (name) => parseFloat(cs.getPropertyValue(name)) || 0;
-      kbSafeBottom = readPx('--safe-bottom') + 4;
-      safeLeft = readPx('--safe-left');
-      safeRight = readPx('--safe-right');
-      kbHeight = Math.min(56, Math.max(38, H * 0.065));
-      if (state.running) maybeReinitBgStars(prevW, prevH);
-      _bgStarsPrevW = W;
-      _bgStarsPrevH = H;
+      const d = _canvasResize.resize();
+      W = d.W;
+      H = d.H;
+      kbHeight = d.kbHeight;
+      kbSafeBottom = d.kbSafeBottom;
+      safeLeft = d.safeLeft;
+      safeRight = d.safeRight;
     }
-    // Phase 0d batch 28: pure bg-stars decision moved to
-    // packages/web/src/viewport-layout.ts. Shell still owns
-    // initBgStars + the per-star position mutation.
-    /** @param {number} prevW @param {number} prevH */
-    function maybeReinitBgStars(prevW, prevH) {
-      const decision = ViewportLayout.decideBgStarsAction(prevW, prevH, W, H, !!_bg);
-      if (decision.action === 'reinit') {
-        initBgStars();
-        return;
-      }
-      const { sx, sy } = decision;
-      // _bg is non-null when we're in the 'scale' branch (the
-      // !_bg case routes to 'reinit' inside decideBgStarsAction).
-      if (!_bg) return;
-      for (const s of _bg.stars) {
-        s.x *= sx;
-        s.y *= sy;
-      }
-    }
+    function initBgStars() { _canvasResize.initBgStars(); }
     resize();
     window.addEventListener('resize', resize);
 
@@ -1617,20 +1601,15 @@
     // Background composites — Phase 0b.3: delegated to @piano/core.
     // Star field stored as { stars: [...] } via initBackground; drawBgStars
     // mutates the twinkle phase in-place. Aurora + flowers are pure draws.
-    /** @type {ReturnType<typeof PianoCore.initBackground>|null} */
-    let _bg = null;
-    function initBgStars() {
-      _bg = PianoCore.initBackground({
-        screenW: W,
-        screenH: H,
-        starCount: PERF_PROFILE.bgStarCount,
-      });
-    }
+    // Phase 0d batch 59: the bg-stars field + initBgStars factory now
+    // live inside _canvasResize (declared above). The shell only
+    // reads the field through getBgStars() at draw time.
     const _themeColors = () => CONFIG.THEMES[state.currentTheme].colors;
     /** @param {number} _time */
     const drawBgStars = (_time) => {
-      if (!_bg) return;
-      PianoCore.drawBgStars(ctx, _bg, { flow: state.flow, themeColors: _themeColors() });
+      const bg = _canvasResize.getBgStars();
+      if (!bg) return;
+      PianoCore.drawBgStars(ctx, /** @type {any} */ (bg), { flow: state.flow, themeColors: _themeColors() });
     };
     /** @param {number} time */
     const drawAurora = (time) =>
