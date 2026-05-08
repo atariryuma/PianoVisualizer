@@ -2,7 +2,12 @@
 // Tests for packages/web/src/modal-focus.ts.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createModalFocus, FOCUSABLE_SELECTOR } from '../src/modal-focus';
+import {
+  createEscRouter,
+  createModalFocus,
+  FOCUSABLE_SELECTOR,
+  type EscRoute,
+} from '../src/modal-focus';
 
 function makeModal(buttonsCount: number = 3): HTMLElement {
   const modal = document.createElement('div');
@@ -201,5 +206,165 @@ describe('FOCUSABLE_SELECTOR', () => {
     expect(FOCUSABLE_SELECTOR).toBe(
       'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
+  });
+});
+
+// ─── createEscRouter (Phase 0d batch 61) ──────────────────────────
+
+interface RouteSpy extends EscRoute {
+  closeSpy: ReturnType<typeof vi.fn>;
+  openFlag: { value: boolean };
+}
+
+function makeRoute(priority: number, openInitially = false): RouteSpy {
+  const closeSpy = vi.fn();
+  const openFlag = { value: openInitially };
+  return {
+    priority,
+    isOpen: () => openFlag.value,
+    close: closeSpy,
+    closeSpy,
+    openFlag,
+  };
+}
+
+function fireEsc(target?: HTMLElement | null): KeyboardEvent {
+  const e = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
+  // happy-dom respects the dispatch path; set target by dispatching from the element.
+  (target ?? document).dispatchEvent(e);
+  return e;
+}
+
+describe('createEscRouter — basic routing', () => {
+  it('install() registers the keydown listener; uninstall() detaches it', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    fireEsc();
+    expect(r.closeSpy).toHaveBeenCalledOnce();
+    router.uninstall();
+    fireEsc();
+    expect(r.closeSpy).toHaveBeenCalledOnce(); // unchanged after uninstall
+  });
+
+  it('second install() is a no-op (no double-fire)', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    router.install();
+    fireEsc();
+    expect(r.closeSpy).toHaveBeenCalledOnce();
+    router.uninstall();
+  });
+
+  it('fires the highest-priority open route', () => {
+    const lo = makeRoute(10, true);
+    const hi = makeRoute(50, true);
+    const mid = makeRoute(30, true);
+    const router = createEscRouter({ document, routes: [lo, hi, mid] });
+    router.install();
+    fireEsc();
+    expect(hi.closeSpy).toHaveBeenCalledOnce();
+    expect(mid.closeSpy).not.toHaveBeenCalled();
+    expect(lo.closeSpy).not.toHaveBeenCalled();
+    router.uninstall();
+  });
+
+  it('skips closed routes; fires the next-priority open one', () => {
+    const r1 = makeRoute(50, false);
+    const r2 = makeRoute(30, true);
+    const r3 = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r1, r2, r3] });
+    router.install();
+    fireEsc();
+    expect(r2.closeSpy).toHaveBeenCalledOnce();
+    expect(r3.closeSpy).not.toHaveBeenCalled();
+    router.uninstall();
+  });
+
+  it('non-Escape keys are ignored', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    expect(r.closeSpy).not.toHaveBeenCalled();
+    router.uninstall();
+  });
+
+  it('all routes closed → no-op', () => {
+    const r1 = makeRoute(50, false);
+    const r2 = makeRoute(30, false);
+    const router = createEscRouter({ document, routes: [r1, r2] });
+    router.install();
+    fireEsc();
+    expect(r1.closeSpy).not.toHaveBeenCalled();
+    expect(r2.closeSpy).not.toHaveBeenCalled();
+    router.uninstall();
+  });
+
+  it('isOpen is read fresh each ESC (not snapshotted at install)', () => {
+    const r = makeRoute(10, false);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    fireEsc();
+    expect(r.closeSpy).not.toHaveBeenCalled();
+    r.openFlag.value = true; // synchronous flip
+    fireEsc();
+    expect(r.closeSpy).toHaveBeenCalledOnce();
+    router.uninstall();
+  });
+});
+
+describe('createEscRouter — input-typing exception', () => {
+  it('ESC inside <input> with content → swallowed (browser native clear runs)', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    const input = document.createElement('input');
+    input.value = 'half-typed text';
+    document.body.appendChild(input);
+    input.focus();
+    fireEsc(input);
+    expect(r.closeSpy).not.toHaveBeenCalled();
+    router.uninstall();
+  });
+
+  it('ESC inside empty <input> → still closes the modal', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    const input = document.createElement('input');
+    input.value = '';
+    document.body.appendChild(input);
+    fireEsc(input);
+    expect(r.closeSpy).toHaveBeenCalledOnce();
+    router.uninstall();
+  });
+
+  it('ESC inside <textarea> with content → swallowed', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    const ta = document.createElement('textarea');
+    ta.value = 'long\ndraft\nhere';
+    document.body.appendChild(ta);
+    fireEsc(ta);
+    expect(r.closeSpy).not.toHaveBeenCalled();
+    router.uninstall();
+  });
+
+  it('ESC outside any input → fires close even if a (different) input had value', () => {
+    const r = makeRoute(10, true);
+    const router = createEscRouter({ document, routes: [r] });
+    router.install();
+    const input = document.createElement('input');
+    input.value = 'still typed';
+    document.body.appendChild(input);
+    // Dispatch from <body> instead of input itself — handler reads
+    // event.target, not document.activeElement.
+    fireEsc(document.body);
+    expect(r.closeSpy).toHaveBeenCalledOnce();
+    router.uninstall();
   });
 });

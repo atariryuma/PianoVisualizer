@@ -1343,42 +1343,49 @@
     let renderSessionSummaryText = (_animate) => {};
     /** @type {(combo: number, flow: number) => import('./session-summary').BestScores} */
     let saveBestScores = (_c, _f) => /** @type {import('./session-summary').BestScores} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
-    // Single, ordered ESC handler for every modal. Highest-z first so the
-    // topmost layer pops first; if the user is currently typing inside an
-    // <input> / <textarea> we let the browser's native ESC handling run
-    // (clears the field) instead of nuking the modal mid-edit.
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      // Don't shadow the t() translator; ESC inside an input clears the
-      // browser's native field — let it run instead of nuking the modal.
-      const tgt = /** @type {HTMLInputElement|null} */ (e.target);
-      if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) {
-        if (tgt.value && tgt.value.length > 0) return;
-      }
-      // sectionEditModal sits above addSongModal in z; settingsPanel above
-      // both; sectionResult / sessionSummary / songPanel close to title.
-      const SECEDIT = typeof DOM_SECEDIT !== 'undefined' ? DOM_SECEDIT : null;
-      const ADDSONG = typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG : null;
-      if (SECEDIT && SECEDIT.modal && SECEDIT.modal.classList.contains('visible')) {
-        closeSectionEditor();
-        return;
-      }
-      if (DOM.settingsPanel.classList.contains('visible')) {
-        closeSettings();
-        return;
-      }
-      if (ADDSONG && ADDSONG.modal && ADDSONG.modal.classList.contains('visible')) {
-        closeAddSongModal();
-        return;
-      }
-      if (DOM.sessionSummary && DOM.sessionSummary.classList.contains('visible')) {
-        DOM.sessionSummary.classList.remove('visible');
-        return;
-      }
-      if (DOM.sectionResult && DOM.sectionResult.classList.contains('visible')) {
-        DOM.sectionResult.classList.remove('visible');
-      }
-    });
+    // Phase 0d batch 61: single ordered ESC handler for every modal
+    // moved to modal-focus.ts createEscRouter(). Each route is a
+    // priority + isOpen() predicate + close() — the router sorts by
+    // priority and fires the topmost open one. SECEDIT + ADDSONG are
+    // forward-declared (their wire-up runs further down the file)
+    // so we read them through `typeof DOM_SECEDIT !== 'undefined'`
+    // guards inside the predicate thunks.
+    ModalFocus.createEscRouter({
+      document,
+      routes: [
+        {
+          priority: 50,
+          isOpen: () => {
+            const SECEDIT = typeof DOM_SECEDIT !== 'undefined' ? DOM_SECEDIT : null;
+            return !!(SECEDIT && SECEDIT.modal && SECEDIT.modal.classList.contains('visible'));
+          },
+          close: () => closeSectionEditor(),
+        },
+        {
+          priority: 40,
+          isOpen: () => DOM.settingsPanel.classList.contains('visible'),
+          close: () => closeSettings(),
+        },
+        {
+          priority: 30,
+          isOpen: () => {
+            const ADDSONG = typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG : null;
+            return !!(ADDSONG && ADDSONG.modal && ADDSONG.modal.classList.contains('visible'));
+          },
+          close: () => closeAddSongModal(),
+        },
+        {
+          priority: 20,
+          isOpen: () => !!(DOM.sessionSummary && DOM.sessionSummary.classList.contains('visible')),
+          close: () => DOM.sessionSummary && DOM.sessionSummary.classList.remove('visible'),
+        },
+        {
+          priority: 10,
+          isOpen: () => !!(DOM.sectionResult && DOM.sectionResult.classList.contains('visible')),
+          close: () => DOM.sectionResult && DOM.sectionResult.classList.remove('visible'),
+        },
+      ],
+    }).install();
 
     // settings-panel wire-up moved below — see "settings-panel wire-up".
     // Reason: createSettingsPanel needs `practice`, `midiInput`, and
