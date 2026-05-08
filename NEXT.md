@@ -6,12 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2 + extended, batches 39-43)**. **27 new
+Last refreshed: **2026-05-08 (cycle 2 + extended, batches 39-50)**. **34 new
 typed modules** plus the autonomous bench harness landed across the session.
-`legacy-app.js` is now **5,335 lines** (was 6,861 at session start, **−1,526
-net** — pacing toward Phase 0e DoD). **1,779 tests** total (786 core, 993 web;
-**+635 this session**). `pnpm verify` clean. Bench **11/11 passing across every
-commit**, frame avg 5.2–7.1 ms.
+`legacy-app.js` is now **5,100 lines** (was 6,861 at session start, **−1,761
+net** — pacing toward Phase 0e DoD). **1,878 tests** total (786 core, 1,092 web;
+**+734 this session**). `pnpm verify` clean. Bench **11/11 passing across every
+commit**, frame avg 5.2–7.2 ms.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -99,6 +99,23 @@ every commit.**
   celebration.
 - batch 43 — `agc-controller.ts`: 25-line software AGC reducer (-4 lines net, +8
   tests). Asymmetric attack/release, voice-suppression cap.
+- batch 44 — `hud-update.ts`: encouragement-banner reducer + flow-gauge writer
+  with whole-percent-bucket cache + debug overlay (-43 lines, +17 tests).
+- batch 45 — `quality-update.ts`: per-frame rhythm/dynamics/stability/composite
+  scoring reducer + growth-trend ring + coaching-feedback i18n + DOM gate (-39
+  lines, +12 tests).
+- batch 46 — `quest-state-update.ts`: v10 Magic Quest tick + celebration toast,
+  dot strip, activeQuestId mirror (-28 lines, +14 tests).
+- batch 47 — `modal-focus.ts`: 57-line tab-trap + non-LIFO restore-on-close,
+  document/rAF held by deps (-52 lines, +13 tests).
+- batch 48 — `session-reset.ts`: 85-line full-session reset reducer (state
+  scalars + 5 @piano/core reducers + 11 DOM clears + MIDI bookkeeping) (-44
+  lines, +18 tests). midiState via thunk for TDZ.
+- batch 49 — `user-songs-mxl.ts`: lazy IDBDatabase handle cache + 4-op wrapper
+  generic over D/R + JSZip-backed .mxl extraction (-23 lines, +12 tests).
+- batch 50 — `intro-diag.ts`: setIntroHintDiagnostic + showIntroDiag + clear +
+  showMidiWaitingHint with iPad/WMB once-per-session guard, isAppleMobile +
+  hasRequestMIDIAccess held by deps (-6 lines, +13 tests).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -210,11 +227,18 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 93  | `web/session-confidence-ui.ts`  | 13    | `packages/web/src/session-confidence-ui.ts`     |
 | 94  | `web/game-state-update.ts`      | 18    | `packages/web/src/game-state-update.ts`         |
 | 95  | `web/agc-controller.ts`         | 8     | `packages/web/src/agc-controller.ts`            |
+| 96  | `web/hud-update.ts`             | 17    | `packages/web/src/hud-update.ts`                |
+| 97  | `web/quality-update.ts`         | 12    | `packages/web/src/quality-update.ts`            |
+| 98  | `web/quest-state-update.ts`     | 14    | `packages/web/src/quest-state-update.ts`        |
+| 99  | `web/modal-focus.ts`            | 13    | `packages/web/src/modal-focus.ts`               |
+| 100 | `web/session-reset.ts`          | 18    | `packages/web/src/session-reset.ts`             |
+| 101 | `web/user-songs-mxl.ts`         | 12    | `packages/web/src/user-songs-mxl.ts`            |
+| 102 | `web/intro-diag.ts`             | 13    | `packages/web/src/intro-diag.ts`                |
 
-**Status: 1,779/1,779 tests green (786 core + 993 web), 0 lint errors, 0 type
+**Status: 1,878/1,878 tests green (786 core + 1,092 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
-avg 5.2–7.1 ms. `legacy-app.js`: 5,335 lines (was 9,000+ at Phase 0a; 6,861 at
-session start this cycle, **−1,526 net** across 26 shell-shrinking batches + 1
+avg 5.2–7.2 ms. `legacy-app.js`: 5,100 lines (was 9,000+ at Phase 0a; 6,861 at
+session start this cycle, **−1,761 net** across 33 shell-shrinking batches + 1
 architectural batch).
 
 ---
