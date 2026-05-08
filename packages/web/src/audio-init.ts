@@ -1,18 +1,18 @@
 // Audio context lifecycle + recovery seam.
-// Phase 0d batch 5 extraction from legacy-app.js.
+// Phase 0d batches 5 + 60 extracted from legacy-app.js.
 //
 // Scope (deliberately narrow): everything that creates / rebuilds /
-// recreates the AudioContext + gain → analyser graph. The boot-flow
-// helpers (`initAudio`, `acquireMic`, `suspendMic`, `resumeMic`) stay
-// in the shell because they're tied to the state-machine + DOM + MIDI
-// + i18n wire-up; carving those would force every audio-node read
-// across the rest of the shell to indirect through this module.
+// recreates the AudioContext + gain → analyser graph + the
+// visibility / devicechange handlers that drive the recovery seam.
+// The boot-flow helpers (`initAudio`, `acquireMic`, `suspendMic`,
+// `resumeMic`) stay in the shell because they're tied to the
+// state-machine + DOM + MIDI + i18n wire-up; carving those would
+// force every audio-node read across the rest of the shell to
+// indirect through this module.
 //
 // Out of scope:
 //   • `initAudio` (boot — MIDI probe → mic acquisition → state.micSuspended)
 //   • `acquireMic` / `suspendMic` / `resumeMic` (mic lifecycle)
-//   • `devicechange` + `visibilitychange` listeners (cross-cutting — also
-//     toggle wake-lock, MIDI re-enumeration, page-resume cleanup)
 //
 // In scope:
 //   • `MIC_CONSTRAINTS` + `AUDIO_SAMPLE_RATE` constants
@@ -21,6 +21,9 @@
 //   • `createAudioRecovery()` — close-context-and-rebuild seam, with
 //     re-entrancy guard, that the shell calls from devicechange + visibility
 //     resume listeners
+//   • `createAudioLifecycle()` — installs `visibilitychange` +
+//     `devicechange` listeners that drive recovery + cross-cut MIDI
+//     re-enumeration + wake-lock refresh on resume (Phase 0d batch 60)
 //
 // WebKit Bug context (open as of 2025):
 //   • Bug 154538 — AirPods sample-rate flip (24/48). Pinning sampleRate at
@@ -270,4 +273,202 @@ export function createAudioRecovery(deps: AudioRecoveryDeps): AudioRecovery {
   }
 
   return { recover };
+}
+
+// ─── Audio lifecycle handlers (Phase 0d batch 60) ─────────────────
+
+/** Subset of `navigator` we touch. */
+export interface AudioLifecycleNavigator {
+  requestMIDIAccess?: (...args: unknown[]) => Promise<unknown>;
+  mediaDevices?: {
+    addEventListener?: (
+      type: 'devicechange',
+      listener: (this: unknown, ev: Event) => unknown
+    ) => void;
+  };
+}
+
+/** Subset of `midiInput` ref the visibility handler reads. */
+export interface AudioLifecycleMidiRef {
+  enabled: boolean;
+}
+
+export interface AudioLifecycleDeps {
+  // ── audio side ─────────────────────────────────────────────────
+  /** Read fresh on every event — the shell may have just-recreated
+   *  the context inside an earlier visibility/device cycle. */
+  getAudioCtx: () => AudioContext | null;
+  /** Recovery seam — usually the same `recover()` returned by
+   *  createAudioRecovery in this module. */
+  recover: () => Promise<void>;
+  /** Predicate read on entry to both handlers; devicechange + the
+   *  wake-lock branch of visibilitychange are gated by it. */
+  isRunning: () => boolean;
+
+  // ── wake lock ─────────────────────────────────────────────────
+  /** Re-acquire the screen wake lock on tab visibility resume.
+   *  Browsers drop the lock on hide; iOS additionally suspends the
+   *  AudioContext + (in WMB) silently breaks MIDI handlers. */
+  requestWakeLock: () => void;
+
+  // ── MIDI cross-cut on visibility resume ────────────────────────
+  navigator: AudioLifecycleNavigator;
+  midiInput: AudioLifecycleMidiRef;
+  /** Round-trip the cached MIDIInput port to confirm it's still
+   *  alive. WMB / WKWebView bg suspension turns the port into a
+   *  corpse; verifyAlive false → null + rescan. */
+  verifyMidiAlive: () => Promise<boolean>;
+  /** Force-fresh MIDIAccess so the next rescan re-enumerates
+   *  instead of reading a dead reference. The shell's
+   *  `_midiAccess = null` write happens here. */
+  clearMidiAccessCache: () => void;
+  /** Silent rescan (no diagnostic on failure). */
+  rescanMidi: (silent: boolean) => Promise<boolean>;
+  startMidiAutoRescan: () => void;
+
+  // ── targets / time hooks ──────────────────────────────────────
+  /** Defaults to live `document`. */
+  document?: Document;
+  /** devicechange debounce window (ms). Default 250. The legacy
+   *  shell stashed the timer handle on `window._audioDeviceChangeTimer`;
+   *  we keep it in the factory closure now. */
+  deviceChangeDebounceMs?: number;
+  /** Timer hooks — tests inject vi.useFakeTimers() shims. */
+  setTimeout?: (cb: () => void, ms: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
+
+  // ── logging ───────────────────────────────────────────────────
+  /** Defaults to `console.warn`. */
+  warn?: (msg: string) => void;
+}
+
+export interface AudioLifecycle {
+  /** Wire `document.visibilitychange` + `navigator.mediaDevices.devicechange`
+   *  listeners. Idempotent — second call is a no-op. */
+  install(): void;
+  /** Detach both listeners (mainly for tests). */
+  uninstall(): void;
+}
+
+const DEFAULT_DEVICECHANGE_DEBOUNCE_MS = 250;
+
+export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
+  const debounceMs = deps.deviceChangeDebounceMs ?? DEFAULT_DEVICECHANGE_DEBOUNCE_MS;
+  const setT = deps.setTimeout ?? ((cb, ms) => setTimeout(cb, ms));
+  const clearT = deps.clearTimeout ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+  const warn = deps.warn ?? ((m: string) => console.warn(m));
+  const doc = deps.document ?? (typeof document !== 'undefined' ? document : null);
+
+  let installed = false;
+  let deviceTimer: unknown = null;
+  let visibilityHandler: (() => void) | null = null;
+  let deviceHandler: (() => void) | null = null;
+
+  // AirPods / headphone unplug switches sample rate (24/48 flip).
+  // The cleanest recovery is to recreate the context — same as the
+  // visibility recovery path. devicechange fires multiple times for
+  // one event, hence the debounce.
+  function onDeviceChange(): void {
+    if (!deps.isRunning() || !deps.getAudioCtx()) return;
+    if (deviceTimer !== null) clearT(deviceTimer);
+    deviceTimer = setT(() => {
+      deviceTimer = null;
+      deps.recover().catch((e: unknown) => {
+        warn('[AUDIO] devicechange recovery: ' + (e instanceof Error ? e.message : String(e)));
+      });
+    }, debounceMs);
+  }
+
+  // Browsers drop the wake lock when the tab is hidden, suspend
+  // AudioContext, and (on iOS WMB) silently disable MIDI port
+  // handlers. On every resume we refresh all three so the kid can
+  // pick up exactly where they left off without seeing a phantom
+  // "connection error".
+  async function onVisibilityChange(): Promise<void> {
+    if (!doc || doc.visibilityState !== 'visible') return;
+    if (deps.isRunning()) deps.requestWakeLock();
+
+    const ctx = deps.getAudioCtx();
+    if (ctx) {
+      // iOS suspend ≠ resumable. If state stayed 'running' through
+      // the bg round-trip we can keep going; otherwise full recreate.
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          /* ignore */
+        }
+        // If still suspended after resume(), context is dead — recreate.
+        if (ctx.state === 'suspended') {
+          await deps.recover();
+        }
+      }
+    }
+
+    if (!deps.navigator.requestMIDIAccess) return;
+    if (deps.midiInput.enabled) {
+      // We *think* MIDI is connected — verify the port still responds.
+      const ok = await deps.verifyMidiAlive();
+      if (ok) return;
+      // The port is a corpse (WMB / WKWebView bg suspension). Force
+      // a fresh MIDIAccess so the next rescan re-enumerates instead
+      // of re-checking the dead reference.
+      deps.clearMidiAccessCache();
+    }
+    // No MIDI / dead port → silent rescan. Force-fresh on resume so
+    // a stale enumeration from before the background trip can't
+    // linger; the auto-rescan poller keeps trying if this single
+    // attempt doesn't catch the device immediately.
+    deps.clearMidiAccessCache();
+    deps
+      .rescanMidi(true)
+      .then((rescanOk) => {
+        if (!rescanOk) deps.startMidiAutoRescan();
+      })
+      .catch(() => deps.startMidiAutoRescan());
+  }
+
+  function install(): void {
+    if (installed) return;
+    installed = true;
+    if (deps.navigator.mediaDevices?.addEventListener) {
+      deviceHandler = onDeviceChange;
+      deps.navigator.mediaDevices.addEventListener('devicechange', deviceHandler);
+    }
+    if (doc) {
+      // Wrap the async handler so addEventListener doesn't see a
+      // dangling promise.
+      visibilityHandler = () => {
+        void onVisibilityChange();
+      };
+      doc.addEventListener('visibilitychange', visibilityHandler);
+    }
+  }
+
+  function uninstall(): void {
+    if (!installed) return;
+    installed = false;
+    if (deviceTimer !== null) {
+      clearT(deviceTimer);
+      deviceTimer = null;
+    }
+    if (
+      deps.navigator.mediaDevices &&
+      'removeEventListener' in deps.navigator.mediaDevices &&
+      deviceHandler
+    ) {
+      (
+        deps.navigator.mediaDevices as unknown as {
+          removeEventListener: (t: string, h: () => void) => void;
+        }
+      ).removeEventListener('devicechange', deviceHandler);
+    }
+    if (doc && visibilityHandler) {
+      doc.removeEventListener('visibilitychange', visibilityHandler);
+    }
+    deviceHandler = null;
+    visibilityHandler = null;
+  }
+
+  return { install, uninstall };
 }

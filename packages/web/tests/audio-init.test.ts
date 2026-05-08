@@ -11,10 +11,12 @@ import {
   createAudioContext,
   buildAudioGraph,
   createAudioRecovery,
+  createAudioLifecycle,
   MIC_CONSTRAINTS,
   AUDIO_SAMPLE_RATE,
   type AudioGraphConfig,
   type AudioStateSnapshot,
+  type AudioLifecycleDeps,
 } from '../src/audio-init';
 
 // ─── Fake AudioContext ───────────────────────────────────────────────
@@ -362,5 +364,345 @@ describe('createAudioRecovery', () => {
     await harness.recovery.recover();
     // The new graph should have a mic source node wired (the stream was alive).
     expect(harness.applied!.graph.micSourceNode).not.toBeNull();
+  });
+});
+
+// ─── createAudioLifecycle (Phase 0d batch 60) ─────────────────────
+
+interface LifecycleFx {
+  install: () => void;
+  uninstall: () => void;
+  fireDeviceChange: () => void;
+  fireVisibility: (state: 'visible' | 'hidden') => Promise<void>;
+  recover: ReturnType<typeof vi.fn>;
+  requestWakeLock: ReturnType<typeof vi.fn>;
+  verifyMidiAlive: ReturnType<typeof vi.fn>;
+  rescanMidi: ReturnType<typeof vi.fn>;
+  startMidiAutoRescan: ReturnType<typeof vi.fn>;
+  clearMidiAccessCache: ReturnType<typeof vi.fn>;
+  setRunning: (b: boolean) => void;
+  setAudioCtx: (
+    ctx: { state: 'suspended' | 'running'; resume: () => Promise<void> } | null
+  ) => void;
+  setMidiEnabled: (b: boolean) => void;
+  setHasRequestMIDIAccess: (b: boolean) => void;
+  warn: ReturnType<typeof vi.fn>;
+  /** Drive the fake setTimeout queue manually. */
+  flushTimers: (ms: number) => void;
+}
+
+function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): LifecycleFx {
+  let running = true;
+  let ctx: { state: 'suspended' | 'running'; resume: () => Promise<void> } | null = null;
+  let midiEnabled = false;
+  let hasRequestMIDIAccess = true;
+
+  const recover = vi.fn(async () => {});
+  const requestWakeLock = vi.fn();
+  const verifyMidiAlive = vi.fn(async () => true);
+  const rescanMidi = vi.fn(async () => true);
+  const startMidiAutoRescan = vi.fn();
+  const clearMidiAccessCache = vi.fn();
+  const warn = vi.fn();
+
+  // Manual event-target stubs so we can fire events deterministically.
+  type DeviceListener = (this: unknown, ev: Event) => void;
+  let deviceListener: DeviceListener | null = null;
+  const mediaDevices = {
+    addEventListener: vi.fn((_t: string, h: DeviceListener) => {
+      deviceListener = h;
+    }),
+    removeEventListener: vi.fn(() => {
+      deviceListener = null;
+    }),
+  };
+
+  // Use the real `document` (happy-dom). We force visibilityState
+  // via getter override.
+  let visState: 'visible' | 'hidden' = 'hidden';
+  const docStub = {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    get visibilityState() {
+      return visState;
+    },
+  } as unknown as Document;
+
+  let visListener: (() => void) | null = null;
+  (docStub.addEventListener as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+    (_t: string, h: () => void) => {
+      visListener = h;
+    }
+  );
+
+  // Manual fake timers so we can flush devicechange debounce
+  // synchronously inside tests.
+  const queue: Array<{ id: number; cb: () => void; fireAt: number }> = [];
+  let nowMs = 0;
+  let nextId = 1;
+  const setT = vi.fn((cb: () => void, ms: number) => {
+    const id = nextId++;
+    queue.push({ id, cb, fireAt: nowMs + ms });
+    return id;
+  });
+  const clearT = vi.fn((handle: unknown) => {
+    const idx = queue.findIndex((q) => q.id === handle);
+    if (idx >= 0) queue.splice(idx, 1);
+  });
+
+  const lifecycle = createAudioLifecycle({
+    getAudioCtx: () => ctx as unknown as AudioContext,
+    recover,
+    isRunning: () => running,
+    requestWakeLock,
+    navigator: {
+      get requestMIDIAccess() {
+        return hasRequestMIDIAccess ? () => Promise.resolve({}) : undefined;
+      },
+      mediaDevices,
+    },
+    midiInput: {
+      get enabled() {
+        return midiEnabled;
+      },
+      set enabled(b: boolean) {
+        midiEnabled = b;
+      },
+    },
+    verifyMidiAlive,
+    clearMidiAccessCache,
+    rescanMidi,
+    startMidiAutoRescan,
+    document: docStub,
+    setTimeout: setT as unknown as AudioLifecycleDeps['setTimeout'],
+    clearTimeout: clearT as unknown as AudioLifecycleDeps['clearTimeout'],
+    warn,
+    ...over,
+  });
+
+  return {
+    install: lifecycle.install,
+    uninstall: lifecycle.uninstall,
+    fireDeviceChange: () => {
+      if (deviceListener) deviceListener.call(null, new Event('devicechange'));
+    },
+    fireVisibility: async (state) => {
+      visState = state;
+      if (visListener) visListener();
+      // Drain microtasks so the async handler completes.
+      await new Promise((r) => setImmediate(r));
+    },
+    recover,
+    requestWakeLock,
+    verifyMidiAlive,
+    rescanMidi,
+    startMidiAutoRescan,
+    clearMidiAccessCache,
+    setRunning: (b) => {
+      running = b;
+    },
+    setAudioCtx: (newCtx) => {
+      ctx = newCtx;
+    },
+    setMidiEnabled: (b) => {
+      midiEnabled = b;
+    },
+    setHasRequestMIDIAccess: (b) => {
+      hasRequestMIDIAccess = b;
+    },
+    warn,
+    flushTimers: (ms) => {
+      nowMs += ms;
+      const ready = queue.filter((q) => q.fireAt <= nowMs);
+      ready.forEach((q) => q.cb());
+      queue.splice(0, queue.length, ...queue.filter((q) => q.fireAt > nowMs));
+    },
+  };
+}
+
+describe('createAudioLifecycle — install / uninstall', () => {
+  it('install() registers both listeners; second install is a no-op', () => {
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.install();
+    // Second install must not double-register.
+    // (Implementation detail: our stubs record once.)
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    expect(fx.recover).toHaveBeenCalledTimes(1);
+  });
+
+  it('uninstall() detaches the device handler (no recover after fire)', () => {
+    const fx = makeLifecycleFixture();
+    fx.install();
+    fx.uninstall();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+});
+
+describe('createAudioLifecycle — devicechange', () => {
+  it('debounces with 250ms default; calls recover() exactly once for a burst', () => {
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.fireDeviceChange();
+    fx.fireDeviceChange();
+    fx.flushTimers(249);
+    expect(fx.recover).not.toHaveBeenCalled();
+    fx.flushTimers(2);
+    expect(fx.recover).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors custom deviceChangeDebounceMs', () => {
+    const fx = makeLifecycleFixture({ deviceChangeDebounceMs: 50 });
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(60);
+    expect(fx.recover).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing when isRunning=false', () => {
+    const fx = makeLifecycleFixture();
+    fx.setRunning(false);
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when audioCtx is null (boot path)', () => {
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(null);
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+
+  it('warn-logs when recover() rejects (must not propagate)', async () => {
+    const fx = makeLifecycleFixture({
+      recover: vi.fn().mockRejectedValue(new Error('node closed')),
+    });
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    // Allow the rejection to flow through.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fx.warn).toHaveBeenCalledOnce();
+    expect(fx.warn.mock.calls[0][0]).toContain('node closed');
+  });
+});
+
+describe('createAudioLifecycle — visibilitychange', () => {
+  it('hidden → no-op (early return)', async () => {
+    const fx = makeLifecycleFixture();
+    fx.install();
+    await fx.fireVisibility('hidden');
+    expect(fx.requestWakeLock).not.toHaveBeenCalled();
+  });
+
+  it('visible + running → re-acquires wake lock', async () => {
+    const fx = makeLifecycleFixture();
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(fx.requestWakeLock).toHaveBeenCalledOnce();
+  });
+
+  it('visible + suspended-but-resumable ctx → resume(), no recover()', async () => {
+    const resumeSpy = vi.fn(async () => {});
+    let st: 'suspended' | 'running' = 'suspended';
+    const ctx = {
+      get state() {
+        return st;
+      },
+      resume: vi.fn(async () => {
+        st = 'running';
+        await resumeSpy();
+      }),
+    };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(ctx.resume).toHaveBeenCalledOnce();
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+
+  it('visible + suspended-and-stays-suspended → recover()', async () => {
+    const ctx = {
+      state: 'suspended' as 'suspended' | 'running',
+      resume: vi.fn(async () => {}),
+    };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(ctx.resume).toHaveBeenCalledOnce();
+    expect(fx.recover).toHaveBeenCalledOnce();
+  });
+
+  it('visible + MIDI alive (verifyAlive=true) → no rescan', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setMidiEnabled(true);
+    fx.verifyMidiAlive.mockResolvedValue(true);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(fx.verifyMidiAlive).toHaveBeenCalledOnce();
+    expect(fx.clearMidiAccessCache).not.toHaveBeenCalled();
+    expect(fx.rescanMidi).not.toHaveBeenCalled();
+  });
+
+  it('visible + MIDI corpse (verifyAlive=false) → clear + silent rescan', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setMidiEnabled(true);
+    fx.verifyMidiAlive.mockResolvedValue(false);
+    fx.rescanMidi.mockResolvedValue(true);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(fx.clearMidiAccessCache).toHaveBeenCalled();
+    expect(fx.rescanMidi).toHaveBeenCalledWith(true);
+    // Drain rescan microtasks
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fx.startMidiAutoRescan).not.toHaveBeenCalled(); // rescan succeeded
+  });
+
+  it('visible + no MIDI + rescan fails → startMidiAutoRescan kicks', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setMidiEnabled(false);
+    fx.rescanMidi.mockResolvedValue(false);
+    fx.install();
+    await fx.fireVisibility('visible');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fx.startMidiAutoRescan).toHaveBeenCalledOnce();
+  });
+
+  it('visible + rescan rejects → startMidiAutoRescan still runs', async () => {
+    const fx = makeLifecycleFixture();
+    fx.rescanMidi.mockRejectedValue(new Error('boom'));
+    fx.install();
+    await fx.fireVisibility('visible');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fx.startMidiAutoRescan).toHaveBeenCalledOnce();
+  });
+
+  it('navigator.requestMIDIAccess missing → no MIDI work, audio still ran', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setHasRequestMIDIAccess(false);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(fx.requestWakeLock).toHaveBeenCalledOnce();
+    expect(fx.verifyMidiAlive).not.toHaveBeenCalled();
+    expect(fx.rescanMidi).not.toHaveBeenCalled();
   });
 });

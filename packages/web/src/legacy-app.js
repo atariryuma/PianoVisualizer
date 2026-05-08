@@ -2937,58 +2937,11 @@
     /** @returns {Promise<void>} */
     function recoverAudioContext() { return _audioRecovery.recover(); }
 
-    // AirPods / headphone unplug switches sample rate (24/48 flip). The cleanest
-    // recovery is to recreate the context — same as visibility recovery.
-    if (navigator.mediaDevices?.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', () => {
-        if (!state.running || !audioCtx) return;
-        // Debounce: devicechange fires multiple times for one event.
-        clearTimeout(window._audioDeviceChangeTimer);
-        window._audioDeviceChangeTimer = setTimeout(() => {
-          recoverAudioContext().catch(e => console.warn('[AUDIO] devicechange recovery:', e.message));
-        }, 250);
-      });
-    }
-
-    // Browsers drop the wake lock when the tab is hidden, suspend AudioContext,
-    // and (on iOS WMB) silently disable MIDI port handlers. On every resume we
-    // refresh all three so the kid can pick up exactly where they left off
-    // without seeing a phantom "connection error".
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState !== 'visible') return;
-      if (state.running) requestWakeLock();
-      if (audioCtx) {
-        // iOS suspend ≠ resumable. If state stayed 'running' through the bg
-        // round-trip we can keep going; otherwise full recreate.
-        if (audioCtx.state === 'suspended') {
-          try { await audioCtx.resume(); } catch (e) {}
-          // If still suspended after resume(), the context is dead — recreate.
-          if (audioCtx.state === 'suspended') {
-            await recoverAudioContext();
-          }
-        }
-      }
-      if (!navigator.requestMIDIAccess) return;
-      if (midiInput.enabled) {
-        // We *think* MIDI is connected — verify the port still responds.
-        const ok = await verifyMidiAlive();
-        if (ok) return;
-        // The port is a corpse (WMB / WKWebView background suspension). Force
-        // a fresh MIDIAccess so the next rescan re-enumerates instead of
-        // re-checking the dead reference.
-        _midiAccess = null;
-      }
-      // No MIDI / dead port → silent rescan. Force-fresh on resume so a
-      // stale enumeration from before the background trip can't linger;
-      // the auto-rescan poller will keep trying if this single attempt
-      // doesn't catch the device immediately.
-      _midiAccess = null;
-      rescanMidi(true)
-        .then((ok) => {
-          if (!ok) startMidiAutoRescan();
-        })
-        .catch(() => startMidiAutoRescan());
-    });
+    // Phase 0d batch 60: visibilitychange + devicechange handlers
+    // moved into audio-init.ts as createAudioLifecycle({...}). The
+    // factory install() call lives further down (after midiInput +
+    // verifyMidiAlive + rescanMidi + startMidiAutoRescan are all
+    // declared) — search "_audioLifecycle.install()".
 
     // ========================================
     // Input layer — Web MIDI (preferred) + microphone fallback.
@@ -3272,6 +3225,29 @@
       showMidiWaitingHint: () => showMidiWaitingHint(),
       startMidiAutoRescan: () => startMidiAutoRescan(),
     });
+
+    // Phase 0d batch 60: cross-cutting visibilitychange + devicechange
+    // listener cluster moved to audio-init.ts createAudioLifecycle().
+    // Wired here (after midiInput + verifyMidiAlive + rescanMidi +
+    // startMidiAutoRescan are declared) so all closures resolve.
+    AudioInit.createAudioLifecycle({
+      getAudioCtx: () => audioCtx,
+      recover: () => recoverAudioContext(),
+      isRunning: () => !!state.running,
+      requestWakeLock: () => requestWakeLock(),
+      navigator: /** @type {import('./audio-init').AudioLifecycleNavigator} */ (
+        /** @type {any} */ (navigator)
+      ),
+      midiInput: /** @type {import('./audio-init').AudioLifecycleMidiRef} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      verifyMidiAlive: () => verifyMidiAlive(),
+      clearMidiAccessCache: () => {
+        _midiAccess = null;
+      },
+      rescanMidi: (silent) => rescanMidi(silent),
+      startMidiAutoRescan: () => startMidiAutoRescan(),
+    }).install();
 
     // ========================================
     // BLE-MIDI via Web Bluetooth
