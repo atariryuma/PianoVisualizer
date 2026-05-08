@@ -1137,26 +1137,20 @@
       _bgStarsPrevW = W;
       _bgStarsPrevH = H;
     }
+    // Phase 0d batch 28: pure bg-stars decision moved to
+    // packages/web/src/viewport-layout.ts. Shell still owns
+    // initBgStars + the per-star position mutation.
     /** @param {number} prevW @param {number} prevH */
     function maybeReinitBgStars(prevW, prevH) {
-      // Only re-randomize when the viewport changes by more than ~25 % on
-      // either axis. Smaller deltas (iOS URL-bar collapse, soft-keyboard
-      // show / hide, minor browser-window drag) just scale the existing
-      // star positions in place — re-init flickers visibly because every
-      // star jumps to a fresh random spot. First call (prev = 0) always
-      // re-inits to seed the field.
-      if (!_bg || !prevW || !prevH) {
+      const decision = ViewportLayout.decideBgStarsAction(prevW, prevH, W, H, !!_bg);
+      if (decision.action === 'reinit') {
         initBgStars();
         return;
       }
-      const dx = Math.abs(W - prevW) / Math.max(1, prevW);
-      const dy = Math.abs(H - prevH) / Math.max(1, prevH);
-      if (dx > 0.25 || dy > 0.25) {
-        initBgStars();
-        return;
-      }
-      const sx = W / prevW;
-      const sy = H / prevH;
+      const { sx, sy } = decision;
+      // _bg is non-null when we're in the 'scale' branch (the
+      // !_bg case routes to 'reinit' inside decideBgStarsAction).
+      if (!_bg) return;
       for (const s of _bg.stars) {
         s.x *= sx;
         s.y *= sy;
@@ -1171,76 +1165,27 @@
     // and the body[data-layout="..."] selectors. drawPracticeLane reads
     // currentLayoutMode (cached below) to switch between stacked and
     // split-h rendering.
-    let currentLayoutMode = 'phone-portrait';
-    let lastTopClusterPx = -1;
-    let lastKbHeightPx = -1;
-    // Cached OSMD container rect — refreshed on resize / orientationchange and
-    // when the OSMD strip itself resizes. drawPracticeLane reads this every
-    // frame; calling getBoundingClientRect() per-frame instead would force a
-    // synchronous layout flush at 60fps.
-    const cachedOsmdRect = { top: 0, right: 0, bottom: 0, height: 0, width: 0 };
-    // Phase 0d batch 24: pure viewport classifier moved to
-    // packages/web/src/layout-detect.ts. Forwarder reads the live
-    // window dimensions so existing callsites stay unchanged.
-    function detectLayout() {
-      return LayoutDetect.detectLayout(window.innerWidth, window.innerHeight);
-    }
-    /** @param {Element|null} el */
-    function measureBottom(el) {
-      if (!el) return 0;
-      const r = el.getBoundingClientRect();
-      return r.height > 0 ? r.bottom : 0;
-    }
-    function refreshOsmdRect() {
-      const el = DOM.osmdContainer;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      cachedOsmdRect.top = r.top;
-      cachedOsmdRect.right = r.right;
-      cachedOsmdRect.bottom = r.bottom;
-      cachedOsmdRect.height = r.height;
-      cachedOsmdRect.width = r.width;
-    }
-    function syncLayout() {
-      const layout = detectLayout();
-      if (currentLayoutMode !== layout) {
-        currentLayoutMode = layout;
-        document.body.dataset.layout = layout;
-      }
-      const topClusterBottom = Math.round(
-        Math.max(measureBottom(DOM.practiceTopBar), measureBottom(DOM.themeBar))
-      );
-      const kbPx = Math.round(kbHeight);
-      const root = document.documentElement.style;
-      // Skip same-value writes — ResizeObserver fires on every topBar text
-      // mutation (section name, tempo, progress); unconditional setProperty
-      // would trigger a :root style recalc on each.
-      if (topClusterBottom !== lastTopClusterPx) {
-        lastTopClusterPx = topClusterBottom;
-        if (topClusterBottom > 0) {
-          root.setProperty('--top-cluster-bottom', topClusterBottom + 'px');
-        } else {
-          root.removeProperty('--top-cluster-bottom');
-        }
-      }
-      if (kbPx !== lastKbHeightPx) {
-        lastKbHeightPx = kbPx;
-        root.setProperty('--kb-height', kbPx + 'px');
-      }
-      refreshOsmdRect();
-    }
+    // Phase 0d batch 28: syncLayout + refreshOsmdRect + onResizeBurst
+    // + cached OSMD rect + currentLayoutMode + per-write skip caches
+    // moved to packages/web/src/viewport-layout.ts. The shell holds
+    // the cachedOsmdRect ref so drawPracticeLane reads it every
+    // frame without going through the factory.
+    const cachedOsmdRect = ViewportLayout.makeCachedOsmdRect();
+    const _viewportLayout = ViewportLayout.createViewportLayout({
+      dom: {
+        practiceTopBar: DOM.practiceTopBar,
+        themeBar: DOM.themeBar,
+        osmdContainer: DOM.osmdContainer,
+      },
+      getKbHeight: () => kbHeight,
+      cachedOsmdRect,
+    });
+    /** @returns {string} */
+    function detectLayout() { return _viewportLayout.getCurrentLayoutMode(); }
+    function refreshOsmdRect() { _viewportLayout.refreshOsmdRect(); }
+    function syncLayout() { _viewportLayout.syncLayout(); }
+    function onResizeBurst() { _viewportLayout.onResizeBurst(); }
     syncLayout();
-    // Coalesce resize bursts (iPad URL-bar collapse, iOS keyboard show/hide
-    // each fire many resize events in rapid succession) onto a single rAF.
-    let _resizePending = false;
-    function onResizeBurst() {
-      if (_resizePending) return;
-      _resizePending = true;
-      requestAnimationFrame(() => {
-        _resizePending = false;
-        syncLayout();
-      });
-    }
     window.addEventListener('resize', onResizeBurst);
     window.addEventListener('orientationchange', onResizeBurst);
     if (typeof ResizeObserver !== 'undefined') {
@@ -5369,7 +5314,7 @@
         kbHeight,
         kbSafeBottom,
         safeRight,
-        currentLayoutMode,
+        currentLayoutMode: _viewportLayout.getCurrentLayoutMode(),
         cachedOsmdRect: /** @type {import('./practice-lane').PracticeLaneOsmdRect} */ (
           cachedOsmdRect
         ),
