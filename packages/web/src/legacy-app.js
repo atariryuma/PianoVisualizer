@@ -4200,7 +4200,11 @@
       ),
       dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput },
       t,
-      isRescanRunning: () => !!_midiRescanTimer,
+      // Thunked: _midiRescan's `const` lives further down the file
+      // (TDZ — same dance as bleMidi in midi-ports). The indicator
+      // pill reads this once per setInputIndicator() call, never at
+      // factory-build time, so the access is safe.
+      isRescanRunning: () => _midiRescan.isRescanRunning(),
       hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
     });
     function pulseMidiBadge() { _midiIndicator.pulseBadge(); }
@@ -4387,42 +4391,36 @@
     // for rescans. Re-requesting bypasses cached permission on some polyfills
     // and may also fail outside the original user gesture.
     /** @type {MIDIAccess|null} */
+    // Phase 0d batch 26: ensureMidiAccess + rescanMidi + auto-rescan
+    // poller moved to packages/web/src/midi-rescan.ts. The factory
+    // is built right after attachMidiPort / detachMidiPort are
+    // declared so all the callbacks resolve. _midiAccess is only
+    // exposed via the factory (verifyMidiAlive reads it through the
+    // closure here, not the legacy outer scope). Forward-declared
+    // for the verify path that still needs the raw access ref.
+    /** @type {MIDIAccess|null} */
     let _midiAccess = null;
-
-    // Force=true drops the cache and re-requests. Used by the explicit user
-    // rescan path so a stale MIDIAccess (Web MIDI Browser / sleeping iPad) can
-    // recover without requiring an app restart.
-    /** @param {boolean} [force] */
+    const _midiRescan = MidiRescan.createMidiRescan({
+      midiInput: /** @type {import('./midi-ports').MidiPortsInputRef} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
+      detachMidiPort: (port) => detachMidiPort(/** @type {any} */ (port)),
+      isAppleMobile: () => isAppleMobile(),
+      showDiagnostic: (makeLines) => {
+        showIntroDiag(() => {
+          const { line1, line2 } = makeLines();
+          setIntroHintDiagnostic(line1, line2);
+        });
+      },
+      t,
+      setInputIndicator,
+      navigator,
+    });
+    /** @param {boolean} [force] @returns {Promise<MIDIAccess>} */
     async function ensureMidiAccess(force) {
-      if (force && _midiAccess) {
-        // Drop the stale MIDIAccess's listener BEFORE losing the reference,
-        // so the old object can't keep firing into our handler after a
-        // forced rescan (Web MIDI Browser keeps the dead access alive).
-        try { _midiAccess.onstatechange = null; } catch (_) {}
-        _midiAccess = null;
-      }
-      if (_midiAccess) return _midiAccess;
-      // Try sysex:true first (Web MIDI Browser exposes BLE-MIDI only with
-      // sysex granted). Fall back to sysex:false on rejection. Surface both
-      // failure reasons so debugging is possible.
-      let sysexErr = null;
-      try { _midiAccess = await navigator.requestMIDIAccess({ sysex: true }); }
-      catch (e) {
-        sysexErr = e;
-        try { _midiAccess = await navigator.requestMIDIAccess({ sysex: false }); }
-        catch (e2) {
-          const reason = '[sysex:true] ' + (sysexErr.name || 'Err') + ': ' + sysexErr.message
-            + ' / [sysex:false] ' + (e2.name || 'Err') + ': ' + e2.message;
-          throw new Error(reason);
-        }
-      }
-      _midiAccess.onstatechange = (e) => {
-        const port = /** @type {MIDIInput|null} */ (e.port);
-        if (!port || port.type !== 'input') return;
-        console.log('[MIDI] state change: "' + port.name + '" → ' + port.state);
-        if (port.state === 'connected' && !midiInput.enabled) attachMidiPort(port);
-        else if (port.state === 'disconnected') detachMidiPort(port);
-      };
+      const access = await _midiRescan.ensureAccess(force);
+      _midiAccess = /** @type {MIDIAccess} */ (/** @type {any} */ (access));
       return _midiAccess;
     }
 
@@ -4435,57 +4433,12 @@
       );
     }
 
-    /** @param {boolean} [silent] */
-    async function rescanMidi(silent) {
-      if (!navigator.requestMIDIAccess) {
-        if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagWebMidiUnsupported')));
-        return false;
-      }
-      // A user-initiated rescan (silent=false) drops the cached MIDIAccess so
-      // a stale enumeration (e.g. WMB or post-sleep) can be refreshed.
-      if (!silent) _midiAccess = null;
-      try {
-        const access = await ensureMidiAccess();
-        const ports = gatherMidiInputs(access);
-        const portInfo = ports.map(p => (p.name || 'unnamed') + '/' + p.state).join(', ');
-        console.log('[MIDI] rescan ports: [' + portInfo + ']');
-
-        if (ports.length === 0) {
-          if (!silent) {
-            // Web MIDI Browser quirk: devices already paired at startup are often
-            // invisible — re-pairing usually surfaces them.
-            showIntroDiag(() => {
-              const hint = t(isAppleMobile() ? 'diagWmbHint' : 'diagConnectHint');
-              setIntroHintDiagnostic(t('diagNoMidiPort'), hint);
-            });
-          }
-          return false;
-        }
-        // Strict pass — by-the-spec.
-        for (const port of ports) {
-          if (port.state === 'connected' && !midiInput.enabled && attachMidiPort(port)) return true;
-        }
-        // @WMB-WORKAROUND (Phase 0d): same rationale as initWebMIDI's
-        // second-pass attach. WMB pre-paired BLE keyboards can show up with
-        // state='unknown' until first open(); attempt the loose pass here
-        // too so the rescan poller catches them.
-        for (const port of ports) {
-          if (!midiInput.enabled && attachMidiPort(port)) {
-            console.log('[MIDI] rescan attached non-connected port (WMB quirk): ' + port.name);
-            return true;
-          }
-        }
-        // /@WMB-WORKAROUND
-        if (!silent) {
-          showIntroDiag(() => setIntroHintDiagnostic(t('diagDetectedFmt', { v: portInfo }), t('diagCouldNotConnect')));
-        }
-        return false;
-      } catch (e) {
-        console.warn('[MIDI] rescan failed:', e.message);
-        if (!silent) showIntroDiag(() => setIntroHintDiagnostic(t('diagMidiError'), e.message));
-        return false;
-      }
-    }
+    // Phase 0d batch 26: rescan body lives in midi-rescan.ts. The
+    // forwarder keeps the legacy short name + JSDoc for any
+    // remaining callsites (manual rescan tap on the badge, settings
+    // panel rescan button, etc.).
+    /** @param {boolean} [silent] @returns {Promise<boolean>} */
+    function rescanMidi(silent) { return _midiRescan.rescan(silent); }
 
     // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
     // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
@@ -4507,77 +4460,13 @@
     }
     function clearIntroDiagCache() { state.lastIntroDiag = null; }
 
-    // Polling: when MIDI is required but not connected, detect when the user
-    // has paired in the WMB UI in the background and returns to the page.
-    //
-    // Ramped cadence: the first 30s poll at 1s — this catches the common
-    // "open the page first, then pair the keyboard" iPad flow within 1s of
-    // pairing. After 30s drop to 2.5s (network-friendly for sustained
-    // background listening). After 5min drop to 10s (the user has clearly
-    // walked away; we just want to catch a return-to-page reconnect).
-    //
-    // Forces a fresh MIDIAccess every ~5 ticks (12.5s) to work around Web
-    // MIDI Browser's stale-enumeration quirk: re-pairing in WMB sometimes
-    // doesn't propagate via statechange to a cached MIDIAccess.
-    /** @type {ReturnType<typeof setTimeout>|number} */
-    let _midiRescanTimer = 0;
-    let _midiRescanTickCount = 0;
-    let _midiRescanStartedAt = 0;
-    function startMidiAutoRescan() {
-      if (_midiRescanTimer) return;
-      _midiRescanTickCount = 0;
-      _midiRescanStartedAt = performance.now();
-      _scheduleNextRescan();
-      // Refresh the input badge so the hourglass "waiting" state shows
-      // up immediately without waiting for the first attach attempt.
-      setInputIndicator();
-    }
-    function _scheduleNextRescan() {
-      const elapsed = performance.now() - _midiRescanStartedAt;
-      let delay;
-      if (elapsed < 30_000) delay = 1_000;          // Fast: 1s for first 30s
-      else if (elapsed < 5 * 60_000) delay = 2_500; // Steady: 2.5s out to 5min
-      else delay = 10_000;                          // Slow: 10s long-tail
-      _midiRescanTimer = setTimeout(() => {
-        if (midiInput.enabled || !navigator.requestMIDIAccess) {
-          stopMidiAutoRescan();
-          return;
-        }
-        // Periodically force a fresh MIDIAccess. WMB caches port enumeration
-        // and re-pairing doesn't always re-fire statechange.
-        // @WMB-WORKAROUND (Phase 0d): the fast-window 2-tick force is
-        // tuned for WMB's stale-cache; on desktop browsers a 5-tick force
-        // is plenty (the spec-compliant statechange handles re-pair). When
-        // Phase 1 retires the WMB code path, drop the `forceEvery` ramp
-        // and just use a flat 5.
-        _midiRescanTickCount++;
-        const elapsedNow = performance.now() - _midiRescanStartedAt;
-        const forceEvery = isAppleMobile() && elapsedNow < 30_000 ? 2 : 5;
-        // /@WMB-WORKAROUND
-        const force = _midiRescanTickCount % forceEvery === 0;
-        if (force) {
-          console.log('[MIDI] auto-rescan: forcing fresh MIDIAccess (tick=' + _midiRescanTickCount + ')');
-          ensureMidiAccess(true).catch(() => {});
-        }
-        rescanMidi(true).then((ok) => {
-          if (ok) {
-            stopMidiAutoRescan();
-          } else if (!midiInput.enabled) {
-            _scheduleNextRescan();
-          }
-        });
-      }, delay);
-    }
-    function stopMidiAutoRescan() {
-      if (_midiRescanTimer) {
-        clearTimeout(_midiRescanTimer);
-        _midiRescanTimer = 0;
-        // Same-reason as start: clear the "waiting" hourglass on the badge
-        // when the poller stops (either we connected, or we gave up).
-        setInputIndicator();
-      }
-      _midiRescanTickCount = 0;
-    }
+    // Phase 0d batch 26: auto-rescan poller (ramped cadence + WMB
+    // force-fresh quirks) lives in midi-rescan.ts. Forwarders keep
+    // the legacy short names so existing callsites unchanged. The
+    // indicator's hourglass state reads `_midiRescan.isRescanRunning()`
+    // through the thunk wired in batch 20.
+    function startMidiAutoRescan() { _midiRescan.startAutoRescan(); }
+    function stopMidiAutoRescan() { _midiRescan.stopAutoRescan(); }
 
     // ========================================
     // BLE-MIDI via Web Bluetooth
