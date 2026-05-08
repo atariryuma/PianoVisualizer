@@ -2001,181 +2001,64 @@
     // ========================================
     // Game Logic — 4-layer architecture (v9)
     // ========================================
+    // Phase 0d batch 42: 173-line per-frame game-state reducer moved to
+    // packages/web/src/game-state-update.ts. Deps wire-up references
+    // hoisted function declarations from later in this scope.
+    const _gameStateDeps = /** @type {import('./game-state-update').GameStateUpdateDeps} */ ({
+      state: /** @type {any} */ (state),
+      getPractice: () => /** @type {any} */ (practice),
+      getMidiInput: () => /** @type {any} */ (midiInput),
+      getPitchMedianFrames: () => PITCH_MEDIAN_FRAMES,
+      tuning: {
+        pitchMinHz: CONFIG.PITCH_MIN_HZ,
+        pitchMinHzPractice: CONFIG.PITCH_MIN_HZ_PRACTICE,
+        pitchMaxHz: CONFIG.PITCH_MAX_HZ,
+        confidenceThreshold: CONFIG.CONFIDENCE_THRESHOLD,
+        goodNoteRms: CONFIG.GOOD_NOTE_RMS,
+        onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS,
+        comboWindowMs: CONFIG.COMBO_WINDOW_MS,
+        silenceDecayStartMs: CONFIG.SILENCE_DECAY_START_MS,
+        silenceHardDecayMs: CONFIG.SILENCE_HARD_DECAY_MS,
+        flowDecaySoft: CONFIG.FLOW_DECAY_SOFT,
+        flowDecayHard: CONFIG.FLOW_DECAY_HARD,
+        comboDecayRate: CONFIG.COMBO_DECAY_RATE,
+        noiseRmsThreshold: CONFIG.NOISE_RMS_THRESHOLD,
+        noisePenaltyCooldownMs: CONFIG.NOISE_PENALTY_COOLDOWN_MS,
+        flowNoisePenalty: CONFIG.FLOW_NOISE_PENALTY,
+        comboNoisePenalty: CONFIG.COMBO_NOISE_PENALTY,
+        flowGainBase: CONFIG.FLOW_GAIN_BASE,
+        flowGainComboMax: CONFIG.FLOW_GAIN_COMBO_MAX,
+        flowGainStabilityMax: CONFIG.FLOW_GAIN_STABILITY_MAX,
+        flowGainQualityMax: CONFIG.FLOW_GAIN_QUALITY_MAX,
+      },
+      stages: /** @type {any} */ (CONFIG.STAGES),
+      qhOptsMic: QH_OPTS_MIC,
+      psOpts: PS_OPTS,
+      core: {
+        applyOnsetToHistory: PianoCore.applyOnsetToHistory,
+        applyOnsetPitch: PianoCore.applyOnsetPitch,
+        applyActivePlay: PianoCore.applyActivePlay,
+        decayStability: PianoCore.decayStability,
+        stageForFlow: PianoCore.stageForFlow,
+        classifyStageTransition: PianoCore.classifyStageTransition,
+        pitchHzToSemitones: PianoCore.pitchHzToSemitones,
+      },
+      updateMultiFeatureOnset,
+      updateSessionConfidence,
+      updateQualityScores,
+      updateHUD,
+      spawnBurst,
+      effectStarShower,
+      getScreen: () => ({ W, H }),
+      stageLabelEl: DOM.stageLabel,
+      stageLabelText: stageLabel,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      remoteLog,
+    });
     /** @param {number} timeMs @param {number} dt @param {{pitch:number, conf:number, rms:number}} pitchResult */
     function updateGameState(timeMs, dt, pitchResult) {
-      const { pitch, conf, rms } = pitchResult;
-
-      // Pitch median ring buffer — only collect high-confidence pitches. When mic
-      // matching needs a stable pitch (onset moment), we use the median of recent
-      // entries instead of the raw single-frame reading. Kills 1-octave YIN errors.
-      if (!state.recentPitches) state.recentPitches = [];
-      if (pitch > CONFIG.PITCH_MIN_HZ && conf > 0.5) {
-        state.recentPitches.push(pitch);
-        if (state.recentPitches.length > PITCH_MEDIAN_FRAMES) state.recentPitches.shift();
-      }
-
-      // Adaptive RMS floor — exponential moving average of background noise during
-      // confirmed quiet (RMS very low AND no recent onset). The "good note" threshold
-      // floats above this floor with a hard upper cap so a noisy room can't push the
-      // threshold past where real piano notes live.
-      if (state.adaptiveSilenceRms == null) state.adaptiveSilenceRms = 0.001;
-      const inQuietWindow = rms < 0.01
-        && (timeMs - state.lastOnsetTimeMs) > CONFIG.ONSET_GATE_DURATION_MS;
-      if (inQuietWindow) {
-        state.adaptiveSilenceRms = state.adaptiveSilenceRms * 0.97 + rms * 0.03;
-      }
-      const adaptiveGoodNoteRms = Math.max(
-        CONFIG.GOOD_NOTE_RMS,
-        Math.min(0.020, state.adaptiveSilenceRms * 2.0)
-      );
-
-      const onsetState = updateMultiFeatureOnset(timeMs, pitch);
-
-      const pitchMinHz = practice.enabled
-        ? CONFIG.PITCH_MIN_HZ_PRACTICE
-        : CONFIG.PITCH_MIN_HZ;
-      const pitchOk = pitch > pitchMinHz && pitch < CONFIG.PITCH_MAX_HZ
-        && conf > CONFIG.CONFIDENCE_THRESHOLD && rms > adaptiveGoodNoteRms;
-      const isOnsetNote = pitchOk && onsetState.isOnset;
-      const isActivePlay = pitchOk && onsetState.gateOpen;
-
-      state.debugLastRms = rms;
-      state.debugLastConf = conf;
-      state.debugLastPitch = pitch;
-      state.debugIsGoodNote = isOnsetNote;
-      state.debugIsActivePlay = isActivePlay;
-
-      updateSessionConfidence(timeMs, isActivePlay);
-
-      // v13: When MIDI is the active source, MIDI events drive the quality histories
-      // (rhythm/dynamics/stability) so the radar reflects what was actually played
-      // rather than what the mic happened to pick up. Skip the mic push to avoid
-      // double-counting and to keep silent (headphone) practice fully evaluable.
-      const midiDrivingHistories = midiInput.enabled
-        && (timeMs - (midiInput.lastEventTime || 0)) < 2000;
-
-      if (isOnsetNote && !midiDrivingHistories) {
-        PianoCore.applyOnsetToHistory(state, timeMs, rms, QH_OPTS_MIC);
-      }
-
-      updateQualityScores(timeMs);
-
-      const dtSec = dt / 1000;
-      const isPerforming = state.sessionState === 'performing';
-      const isWarmup = state.sessionState === 'warmup';
-
-      if (isOnsetNote && !midiDrivingHistories) {
-        PianoCore.applyOnsetPitch(state, PianoCore.pitchHzToSemitones(pitch), PS_OPTS);
-        state.lastSilenceStartMs = -1;
-
-        if (isPerforming || isWarmup) {
-          if (state.lastGoodNoteTimeMs > 0 && (timeMs - state.lastGoodNoteTimeMs) < CONFIG.COMBO_WINDOW_MS) {
-            state.combo++;
-            if (state.combo > state.bestCombo) {
-              state.bestCombo = state.combo;
-            }
-          } else {
-            state.combo = Math.max(1, Math.floor(state.combo * 0.6));
-          }
-        }
-        state.lastGoodNoteTimeMs = timeMs;
-      } else if (isActivePlay) {
-        state.lastSilenceStartMs = -1;
-        PianoCore.applyActivePlay(state, PS_OPTS);
-      } else {
-        // Idle exponential decay (frame-rate independent via dtSec).
-        PianoCore.decayStability(state, dtSec, PS_OPTS);
-
-        if (state.lastSilenceStartMs < 0) {
-          state.lastSilenceStartMs = timeMs;
-        }
-        const silenceDuration = timeMs - state.lastSilenceStartMs;
-
-        if (silenceDuration > CONFIG.SILENCE_DECAY_START_MS) {
-          // Slow decay start
-          state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_SOFT * dtSec);
-          if (silenceDuration > CONFIG.SILENCE_HARD_DECAY_MS) {
-            // Hard decay later. Combo is integer, so accumulate fractional
-            // decay across frames — otherwise Math.ceil rounds up every
-            // frame and combo drops at framerate (144/sec on 144Hz vs
-            // 60/sec on 60Hz). The accumulator keeps drops/sec constant.
-            state.flow = Math.max(0, state.flow - CONFIG.FLOW_DECAY_HARD * dtSec);
-            state.comboDecayAccum = (state.comboDecayAccum || 0) + CONFIG.COMBO_DECAY_RATE * 60 * dtSec;
-            if (state.comboDecayAccum >= 1) {
-              const drops = Math.floor(state.comboDecayAccum);
-              state.combo = Math.max(0, state.combo - drops);
-              state.comboDecayAccum -= drops;
-            }
-          }
-        }
-
-        if (rms > CONFIG.NOISE_RMS_THRESHOLD && !isActivePlay) {
-          if (timeMs - state.lastNoisePenaltyMs > CONFIG.NOISE_PENALTY_COOLDOWN_MS) {
-            state.flow = Math.max(0, state.flow - CONFIG.FLOW_NOISE_PENALTY * dtSec);
-            state.combo = Math.max(0, state.combo - CONFIG.COMBO_NOISE_PENALTY);
-            state.lastNoisePenaltyMs = timeMs;
-          }
-        }
-      }
-
-      if (isActivePlay) {
-        // v10: Instant Gratification — Gain flow even in 'waiting' state
-        // v10: Always allow flow gain regardless of session state
-        {
-          const comboFactor = Math.min(state.combo / 50, 1);
-          const qualityFactor = state.qualityScore;
-          let flowGain = (CONFIG.FLOW_GAIN_BASE
-            + comboFactor * CONFIG.FLOW_GAIN_COMBO_MAX
-            + state.pitchStability * CONFIG.FLOW_GAIN_STABILITY_MAX
-            + qualityFactor * CONFIG.FLOW_GAIN_QUALITY_MAX) * dtSec;
-
-          // Boost gain in warmup/waiting to get started faster
-          if (state.sessionState !== 'performing') flowGain *= 1.5;
-
-          state.flow = Math.min(100, state.flow + flowGain);
-          if (state.flow > state.peakFlow) state.peakFlow = state.flow;
-        }
-      }
-
-
-
-      // Stage transitions — Phase 0b.3: delegated to @piano/core.
-      const prevStage = state.currentStage;
-      const newStage = PianoCore.stageForFlow(state.flow, CONFIG.STAGES);
-      if (newStage !== prevStage) {
-        state.currentStage = newStage;
-        DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[newStage]);
-        DOM.stageLabel.classList.toggle('visible', newStage > 0);
-        if (PianoCore.classifyStageTransition(prevStage, newStage) === 'up' && newStage > 0) {
-          for (let i = 0; i < 40; i++) {
-            spawnBurst(Math.random() * W, Math.random() * H, 3, 0.9);
-          }
-          effectStarShower(6);
-        }
-      }
-
-      // Periodic per-frame stats — only collected/forwarded when remote logging
-      // is on. Skipping the min/max scans entirely on prod hot path.
-      if (REMOTE_LOG_ENABLED) {
-        if (rms > state.debugMaxRms) state.debugMaxRms = rms;
-        if (conf > state.debugMaxConf) state.debugMaxConf = conf;
-        if (state.debugHarmonicity > state.debugMaxHarm) state.debugMaxHarm = state.debugHarmonicity;
-        if (isOnsetNote) state.debugOnsetCount++;
-        if (timeMs - state.lastDebugLogMs > 2000) {
-          state.lastDebugLogMs = timeMs;
-          remoteLog(`[Stats] Flow=${state.flow.toFixed(1)} | MaxRMS=${state.debugMaxRms.toFixed(4)}`
-            + ` | MaxConf=${state.debugMaxConf.toFixed(2)} | MaxHarm=${state.debugMaxHarm.toFixed(2)}`
-            + ` | onsets=${state.debugOnsetCount} | reason=${state.debugOnsetReason || '-'}`
-            + ` | Stab=${state.pitchStability.toFixed(2)} | Combo=${state.combo} | Stg=${state.currentStage}`);
-          state.debugMaxRms = 0; state.debugMaxConf = 0; state.debugMaxHarm = 0;
-          state.debugOnsetCount = 0;
-        }
-      }
-
-      updateHUD(timeMs);
-      return isOnsetNote;
+      return GameStateUpdate.updateGameState(timeMs, dt, pitchResult, _gameStateDeps);
     }
-
     // ========================================
     // v9: updateHUD — encouragement instead of numbers
     // ========================================
