@@ -3273,6 +3273,11 @@
       t,
       setInputIndicator,
       navigator,
+      // [Bug fix 2026-05-09] Pause auto-rescan during active
+      // practice. requestMIDIAccess({force:true}) triggered residual
+      // dt=50ms frame spikes on every 5th tick — see midi-rescan.ts
+      // header comment.
+      isPaused: () => !!practice.enabled,
     });
     /** @param {boolean} [force] @returns {Promise<MIDIAccess>} */
     async function ensureMidiAccess(force) {

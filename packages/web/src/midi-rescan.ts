@@ -80,6 +80,19 @@ export interface MidiRescanDeps {
    *  shell passes `setTimeout` / `clearTimeout` directly. */
   setTimeout?: (cb: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
+
+  /** [Bug fix 2026-05-09 — Issue 2 final polish]
+   *  When this returns true, the auto-rescan tick is a no-op (no
+   *  force-fresh MIDIAccess, no port enumeration). Used to suppress
+   *  the rescan during active practice playback — the
+   *  `requestMIDIAccess({force: true})` call is synchronous-ish
+   *  inside Chrome and was the residual cause of dt=50 ms frame
+   *  spikes after the particle/shadowBlur fixes landed (server.log
+   *  03:52 window: 5 in-playback drops, all with particles=0-5,
+   *  coinciding with `[MIDI] auto-rescan tick=...` lines). The kid
+   *  is unlikely to plug in a MIDI keyboard mid-song; we resume
+   *  rescan when they're back on the song panel / title screen. */
+  isPaused?: () => boolean;
 }
 
 export interface MidiRescan {
@@ -253,6 +266,14 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
     timer = setT(() => {
       if (deps.midiInput.enabled || !deps.navigator.requestMIDIAccess) {
         stopAutoRescan();
+        return;
+      }
+      // [Bug fix 2026-05-09 — Issue 2 final polish] Skip the tick
+      // when the caller says we're paused (= practice.enabled in
+      // the legacy shell). Reschedule for the same cadence so we
+      // pick right back up when practice ends.
+      if (deps.isPaused?.()) {
+        scheduleNext();
         return;
       }
       // Periodically force a fresh MIDIAccess. WMB caches port

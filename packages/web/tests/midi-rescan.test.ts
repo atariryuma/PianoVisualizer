@@ -416,4 +416,50 @@ describe('startAutoRescan + ramped cadence', () => {
     const fx = makeFixture();
     expect(fx.rescan.isRescanRunning()).toBe(false);
   });
+
+  // [Bug fix 2026-05-09 — Issue 2 final polish] When isPaused()
+  // returns true the tick body must not run requestMIDIAccess
+  // (or any port enumeration); it should just reschedule itself.
+  it('isPaused=true makes the tick a no-op (no requestMIDIAccess) and reschedules', async () => {
+    let paused = true;
+    const requestSpy = vi.fn().mockResolvedValue({ inputs: new Map() });
+    const fx = makeFixture({
+      isPaused: () => paused,
+      navigator: {
+        get requestMIDIAccess() {
+          return requestSpy;
+        },
+      } as MidiRescanDeps['navigator'],
+    });
+    fx.rescan.startAutoRescan();
+    // First tick: paused → no-op + reschedule.
+    fx.flushTimer();
+    await Promise.resolve();
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(fx.rescan.isRescanRunning()).toBe(true);
+
+    // Unpause — next tick should resume normal behavior (and exit
+    // because midiInput is still empty/disabled, so the rescan
+    // returns false but we don't care; the point is requestMIDIAccess
+    // was now called).
+    paused = false;
+    fx.flushTimer();
+    await Promise.resolve();
+    expect(requestSpy).toHaveBeenCalled();
+  });
+
+  it('omitting isPaused (undefined) keeps the original behavior', async () => {
+    const requestSpy = vi.fn().mockResolvedValue({ inputs: new Map() });
+    const fx = makeFixture({
+      navigator: {
+        get requestMIDIAccess() {
+          return requestSpy;
+        },
+      } as MidiRescanDeps['navigator'],
+    });
+    fx.rescan.startAutoRescan();
+    fx.flushTimer();
+    await Promise.resolve();
+    expect(requestSpy).toHaveBeenCalled();
+  });
 });
