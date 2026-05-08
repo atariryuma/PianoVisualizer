@@ -4533,40 +4533,21 @@
     // ========================================
     // Tone.js helpers
     // ========================================
-    /** @type {import('tone').PolySynth|null} */
-    let tonePiano = null;
-    /** @type {import('tone').Synth|null} */
-    let toneMetronome = null;
-    function ensureToneInstruments() {
-      if (tonePiano || typeof Tone === 'undefined') return;
-      tonePiano = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.005, decay: 0.18, sustain: 0.25, release: 0.6 }
-      }).toDestination();
-      tonePiano.volume.value = -14;
-      toneMetronome = new Tone.MembraneSynth({
-        pitchDecay: 0.008, octaves: 4,
-        envelope: { attack: 0.001, decay: 0.1, sustain: 0 }
-      }).toDestination();
-      toneMetronome.volume.value = -10;
-    }
-
-    // Audible count-in: one tick per displayed number ("4, 3, 2, 1") then a
-    // brighter "GO!" downbeat exactly when the first note lands at the hit line.
-    // Beat spacing follows the song's quarter-note duration so the count-in
-    // *feels* like the piece — a 60 BPM lullaby gets slow ticks, a brisk étude
-    // gets quick ones, and the kid arrives on tempo.
-    // Count-in beeps — Phase 0c: delegated to packages/web/src/audio-scheduler.
-    // The scheduler module owns the Tone.Transport calls; this shim
-    // assembles the deps + options bag from the legacy globals.
+    // Phase 0d batch 33: lazy synth instantiation + count-in
+    // scheduling + Transport-stop teardown moved to
+    // packages/web/src/practice-tone-audio.ts. The factory holds
+    // the two synths in closure state; getInstruments() exposes
+    // them so startPracticeSection can hand them to AudioScheduler.
+    const _practiceToneAudio = PracticeToneAudio.createPracticeToneAudio({
+      Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
+      audioScheduler: /** @type {any} */ (AudioScheduler),
+      cursor: osmdAdapter,
+      getCountInMs: () => COUNT_IN_MS,
+    });
+    function ensureToneInstruments() { _practiceToneAudio.ensureInstruments(); }
     /** @param {number} startAudioTime */
     function scheduleCountInBeeps(startAudioTime) {
-      if (typeof Tone === 'undefined') return;
-      AudioScheduler.scheduleCountInBeeps(
-        { metronome: toneMetronome, piano: tonePiano },
-        startAudioTime,
-        { countInMs: COUNT_IN_MS, beats: 4 }
-      );
+      _practiceToneAudio.scheduleCountIn(startAudioTime);
     }
 
     /** @param {number} midi */
@@ -4848,8 +4829,9 @@
           // audio-scheduler module. Listen forces ghost on so the kid hears the
           // song; rhythm respects the user's ghost toggle.
           const ghostActive = practice.mode === 'listen' || practice.ghostOn;
+          const _instruments = _practiceToneAudio.getInstruments();
           AudioScheduler.scheduleSectionPlayback(
-            { metronome: toneMetronome, piano: ghostActive ? tonePiano : null },
+            { metronome: _instruments.metronome, piano: ghostActive ? _instruments.piano : null },
             {
               notes: practice.sectionNotes,
               metronomeOn: practice.metronomeOn,
@@ -4911,18 +4893,7 @@
       }
     }
 
-    function stopPracticeAudio() {
-      try {
-        if (typeof Tone !== 'undefined') {
-          Tone.Transport.stop();
-          Tone.Transport.cancel();
-        }
-      } catch (e) {}
-      osmdAdapter.hideCursor();
-      // Drop the active notehead pink so a paused/ended section doesn't
-      // leave a stale highlighted note glowing in the score.
-      osmdAdapter.clearHighlights();
-    }
+    function stopPracticeAudio() { _practiceToneAudio.stopPracticeAudio(); }
 
     // ========================================
     // Per-frame practice tick — Phase 0d batch 8 wire-up
