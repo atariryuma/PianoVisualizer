@@ -1,0 +1,477 @@
+// Start-practice-section orchestrator — Phase 0d batch 39.
+//
+// The big-bang setup that runs when the kid hits "▶ Start practice"
+// (or transitions to the next section after completing one). Walks
+// the full state machine:
+//
+//   1. Hide intro hint, lazy-load the score if needed.
+//   2. Recompute count-in / lookahead lengths for the section's
+//      tempo (must run BEFORE buildSectionNotes — note timeMs bakes
+//      in COUNT_IN_MS).
+//   3. Build the per-section timeline (full-song listen takes a
+//      different shape — anchors on the first note's timeSec).
+//   4. Reset all per-section practice + state counters (hits,
+//      misses, combos, pendingHolds, flow, etc.).
+//   5. Paint the practice HUD (section name, tempo %, progress).
+//   6. Sync layout + show input indicator + request wake lock.
+//   7. Show the section banner ('Intro' 👑 etc.) — full-song listen
+//      shows the song title instead.
+//   8. Position OSMD's cursor at the section's first note;
+//      reset-scroll-throttle so the new section's first scroll
+//      isn't swallowed by the previous one's last frame.
+//   9. Audio setup branches by mode:
+//      - guided: cursor visible, schedule count-in, wait for input.
+//      - rhythm / listen: schedule full timeline (ghost forced on
+//        for listen; rhythm respects practice.ghostOn). Transport
+//        starts at startAudioTime ABSOLUTE so beep 0 lines up with
+//        Transport.position 0.
+//   10. Probe AudioContext.outputLatency + baseLatency, write
+//       practice.audioOffsetMs via PianoCore.pickAudioOffsetMs
+//       (user override wins / clamp AirPods tail / default
+//       fallback). On Tone-failure, retain the user override or
+//       fall back to default.
+//
+// Side-effects fan out through deps; the function itself is async.
+// The shell wraps this in the legacy `startPracticeSection(idx)`
+// entry-point.
+
+/** Generic OSMD-derived note shape — same as section-notes.ts. */
+export interface OsmdLikeNote {
+  hand?: string;
+  midi: number;
+  timeSec?: number;
+  durSec?: number;
+  timeMs?: number;
+  durMs?: number;
+  measureIdx?: number;
+  inBarQuarters?: number;
+  hit?: boolean;
+  missed?: boolean;
+  _filtered?: boolean;
+}
+
+export interface HandRanges {
+  lhMin: number;
+  lhMax: number;
+  rhMin: number;
+  rhMax: number;
+}
+
+export interface SongSection {
+  id?: string;
+  nameKey: string;
+  startSec?: number;
+  endSec?: number;
+  isBoss?: boolean;
+}
+
+export interface CurrentSongRef {
+  _loaded?: boolean;
+  sections?: SongSection[];
+  titleKey: string;
+}
+
+export interface StatePartial {
+  flow: number;
+  combo: number;
+  bestCombo: number;
+}
+
+export interface PracticePartial {
+  enabled: boolean;
+  sectionIdx: number;
+  sectionNotes: OsmdLikeNote[];
+  handRanges?: HandRanges;
+  laneDrawFromIdx?: number;
+  currentNoteIdx: number;
+  hits: number;
+  misses: number;
+  timingScoreSum: number;
+  durationScoreSum: number;
+  durationScoredCount: number;
+  pendingHolds: Map<number, OsmdLikeNote>;
+  sectionCombo: number;
+  sectionBestCombo: number;
+  _completing?: boolean;
+  _lastProgUpdate?: number;
+  _sectionTargetCount?: number;
+  _cursorScanIdx?: number;
+  _lastCursorNoteIdx?: number;
+  mode: 'guided' | 'rhythm' | 'listen';
+  fullSongMode?: boolean;
+  tempoPct: number;
+  ghostOn?: boolean;
+  metronomeOn?: boolean;
+  startAudioTime: number;
+  audioOffsetMs?: number | null;
+}
+
+export interface PrefsPartial {
+  audioOffsetMs?: number | null;
+}
+
+/** Subset of OsmdAdapter we touch. */
+export interface StartSectionOsmdAdapter {
+  cursorTo: (measureIdx: number, inBarQuarters: number) => void;
+  showCursor: () => void;
+}
+
+/** Subset of Tone surface we touch. */
+export interface StartSectionToneRef {
+  start(): Promise<unknown>;
+  now(): number;
+  context: {
+    lookAhead: number;
+    rawContext?: { outputLatency?: number; baseLatency?: number };
+    outputLatency?: number;
+    baseLatency?: number;
+  };
+  Transport: {
+    cancel(): void;
+    stop(): void;
+    position: number | string;
+    start(time?: number | string): void;
+  };
+}
+
+/** Audio-scheduler surface for the rhythm/listen branch. */
+export interface StartSectionAudioScheduler {
+  scheduleSectionPlayback(
+    instruments: { metronome: unknown; piano: unknown },
+    opts: {
+      notes: OsmdLikeNote[];
+      metronomeOn?: boolean;
+      beatMs: number;
+      countInMs: number;
+    }
+  ): void;
+}
+
+export interface PickAudioOffsetOptions {
+  userOverrideMs: number | null;
+  reportedOutMs: number;
+  reportedBaseMs: number;
+  defaultMs: number;
+}
+
+/** DOM bag the practice HUD writes update. */
+export interface StartSectionDom {
+  ptbSection: { textContent: string };
+  ptbTempo: { textContent: string };
+  ptbProgress: { textContent: string };
+  practiceHud: { classList: { add(c: string): void } };
+  osmdContainer: { classList: { add(c: string): void } };
+}
+
+export interface StartPracticeSectionDeps {
+  state: StatePartial;
+  practice: PracticePartial;
+  prefs: PrefsPartial;
+  getCurrentSong: () => CurrentSongRef | null;
+
+  // Tunables
+  countInMs: () => number;
+  defaultAudioOffsetMs: number;
+  remoteLogEnabled: boolean;
+
+  // I/O hooks
+  alert: (msg: string) => void;
+  remoteLog: (line: string) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+
+  // UI / layout
+  hideIntroHint: () => void;
+  syncLayout: () => void;
+  setInputIndicator: () => void;
+  requestWakeLock: () => void;
+  showSectionBanner: (sec: { nameKey: string; isBoss?: boolean }) => void;
+  dom: StartSectionDom;
+
+  // Score / notes
+  loadCurrentScore: () => Promise<void>;
+  recomputePracticeTimings: () => void;
+  buildSectionNotes: (idx: number) => OsmdLikeNote[];
+  buildFullSongNotes: () => OsmdLikeNote[];
+  computeHandRanges: (notes: OsmdLikeNote[]) => HandRanges;
+
+  // OSMD
+  osmdAdapter: StartSectionOsmdAdapter;
+  resetScrollThrottle: () => void;
+  osmdScrollToCursor: () => void;
+
+  // Audio
+  Tone: StartSectionToneRef | undefined;
+  ensureToneInstruments: () => void;
+  scheduleCountInBeeps: (startAudioTime: number) => void;
+  audioScheduler: StartSectionAudioScheduler;
+  /** Lazy access to the synth pair (created on demand by
+   *  practice-tone-audio). Read at call time so the rhythm branch
+   *  picks up the just-instantiated synths. */
+  getInstruments: () => { piano: unknown; metronome: unknown };
+  practiceBeatMs: () => number;
+  pickAudioOffsetMs: (opts: PickAudioOffsetOptions) => number;
+}
+
+const AUDIO_START_LEAD_SEC = 0.05;
+
+export function createStartPracticeSection(
+  deps: StartPracticeSectionDeps
+): (sectionIdx: number) => Promise<void> {
+  return async function startPracticeSection(sectionIdx: number): Promise<void> {
+    deps.hideIntroHint();
+    const song = deps.getCurrentSong();
+    if (!song) return;
+
+    if (!song._loaded) {
+      try {
+        await deps.loadCurrentScore();
+      } catch (e) {
+        deps.alert(deps.t('alertScoreLoadFailedFmt', { v: (e as Error).message }));
+        return;
+      }
+    }
+
+    // Lock in count-in / lookahead lengths BEFORE buildSectionNotes
+    // — note timeMs bakes in COUNT_IN_MS.
+    deps.recomputePracticeTimings();
+
+    const sec = song.sections?.[sectionIdx];
+    if (!sec) return;
+
+    const isFullSong = deps.practice.mode === 'listen' && !!deps.practice.fullSongMode;
+
+    // ── reset per-section state ──────────────────────────────────
+    deps.practice.enabled = true;
+    deps.practice.sectionIdx = isFullSong ? 0 : sectionIdx;
+    deps.practice.sectionNotes = isFullSong
+      ? deps.buildFullSongNotes()
+      : deps.buildSectionNotes(sectionIdx);
+
+    if (deps.remoteLogEnabled && deps.practice.sectionNotes.length) {
+      logSectionDiag(deps, sec, sectionIdx);
+    }
+
+    deps.practice.handRanges = deps.computeHandRanges(deps.practice.sectionNotes);
+    deps.practice.laneDrawFromIdx = 0;
+    deps.practice.currentNoteIdx = 0;
+    deps.practice.hits = 0;
+    deps.practice.misses = 0;
+    deps.practice.timingScoreSum = 0;
+    deps.practice.durationScoreSum = 0;
+    deps.practice.durationScoredCount = 0;
+    deps.practice.pendingHolds = new Map();
+    deps.practice.sectionCombo = 0;
+    deps.practice.sectionBestCombo = 0;
+    deps.practice._completing = false;
+    deps.practice._lastProgUpdate = 0;
+
+    deps.state.flow = 30;
+    deps.state.combo = 0;
+    deps.state.bestCombo = 0;
+
+    // ── HUD paint ────────────────────────────────────────────────
+    deps.dom.ptbSection.textContent = isFullSong
+      ? deps.t(song.titleKey)
+      : deps.t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+    // Full-song listen plays at written tempo regardless of
+    // practice.tempoPct (see buildFullSongNotes). Reflect that in
+    // the HUD.
+    deps.dom.ptbTempo.textContent = '🥁 ' + (isFullSong ? 100 : deps.practice.tempoPct) + '%';
+    // Exclude _filtered notes from the progress count (auto-skipped).
+    deps.practice._sectionTargetCount = deps.practice.sectionNotes.reduce(
+      (c, n) => c + (n._filtered ? 0 : 1),
+      0
+    );
+    deps.dom.ptbProgress.textContent = '0 / ' + deps.practice._sectionTargetCount;
+    deps.dom.practiceHud.classList.add('visible');
+    deps.dom.osmdContainer.classList.add('visible');
+    deps.syncLayout();
+    deps.setInputIndicator();
+    deps.requestWakeLock();
+
+    // ── section banner ───────────────────────────────────────────
+    if (isFullSong) {
+      deps.showSectionBanner({ nameKey: song.titleKey });
+    } else {
+      deps.showSectionBanner(sec);
+    }
+
+    // ── OSMD cursor + scroll ─────────────────────────────────────
+    const firstNote = deps.practice.sectionNotes[0];
+    if (firstNote) {
+      deps.osmdAdapter.cursorTo(firstNote.measureIdx ?? 0, firstNote.inBarQuarters ?? 0);
+    }
+    // Bypass the scroll-throttle so the new section's first scroll
+    // isn't swallowed by the previous section's last-frame scroll.
+    deps.resetScrollThrottle();
+    deps.osmdScrollToCursor();
+    deps.osmdAdapter.showCursor();
+    // Reset per-frame scan cursor for the lane drawer.
+    deps.practice._cursorScanIdx = 0;
+    deps.practice._lastCursorNoteIdx = -1;
+
+    // ── audio setup ──────────────────────────────────────────────
+    try {
+      if (!deps.Tone) throw new Error('Tone.js not loaded');
+      await deps.Tone.start();
+      deps.ensureToneInstruments();
+      deps.Tone.Transport.cancel();
+      deps.Tone.Transport.stop();
+      deps.Tone.Transport.position = 0;
+
+      if (deps.practice.mode === 'guided') {
+        // Guided: cursor visible, lane parks current note at hit
+        // line. No transport scheduling.
+        deps.osmdAdapter.showCursor();
+        deps.practice.startAudioTime = deps.Tone.now();
+        deps.scheduleCountInBeeps(deps.practice.startAudioTime);
+      } else {
+        // Rhythm / Listen: full timeline scheduling.
+        const ghostActive = deps.practice.mode === 'listen' || !!deps.practice.ghostOn;
+        const instruments = deps.getInstruments();
+        deps.audioScheduler.scheduleSectionPlayback(
+          {
+            metronome: instruments.metronome,
+            piano: ghostActive ? instruments.piano : null,
+          },
+          {
+            notes: deps.practice.sectionNotes,
+            metronomeOn: deps.practice.metronomeOn,
+            beatMs: deps.practiceBeatMs(),
+            countInMs: deps.countInMs(),
+          }
+        );
+        // Cursor sync runs per-frame from drawPracticeLane. Pass
+        // startAudioTime as an ABSOLUTE audio time so Transport.
+        // position 0 lines up with beep 0 (relative '+0.05'
+        // anchoring would leave a lookAhead-sized gap).
+        deps.practice.startAudioTime = deps.Tone.now() + AUDIO_START_LEAD_SEC;
+        deps.scheduleCountInBeeps(deps.practice.startAudioTime);
+        deps.Tone.Transport.start(deps.practice.startAudioTime);
+        deps.osmdAdapter.showCursor();
+      }
+
+      // Audio-latency probe.
+      try {
+        const ctx = deps.Tone.context.rawContext || deps.Tone.context;
+        const out = (ctx.outputLatency || 0) * 1000;
+        const base = (ctx.baseLatency || 0) * 1000;
+        deps.practice.audioOffsetMs = deps.pickAudioOffsetMs({
+          userOverrideMs: deps.prefs.audioOffsetMs ?? null,
+          reportedOutMs: out,
+          reportedBaseMs: base,
+          defaultMs: deps.defaultAudioOffsetMs,
+        });
+        deps.remoteLog(
+          '[Practice] mode=' +
+            deps.practice.mode +
+            ' tempoPct=' +
+            deps.practice.tempoPct +
+            ' audioOutputLatency=' +
+            out.toFixed(1) +
+            'ms' +
+            ' audioBaseLatency=' +
+            base.toFixed(1) +
+            'ms' +
+            ' lookAhead=' +
+            (deps.Tone.context.lookAhead * 1000).toFixed(1) +
+            'ms' +
+            ' compensation=' +
+            (deps.practice.audioOffsetMs ?? 0).toFixed(1) +
+            'ms' +
+            (deps.prefs.audioOffsetMs != null ? ' (user)' : ' (auto)')
+        );
+      } catch {
+        deps.practice.audioOffsetMs =
+          deps.prefs.audioOffsetMs != null ? deps.prefs.audioOffsetMs : deps.defaultAudioOffsetMs;
+      }
+    } catch (e) {
+      console.error('Tone start failed', e);
+      deps.practice.startAudioTime = performance.now() / 1000 + AUDIO_START_LEAD_SEC;
+      // Tone-failure short-circuits the audio-latency probe — reset
+      // audioOffsetMs so the lane uses sane compensation rather
+      // than stale state.
+      deps.practice.audioOffsetMs =
+        deps.prefs.audioOffsetMs != null ? deps.prefs.audioOffsetMs : deps.defaultAudioOffsetMs;
+    }
+  };
+}
+
+/** Verbose load-time diag dump — only fires when remote logging is
+ *  enabled. Verifies that the per-section playback timeline (timeMs
+ *  values that drive lane + cursor sync) was built correctly. */
+function logSectionDiag(
+  deps: StartPracticeSectionDeps,
+  sec: SongSection,
+  sectionIdx: number
+): void {
+  void sectionIdx;
+  const psn = deps.practice.sectionNotes;
+  let rCnt = 0;
+  let lCnt = 0;
+  let filteredCnt = 0;
+  for (const n of psn) {
+    if (n._filtered) filteredCnt++;
+    else if (n.hand === 'R') rCnt++;
+    else if (n.hand === 'L') lCnt++;
+  }
+  const span = (psn[psn.length - 1].timeMs ?? 0) - (psn[0].timeMs ?? 0);
+  deps.remoteLog(
+    '[DIAG/play.section] sec=' +
+      (sec.id ?? '?') +
+      ' src=[' +
+      (sec.startSec ?? 0).toFixed(3) +
+      '..' +
+      (sec.endSec ?? 0).toFixed(3) +
+      ']s' +
+      ' tempoPct=' +
+      deps.practice.tempoPct +
+      '%' +
+      ' speedFactor=' +
+      (100 / deps.practice.tempoPct).toFixed(3) +
+      ' countIn=' +
+      deps.countInMs() +
+      'ms' +
+      ' notes=' +
+      psn.length +
+      ' R=' +
+      rCnt +
+      ' L=' +
+      lCnt +
+      ' filtered=' +
+      filteredCnt +
+      ' span=' +
+      span.toFixed(0) +
+      'ms' +
+      ' first.t=' +
+      (psn[0].timeMs ?? 0).toFixed(0) +
+      ' last.t=' +
+      (psn[psn.length - 1].timeMs ?? 0).toFixed(0)
+  );
+  const fmtPsn = (n: OsmdLikeNote, i: number): string =>
+    'i=' +
+    i +
+    ' t=' +
+    (n.timeMs ?? 0).toFixed(0) +
+    ' dur=' +
+    (n.durMs ?? 0).toFixed(0) +
+    ' midi=' +
+    n.midi +
+    ' ' +
+    (n.hand ?? '?') +
+    ' m=' +
+    (n.measureIdx ?? 0) +
+    ' q=' +
+    (n.inBarQuarters ?? 0).toFixed(2) +
+    (n._filtered ? ' (filtered)' : '');
+  const head = Math.min(8, psn.length);
+  for (let i = 0; i < head; i++) {
+    deps.remoteLog('[DIAG/play.note] ' + fmtPsn(psn[i], i));
+  }
+  if (psn.length > head + 4) {
+    deps.remoteLog('[DIAG/play.note] ... ' + (psn.length - head - 4) + ' notes elided ...');
+  }
+  for (let i = Math.max(head, psn.length - 4); i < psn.length; i++) {
+    deps.remoteLog('[DIAG/play.note] ' + fmtPsn(psn[i], i));
+  }
+}

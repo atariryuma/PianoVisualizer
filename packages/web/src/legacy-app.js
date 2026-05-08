@@ -4473,216 +4473,53 @@
       return SectionNotes.computeHandRanges(/** @type {any} */ (sectionNotes));
     }
 
+    // Phase 0d batch 39: 209-line startPracticeSection orchestrator
+    // moved to packages/web/src/start-practice-section.ts. The factory
+    // closes over all the shell-side hooks (DOM bag, OSMD adapter, Tone,
+    // AudioScheduler, _practiceToneAudio.getInstruments, etc.) so the
+    // legacy short name is a 1-line forwarder.
+    const _startPracticeSection = StartPracticeSection.createStartPracticeSection({
+      state: /** @type {any} */ (state),
+      practice: /** @type {any} */ (practice),
+      prefs: /** @type {any} */ (prefs),
+      getCurrentSong: () => /** @type {any} */ (currentSong),
+      countInMs: () => COUNT_IN_MS,
+      defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      alert: (msg) => alert(msg),
+      remoteLog,
+      t,
+      hideIntroHint,
+      syncLayout,
+      setInputIndicator,
+      requestWakeLock,
+      showSectionBanner,
+      dom: {
+        ptbSection: DOM.ptbSection,
+        ptbTempo: DOM.ptbTempo,
+        ptbProgress: DOM.ptbProgress,
+        practiceHud: DOM.practiceHud,
+        osmdContainer: DOM.osmdContainer,
+      },
+      loadCurrentScore: () => loadCurrentScore(),
+      recomputePracticeTimings,
+      buildSectionNotes,
+      buildFullSongNotes,
+      computeHandRanges: /** @type {any} */ (computeHandRanges),
+      osmdAdapter: /** @type {any} */ (osmdAdapter),
+      resetScrollThrottle: () => _osmdCursor.resetScrollThrottle(),
+      osmdScrollToCursor,
+      Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
+      ensureToneInstruments,
+      scheduleCountInBeeps,
+      audioScheduler: /** @type {any} */ (AudioScheduler),
+      getInstruments: () => _practiceToneAudio.getInstruments(),
+      practiceBeatMs,
+      pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
+    });
     /** @param {number} sectionIdx */
     async function startPracticeSection(sectionIdx) {
-      hideIntroHint();
-      if (!currentSong._loaded) {
-        try { await loadCurrentScore(); }
-        catch (e) { alert(t('alertScoreLoadFailedFmt', { v: e.message })); return; }
-      }
-
-      // Lock in the count-in / lookahead lengths for this section before notes
-      // are built — buildSectionNotes() bakes COUNT_IN_MS into each note's timeMs.
-      recomputePracticeTimings();
-
-      const sec = currentSong.sections[sectionIdx];
-      // Full-song listen takes over the timeline shape but keeps sectionIdx
-      // pointing at the first section so OSMD's cursor + the result-card
-      // banner have a sensible starting anchor.
-      const isFullSong = practice.mode === 'listen' && practice.fullSongMode;
-
-      // Reset all per-section state
-      practice.enabled = true;
-      practice.sectionIdx = isFullSong ? 0 : sectionIdx;
-      practice.sectionNotes = isFullSong ? buildFullSongNotes() : buildSectionNotes(sectionIdx);
-      // ---------- DIAG: section playback notes ----------
-      // Verifies that the per-section playback timeline (timeMs values that
-      // drive the lane + the cursor sync) was built from the song notes
-      // correctly. Shows count, span, count-in offset, hand split, and the
-      // first 8 + last 4 entries.
-      if (REMOTE_LOG_ENABLED && practice.sectionNotes.length) {
-        const psn = practice.sectionNotes;
-        // Single pass: hand counts AND filtered count. Previous code did a
-        // reduce + a separate filter, walking the array twice.
-        let rCnt = 0, lCnt = 0, filteredCnt = 0;
-        for (const n of psn) {
-          if (n._filtered) filteredCnt++;
-          else if (n.hand === 'R') rCnt++;
-          else if (n.hand === 'L') lCnt++;
-        }
-        remoteLog('[DIAG/play.section] sec=' + sec.id +
-          ' src=[' + sec.startSec.toFixed(3) + '..' + sec.endSec.toFixed(3) + ']s' +
-          ' tempoPct=' + practice.tempoPct + '%' +
-          ' speedFactor=' + (100 / practice.tempoPct).toFixed(3) +
-          ' countIn=' + COUNT_IN_MS + 'ms' +
-          ' notes=' + psn.length +
-          ' R=' + rCnt +
-          ' L=' + lCnt +
-          ' filtered=' + filteredCnt +
-          ' span=' + (psn[psn.length - 1].timeMs - psn[0].timeMs).toFixed(0) + 'ms' +
-          ' first.t=' + psn[0].timeMs.toFixed(0) +
-          ' last.t=' + psn[psn.length - 1].timeMs.toFixed(0));
-        const fmtPsn = (/** @type {OsmdLikeNote} */ n, /** @type {number} */ i) => 'i=' + i +
-          ' t=' + n.timeMs.toFixed(0) +
-          ' dur=' + n.durMs.toFixed(0) +
-          ' midi=' + n.midi +
-          ' ' + n.hand +
-          ' m=' + n.measureIdx +
-          ' q=' + (n.inBarQuarters ?? 0).toFixed(2) +
-          (n._filtered ? ' (filtered)' : '');
-        const head = Math.min(8, psn.length);
-        for (let i = 0; i < head; i++) {
-          remoteLog('[DIAG/play.note] ' + fmtPsn(psn[i], i));
-        }
-        if (psn.length > head + 4) {
-          remoteLog('[DIAG/play.note] ... ' + (psn.length - head - 4) + ' notes elided ...');
-        }
-        for (let i = Math.max(head, psn.length - 4); i < psn.length; i++) {
-          remoteLog('[DIAG/play.note] ' + fmtPsn(psn[i], i));
-        }
-      }
-      practice.handRanges = computeHandRanges(practice.sectionNotes);
-      practice.laneDrawFromIdx = 0;        // amortized cursor for lane culling
-      practice.currentNoteIdx = 0;
-      practice.hits = practice.misses = practice.timingScoreSum = 0;
-      practice.durationScoreSum = 0;
-      practice.durationScoredCount = 0;
-      practice.pendingHolds = new Map();
-      practice.sectionCombo = practice.sectionBestCombo = 0;
-      practice._completing = false;
-      practice._lastProgUpdate = 0;
-
-      state.flow = 30;
-      state.combo = 0;
-      state.bestCombo = 0;
-
-      // HUD — show the song title in full-song listen so the kid sees what
-      // they're listening to instead of the (now-irrelevant) first-section name.
-      DOM.ptbSection.textContent = isFullSong
-        ? t(currentSong.titleKey)
-        : t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-      // Full-song listen plays at the score's written tempo regardless of the
-      // user's tempoPct selection (see buildFullSongNotes). Reflect that in the
-      // HUD so the kid doesn't see "🥁 60%" while hearing the song at 100%.
-      DOM.ptbTempo.textContent = '🥁 ' + (isFullSong ? 100 : practice.tempoPct) + '%';
-      // Exclude _filtered notes from the progress count (they are auto-skipped).
-      practice._sectionTargetCount = practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
-      DOM.ptbProgress.textContent = '0 / ' + practice._sectionTargetCount;
-      DOM.practiceHud.classList.add('visible');
-      DOM.osmdContainer.classList.add('visible');
-      syncLayout();
-      setInputIndicator();
-      requestWakeLock();
-
-      // Section banner — flies in to celebrate the start. Full-song listen
-      // gets a single banner with the song's title rather than the first
-      // section's name (the kid is hearing the whole song, not just Intro).
-      if (isFullSong) {
-        showSectionBanner({ nameKey: currentSong.titleKey });
-      } else {
-        showSectionBanner(sec);
-      }
-
-      // Position OSMD's cursor at the section's first note. cursorTo
-      // handles the backward-seek case internally (resets first if the
-      // target is behind the current iterator position).
-      const firstNote = practice.sectionNotes[0];
-      if (firstNote) osmdAdapter.cursorTo(firstNote.measureIdx, firstNote.inBarQuarters);
-      // Bypass the 100 ms scroll-throttle so the new section's first
-      // scroll-to-cursor isn't swallowed by the previous section's
-      // last-frame scroll.
-      _osmdCursor.resetScrollThrottle();
-      osmdScrollToCursor();
-      osmdAdapter.showCursor();
-      // Reset the per-frame scan cursor so the lane drawer's elapsed →
-      // step lookup starts from index 0 for the new section.
-      practice._cursorScanIdx = 0;
-      practice._lastCursorNoteIdx = -1;
-
-      // Audio setup — guided mode skips ALL transport scheduling because the score
-      // doesn't auto-advance. Ghost / metronome / cursor-sync events are only used in
-      // rhythm mode where the timeline plays itself.
-      const audioStartLead = 0.05;
-      try {
-        if (typeof Tone === 'undefined') throw new Error('Tone.js not loaded');
-        await Tone.start();
-        ensureToneInstruments();
-        Tone.Transport.cancel();
-        Tone.Transport.stop();
-        Tone.Transport.position = 0;
-
-        if (practice.mode === 'guided') {
-          // Guided: cursor visible immediately, lane shows current note at hit line.
-          osmdAdapter.showCursor();
-          practice.startAudioTime = Tone.now();
-          scheduleCountInBeeps(practice.startAudioTime);
-        } else {
-          // Rhythm / Listen — full timeline scheduling delegated to the typed
-          // audio-scheduler module. Listen forces ghost on so the kid hears the
-          // song; rhythm respects the user's ghost toggle.
-          const ghostActive = practice.mode === 'listen' || practice.ghostOn;
-          const _instruments = _practiceToneAudio.getInstruments();
-          AudioScheduler.scheduleSectionPlayback(
-            { metronome: _instruments.metronome, piano: ghostActive ? _instruments.piano : null },
-            {
-              notes: practice.sectionNotes,
-              metronomeOn: practice.metronomeOn,
-              beatMs: practiceBeatMs(),
-              countInMs: COUNT_IN_MS,
-            }
-          );
-          // Cursor sync runs per-frame from drawPracticeLane, NOT from
-          // Tone.Draw.schedule (Tone.Draw inherits Transport's ~100 ms
-          // lookAhead — audio plays on time but cursor crawls behind).
-          practice.startAudioTime = Tone.now() + audioStartLead;
-          scheduleCountInBeeps(practice.startAudioTime);
-          // CRITICAL: pass startAudioTime as an ABSOLUTE audio time so
-          // Transport.position = 0 lines up exactly with beep 0. Using a
-          // relative '+0.05' string anchors the Transport at currentTime+0.05
-          // while startAudioTime is currentTime+lookAhead+0.05 — the
-          // resulting `lookAhead` (≈100 ms) gap is what made the GO! beep
-          // land after the first note in rhythm mode.
-          Tone.Transport.start(practice.startAudioTime);
-          // Cursor visible during count-in too — kid can see "this is where
-          // we'll start" instead of an empty score with notes about to fall.
-          osmdAdapter.showCursor();
-        }
-        // Diagnostic: log device audio output latency. AudioContext.outputLatency
-        // is the speaker-side buffer delay; baseLatency is the processing block.
-        // The total is roughly how late audio reaches the kid's ears vs Tone.now().
-        try {
-          const ctx = /** @type {AudioContext} */ (/** @type {unknown} */ (Tone.context.rawContext || Tone.context));
-          const out = (ctx.outputLatency || 0) * 1000;
-          const base = (ctx.baseLatency || 0) * 1000;
-          // pickAudioOffsetMs in @piano/core encapsulates the user-override-
-          // wins / clamp-AirPods-tail / fall-back-to-default decision so it's
-          // testable without standing up an AudioContext.
-          practice.audioOffsetMs = PianoCore.pickAudioOffsetMs({
-            userOverrideMs: prefs.audioOffsetMs,
-            reportedOutMs: out,
-            reportedBaseMs: base,
-            defaultMs: DEFAULT_AUDIO_OFFSET_MS,
-          });
-          remoteLog('[Practice] mode=' + practice.mode
-            + ' tempoPct=' + practice.tempoPct
-            + ' audioOutputLatency=' + out.toFixed(1) + 'ms'
-            + ' audioBaseLatency=' + base.toFixed(1) + 'ms'
-            + ' lookAhead=' + (Tone.context.lookAhead * 1000).toFixed(1) + 'ms'
-            + ' compensation=' + practice.audioOffsetMs.toFixed(1) + 'ms'
-            + (prefs.audioOffsetMs != null ? ' (user)' : ' (auto)'));
-        } catch (e) {
-          practice.audioOffsetMs = prefs.audioOffsetMs != null
-            ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS;
-        }
-      } catch (e) {
-        console.error('Tone start failed', e);
-        practice.startAudioTime = (performance.now() / 1000) + audioStartLead;
-        // Tone failure short-circuits the audio-latency probe above, leaving
-        // practice.audioOffsetMs at whatever the previous section set. Reset
-        // it so the lane uses a sane compensation rather than stale state.
-        practice.audioOffsetMs = prefs.audioOffsetMs != null
-          ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS;
-      }
+      await _startPracticeSection(sectionIdx);
     }
 
     function stopPracticeAudio() { _practiceToneAudio.stopPracticeAudio(); }
