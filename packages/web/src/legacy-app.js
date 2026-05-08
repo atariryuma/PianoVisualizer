@@ -4932,24 +4932,20 @@
 
     // ========================================
     // Hit feedback chip (DOM)
-    // ========================================
-    // Throttled to ~100ms minimum spacing — prevents DOM/animation thrashing during
-    // rapid passages (12+ notes/sec). Hits keep registering; only the visual chip is
-    // skipped when the previous one is still settling in.
-    let _lastChipMs = 0;
+    // Phase 0d batch 35: showHitChip + refreshIntroHint +
+    // hideIntroHint + noInputAvailable + alertAudioInitError moved
+    // to packages/web/src/intro-hint-ui.ts. The chip-throttle
+    // timestamp lives in the factory closure (no more shell-scoped
+    // `_lastChipMs`).
+    const _introHintUi = IntroHintUi.createIntroHintUi({
+      dom: { introHint: DOM.introHint },
+      state: /** @type {any} */ (state),
+      midiInput: /** @type {any} */ (midiInput),
+      t,
+      getHeight: () => H,
+    });
     /** @param {string} kind @param {string} text */
-    function showHitChip(kind, text) {
-      const now = performance.now();
-      if (now - _lastChipMs < 100) return;
-      _lastChipMs = now;
-      const chip = document.createElement('div');
-      chip.className = 'hit-chip ' + kind;
-      chip.textContent = text;
-      chip.style.left = '50%';
-      chip.style.top = (H * 0.55 - 30) + 'px';
-      document.body.appendChild(chip);
-      setTimeout(() => chip.remove(), 1100);
-    }
+    function showHitChip(kind, text) { _introHintUi.showHitChip(kind, text); }
 
     // ========================================
     // Section complete → result screen
@@ -5061,20 +5057,9 @@
     // True when we have no input alive AND don't expect to recover one without
     // user help. iOS-WMB intentionally skips the mic but is still happy to wait
     // for a MIDI keyboard — that is NOT the "no input" state we want to nag about.
-    function noInputAvailable() {
-      return state.micPermissionFailed && !midiInput.enabled;
-    }
-
-    // The intro hint only appears when there's a real input problem the kid
-    // needs to act on. When mic + MIDI are healthy (or about to be — auto-poll
-    // will pick up a hot-plugged keyboard), nothing is shown — the canvas
-    // lights up the moment they play, which is the only feedback they need.
-    function refreshIntroHint() {
-      if (!DOM.introHint) return;
-      const show = noInputAvailable();
-      DOM.introHint.classList.toggle('visible', show);
-      if (show) DOM.introHint.innerHTML = t('introNeedMidi');
-    }
+    function noInputAvailable() { return _introHintUi.noInputAvailable(); }
+    // refreshIntroHint moved to packages/web/src/intro-hint-ui.ts (batch 35).
+    function refreshIntroHint() { _introHintUi.refreshIntroHint(); }
 
     function showRunningUI() {
       DOM.startScreen.style.display = 'none';
@@ -5100,16 +5085,10 @@
       }
     }
 
-    function hideIntroHint() {
-      if (DOM.introHint) DOM.introHint.classList.remove('visible');
-      clearIntroDiagCache();
-    }
+    function hideIntroHint() { _introHintUi.hideIntroHint(); }
 
     /** @param {unknown} e */
-    function alertAudioInitError(e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      alert(t('audioInitFailedFmt', { v: msg }));
-    }
+    function alertAudioInitError(e) { _introHintUi.alertAudioInitError(e); }
 
     // ─── song-panel wire-up ─────────────────────────────────────────
     // Ties together the song-panel buttons that were extracted into
