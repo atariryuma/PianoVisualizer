@@ -6,11 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2 + MIDI port batches)**. 11 new typed
-modules + autonomous bench harness landed in this session. `legacy-app.js` is
-**6,455 lines** (was 6,861 at session start, **-406 lines net** — biggest
-single-session reduction in the project's history). **1,438 tests** (786 core +
-652 web; **+294 tests this session**). `pnpm verify` clean.
+Last refreshed: **2026-05-08 (cycle 2 final)**. **15 new typed modules** plus
+the autonomous bench harness landed in this session. `legacy-app.js` is now
+**6,189 lines** (was 6,861 at session start, **−672 net** — biggest
+single-session reduction in the project's history). **1,515 tests** total (786
+core, 729 web; **+371 this session**). `pnpm verify` clean. Bench **11/11
+passing across every commit**, frame avg 5.2–7.1 ms.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -45,11 +46,24 @@ every commit.**
   polyfill helper (-64 lines, +37 tests). Closes the WMB visibility-resume
   re-bind contract.
 - batch 26 — `midi-rescan.ts`: MIDIAccess cache + manual rescan + ramped
-  auto-rescan poller (-109 lines, +25 tests). **Biggest single batch.**
-  Injectable now()/setTimeout for deterministic poller tests.
+  auto-rescan poller (-109 lines, +25 tests). Injectable now()/setTimeout for
+  deterministic poller tests.
 - batch 27 — `ble-midi-connect.ts`: Web Bluetooth GATT connect path + GATT
   disconnect handler (-47 lines, +18 tests). Closes the BLE-MIDI cluster
   alongside ble-midi-parser (batch 21).
+- batch 28 — `viewport-layout.ts`: syncLayout, refreshOsmdRect, onResizeBurst,
+  measureBottom, bg-stars decision (-58 lines, +21 tests).
+- batch 29 — `osmd-init.ts`: 100-line OSMD ctor + load + render + repetition
+  activation + cursor wrapping (-83 lines, +21 tests). All accumulated quirks-
+  handling pinned in tests.
+- batch 30 — `render-loop.ts`: per-frame orchestrator. Ties RenderFrame /
+  MicPipeline / RenderMid / RenderLate together via deps-builders for
+  per-frame-fresh values; silence gate moved into the spectrum builder. +13
+  tests.
+- batch 31 — `score-loader.ts`: 156-line loadCurrentScore orchestrator (init →
+  XML parse → notes extract → playback order → expand → sections → bpm → diag →
+  drop xmlText), race-safe via stillCurrent thunk on every await boundary
+  (**-116 lines**, +22 tests). **Biggest single batch of the cycle.**
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -145,13 +159,17 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 77  | `web/midi-ports.ts`           | 37    | `packages/web/src/midi-ports.ts`                |
 | 78  | `web/midi-rescan.ts`          | 25    | `packages/web/src/midi-rescan.ts`               |
 | 79  | `web/ble-midi-connect.ts`     | 18    | `packages/web/src/ble-midi-connect.ts`          |
+| 80  | `web/viewport-layout.ts`      | 21    | `packages/web/src/viewport-layout.ts`           |
+| 81  | `web/osmd-init.ts`            | 21    | `packages/web/src/osmd-init.ts`                 |
+| 82  | `web/render-loop.ts`          | 13    | `packages/web/src/render-loop.ts`               |
+| 83  | `web/score-loader.ts`         | 22    | `packages/web/src/score-loader.ts`              |
 
-**Status: 1,438/1,438 tests green (786 core + 652 web), 0 lint errors, 0 type
-errors, 0 residual TS errors. `pnpm verify` clean.** Bench: 11/11 passed across
-every commit, frame avg 5.2–7.1 ms. `legacy-app.js`: 6,455 lines (was 9,000+ at
-Phase 0a; 6,861 at session start this cycle, **-406 net** across 10
-shell-shrinking batches + 1 architectural batch — biggest single-session
-reduction in the project's history).
+**Status: 1,515/1,515 tests green (786 core + 729 web), 0 lint errors, 0 type
+errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
+avg 5.2–7.1 ms. `legacy-app.js`: 6,189 lines (was 9,000+ at Phase 0a; 6,861 at
+session start this cycle, **−672 net** across 14 shell-shrinking batches + 1
+architectural batch — biggest single-session reduction in the project's
+history).
 
 ---
 
