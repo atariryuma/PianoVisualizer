@@ -4239,38 +4239,24 @@
       }
     }
 
-    /** @type {ReturnType<typeof setTimeout>|number} */
-    let _midiBadgePulseTimer = 0;
-    function pulseMidiBadge() {
-      if (!DOM.midiBadge || !DOM.midiBadge.classList.contains('visible')) return;
-      DOM.midiBadge.classList.add('pulse');
-      clearTimeout(_midiBadgePulseTimer);
-      _midiBadgePulseTimer = setTimeout(() => DOM.midiBadge.classList.remove('pulse'), 140);
-    }
-
-    function refreshMidiBadge() {
-      if (!DOM.midiBadge) return;
-      if (midiInput.enabled && midiInput.port?.name) {
-        DOM.midiBadge.textContent = '🎹 ' + midiInput.port.name;
-        DOM.midiBadge.classList.add('visible');
-      } else {
-        DOM.midiBadge.classList.remove('visible');
-        DOM.midiBadge.classList.remove('pulse');
-      }
-    }
-
-    // iOS Safari (and every other browser on iPadOS / iOS — they all use WebKit)
-    // does not implement the Web MIDI API at all. WebKit Bug 107250 is unresolved
-    // and Apple has stated it is not on the roadmap. Detect this so we can show
-    // a useful hint rather than silently falling back to mic.
-    // Cached — UA never changes within a session, no need to re-regex per call.
-    const _isAppleMobile = (() => {
-      const ua = navigator.userAgent || '';
-      const isIOS = /iPad|iPhone|iPod/.test(ua);
-      const isIPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-      return isIOS || isIPadOS;
-    })();
-    function isAppleMobile() { return _isAppleMobile; }
+    // Phase 0d batch 20: MIDI badge + topbar input pill + UA cache
+    // + virtual-port filter moved to packages/web/src/midi-indicator.ts.
+    // The factory closes over the badge-pulse timer + cached UA result;
+    // shell rebinds to the existing short function names so the rest
+    // of the file (event wiring, MIDI port attach/detach) keeps reading
+    // them as plain function refs.
+    const _midiIndicator = MidiIndicator.createMidiIndicator({
+      midiInput: /** @type {import('./midi-indicator').MidiIndicatorMidiInput} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput },
+      t,
+      isRescanRunning: () => !!_midiRescanTimer,
+      hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
+    });
+    function pulseMidiBadge() { _midiIndicator.pulseBadge(); }
+    function refreshMidiBadge() { _midiIndicator.refreshBadge(); }
+    function isAppleMobile() { return _midiIndicator.isAppleMobile(); }
 
     // ╔════════════════════════════════════════════════════════════════════╗
     // ║ Web MIDI Browser (WMB) workarounds — TEMPORARY, scheduled for      ║
@@ -4302,39 +4288,7 @@
     // ║   5. (this header — leave or remove together)                     ║
     // ╚════════════════════════════════════════════════════════════════════╝
 
-    function setInputIndicator() {
-      // v13: Toggle a body class so CSS can reserve bottom space for the
-      // virtual keyboard (lifts #stageLabel, #noteDisplay, #debugOverlay).
-      document.body.classList.toggle('midi-on', !!midiInput.enabled);
-      if (typeof refreshMidiBadge === 'function') refreshMidiBadge();
-      if (!DOM.ptbInput) return;
-      // Pill is emoji-only on every layout — saves topbar width in the
-      // narrow phone case + frees horizontal room for the centered section
-      // name on iPad. Mode + device name stay accessible via title (long-press
-      // / hover) and aria-label (screen readers).
-      if (midiInput.enabled) {
-        DOM.ptbInput.textContent = '🎹';
-        DOM.ptbInput.classList.add('midi');
-        DOM.ptbInput.classList.remove('midi-waiting');
-        DOM.ptbInput.title = t('tipMidiKeyboardFmt', { v: midiInput.port?.name || 'unknown' });
-        DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
-      } else if (_midiRescanTimer && typeof navigator.requestMIDIAccess === 'function') {
-        // Auto-rescan poller is running (= we know MIDI is supported but no
-        // port has shown up yet). Show a "waiting" hourglass so users see
-        // the app is actively listening rather than silently mic-only.
-        DOM.ptbInput.textContent = '🎹⏳';
-        DOM.ptbInput.classList.remove('midi');
-        DOM.ptbInput.classList.add('midi-waiting');
-        DOM.ptbInput.title = t('tipMidiWaiting') || 'Waiting for MIDI keyboard… tap to rescan';
-        DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
-      } else {
-        DOM.ptbInput.textContent = '🎙️';
-        DOM.ptbInput.classList.remove('midi');
-        DOM.ptbInput.classList.remove('midi-waiting');
-        DOM.ptbInput.title = midiInput.platformBlocked ? t('tipIosMidiBlocked') : t('tipMicMode');
-        DOM.ptbInput.setAttribute('aria-label', DOM.ptbInput.title);
-      }
-    }
+    function setInputIndicator() { _midiIndicator.setInputIndicator(); }
 
     // Tapping the input badge in the practice topbar triggers a manual rescan
     // (verbose, surfaces diagnostic in introHint on failure). Cheap escape hatch
@@ -4346,19 +4300,11 @@
       void rescanMidi(false);
     });
 
-    // Linux distros (Steam Deck included) expose a "Midi Through Port-0" by default
-    // that has no physical keyboard attached. macOS has "IAC Driver" and "rtpmidi"
-    // can show up too. Auto-connecting to these makes the UI claim MIDI is active
-    // while no events ever fire — so we filter them out.
+    // Virtual-port filter moved to packages/web/src/midi-indicator.ts —
+    // re-bind to the short name so the existing enumeration callsites
+    // keep working unchanged.
     /** @param {{name?:string|null, manufacturer?:string|null}|null} port */
-    function isVirtualMidiPort(port) {
-      const name = (port?.name || '').toLowerCase();
-      return !name
-        || name.includes('through')
-        || name.includes('loop')
-        || name.includes('iac driver')
-        || name.includes('rtpmidi');
-    }
+    function isVirtualMidiPort(port) { return _midiIndicator.isVirtualMidiPort(port); }
 
     // Returns true if the port was successfully attached, false if it was skipped
     // (virtual/system port). Callers can use the return to decide whether to keep
