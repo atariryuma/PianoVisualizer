@@ -1698,158 +1698,46 @@
     // ========================================
     // Multi-Feature Onset Detection (v9 — with harmonicity)
     // ========================================
+    // Phase 0d batch 40: 152-line multi-feature onset detector
+    // (5-condition gate + adaptive flux threshold + practice-mode
+    // hysteresis + AGC voice-suppression counters) moved to
+    // packages/web/src/onset-detect.ts.
+    const _onsetDetectDeps = /** @type {import('./onset-detect').OnsetDetectDeps} */ ({
+      state: /** @type {any} */ (state),
+      getPractice: () => /** @type {any} */ (practice),
+      tuning: {
+        pitchMinHz: CONFIG.PITCH_MIN_HZ,
+        fluxFreqMinHz: CONFIG.FLUX_FREQ_MIN_HZ,
+        fluxFreqMaxHz: CONFIG.FLUX_FREQ_MAX_HZ,
+        onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS,
+        onsetSpreadMinChange: CONFIG.ONSET_SPREAD_MIN_CHANGE,
+        onsetSpreadThreshold: CONFIG.ONSET_SPREAD_THRESHOLD,
+        onsetSpreadMax: CONFIG.ONSET_SPREAD_MAX,
+        flatnessPianoMin: CONFIG.FLATNESS_PIANO_MIN,
+        crestVoiceMax: CONFIG.CREST_VOICE_MAX,
+        spectralFluxThreshold: CONFIG.SPECTRAL_FLUX_THRESHOLD,
+        spectralFluxAdaptiveK: CONFIG.SPECTRAL_FLUX_ADAPTIVE_K,
+        spectralFluxHistorySize: CONFIG.SPECTRAL_FLUX_HISTORY_SIZE,
+        centroidHistorySize: CONFIG.CENTROID_HISTORY_SIZE,
+        harmonicityMin: CONFIG.HARMONICITY_MIN,
+        harmonicityMinPractice: CONFIG.HARMONICITY_MIN_PRACTICE,
+        onsetCooldownMs: CONFIG.ONSET_COOLDOWN_MS,
+        getOnsetHysteresisFrames: () => ONSET_HYSTERESIS_FRAMES,
+        agcVoiceRmsMin: CONFIG.AGC_VOICE_RMS_MIN,
+        agcVoiceRejectCount: CONFIG.AGC_VOICE_REJECT_COUNT,
+        agcVoiceSuppressMs: CONFIG.AGC_VOICE_SUPPRESS_MS,
+      },
+      features: {
+        computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid,
+        computeHarmonicity, coefficientOfVariation,
+      },
+      getOnsetAnalyser: () => onsetAnalyser,
+      getOnsetDataArray: () => onsetDataArray,
+      getAudioCtx: () => audioCtx,
+    });
     /** @param {number} timeMs @param {number} currentPitchHz */
     function updateMultiFeatureOnset(timeMs, currentPitchHz) {
-      if (!onsetAnalyser || !onsetDataArray) {
-        state.debugGateOpen = false;
-        return { isOnset: false, gateOpen: false };
-      }
-
-      onsetAnalyser.getByteFrequencyData(onsetDataArray);
-
-      const binHz = audioCtx.sampleRate / onsetAnalyser.fftSize;
-      const startBin = Math.max(1, Math.floor(CONFIG.FLUX_FREQ_MIN_HZ / binHz));
-      const endBin = Math.min(onsetDataArray.length, Math.floor(CONFIG.FLUX_FREQ_MAX_HZ / binHz));
-      const numBins = endBin - startBin;
-
-      if (numBins < 10) {
-        const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
-        state.debugGateOpen = gateOpen;
-        return { isOnset: false, gateOpen };
-      }
-
-      if (!state.prevSpectrum) {
-        state.prevSpectrum = new Float32Array(onsetDataArray.length);
-        state.prevSpectrum.set(onsetDataArray);
-        state.debugGateOpen = false;
-        return { isOnset: false, gateOpen: false };
-      }
-
-      // Feature 1: Spectral Flux
-      let flux = 0;
-      let spreadCount = 0;
-      for (let i = startBin; i < endBin; i++) {
-        const diff = onsetDataArray[i] - state.prevSpectrum[i];
-        if (diff > 0) {
-          flux += diff;
-          if (diff > CONFIG.ONSET_SPREAD_MIN_CHANGE) {
-            spreadCount++;
-          }
-        }
-      }
-      const spread = spreadCount / numBins;
-
-      // Feature 2: Spectral Flatness
-      const flatness = computeSpectralFlatness(onsetDataArray, startBin, endBin);
-
-      // Feature 3: Spectral Crest
-      const crest = computeSpectralCrest(onsetDataArray, startBin, endBin);
-
-      // Feature 4: Spectral Centroid (debug tracking)
-      const centroid = computeSpectralCentroid(onsetDataArray, startBin, endBin, binHz);
-      state.centroidHistory.push(centroid);
-      if (state.centroidHistory.length > CONFIG.CENTROID_HISTORY_SIZE) {
-        state.centroidHistory.shift();
-      }
-      const centroidCV = coefficientOfVariation(state.centroidHistory);
-
-      // v9: Feature 5 — Harmonicity check.
-      // Practice mode tightens the threshold so non-pitched sounds (voice, key noise,
-      // chair creaks, claps) can't masquerade as notes.
-      let harmonicity = 0;
-      let harmonicityOk = true;
-      if (currentPitchHz > CONFIG.PITCH_MIN_HZ) {
-        const fundamentalBin = Math.round(currentPitchHz / binHz);
-        harmonicity = computeHarmonicity(onsetDataArray, fundamentalBin, startBin, endBin);
-        const harmMin = practice.enabled
-          ? CONFIG.HARMONICITY_MIN_PRACTICE
-          : CONFIG.HARMONICITY_MIN;
-        harmonicityOk = harmonicity >= harmMin;
-      }
-      state.debugHarmonicity = harmonicity;
-
-      // Save current spectrum for next frame
-      state.prevSpectrum.set(onsetDataArray);
-
-      // Update flux history for adaptive threshold
-      const fHist = state.spectralFluxHistory;
-      fHist.push(flux);
-      if (fHist.length > CONFIG.SPECTRAL_FLUX_HISTORY_SIZE) fHist.shift();
-
-      // Combined onset decision
-      let isOnset = false;
-      let onsetReason = '';
-      if (fHist.length >= 5) {
-        let mean = 0;
-        for (let i = 0; i < fHist.length; i++) mean += fHist[i];
-        mean /= fHist.length;
-
-        let variance = 0;
-        for (let i = 0; i < fHist.length; i++) {
-          const d = fHist[i] - mean;
-          variance += d * d;
-        }
-        variance /= fHist.length;
-        const stddev = Math.sqrt(variance);
-
-        const adaptiveThreshold = mean + CONFIG.SPECTRAL_FLUX_ADAPTIVE_K * stddev;
-        const threshold = Math.max(CONFIG.SPECTRAL_FLUX_THRESHOLD, adaptiveThreshold);
-
-        state.debugLastThreshold = threshold;
-
-        const fluxOk = flux > threshold;
-        // v10: Bandpass Spread - Reject too low (glitch) AND too high (noise/typing)
-        const spreadOk = spread > CONFIG.ONSET_SPREAD_THRESHOLD && spread < CONFIG.ONSET_SPREAD_MAX;
-
-        const flatnessOk = flatness > CONFIG.FLATNESS_PIANO_MIN;
-        const crestOk = crest < CONFIG.CREST_VOICE_MAX;
-
-        // v9: 5-condition gate (added harmonicity)
-        const allConditionsMet = fluxOk && spreadOk && flatnessOk && crestOk && harmonicityOk;
-        // N-frame hysteresis (practice mode): require ONSET_HYSTERESIS_FRAMES consecutive
-        // frames of all-conditions-met before firing. Filters one-frame spectral spikes
-        // from key clatter, environmental clicks, etc.
-        if (allConditionsMet) {
-          state.consecutiveOnsetFrames = (state.consecutiveOnsetFrames || 0) + 1;
-        } else {
-          state.consecutiveOnsetFrames = 0;
-        }
-        const hysteresisRequirement = practice.enabled ? ONSET_HYSTERESIS_FRAMES : 1;
-        if (allConditionsMet && state.consecutiveOnsetFrames >= hysteresisRequirement) {
-          if (timeMs - state.lastOnsetTimeMs > CONFIG.ONSET_COOLDOWN_MS) {
-            state.lastOnsetTimeMs = timeMs;
-            isOnset = true;
-            onsetReason = 'PIANO';
-            state.consecutiveOnsetFrames = 0;       // reset after firing
-            state.agcVoiceRejectCount = 0;
-          }
-        } else if (fluxOk && spreadOk) {
-          // v9: track rejections for AGC voice suppression
-          if (state.debugLastRms > CONFIG.AGC_VOICE_RMS_MIN) {
-            state.agcVoiceRejectCount++;
-            if (state.agcVoiceRejectCount >= CONFIG.AGC_VOICE_REJECT_COUNT) {
-              state.agcVoiceSuppressUntilMs = timeMs + CONFIG.AGC_VOICE_SUPPRESS_MS;
-            }
-          }
-          if (!harmonicityOk) onsetReason = 'REJ:harm';
-          else if (!flatnessOk) onsetReason = 'REJ:flat';
-          else if (!crestOk) onsetReason = 'REJ:crest';
-        }
-      }
-
-      // Store debug info
-      state.debugLastFlux = flux;
-      state.debugLastSpread = spread;
-      state.debugLastFlatness = flatness;
-      state.debugLastCrest = crest;
-      state.debugOnsetReason = onsetReason;
-      state.debugLastCentroid = centroid;
-      state.debugCentroidCV = centroidCV;
-
-      const gateOpen = (timeMs - state.lastOnsetTimeMs) < CONFIG.ONSET_GATE_DURATION_MS;
-      state.debugGateOpen = gateOpen;
-
-      return { isOnset, gateOpen };
+      return OnsetDetect.updateMultiFeatureOnset(timeMs, currentPitchHz, _onsetDetectDeps);
     }
 
     // ========================================
