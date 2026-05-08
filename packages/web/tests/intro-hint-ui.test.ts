@@ -230,3 +230,180 @@ describe('alertAudioInitError', () => {
     globalAlertSpy.mockRestore();
   });
 });
+
+// ─── showRunningUI (Phase 0d batch 58) ─────────────────────────────
+
+function makeRunningUiFixture(
+  over: Partial<IntroHintUiDeps> = {},
+  body: HTMLElement = document.body
+) {
+  document.body.innerHTML = '';
+  document.body.classList.add('title-screen');
+  const startScreen = document.createElement('div');
+  startScreen.id = 'startScreen';
+  startScreen.style.display = 'flex';
+  document.body.appendChild(startScreen);
+  const hud = document.createElement('div');
+  hud.id = 'hud';
+  hud.style.display = 'none';
+  document.body.appendChild(hud);
+  const micMeter = document.createElement('div');
+  micMeter.id = 'micMeter';
+  document.body.appendChild(micMeter);
+  const introHint = document.createElement('div');
+  introHint.id = 'introHint';
+  document.body.appendChild(introHint);
+
+  const state = {
+    micPermissionFailed: false,
+    micSuspended: false,
+    micIntentionallySkipped: false,
+    lastIntroDiag: null as (() => void) | null,
+  };
+  const midiInput = { enabled: false };
+  const practice = { enabled: false };
+  const requestWakeLock = vi.fn();
+  const startMidiAutoRescan = vi.fn();
+  const rescanMidi = vi.fn(async () => true);
+
+  const deps: IntroHintUiDeps = {
+    dom: { introHint, startScreen, hud, micMeter },
+    state,
+    midiInput,
+    practice,
+    t: vi.fn((key) => `T(${key})`),
+    getHeight: () => 600,
+    body,
+    requestWakeLock,
+    startMidiAutoRescan,
+    rescanMidi,
+    ...over,
+  };
+  return {
+    ui: createIntroHintUi(deps),
+    deps,
+    state,
+    midiInput,
+    practice,
+    startScreen,
+    hud,
+    micMeter,
+    introHint,
+    requestWakeLock,
+    startMidiAutoRescan,
+    rescanMidi,
+  };
+}
+
+describe('showRunningUI', () => {
+  it('hides startScreen + drops .title-screen + reveals HUD', () => {
+    const fx = makeRunningUiFixture();
+    expect(document.body.classList.contains('title-screen')).toBe(true);
+    fx.ui.showRunningUI();
+    expect(fx.startScreen.style.display).toBe('none');
+    expect(document.body.classList.contains('title-screen')).toBe(false);
+    expect(fx.hud.style.display).toBe('block');
+  });
+
+  it('always requests wake lock', () => {
+    const fx = makeRunningUiFixture();
+    fx.ui.showRunningUI();
+    expect(fx.requestWakeLock).toHaveBeenCalledOnce();
+  });
+
+  it('refreshIntroHint runs only when practice.enabled is false', () => {
+    // practice off → refresh runs (paints based on noInputAvailable).
+    const fxOff = makeRunningUiFixture();
+    fxOff.state.micPermissionFailed = true; // ensures intro shows
+    fxOff.ui.showRunningUI();
+    expect(fxOff.introHint.classList.contains('visible')).toBe(true);
+
+    // practice on → refresh is skipped, intro stays whatever it was.
+    const fxOn = makeRunningUiFixture();
+    fxOn.practice.enabled = true;
+    fxOn.state.micPermissionFailed = true;
+    fxOn.ui.showRunningUI();
+    expect(fxOn.introHint.classList.contains('visible')).toBe(false);
+  });
+
+  it('mic meter visible only when no MIDI + mic not suspended', () => {
+    // baseline: no MIDI, mic alive → visible
+    const a = makeRunningUiFixture();
+    a.ui.showRunningUI();
+    expect(a.micMeter.classList.contains('visible')).toBe(true);
+
+    // MIDI on → hidden
+    const b = makeRunningUiFixture();
+    b.midiInput.enabled = true;
+    b.ui.showRunningUI();
+    expect(b.micMeter.classList.contains('visible')).toBe(false);
+
+    // mic suspended → hidden
+    const c = makeRunningUiFixture();
+    c.state.micSuspended = true;
+    c.ui.showRunningUI();
+    expect(c.micMeter.classList.contains('visible')).toBe(false);
+  });
+
+  it('background rescan kicks ONLY when no MIDI + (mic failed OR intentionally skipped)', () => {
+    // No MIDI + mic permission failed → rescan
+    const a = makeRunningUiFixture();
+    a.state.micPermissionFailed = true;
+    a.ui.showRunningUI();
+    expect(a.startMidiAutoRescan).toHaveBeenCalledOnce();
+    expect(a.rescanMidi).toHaveBeenCalledWith(true);
+
+    // No MIDI + intentional skip (iOS-WMB) → rescan
+    const b = makeRunningUiFixture();
+    b.state.micIntentionallySkipped = true;
+    b.ui.showRunningUI();
+    expect(b.startMidiAutoRescan).toHaveBeenCalledOnce();
+
+    // No MIDI + mic alive → no rescan (don't bother the kid)
+    const c = makeRunningUiFixture();
+    c.ui.showRunningUI();
+    expect(c.startMidiAutoRescan).not.toHaveBeenCalled();
+    expect(c.rescanMidi).not.toHaveBeenCalled();
+
+    // MIDI on → no rescan
+    const d = makeRunningUiFixture();
+    d.midiInput.enabled = true;
+    d.state.micPermissionFailed = true;
+    d.ui.showRunningUI();
+    expect(d.startMidiAutoRescan).not.toHaveBeenCalled();
+  });
+
+  it('rescan promise rejection is silently swallowed', async () => {
+    const fx = makeRunningUiFixture({
+      rescanMidi: vi.fn(() => Promise.reject(new Error('boom'))),
+    });
+    fx.state.micPermissionFailed = true;
+    // Must not throw + must not surface a console error to the user.
+    expect(() => fx.ui.showRunningUI()).not.toThrow();
+    // Drain microtasks so the .catch() callback runs.
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  it('missing optional DOM bag entries → no crash, side-effects skipped', () => {
+    const fx = makeRunningUiFixture({
+      dom: {
+        introHint: document.getElementById('introHint'),
+      },
+    });
+    expect(() => fx.ui.showRunningUI()).not.toThrow();
+    // requestWakeLock + (lack of) bg rescan still run / don't run
+    // based on flags, even though startScreen/hud/micMeter are absent.
+    expect(fx.requestWakeLock).toHaveBeenCalledOnce();
+  });
+
+  it('missing requestWakeLock / rescan thunks → no crash', () => {
+    const fx = makeRunningUiFixture({
+      requestWakeLock: undefined,
+      startMidiAutoRescan: undefined,
+      rescanMidi: undefined,
+    });
+    fx.state.micPermissionFailed = true;
+    expect(() => fx.ui.showRunningUI()).not.toThrow();
+  });
+});

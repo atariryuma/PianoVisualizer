@@ -3863,12 +3863,25 @@
     // to packages/web/src/intro-hint-ui.ts. The chip-throttle
     // timestamp lives in the factory closure (no more shell-scoped
     // `_lastChipMs`).
+    // Phase 0d batch 58: showRunningUI folded into intro-hint-ui.ts
+    // (same conceptual seam — the running-state UI cluster, calls
+    // refreshIntroHint internally). New deps: startScreen / hud /
+    // micMeter DOM, practice ref, requestWakeLock + rescan thunks.
     const _introHintUi = IntroHintUi.createIntroHintUi({
-      dom: { introHint: DOM.introHint },
+      dom: {
+        introHint: DOM.introHint,
+        startScreen: DOM.startScreen,
+        hud: DOM.hud,
+        micMeter: DOM.micMeter,
+      },
       state: /** @type {any} */ (state),
       midiInput: /** @type {any} */ (midiInput),
+      practice: /** @type {any} */ (practice),
       t,
       getHeight: () => H,
+      requestWakeLock: () => requestWakeLock(),
+      startMidiAutoRescan: () => startMidiAutoRescan(),
+      rescanMidi: (silent) => rescanMidi(silent),
     });
     /** @param {string} kind @param {string} text */
     function showHitChip(kind, text) { _introHintUi.showHitChip(kind, text); }
@@ -3988,29 +4001,10 @@
     // refreshIntroHint moved to packages/web/src/intro-hint-ui.ts (batch 35).
     function refreshIntroHint() { _introHintUi.refreshIntroHint(); }
 
-    function showRunningUI() {
-      DOM.startScreen.style.display = 'none';
-      document.body.classList.remove('title-screen');
-      DOM.hud.style.display = 'block';
-      // Hold the screen awake whenever audio is alive — was practice-only
-      // before, but iOS will suspend the page (and silently break the MIDI
-      // port handler in WMB) the moment the screen sleeps. Free Play sessions
-      // should stay live for the same reason.
-      requestWakeLock();
-      if (!practice.enabled) refreshIntroHint();
-      if (!midiInput.enabled && !state.micSuspended) DOM.micMeter.classList.add('visible');
-      else DOM.micMeter.classList.remove('visible');
-      // Background-rescan only for actual mic failures — iOS-WMB sessions
-      // (`micIntentionallySkipped`) start the silent poller too so a later MIDI
-      // hot-plug picks up. NEVER fire a non-silent rescan here: it surfaces a
-      // "🎹 No MIDI port found" diagnostic the kid did not ask for.
-      const wantBgRescan = !midiInput.enabled
-        && (state.micPermissionFailed || state.micIntentionallySkipped);
-      if (wantBgRescan) {
-        startMidiAutoRescan();
-        rescanMidi(true).catch(() => {});   // SILENT — no diagnostic on entry
-      }
-    }
+    // Phase 0d batch 58: 23-line title→running UI transition folded
+    // into intro-hint-ui.ts (same conceptual seam as refreshIntroHint
+    // / hideIntroHint, which it calls internally).
+    function showRunningUI() { _introHintUi.showRunningUI(); }
 
     function hideIntroHint() { _introHintUi.hideIntroHint(); }
 

@@ -1,4 +1,4 @@
-// Intro-hint + hit-chip UI — Phase 0d batch 35.
+// Intro-hint + hit-chip + running-state UI — Phase 0d batches 35 + 58.
 //
 // Tiny user-feedback bits that all live in the same overlay region
 // of the canvas:
@@ -23,6 +23,13 @@
 //   5. alertAudioInitError(e) — bilingual alert wrapper for the
 //      audio-init failure path.
 //
+//   6. showRunningUI() — title→running screen transition (Phase 0d
+//      batch 58). Hides the start screen, reveals the HUD, requests
+//      a wake lock, decides on the mic meter visibility, and kicks
+//      off the silent background rescan when only the mic failed
+//      (no MIDI). Stays in this module because it shares the intro-
+//      hint visibility decision via refreshIntroHint().
+//
 // All side-effects flow through deps. The factory closes over the
 // chip-throttle timestamp so the legacy `_lastChipMs` global is
 // gone.
@@ -30,11 +37,26 @@
 /** Subset of the shell's DOM bag the intro UI mutates. */
 export interface IntroHintUiDom {
   introHint: HTMLElement | null;
+  /** Title-screen container — hidden in `showRunningUI`. Optional so
+   *  existing tests that only exercise the chip / hint paths don't
+   *  need to mint a fake start screen. */
+  startScreen?: HTMLElement | null;
+  /** Top HUD container — revealed in `showRunningUI`. */
+  hud?: HTMLElement | null;
+  /** Mic-level meter — toggled in `showRunningUI` based on whether
+   *  the mic is the active input (no MIDI + not suspended). */
+  micMeter?: HTMLElement | null;
 }
 
-/** Subset of `state` we read for the input check. */
+/** Subset of `state` we read for the input check + running-UI decisions. */
 export interface IntroHintUiStateRef {
   micPermissionFailed?: boolean;
+  /** True when audio is paused (visibility / devicechange recovery). */
+  micSuspended?: boolean;
+  /** True on iOS-WMB where the user intentionally skipped mic — we
+   *  still want the silent rescan poller running so a later MIDI
+   *  hot-plug picks up. */
+  micIntentionallySkipped?: boolean;
   /** Lang-change re-render hook the shell stashes. */
   lastIntroDiag?: (() => void) | null;
 }
@@ -44,10 +66,18 @@ export interface IntroHintUiMidiRef {
   enabled: boolean;
 }
 
+/** Subset of `practice` we read for the running-UI decision. */
+export interface IntroHintUiPracticeRef {
+  enabled: boolean;
+}
+
 export interface IntroHintUiDeps {
   dom: IntroHintUiDom;
   state: IntroHintUiStateRef;
   midiInput: IntroHintUiMidiRef;
+  /** Optional — only required by `showRunningUI`. Existing test
+   *  suites that don't exercise the running-UI path can omit this. */
+  practice?: IntroHintUiPracticeRef;
 
   /** Bilingual translator. Reads `introNeedMidi` + `audioInitFailedFmt`. */
   t: (key: string, vars?: Record<string, string>) => string;
@@ -69,6 +99,27 @@ export interface IntroHintUiDeps {
 
   /** Chip throttle window (ms). Default 100. */
   chipThrottleMs?: number;
+
+  // ── showRunningUI deps (all optional so legacy callers of the
+  //    intro / hit-chip API don't need to provide them) ──
+
+  /** document.body or stand-in. Used to clear the `title-screen`
+   *  class on the title→running transition. Defaults to the live
+   *  document.body. */
+  body?: HTMLElement;
+  /** Hold the screen awake whenever audio is alive (was practice-
+   *  only; iOS will suspend the page + silently break MIDI in WMB
+   *  the moment the screen sleeps). */
+  requestWakeLock?: () => void;
+  /** Kick the ramped auto-rescan poller. Called only when the user
+   *  is mic-fallback (no MIDI port) AND the mic itself failed —
+   *  catches a later USB-MIDI hot-plug. */
+  startMidiAutoRescan?: () => void;
+  /** One-shot silent enumeration. Same trigger condition as the
+   *  poller. Returns a promise we explicitly swallow — failures must
+   *  NEVER surface a "🎹 No MIDI port found" diagnostic the kid
+   *  didn't ask for. */
+  rescanMidi?: (silent: boolean) => Promise<unknown>;
 }
 
 export interface IntroHintUi {
@@ -83,6 +134,10 @@ export interface IntroHintUi {
   hideIntroHint(): void;
   /** Bilingual alert wrapper for audio-init failures. */
   alertAudioInitError(e: unknown): void;
+  /** Title→running screen transition. Hides start screen, shows
+   *  HUD, requests wake lock, paints mic meter, kicks silent
+   *  bg-rescan when only the mic failed. */
+  showRunningUI(): void;
 }
 
 const DEFAULT_CHIP_DURATION_MS = 1100;
@@ -131,11 +186,41 @@ export function createIntroHintUi(deps: IntroHintUiDeps): IntroHintUi {
     alertFn(deps.t('audioInitFailedFmt', { v: msg }));
   }
 
+  function showRunningUI(): void {
+    if (deps.dom.startScreen) deps.dom.startScreen.style.display = 'none';
+    const body = deps.body ?? (typeof document !== 'undefined' ? document.body : null);
+    body?.classList.remove('title-screen');
+    if (deps.dom.hud) deps.dom.hud.style.display = 'block';
+    // Hold the screen awake whenever audio is alive — was practice-
+    // only before, but iOS will suspend the page (and silently break
+    // the MIDI port handler in WMB) the moment the screen sleeps.
+    // Free Play sessions should stay live for the same reason.
+    deps.requestWakeLock?.();
+    if (!deps.practice?.enabled) refreshIntroHint();
+    if (deps.dom.micMeter) {
+      const wantsMicMeter = !deps.midiInput.enabled && !deps.state.micSuspended;
+      deps.dom.micMeter.classList.toggle('visible', wantsMicMeter);
+    }
+    // Background-rescan only for actual mic failures — iOS-WMB
+    // sessions (`micIntentionallySkipped`) start the silent poller
+    // too so a later MIDI hot-plug picks up. NEVER fire a non-silent
+    // rescan here: it surfaces a "🎹 No MIDI port found" diagnostic
+    // the kid did not ask for.
+    const wantBgRescan =
+      !deps.midiInput.enabled &&
+      (!!deps.state.micPermissionFailed || !!deps.state.micIntentionallySkipped);
+    if (wantBgRescan) {
+      deps.startMidiAutoRescan?.();
+      deps.rescanMidi?.(true).catch(() => {});
+    }
+  }
+
   return {
     showHitChip,
     noInputAvailable,
     refreshIntroHint,
     hideIntroHint,
     alertAudioInitError,
+    showRunningUI,
   };
 }
