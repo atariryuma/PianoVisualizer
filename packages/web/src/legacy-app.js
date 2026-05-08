@@ -3394,146 +3394,21 @@
     });
     async function loadCurrentScore() { await _scoreLoader.loadCurrentScore(); }
 
-    // Manual scroll to keep the OSMD cursor visible inside its container.
-    // Throttled to once per 100ms — for rapid passages (e.g. Turkish March 16th-note
-    // runs) doing scroll math + reflow per onset bogs down the main thread.
-    let _lastOsmdScrollMs = 0;
-
-    function osmdScrollToCursor() {
-      const c = DOM.osmdContainer;
-      if (!c || !osmd || !osmd.cursor || !osmd.cursor.cursorElement) return;
-      const now = performance.now();
-      if (now - _lastOsmdScrollMs < 100) return;
-      _lastOsmdScrollMs = now;
-      const cTop = osmd.cursor.cursorElement.offsetTop;
-      const cH = osmd.cursor.cursorElement.offsetHeight || 30;
-      const viewH = c.clientHeight;
-      if (cTop < c.scrollTop || cTop + cH > c.scrollTop + viewH) {
-        c.scrollTop = Math.max(0, cTop - viewH / 3);
-      }
-    }
-
-    function osmdResetToStart() {
-      if (!osmd || !osmd.cursor) return;
-      clearNoteHighlights();
-      osmd.cursor.reset();
-      DOM.osmdContainer.scrollTop = 0;
-    }
-
-    // === Currently-playing notehead highlight ===
-    // The thin OSMD cursor (type 1) shows *where in time* we are; this lights
-    // up the actual note(s) sounding right now so the kid can spot "which
-    // ledger-line dot is it" without scanning the column. Called after every
-    // setOsmdCursorToNote() advance (post-walk, the iterator's
-    // NotesUnderCursor/GNotesUnderCursor returns the freshly-current notes).
-    //
-    // Approach: cache each touched <path>'s pre-highlight inline fill on a
-    // dataset attr so clear() can restore it exactly — OSMD doesn't always
-    // rely on inline style for noteheads (some are SVG `fill` attrs, some
-    // pick up the parent <g>'s color), and blanket-clearing style.fill would
-    // wipe any user-applied per-note colors that happened to live inline.
-    const HIGHLIGHT_FILL = '#ff3b6b';   // pink — contrasts with gold cursor + black notes
-    /** @type {SVGPathElement[]} */
-    let _highlightedPaths = [];
-    function clearNoteHighlights() {
-      for (const p of _highlightedPaths) {
-        try {
-          if (p.dataset && '_origFill' in p.dataset) {
-            p.style.fill = p.dataset._origFill ?? '';
-            delete p.dataset._origFill;
-          } else {
-            p.style.fill = '';
-          }
-        } catch (_) { /* element may have been detached on song swap */ }
-      }
-      _highlightedPaths.length = 0;
-    }
-    function highlightCurrentNotes() {
-      clearNoteHighlights();
-      if (!osmd || !osmd.cursor) return;
-      // GNotesUnderCursor (graphical notes, has getSVGGElement) was added
-      // mid-1.x. Fall back to NotesUnderCursor + a property probe so older
-      // OSMD builds still work.
-      let list = [];
-      try {
-        if (typeof osmd.cursor.GNotesUnderCursor === 'function') {
-          list = osmd.cursor.GNotesUnderCursor() || [];
-        } else if (typeof osmd.cursor.NotesUnderCursor === 'function') {
-          list = osmd.cursor.NotesUnderCursor() || [];
-        }
-      } catch (_) { return; }
-      for (const n of list) {
-        if (!n || typeof n.getSVGGElement !== 'function') continue;
-        let g;
-        try { g = n.getSVGGElement(); } catch (_) { continue; }
-        if (!g) continue;
-        // Color every <path> inside the note's <g> (head + stem + accidental
-        // + ledger line if grouped). Coloring just the notehead would lose
-        // the stem, and a "pink notehead with black stem" reads less clearly
-        // than a fully-pink note for an upper-elementary kid.
-        const paths = g.querySelectorAll('path');
-        for (const p of paths) {
-          if (p.dataset && !('_origFill' in p.dataset)) {
-            p.dataset._origFill = p.style.fill || '';
-          }
-          p.style.fill = HIGHLIGHT_FILL;
-          _highlightedPaths.push(p);
-        }
-      }
-    }
-
-    // === Cursor positioning by OSMD iterator's native state ===
-    // Each note carries (measureIdx, inBarQuarters); OSMD's iterator
-    // exposes the same coordinates via CurrentMeasureIndex +
-    // currentTimeStamp. We walk the iterator until they match — no
-    // parallel step counter, no drift on partial measures or grace-note
-    // throws.
-    //
-    // Backward seeks always reset() and walk forward; cursor.previous()
-    // in OSMD 1.9.x leaves the visual cursor at the previous position
-    // while iterator state moves backward (ghost cursor).
+    // Phase 0d batch 32: 5 OSMD cursor functions
+    // (osmdScrollToCursor / osmdResetToStart / clearNoteHighlights /
+    // highlightCurrentNotes / setOsmdCursorToNote) moved to
+    // packages/web/src/osmd-cursor.ts. The factory closes over the
+    // scroll-throttle timestamp + the highlighted-paths tracker.
+    const _osmdCursor = OsmdCursor.createOsmdCursor({
+      getOsmd: () => /** @type {any} */ (osmd),
+      getContainer: () => DOM.osmdContainer,
+    });
+    function osmdScrollToCursor() { _osmdCursor.scrollToCursor(); }
+    function osmdResetToStart() { _osmdCursor.resetToStart(); }
+    function clearNoteHighlights() { _osmdCursor.clearHighlights(); }
+    function highlightCurrentNotes() { _osmdCursor.highlightCurrentNotes(); }
     /** @param {{measureIdx:number, inBarQuarters:number}} note */
-    function setOsmdCursorToNote(note) {
-      if (!osmd || !osmd.cursor || !note) return;
-      const it = osmd.cursor.iterator;
-      const sm = osmd.Sheet?.SourceMeasures;
-      if (!sm) return;
-      const targetM = note.measureIdx | 0;
-      const targetQ = +note.inBarQuarters || 0;
-      const eps = 1e-6;
-
-      /** @param {number} m */
-      const measureStartWhole = (m) => sm[m]?.AbsoluteTimestamp?.realValue || 0;
-      const inBarQ = () => Math.max(0,
-        (it.currentTimeStamp.realValue - measureStartWhole(it.CurrentMeasureIndex)) * 4);
-
-      // Already at target? Skip.
-      const startM = it.CurrentMeasureIndex;
-      if (!it.endReached && startM === targetM && Math.abs(inBarQ() - targetQ) < eps) return;
-
-      // Past target → reset; otherwise we'd walk forever forward.
-      if (it.endReached
-        || startM > targetM
-        || (startM === targetM && inBarQ() > targetQ + eps)) {
-        try { osmd.cursor.reset(); } catch (_) {}
-      }
-
-      // Walk forward until iterator's (measureIdx, inBarQuarters) reaches the
-      // target. Bounded loop in case cursor.next() throws repeatedly without
-      // advancing — without the cap we'd hang.
-      let safety = 20000;
-      while (!it.endReached && safety-- > 0) {
-        const m = it.CurrentMeasureIndex;
-        if (m > targetM) break;
-        if (m === targetM && inBarQ() >= targetQ - eps) break;
-        try { osmd.cursor.next(); } catch (_) { /* grace-note throws — iterator still advances */ }
-      }
-      // Light up the freshly-current notehead(s). highlightCurrentNotes is
-      // internally try/catched at every OSMD-touching call site, so no outer
-      // wrap here — letting unrelated bugs (e.g. push() on a frozen array)
-      // bubble is more useful than silently swallowing them.
-      highlightCurrentNotes();
-    }
+    function setOsmdCursorToNote(note) { _osmdCursor.setCursorToNote(note); }
 
     // OSMD adapter — implements @piano/core/adapters/osmd-adapter's
     // OsmdAdapter interface. Phase 0c modules will consume the adapter
@@ -4940,7 +4815,10 @@
       // target is behind the current iterator position).
       const firstNote = practice.sectionNotes[0];
       if (firstNote) osmdAdapter.cursorTo(firstNote.measureIdx, firstNote.inBarQuarters);
-      _lastOsmdScrollMs = 0;
+      // Bypass the 100 ms scroll-throttle so the new section's first
+      // scroll-to-cursor isn't swallowed by the previous section's
+      // last-frame scroll.
+      _osmdCursor.resetScrollThrottle();
       osmdScrollToCursor();
       osmdAdapter.showCursor();
       // Reset the per-frame scan cursor so the lane drawer's elapsed →
@@ -5401,9 +5279,9 @@
           osmd = null;
         }
         // Drop notehead-highlight refs before innerHTML='' detaches them —
-        // otherwise _highlightedPaths holds dangling elements that the next
-        // clearNoteHighlights() would still try to touch.
-        _highlightedPaths.length = 0;
+        // otherwise the cursor module's tracker holds dangling elements
+        // that the next highlightCurrentNotes() would still try to touch.
+        _osmdCursor.clearHighlights();
         DOM.osmdContainer.innerHTML = '';
       }
       DOM.songTitle.textContent = t(song.titleKey);
