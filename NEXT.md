@@ -6,23 +6,38 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08**. Long extraction run + new in-app dev mode.
-`legacy-app.js` is **6,683 lines** (was 7,225 at session start; ~542 lines
-extracted across 13 module sub-batches + ~208 lines added for the dev-mode
-toolbar's wire-up). New modules: `theme-controls.ts`, `practice-flow.ts`,
-`song-panel-controls.ts`, `song-panel-render.ts`, `practice-tick.ts`,
-`result-card.ts`, `session-summary.ts`, `render-frame.ts`, `render-mid.ts`,
-`render-late.ts`, `dev-mode.ts`. **1,137 tests** (786 core, 351 web; +213 from
-this session). `pnpm verify` clean across 5 packages.
+Last refreshed: **2026-05-08** (active session). Layer C autonomous-bench
+landed. `legacy-app.js` is **6,794 lines**. **1,238 tests** (786 core + 452
+web). `pnpm verify` clean.
 
-**iPad verification — new in this session**:
+**Headless bench harness — landed batch 17 (autonomous feedback loop)**:
+`pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
+launches headless Chrome via puppeteer-core, navigates to
+`?dev=1&autorun=bench&webhook=...`, polls until the report lands, and prints
+markdown to stdout. The vite plugin (`packages/web/vite-bench-plugin.ts`)
+exposes `/__bench/{result,last,clear}` middleware; dev-mode.ts adds
+`?autorun=bench` + `?webhook=URL` URL-param hooks. Closes the "deploy → check by
+hand" cycle — the LLM driving the codebase can now verify end-to-end behaviour
+after every batch in ~5 s. **Verified 11/11 bench passing post-extraction at
+every commit.**
+
+**Recent batches (this session)**:
+
+- batch 17 — autonomous bench harness (vite plugin + puppeteer + dev-mode
+  autorun/webhook). +7 dev-mode tests, no shell change.
+- batch 18 — `mic-pipeline.ts`: YIN throttle + AGC + game-state + mic-driven
+  note spawn (-41 lines from shell, +28 tests).
+- batch 19 — `midi-handlers.ts`: onMidiNoteOn/Off/CC + spawnMidiNoteVisuals (-26
+  lines from shell, +29 tests).
+
+**iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
 with **🧪 Self-test** (10 pass/fail checks for every extracted module's
 globalThis presence, DOM bag completeness, AudioContext, Web MIDI, Service
 Worker, Wake Lock, prefs round-trip), **📊 Diag** (read-only state snapshot, 1Hz
-refresh), **📋 Copy** (markdown report → clipboard for chat paste, includes
-build SHA + UA), and **✕** (deactivate). Persistent via localStorage; `?dev=0`
-clears.
+refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
+(markdown report → clipboard for chat paste, includes build SHA + UA), and **✕**
+(deactivate). Persistent via localStorage; `?dev=0` clears.
 
 ---
 
@@ -95,12 +110,17 @@ clears.
 | 63  | `web/dev-mode.ts`             | 24    | `packages/web/src/dev-mode.ts` (in-app testing) |
 | 64  | `web/render-mid.ts`           | 14    | `packages/web/src/render-mid.ts`                |
 | 65  | `web/render-late.ts`          | 16    | `packages/web/src/render-late.ts`               |
+| 66  | `web/practice-lane.ts`        | 19    | `packages/web/src/practice-lane.ts`             |
+| 67  | `web/section-editor.ts`       | 20    | `packages/web/src/section-editor.ts`            |
+| 68  | `web/midi-render.ts`          | 9     | `packages/web/src/midi-render.ts`               |
+| 69  | bench harness (autorun+wh)    | 7     | `packages/web/vite-bench-plugin.ts` + bench.mjs |
+| 70  | `web/mic-pipeline.ts`         | 28    | `packages/web/src/mic-pipeline.ts`              |
+| 71  | `web/midi-handlers.ts`        | 29    | `packages/web/src/midi-handlers.ts`             |
 
-**Status: 1,137/1,137 tests green (786 core + 351 web), 0 lint errors, 0 type
-errors, 0 residual TS errors. `pnpm verify` clean.** Tag: `phase-0c.5-done`.
-`legacy-app.js`: 6,683 lines (was 9,000+ at Phase 0a). Total Phase 0d extraction
-so far: ≈2,475 lines moved out of the shell across 17 sub-batches (after netting
-out the +208 dev-mode wire-up addition).
+**Status: 1,238/1,238 tests green (786 core + 452 web), 0 lint errors, 0 type
+errors, 0 residual TS errors. `pnpm verify` clean.** Bench: 11/11 passed, frame
+avg 7.0ms. `legacy-app.js`: 6,794 lines (was 9,000+ at Phase 0a; 6,861 at
+session start last cycle).
 
 ---
 
