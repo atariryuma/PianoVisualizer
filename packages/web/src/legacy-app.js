@@ -2185,91 +2185,47 @@
       showSessionSummary = _sessionSummary.showSessionSummary;
     }
 
-    function resetSession() {
-      state.flow = 0;
-      state.combo = 0;
-      state.bestCombo = 0;
-      state.currentStage = 0;
-      state.pitchStability = 0;
-      // Phase 0b.3: in-place buffer reset preserves array identity, so any
-      // ArrayLike consumers caching the ref (quality.ts) keep working.
-      PianoCore.resetQualityHistoryState(state);
-      state.centroidHistory = [];
-      state.rhythmScore = 0;
-      state.dynamicsScore = 0;
-      state.stabilityScore = 0;
-      state.qualityScore = 0;
-      state.displayedQualityScore = 0;
-      state.growthScore = 0;
-      state.qualityHistory = [];
-      // Reset quest tracker — keep the SAME completedQuests array reference
-      // (since _questState.completedIds shares it) by clearing in-place.
-      state.completedQuests.length = 0;
-      PianoCore.resetQuestTrackerState(_questState);
-      _questState.completedIds = state.completedQuests; // re-share after reset
-      state.activeQuestId = null;
-      state.lastQuestCheckMs = 0;
-      PianoCore.resetEncouragementState(_encState);
-      // Inline of the old _mirrorEncStateToLegacy (factory owns this now).
-      state.currentEncouragementTier = _encState.currentTier;
-      state.lastEncouragementTimeMs = _encState.lastShownTimeMs;
-      state.encouragementHideTimeMs = _encState.hideTimeMs > 0 ? _encState.hideTimeMs : 0;
-      state.lastGoodNoteTimeMs = 0;
-      state.lastSilenceStartMs = -1;
-      state.lastPitchSemitones = null;
-      state.peakFlow = 0;
-      state.sessionStartTimeMs = performance.now();
-      state.lastNoteTimeMs = 0;
-      state.lastDetectedNote = '';
-      state.sessionState = 'waiting';
-      state.sessionConfidence = 0;
-      state.sessionPianoCount = 0;
-      state.sessionRingHead = 0;
-      state.sessionRingTail = 0;
-      state.sessionRingSize = 0;
-      for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i].isPiano = false;
-      state.feedbackGood = '';
-      state.feedbackNext = '';
-      state.goalWindowStartMs = 0;
-      state.goalCelebrateUntilMs = 0;
-      state.goalCompletedCount = 0;
-      state.spectralFluxHistory = [];
-      state.prevSpectrum = null;
-      state.lastOnsetTimeMs = -9999;
-      state.smoothEnergy = 0;
-      PianoCore.resetWakeUpFlashState(state);
-      state.glowPulseIntensity = 0;
-      state.shimmerPhase = -1;
-      ripples.length = 0;
-      particles.length = 0;
-      DOM.stageLabel.textContent = '';
-      DOM.stageLabel.classList.remove('visible');
-      DOM.encouragement.classList.remove('visible');
-      DOM.qualityScore.classList.remove('visible');
-      DOM.noteDisplay.classList.remove('visible');
-      DOM.questDisplay.classList.remove('visible');
-      DOM.questDots.innerHTML = '';
-      DOM.questLabel.textContent = '';
-      DOM.questToast.classList.remove('show');
-      DOM.flowFill.style.height = '0%';
-      _hudUpdate.invalidateFlowCache();   // next updateHUD tick re-paints the gauge
-      DOM.sessionStatus.classList.remove('visible');
-      DOM.sessionStatus.textContent = '';
-      DOM.playTime.textContent = '0:00';
-      // Drop any held MIDI keys / sustain so the next session starts clean.
-      midiState.activeNotes.clear();
-      midiState.sustainedNotes.clear();
-      midiState.sustainOn = false;
-      // Chord-window fields cleared via the dedicated reducer reset.
-      PianoCore.resetChordWindowState(midiState);
-      // Drop the BLE-redelivery dedupe cache too; otherwise a long mic-only
-      // session that included a stray MIDI note can theoretically swallow
-      // the first MIDI note after a reconnect (same `(midi<<8)|velocity`
-      // happening to fall inside the 30 ms window). Cache lives inside
-      // packages/web/src/midi-dispatch.ts since batch 22.
-      _midiDispatch.reset();
-      remoteLog('[RESET] Session reset by user');
-    }
+    // Phase 0d batch 48: 85-line full-session-reset reducer moved to
+    // packages/web/src/session-reset.ts.
+    const _sessionReset = SessionReset.createSessionReset(
+      /** @type {import('./session-reset').SessionResetDeps} */ ({
+        refs: {
+          state: /** @type {any} */ (state),
+          questState: /** @type {any} */ (_questState),
+          encState: /** @type {any} */ (_encState),
+          getMidiState: () => /** @type {any} */ (midiState),
+          sessionRing: /** @type {any} */ (sessionRing),
+          ripples,
+          particles,
+        },
+        reducers: {
+          resetQualityHistoryState: PianoCore.resetQualityHistoryState,
+          resetQuestTrackerState: PianoCore.resetQuestTrackerState,
+          resetEncouragementState: PianoCore.resetEncouragementState,
+          resetWakeUpFlashState: PianoCore.resetWakeUpFlashState,
+          resetChordWindowState: PianoCore.resetChordWindowState,
+        },
+        dom: {
+          stageLabel: DOM.stageLabel,
+          encouragement: DOM.encouragement,
+          qualityScore: DOM.qualityScore,
+          noteDisplay: DOM.noteDisplay,
+          questDisplay: DOM.questDisplay,
+          questDots: DOM.questDots,
+          questLabel: DOM.questLabel,
+          questToast: DOM.questToast,
+          flowFill: DOM.flowFill,
+          sessionStatus: DOM.sessionStatus,
+          playTime: DOM.playTime,
+        },
+        sessionRingCap: SESSION_RING_CAP,
+        invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
+        resetMidiDispatch: () => _midiDispatch.reset(),
+        remoteLog,
+        now: () => performance.now(),
+      })
+    );
+    function resetSession() { _sessionReset.reset(); }
 
     // ========================================
     // v12: Practice Mode — Für Elise

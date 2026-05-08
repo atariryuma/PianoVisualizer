@@ -76,6 +76,7 @@ import * as HudUpdate from './hud-update';
 import * as QualityUpdate from './quality-update';
 import * as QuestStateUpdate from './quest-state-update';
 import * as ModalFocus from './modal-focus';
+import * as SessionReset from './session-reset';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -139,6 +140,7 @@ declare global {
     QualityUpdate: typeof QualityUpdate;
     QuestStateUpdate: typeof QuestStateUpdate;
     ModalFocus: typeof ModalFocus;
+    SessionReset: typeof SessionReset;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -289,6 +291,8 @@ declare global {
   var QuestStateUpdate: typeof import('./quest-state-update');
 
   var ModalFocus: typeof import('./modal-focus');
+
+  var SessionReset: typeof import('./session-reset');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -350,6 +354,7 @@ declare global {
 (globalThis as unknown as Window).QualityUpdate = QualityUpdate;
 (globalThis as unknown as Window).QuestStateUpdate = QuestStateUpdate;
 (globalThis as unknown as Window).ModalFocus = ModalFocus;
+(globalThis as unknown as Window).SessionReset = SessionReset;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`
