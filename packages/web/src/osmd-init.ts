@@ -76,39 +76,67 @@ const DEFAULT_CONTAINER_ID = 'osmdContainer';
 export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
   let instance: OsmdInstance | null = null;
   let inflight: Promise<OsmdInstance> | null = null;
+  // [Bug fix 2026-05-09] Track which URL is currently loaded into the
+  // instance. The previous code returned the cached instance on every
+  // init() call regardless of which song was selected — so switching
+  // from fur_elise to alla_turca / a user song never re-ran
+  // `inst.load(newUrl)`, leaving OSMD's Sheet.SourceMeasures bound to
+  // the previous song. Downstream `extractNotesFromOsmd` then walked
+  // the stale iterator and `expandNotesByPlaybackOrder` produced
+  // NaN-tainted timings (see server.log
+  // `[DIAG/play.note] i=0 t=NaN dur=NaN` from 2026-05-09 03:03:57).
+  let loadedUrl: string | null = null;
 
   async function init(): Promise<OsmdInstance> {
-    if (instance) return instance;
-    if (inflight) return inflight;
     if (!deps.opensheetmusicdisplay) {
       throw new Error('OSMD library not loaded');
     }
 
+    // Resolve the URL FIRST so the cache check + the inflight check
+    // both see the same key.
+    const song = deps.getCurrentSong();
+    const url = song?.xmlUrl || song?.mxlUrl;
+    if (!url) throw new Error('No xmlUrl / mxlUrl on the current song');
+
+    // Cache hit: same URL is already fully loaded into the instance.
+    if (instance && loadedUrl === url && !inflight) return instance;
+
+    // In-flight load (for ANY url): wait for it to settle, then retry
+    // — if it loaded a different URL, the next call will re-enter
+    // and trigger our re-load path.
+    if (inflight) return inflight;
+
     inflight = (async () => {
       const lib = deps.opensheetmusicdisplay!;
-      const inst = new lib.OpenSheetMusicDisplay(deps.containerId ?? DEFAULT_CONTAINER_ID, {
-        drawTitle: false,
-        drawSubtitle: false,
-        drawComposer: false,
-        drawCredits: false,
-        drawPartNames: false,
-        drawHiddenNotes: false,
-        autoResize: false,
-        backend: 'svg',
-        cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: false }],
-      });
 
-      // RenderPedals quirk — see header note.
-      try {
-        (inst as any).EngravingRules.RenderPedals = false;
-      } catch (e) {
-        console.warn('[OSMD] could not disable pedal render: ' + (e as Error).message);
-      }
-      // CursorIgnoreRepetitions — see header note.
-      try {
-        (inst as any).EngravingRules.CursorIgnoreRepetitions = true;
-      } catch {
-        /* older OSMD: option doesn't exist, behavior is the same */
+      // First-time setup: create the OSMD instance + apply the
+      // engraving-rules quirk fixes. Reused across song switches.
+      if (!instance) {
+        const inst = new lib.OpenSheetMusicDisplay(deps.containerId ?? DEFAULT_CONTAINER_ID, {
+          drawTitle: false,
+          drawSubtitle: false,
+          drawComposer: false,
+          drawCredits: false,
+          drawPartNames: false,
+          drawHiddenNotes: false,
+          autoResize: false,
+          backend: 'svg',
+          cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: false }],
+        });
+
+        // RenderPedals quirk — see header note.
+        try {
+          (inst as any).EngravingRules.RenderPedals = false;
+        } catch (e) {
+          console.warn('[OSMD] could not disable pedal render: ' + (e as Error).message);
+        }
+        // CursorIgnoreRepetitions — see header note.
+        try {
+          (inst as any).EngravingRules.CursorIgnoreRepetitions = true;
+        } catch {
+          /* older OSMD: option doesn't exist, behavior is the same */
+        }
+        instance = inst;
       }
 
       // OSMD's load() accepts both .mxl URLs (zipped) and plain
@@ -125,16 +153,32 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
       // are already xml-first because registerUserSong unzips the
       // .mxl at import time and stores a blob URL of the plain XML
       // in `xmlUrl`).
-      const song = deps.getCurrentSong();
-      const url = song?.xmlUrl || song?.mxlUrl;
-      if (!url) throw new Error('No xmlUrl / mxlUrl on the current song');
+      const inst = instance;
       await inst.load(url);
+      loadedUrl = url;
 
       // Activate Repetition objects so the iterator performs back-
       // jumps. See header note.
       const repSet = new Set<{ UserNumberOfRepetitions?: number; NumberOfRepetitions?: number }>();
 
       const measures: any[] = (inst as any).Sheet?.SourceMeasures || [];
+
+      // [Bug fix 2026-05-09] Sanity gate. OSMD's load() can resolve
+      // successfully while leaving Sheet null/empty — the symptom of
+      // a malformed .mxl container, a stale blob URL after IDB
+      // rehydration, or any of the OSMD parser quirks that emit
+      // `OSMD.Cursor.resetIterator(): sheet or measures were
+      // null/undefined` (seen in server.log on every broken load).
+      // Throwing here turns the silent NaN-timing bug into a loud
+      // error that the score-loader already surfaces via the
+      // alertAudioInitError path.
+      if (measures.length === 0) {
+        // Drop the cached state so the NEXT init() call retries from
+        // scratch instead of returning the broken instance.
+        loadedUrl = null;
+        throw new Error('OSMD load: Sheet.SourceMeasures is empty after load(' + url + ')');
+      }
+
       for (const m of measures) {
         for (const list of [m.FirstRepetitionInstructions, m.LastRepetitionInstructions]) {
           if (!list) continue;
@@ -189,7 +233,6 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
         }
       }
 
-      instance = inst;
       return inst;
     })();
 

@@ -89,6 +89,20 @@ export function createPlaybackOrder<TBaseNote, TExpandedNote, TOrder>(
     measures: PlaybackOrderMeasure[],
     sourceMeasureStartSec?: number[]
   ): TExpandedNote[] {
+    // [Bug fix 2026-05-09] Loud failure when OSMD's Sheet didn't
+    // populate. Without this guard the cumulative-sum walk below
+    // produces empty startSec[] / durSec[] arrays; the core
+    // expansion then computes `(undefined - 0) * 1000 ...` for every
+    // note, returning NaN-tainted timing. Symptom in server.log:
+    // `[DIAG/play.note] i=0 t=NaN dur=NaN`. score-loader catches the
+    // throw via its existing try/catch path and surfaces the error
+    // through `alertAudioInitError`.
+    if (!measures || measures.length === 0) {
+      throw new Error(
+        'expandNotesByPlaybackOrder: measures array is empty — OSMD Sheet.SourceMeasures was null or empty after load'
+      );
+    }
+
     let measureStartSec: number[];
     let measureDurSec: number[];
 

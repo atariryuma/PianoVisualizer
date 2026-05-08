@@ -964,6 +964,39 @@
     const createAudioContext = AudioInit.createAudioContext;
 
     async function initAudio() {
+      // [Bug fix 2026-05-09] Idempotent reuse of the AudioContext.
+      //
+      // The previous code unconditionally created a new AudioContext
+      // on every call. When the kid went back to the title screen
+      // and clicked ▶ Start again, this orphaned the previous ctx
+      // (and the gainNode / analyser graph attached to it). The
+      // result: the second ▶ Start built a new shell-side audio
+      // graph, but Tone.js was still bound to the original ctx (we
+      // intentionally never call Tone.setContext after init — see
+      // audio-init.ts header note). The Tone.Transport scheduling
+      // path silently no-ops against an orphaned ctx, the kid sees
+      // count-in beeps that never play, and listen mode appears to
+      // do nothing. Server.log timeline at 2026-05-09 03:03:24
+      // confirms: fresh AudioContext (currentTime=0.000) → Transport
+      // never started → user clicks Quit → Reset.
+      //
+      // The fix: skip the whole graph rebuild when audioCtx already
+      // exists and isn't closed. Just resume from suspended on
+      // re-entry. Tone's context stays the same across the session,
+      // so its Transport / synth state survives the title-round-trip
+      // intact.
+      if (audioCtx && audioCtx.state !== 'closed') {
+        if (audioCtx.state === 'suspended') {
+          try { await audioCtx.resume(); } catch (_e) { /* best-effort */ }
+        }
+        console.log('[AUDIO] re-entry — reusing existing AudioContext (state=' + audioCtx.state + ')');
+        // Probe MIDI again so an externally-attached keyboard since
+        // the last init shows up. Mic state was already set last
+        // time we ran the init flow; don't disturb it.
+        try { await initWebMIDI(); } catch (e) { /* fall back to mic */ }
+        return;
+      }
+
       console.log("Initializing Audio...");
       audioCtx = createAudioContext();
       if (audioCtx.state === 'suspended') {

@@ -221,3 +221,23 @@ describe('createPlaybackOrder — expandNotesByPlaybackOrder cumulative-sum fall
     expect(out[1]).toEqual({ startSec: 1, measureIdx: 1 });
   });
 });
+
+describe('createPlaybackOrder — empty measures NaN guard (2026-05-09 regression)', () => {
+  it('throws "measures array is empty" when measures.length === 0', () => {
+    const fx = makeFixture();
+    expect(() => fx.pb.expandNotesByPlaybackOrder([], { measureIndices: [0, 1, 2] }, [])).toThrow(
+      /measures array is empty/
+    );
+  });
+
+  it('throws when measures is undefined / null (defensive)', () => {
+    const fx = makeFixture();
+    expect(() =>
+      fx.pb.expandNotesByPlaybackOrder(
+        [],
+        { measureIndices: [0] },
+        undefined as unknown as PlaybackOrderMeasure[]
+      )
+    ).toThrow(/measures array is empty/);
+  });
+});

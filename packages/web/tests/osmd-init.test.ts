@@ -29,6 +29,11 @@ interface FakeInstanceOpts {
   cursorIgnoreReptSetThrows?: boolean;
   repetitions?: Array<{ UserNumberOfRepetitions?: number; NumberOfRepetitions?: number }>;
   noCursor?: boolean;
+  /** Force Sheet.SourceMeasures to be empty post-load — exercises
+   *  the new sanity-check throw path (production bug 2026-05-09:
+   *  some malformed user-imported songs produced empty Sheet after
+   *  load). */
+  forceEmptySheet?: boolean;
 }
 
 function makeFakeOsmdLib(instanceOpts: FakeInstanceOpts = {}) {
@@ -47,10 +52,20 @@ function makeFakeOsmdLib(instanceOpts: FakeInstanceOpts = {}) {
         }),
       };
 
-  const measures = repetitions.map((parentRepetition) => ({
+  // [Bug fix 2026-05-09] Default to at least one measure so the
+  // factory's new sanity-check (throws when SourceMeasures.length===0)
+  // doesn't fire on every smoke test. The "empty Sheet" path is
+  // covered explicitly by the `forceEmptySheet` flag below — that's
+  // the path that mimics the production-broken usr_mowwbzmy load.
+  const repetitionMeasures = repetitions.map((parentRepetition) => ({
     FirstRepetitionInstructions: [{ parentRepetition }],
     LastRepetitionInstructions: null,
   }));
+  const measures = instanceOpts.forceEmptySheet
+    ? []
+    : repetitionMeasures.length
+      ? repetitionMeasures
+      : [{ FirstRepetitionInstructions: null, LastRepetitionInstructions: null }];
 
   let pedalsValue: boolean | undefined;
   let cursorIgnoreReptValue: boolean | undefined;
@@ -149,6 +164,38 @@ describe('createOsmdInit — caching', () => {
     expect(a).toBe(b);
     // OSMD ctor was called exactly once.
     expect(fake.lib?.OpenSheetMusicDisplay).toHaveBeenCalledOnce();
+    // load() also called exactly once when URL didn't change.
+    expect(fake.instance.load).toHaveBeenCalledOnce();
+  });
+
+  it('reloads when the current song URL changes (alla_turca regression — switching songs must re-load Sheet)', async () => {
+    const fake = makeFakeOsmdLib();
+    let activeUrl = 'song-a.xml';
+    const init = createOsmdInit({
+      opensheetmusicdisplay: fake.lib,
+      getCurrentSong: () => ({ xmlUrl: activeUrl }),
+    });
+    await init.initOsmd();
+    activeUrl = 'song-b.xml';
+    await init.initOsmd();
+    // Same OSMD instance reused...
+    expect(fake.lib?.OpenSheetMusicDisplay).toHaveBeenCalledOnce();
+    // ...but load() fired twice (once per URL).
+    expect(fake.instance.load).toHaveBeenCalledTimes(2);
+    expect(fake.instance.load).toHaveBeenNthCalledWith(1, 'song-a.xml');
+    expect(fake.instance.load).toHaveBeenNthCalledWith(2, 'song-b.xml');
+  });
+
+  it('does NOT reload when the current song URL is unchanged (selectSong same-song path)', async () => {
+    const fake = makeFakeOsmdLib();
+    const init = createOsmdInit({
+      opensheetmusicdisplay: fake.lib,
+      getCurrentSong: () => ({ xmlUrl: 'same.xml' }),
+    });
+    await init.initOsmd();
+    await init.initOsmd();
+    await init.initOsmd();
+    expect(fake.instance.load).toHaveBeenCalledOnce();
   });
 
   it('collapses concurrent calls onto a single in-flight Promise', async () => {
@@ -278,14 +325,36 @@ describe('createOsmdInit — Repetition activation', () => {
     expect(r.UserNumberOfRepetitions).toBe(4);
   });
 
-  it('handles empty Sheet.SourceMeasures', async () => {
-    const fake = makeFakeOsmdLib();
-    fake.instance.Sheet.SourceMeasures = [];
+  it('throws "Sheet.SourceMeasures is empty" when load resolves but Sheet is empty (2026-05-09 broken-load regression)', async () => {
+    const fake = makeFakeOsmdLib({ forceEmptySheet: true });
     const init = createOsmdInit({
       opensheetmusicdisplay: fake.lib,
       getCurrentSong: () => ({ mxlUrl: 'x.mxl' }),
     });
+    await expect(init.initOsmd()).rejects.toThrow(/Sheet\.SourceMeasures is empty/);
+  });
+
+  it('after the empty-sheet throw, the next call retries from scratch (loadedUrl was cleared)', async () => {
+    let emptyToggle = true;
+    // First load returns empty sheet; flip the flag so the SECOND
+    // load returns a populated one. The factory should NOT cache the
+    // failed load — calling init() again must trigger a re-attempt.
+    const fake = makeFakeOsmdLib();
+    Object.defineProperty(fake.instance.Sheet, 'SourceMeasures', {
+      get() {
+        return emptyToggle
+          ? []
+          : [{ FirstRepetitionInstructions: null, LastRepetitionInstructions: null }];
+      },
+    });
+    const init = createOsmdInit({
+      opensheetmusicdisplay: fake.lib,
+      getCurrentSong: () => ({ mxlUrl: 'x.mxl' }),
+    });
+    await expect(init.initOsmd()).rejects.toThrow(/Sheet\.SourceMeasures is empty/);
+    emptyToggle = false; // simulate retry-with-fresh-blob succeeding
     await expect(init.initOsmd()).resolves.toBeTruthy();
+    expect(fake.instance.load).toHaveBeenCalledTimes(2);
   });
 });
 
