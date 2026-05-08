@@ -2566,97 +2566,56 @@
         getEnergy,
       });
 
-      let isGoodNote = false;
-      // v13: Skip the entire mic processing pipeline when the mic is suspended
-      // (MIDI is the active input). YIN, FFT consumption, AGC, onset detection
-      // and game-state updates are all mic-derived; running them on a torn-down
-      // stream wastes CPU and would also fight the MIDI-driven state.
-      if (analyser && !state.micSuspended) {
-        analyser.getFloatTimeDomainData(freqArray);
-
-        // YIN throttle: full autocorrelation every 3rd frame, RMS-only on others
-        let pitchResult;
-        if (++state.yinSkipCounter % 3 === 0) {
-          pitchResult = detectPitchYIN(freqArray, audioCtx.sampleRate);
-          state.cachedPitchResult = pitchResult;
-        } else {
-          let rms = 0;
-          const len = freqArray.length;
-          for (let i = 0; i < len; i++) rms += freqArray[i] * freqArray[i];
-          rms = Math.sqrt(rms / len);
-          pitchResult = { pitch: state.cachedPitchResult.pitch, conf: state.cachedPitchResult.conf, rms };
-        }
-
-        updateAGC(timeMs, pitchResult.rms);
-
-        // mic level meter (visible feedback that audio is being captured)
-        if (DOM.micMeter && DOM.micMeter.classList.contains('visible')) {
-          const lvl = Math.min(1, pitchResult.rms * 25);
-          DOM.micMeterFill.style.width = (lvl * 100).toFixed(1) + '%';
-        }
-
-        isGoodNote = updateGameState(timeMs, dt, pitchResult);
-        if (isGoodNote && DOM.introHint.classList.contains('visible')) {
-          hideIntroHint();
-        }
-
-        // v12: Practice mode tick (must run before particle work so flow boost applies)
-        if (practice.enabled) {
-          updatePractice(timeMs, isGoodNote, pitchResult.pitch);
-        }
-
-        // v13: When a MIDI keyboard is actively playing, MIDI events drive visuals
-        // (polyphonic, velocity-aware). Skip the mic-derived single-pitch path so we
-        // don't double-spawn or fight YIN's octave guesses.
-        const midiActiveRecently = midiInput.enabled
-          && (performance.now() - (midiInput.lastEventTime || 0)) < 2000;
-
-        if (!midiActiveRecently && isGoodNote && pitchResult.pitch > CONFIG.PITCH_MIN_HZ) {
-          const note = freqToNote(pitchResult.pitch);
-          if (note) {
-            // v10: Synesthesia Mode Color
-            let noteColor = null;
-            if (state.useSynesthesiaMode) {
-              noteColor = getNoteColor(note.name);
-            }
-
-            const noteX = ((note.noteNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
-            const noteY = H * 0.45 + (Math.random() - 0.5) * H * 0.25;
-
-            if (timeMs - state.lastNoteTimeMs > CONFIG.MIN_NOTE_INTERVAL_MS) {
-              // v10: Bass notes (< 100Hz) get extra burst weight
-              const isBass = note.freq < 100;
-              const bassBoost = isBass ? 1.5 : 1.0;
-
-              let burstSize = Math.floor((10 + state.smoothEnergy * 25 + state.flow * 0.2) * bassBoost);
-
-              // Pass noteColor to spawnBurst
-              spawnBurst(noteX, noteY, burstSize, state.smoothEnergy * (1 + state.flow * 0.02), noteColor ?? undefined);
-
-              // v10: Ensure minimum ripple size + Bass Boost
-              const rippleSize = Math.max(200, 150 + state.flow * 3 + state.combo * 0.5) * bassBoost;
-
-              // Use noteColor if active, else theme color
-              const rippleColor = noteColor || theme.colors[note.noteNum % theme.colors.length];
-              ripples.push(new Ripple(noteX, noteY, rippleColor, rippleSize));
-
-              state.lastNoteTimeMs = timeMs;
-
-              // Wake-up flash — clear confirmation at low flow.
-              if (state.flow < 10) PianoCore.triggerWakeUpFlash(state, WUF_OPTS);
-            }
-            // Pass noteColor to spawnStream
-            spawnStream(noteX, H * 0.65, state.smoothEnergy, noteColor ?? undefined);
-
-            showNoteDisplay(note.name, note.name + note.octave, noteColor, timeMs);
-          }
-        }
-      } else if (practice.enabled) {
-        // v13: MIDI-only practice — the mic isn't running, but the falling-notes
-        // timeline (miss detection, section completion) must still tick. Pass
-        // zero-valued mic inputs; MIDI matches happen out-of-band in onMidiNoteOn.
-        updatePractice(timeMs, false, 0);
-      }
+      // Phase 0d batch 18: mic frame pipeline (YIN throttle + AGC +
+      // mic meter + game-state + practice tick + mic-driven note
+      // spawn) lives in packages/web/src/mic-pipeline.ts. Returns
+      // `{ isGoodNote }` so the caller can route follow-up work.
+      const { isGoodNote } = MicPipeline.tickMicPipeline(timeMs, dt, {
+        analyser,
+        audioCtx,
+        freqArray,
+        detectPitchYIN,
+        updateAGC,
+        updateGameState,
+        state: /** @type {import('./mic-pipeline').MicPipelineState} */ (
+          /** @type {any} */ (state)
+        ),
+        practice: /** @type {import('./mic-pipeline').MicPipelinePracticeRef} */ (
+          /** @type {any} */ (practice)
+        ),
+        midiInput: /** @type {import('./mic-pipeline').MicPipelineMidiRef} */ (
+          /** @type {any} */ (midiInput)
+        ),
+        micMeter: DOM.micMeter,
+        micMeterFill: DOM.micMeterFill,
+        introHint: DOM.introHint,
+        hideIntroHint,
+        updatePractice,
+        freqToNote: /** @type {(freq: number) => import('./mic-pipeline').NoteDescriptor | null} */ (
+          /** @type {any} */ (freqToNote)
+        ),
+        getNoteColor,
+        spawnBurst,
+        spawnStream,
+        ripples: /** @type {import('./mic-pipeline').RipplesArray} */ (
+          /** @type {any} */ (ripples)
+        ),
+        Ripple: /** @type {import('./mic-pipeline').RippleCtor} */ (
+          /** @type {any} */ (Ripple)
+        ),
+        showNoteDisplay,
+        triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
+        wufOpts: WUF_OPTS,
+        theme,
+        screen: { W, H },
+        config: {
+          MIN_NOTE_INTERVAL_MS: CONFIG.MIN_NOTE_INTERVAL_MS,
+          PITCH_MIN_HZ: CONFIG.PITCH_MIN_HZ,
+          PIANO_KEY_MIN: CONFIG.PIANO_KEY_MIN,
+          PIANO_KEY_COUNT: CONFIG.PIANO_KEY_COUNT,
+        },
+      });
+      void isGoodNote; // currently unused after extraction; reserved for future hooks
 
       // Phase 0d batch 9b: note-display fade + ambient particle spawn
       // + spectrum bars moved to packages/web/src/render-mid.ts. The
