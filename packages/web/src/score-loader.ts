@@ -199,7 +199,25 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
       const baseNotes = extractRet.notes;
       const srcMeasureStartSec = extractRet.measureStartSec;
       const osmdMeasureBpm = extractRet.measureBpm;
-      if (baseNotes.length === 0) throw new Error('No notes extracted from MusicXML');
+      if (baseNotes.length === 0) {
+        // Diagnostic-friendly throw: includes the song id + which URL
+        // OSMD loaded, so a future "No notes extracted" entry in
+        // server.log immediately fingers the offending asset (instead
+        // of forcing a re-investigation like alla_turca needed). The
+        // 0-measure case usually means OSMD's MXL container reader
+        // couldn't locate the inner XML — see osmd-init.ts header
+        // note about non-standard inner file names.
+        const url =
+          (song as { xmlUrl?: string; mxlUrl?: string }).xmlUrl ||
+          (song as { xmlUrl?: string; mxlUrl?: string }).mxlUrl ||
+          '(no url)';
+        throw new Error(
+          'No notes extracted from MusicXML — songId=' +
+            (song as { id?: string }).id +
+            ' url=' +
+            url
+        );
+      }
 
       // BPM divergence flag — true when OSMD's reading of
       // <metronome beat-unit="eighth"> disagrees with the XML-

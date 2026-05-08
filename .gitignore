@@ -60,3 +60,7 @@ packages/web/.last-bench-report.md
 
 # Claude Code internal scheduled-task lock
 .claude/scheduled_tasks.lock
+
+# Ad-hoc PowerShell helpers from agent diagnostics (server.log greps,
+# .mxl inspectors, etc.). Created on the fly when triaging bugs.
+.claude_*.ps1

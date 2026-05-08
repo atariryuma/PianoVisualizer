@@ -112,11 +112,22 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
       }
 
       // OSMD's load() accepts both .mxl URLs (zipped) and plain
-      // MusicXML URLs. User-added songs may carry either; fall back
-      // to whichever is present.
+      // MusicXML URLs. We prefer the plain XML URL when available
+      // because some .mxl archives contain an inner XML file with a
+      // non-standard name (e.g. `lg-8683180.xml` instead of the
+      // conventional `score.xml`). OSMD's MXL container reader has
+      // historically been quirky around such files — observed in
+      // production: alla_turca.mxl loaded but yielded zero measures
+      // / zero notes, throwing 'No notes extracted from MusicXML'
+      // downstream (server.log [DIAG-FULLSONG] confirmed). The .xml
+      // path bypasses the MXL unzip entirely and is rock-solid for
+      // every score we ship + every user-imported one (user songs
+      // are already xml-first because registerUserSong unzips the
+      // .mxl at import time and stores a blob URL of the plain XML
+      // in `xmlUrl`).
       const song = deps.getCurrentSong();
-      const url = song?.mxlUrl || song?.xmlUrl;
-      if (!url) throw new Error('No mxlUrl / xmlUrl on the current song');
+      const url = song?.xmlUrl || song?.mxlUrl;
+      if (!url) throw new Error('No xmlUrl / mxlUrl on the current song');
       await inst.load(url);
 
       // Activate Repetition objects so the iterator performs back-

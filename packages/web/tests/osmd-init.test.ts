@@ -131,7 +131,7 @@ describe('createOsmdInit — construction guards', () => {
       opensheetmusicdisplay: fake.lib,
       getCurrentSong: () => null,
     });
-    await expect(init.initOsmd()).rejects.toThrow('No mxlUrl / xmlUrl');
+    await expect(init.initOsmd()).rejects.toThrow('No xmlUrl / mxlUrl');
   });
 });
 
@@ -178,24 +178,34 @@ describe('createOsmdInit — caching', () => {
 // ─── URL resolution ────────────────────────────────────────────────
 
 describe('createOsmdInit — URL resolution', () => {
-  it('prefers mxlUrl over xmlUrl', async () => {
+  it('prefers xmlUrl over mxlUrl (alla_turca regression — xml-first avoids non-standard inner-XML names that break OSMD extraction)', async () => {
     const fake = makeFakeOsmdLib();
     const init = createOsmdInit({
       opensheetmusicdisplay: fake.lib,
       getCurrentSong: () => ({ mxlUrl: 'song.mxl', xmlUrl: 'song.xml' }),
     });
     await init.initOsmd();
-    expect(fake.instance.load).toHaveBeenCalledWith('song.mxl');
+    expect(fake.instance.load).toHaveBeenCalledWith('song.xml');
   });
 
-  it('falls back to xmlUrl when mxlUrl is null', async () => {
+  it('falls back to mxlUrl when xmlUrl is null', async () => {
     const fake = makeFakeOsmdLib();
     const init = createOsmdInit({
       opensheetmusicdisplay: fake.lib,
-      getCurrentSong: () => ({ mxlUrl: null, xmlUrl: 'song.xml' }),
+      getCurrentSong: () => ({ mxlUrl: 'song.mxl', xmlUrl: null }),
     });
     await init.initOsmd();
-    expect(fake.instance.load).toHaveBeenCalledWith('song.xml');
+    expect(fake.instance.load).toHaveBeenCalledWith('song.mxl');
+  });
+
+  it('falls back to mxlUrl when xmlUrl is empty string (user-imported song with blob URL on xmlUrl, otherwise fresh — but we keep the legacy lookup honest)', async () => {
+    const fake = makeFakeOsmdLib();
+    const init = createOsmdInit({
+      opensheetmusicdisplay: fake.lib,
+      getCurrentSong: () => ({ mxlUrl: 'fallback.mxl', xmlUrl: '' }),
+    });
+    await init.initOsmd();
+    expect(fake.instance.load).toHaveBeenCalledWith('fallback.mxl');
   });
 });
 

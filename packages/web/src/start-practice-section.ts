@@ -276,7 +276,6 @@ export function createStartPracticeSection(
     if (!deps.practice.sectionNotes.length) {
       deps.practice.enabled = false;
       if (deps.remoteLogEnabled) {
-         
         console.log(
           '[DIAG-FULLSONG] startPracticeSection ABORT — empty sectionNotes ' +
             JSON.stringify({
