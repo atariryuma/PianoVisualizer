@@ -1972,30 +1972,26 @@
     // ========================================
     // Software AGC — with v9 voice suppression
     // ========================================
+    // Phase 0d batch 43: 25-line software AGC reducer moved to
+    // packages/web/src/agc-controller.ts.
+    const _agcDeps = /** @type {import('./agc-controller').AgcControllerDeps} */ ({
+      state: /** @type {any} */ (state),
+      tuning: {
+        updateIntervalMs: CONFIG.AGC_UPDATE_INTERVAL_MS,
+        silenceFloor: CONFIG.AGC_SILENCE_FLOOR,
+        voiceSuppressMax: CONFIG.AGC_VOICE_SUPPRESS_MAX,
+        maxGain: CONFIG.AGC_MAX_GAIN,
+        minGain: CONFIG.AGC_MIN_GAIN,
+        targetRms: CONFIG.AGC_TARGET_RMS,
+        attackCoeff: CONFIG.AGC_ATTACK_COEFF,
+        releaseCoeff: CONFIG.AGC_RELEASE_COEFF,
+      },
+      getGainNode: () => gainNode,
+      getAudioCtx: () => audioCtx,
+    });
     /** @param {number} timeMs @param {number} postGainRms */
     function updateAGC(timeMs, postGainRms) {
-      if (timeMs - state.agcLastUpdateMs < CONFIG.AGC_UPDATE_INTERVAL_MS) return;
-      state.agcLastUpdateMs = timeMs;
-
-      state.agcSmoothedRms += (postGainRms - state.agcSmoothedRms) * 0.15;
-
-      const preGainRms = state.agcSmoothedRms / state.agcGain;
-      if (preGainRms < CONFIG.AGC_SILENCE_FLOOR) return;
-
-      // v9: Determine effective max gain — suppress during voice detection
-      const effectiveMaxGain = (timeMs < state.agcVoiceSuppressUntilMs)
-        ? CONFIG.AGC_VOICE_SUPPRESS_MAX
-        : CONFIG.AGC_MAX_GAIN;
-
-      const ratio = CONFIG.AGC_TARGET_RMS / (state.agcSmoothedRms + 1e-10);
-      const targetGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(effectiveMaxGain, state.agcGain * ratio));
-
-      const alpha = targetGain > state.agcGain ? CONFIG.AGC_ATTACK_COEFF : CONFIG.AGC_RELEASE_COEFF;
-      state.agcGain += (targetGain - state.agcGain) * alpha;
-      state.agcGain = Math.max(CONFIG.AGC_MIN_GAIN, Math.min(effectiveMaxGain, state.agcGain));
-
-      gainNode.gain.setValueAtTime(state.agcGain, audioCtx.currentTime);
-      state.debugAgcGain = state.agcGain;
+      AgcController.updateAGC(timeMs, postGainRms, _agcDeps);
     }
 
     // ========================================
