@@ -6,12 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2 + Phase 0d follow-on)**. **19 new typed
-modules** plus the autonomous bench harness landed across the session.
-`legacy-app.js` is now **5,945 lines** (was 6,861 at session start, **−916 net**
-— biggest single-session reduction in the project's history). **1,598 tests**
-total (786 core, 812 web; **+454 this session**). `pnpm verify` clean. Bench
-**11/11 passing across every commit**, frame avg 5.2–7.1 ms.
+Last refreshed: **2026-05-08 (cycle 2 + Phase 0d follow-on, batches 32-38)**.
+**22 new typed modules** plus the autonomous bench harness landed across the
+session. `legacy-app.js` is now **5,809 lines** (was 6,861 at session start,
+**−1,052 net** — first time the shell has crossed below the 6,000-line mark).
+**1,689 tests** total (786 core, 903 web; **+545 this session**). `pnpm verify`
+clean. Bench **11/11 passing across every commit**, frame avg 5.2–7.1 ms.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -73,6 +73,15 @@ every commit.**
   computeHandRanges (-72 lines, +23 tests). Pure-ish builders.
 - batch 35 — `intro-hint-ui.ts`: showHitChip + intro hint state machine +
   audio-init alert (-21 lines, +19 tests).
+- batch 36 — `practice-scoring.ts`: medianRecentPitch + matchNoteOnset +
+  finalizeNoteHold + practiceRealElapsedMs + practiceElapsedMs (-123 lines, +41
+  tests). Chord-cluster matching, asymmetric early/late windows, audio- offset
+  clock math.
+- batch 37 — `practice-progress.ts`: load + save + per-song lookup + daily-
+  streak record facade over PianoCore reducers (-3 lines net, +14 tests).
+- batch 38 — `shell-helpers.ts`: setupHiDPICanvas, notePitchClass, midiToFreq,
+  noteStateLabel, midiToPitchName, midiToFullName (-10 lines, +36 tests). All
+  pure-functions; bilingual (EN/JP) note-name table parameterized.
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -176,13 +185,16 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 85  | `web/practice-tone-audio.ts`  | 17    | `packages/web/src/practice-tone-audio.ts`       |
 | 86  | `web/section-notes.ts`        | 23    | `packages/web/src/section-notes.ts`             |
 | 87  | `web/intro-hint-ui.ts`        | 19    | `packages/web/src/intro-hint-ui.ts`             |
+| 88  | `web/practice-scoring.ts`     | 41    | `packages/web/src/practice-scoring.ts`          |
+| 89  | `web/practice-progress.ts`    | 14    | `packages/web/src/practice-progress.ts`         |
+| 90  | `web/shell-helpers.ts`        | 36    | `packages/web/src/shell-helpers.ts`             |
 
-**Status: 1,598/1,598 tests green (786 core + 812 web), 0 lint errors, 0 type
+**Status: 1,689/1,689 tests green (786 core + 903 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
-avg 5.2–7.1 ms. `legacy-app.js`: 5,945 lines (was 9,000+ at Phase 0a; 6,861 at
-session start this cycle, **−916 net** across 18 shell-shrinking batches + 1
-architectural batch — biggest single-session reduction in the project's
-history).
+avg 5.2–7.1 ms. `legacy-app.js`: 5,809 lines (was 9,000+ at Phase 0a; 6,861 at
+session start this cycle, **−1,052 net** across 21 shell-shrinking batches + 1
+architectural batch — first time the shell has crossed below the 6,000-line
+mark, biggest single-session reduction in the project's history).
 
 ---
 
