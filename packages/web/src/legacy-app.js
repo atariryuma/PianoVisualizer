@@ -1223,21 +1223,12 @@
       },
     });
 
-    function applyI18n() {
-      document.querySelectorAll('[data-i18n], [data-i18n-title], [data-i18n-placeholder], [data-i18n-aria-label]').forEach(rawEl => {
-        const el = /** @type {HTMLInputElement} */ (rawEl); // widest of the targets — has title + placeholder + textContent
-        const k = el.getAttribute('data-i18n');
-        const tk = el.getAttribute('data-i18n-title');
-        const pk = el.getAttribute('data-i18n-placeholder');
-        const ak = el.getAttribute('data-i18n-aria-label');
-        if (k) el.textContent = t(k);
-        if (tk) el.title = t(tk);
-        if (pk) el.placeholder = t(pk);
-        if (ak) el.setAttribute('aria-label', t(ak));
-      });
-      // Notify code paths that re-render their own text (song panel, result screen, etc.).
-      window.dispatchEvent(new CustomEvent('langchange'));
-    }
+    // Phase 0d batch 62: applyI18n DOM walker moved to
+    // theme-controls.ts (sibling of setLang). Forwarder thunk lives
+    // here because the function is referenced before _themeControls
+    // is created (the createThemeControls call below uses a thunk
+    // for applyI18n to break the previous circular dep).
+    function applyI18n() { _themeControls.applyI18n(); }
 
     // setLang moved to theme-controls.ts (Phase 0d batch 7a) — exposed
     // as `_themeControls.setLang` after createThemeControls() runs below.
@@ -1261,7 +1252,10 @@
         /** @type {any} */ (state)
       ),
       savePrefs,
-      applyI18n: () => applyI18n(),
+      // Phase 0d batch 62: applyI18n DOM walker now lives inside
+      // theme-controls.ts, so we just hand it the translator + the
+      // settings-panel refresh callback.
+      t: (key) => t(key),
       refreshSettingsPanel: () => refreshSettingsPanel(),
     });
     const applyTheme = _themeControls.applyTheme;

@@ -1,5 +1,5 @@
 // Theme bar + synesthesia toggle + language toggle controls.
-// Phase 0d batch 7a extraction from legacy-app.js.
+// Phase 0d batches 7a + 62 extracted from legacy-app.js.
 //
 // Three independent appearance/i18n controls that all live in the
 // theme bar at the top of the screen:
@@ -7,13 +7,18 @@
 //     accessible as `role="radio"` so Enter/Space activate them too.
 //   • Synesthesia toggle — per-note color mode, toggled via a single
 //     button with click + Enter/Space.
-//   • Language toggle — flips between EN and JP, refreshes data-i18n
-//     attributes via the shell's `applyI18n` callback.
+//   • Language toggle — flips between EN and JP, walks
+//     `[data-i18n*]` to refresh DOM text/title/placeholder/aria-label
+//     attributes, fires the cross-cutting `langchange` event for the
+//     imperative shell-side refreshes (song panel, lane labels, etc.).
 //
-// All three persist via `savePrefs()` and emit no events of their
-// own — listeners on `prefs.lang` use `applyI18n()` to walk the DOM
-// and the shell's `langchange` event for cross-cutting refreshes
-// (lane labels, song panel, etc.). Those stay in the shell.
+// `applyI18n()` (batch 62 fold) — the DOM walker that updates every
+// element with a `data-i18n*` attribute. Lives in this module because
+// it's the natural sibling of `setLang()` (which calls it after a
+// lang flip). Shell still owns the `langchange` event listener —
+// that handler reads enough shell-private vars (lane labels,
+// activeNoteNames, currentSong, render fns) that folding it would
+// drag a dozen new deps.
 
 import type { Lang } from '@piano/core';
 
@@ -35,8 +40,9 @@ export interface ThemeControlsDeps {
   state: ThemeControlsStateRef;
   /** Persist prefs to localStorage. */
   savePrefs(): void;
-  /** Walk `[data-i18n]` and update text. Called after `setLang()`. */
-  applyI18n(): void;
+  /** Bilingual translator. Reads at every applyI18n() call so a
+   *  langchange between calls is picked up. */
+  t(key: string): string;
   /** Refresh the settings panel labels (input status / audio offset
    *  text) — called after a lang flip because those are imperatively
    *  set, not data-i18n driven. */
@@ -55,6 +61,12 @@ export interface ThemeControls {
   /** Switch language. Updates `prefs.lang`, syncs `<html lang>`,
    *  persists, and fires `applyI18n()`. */
   setLang(lang: Lang): void;
+  /** Walk every element with a `data-i18n*` attribute and update
+   *  textContent / title / placeholder / aria-label from the
+   *  injected translator. Fires a `langchange` CustomEvent on
+   *  `window` so the shell's cross-cutting refresh listener picks
+   *  up the imperative bits (song panel, lane labels, etc.). */
+  applyI18n(): void;
 }
 
 /** Wire all three controls. The shell calls
@@ -89,6 +101,30 @@ export function createThemeControls(deps: ThemeControlsDeps): ThemeControls {
     btn.textContent = deps.prefs.lang === 'jp' ? '🇯🇵 日本語' : '🇬🇧 EN';
   }
 
+  function applyI18n(): void {
+    document
+      .querySelectorAll<HTMLElement>(
+        '[data-i18n], [data-i18n-title], [data-i18n-placeholder], [data-i18n-aria-label]'
+      )
+      .forEach((rawEl) => {
+        // Cast to widest target (input has all of title + placeholder
+        // + textContent) so the same loop body works for buttons,
+        // labels, headings, inputs, etc.
+        const el = rawEl as HTMLInputElement;
+        const k = el.getAttribute('data-i18n');
+        const tk = el.getAttribute('data-i18n-title');
+        const pk = el.getAttribute('data-i18n-placeholder');
+        const ak = el.getAttribute('data-i18n-aria-label');
+        if (k) el.textContent = deps.t(k);
+        if (tk) el.title = deps.t(tk);
+        if (pk) el.placeholder = deps.t(pk);
+        if (ak) el.setAttribute('aria-label', deps.t(ak));
+      });
+    // Notify code paths that re-render their own text (song panel,
+    // result screen, etc.).
+    window.dispatchEvent(new CustomEvent('langchange'));
+  }
+
   function setLang(lang: Lang): void {
     deps.prefs.lang = lang === 'jp' ? 'jp' : 'en';
     deps.savePrefs();
@@ -96,7 +132,7 @@ export function createThemeControls(deps: ThemeControlsDeps): ThemeControls {
     // The HTML default is 'ja'; without this the EN-flipped UI would still
     // be read by a Japanese voice on iOS VoiceOver / NVDA.
     document.documentElement.lang = deps.prefs.lang === 'jp' ? 'ja' : 'en';
-    deps.applyI18n();
+    applyI18n();
     refreshLangToggle();
   }
 
@@ -141,5 +177,5 @@ export function createThemeControls(deps: ThemeControlsDeps): ThemeControls {
   // Initial sync of the lang toggle label.
   refreshLangToggle();
 
-  return { applyTheme, applySynesthesia, setLang };
+  return { applyTheme, applySynesthesia, setLang, applyI18n };
 }

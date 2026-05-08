@@ -35,7 +35,7 @@ function makeDeps(overrides: Partial<ThemeControlsDeps> = {}): ThemeControlsDeps
     prefs,
     state,
     savePrefs: vi.fn(),
-    applyI18n: vi.fn(),
+    t: vi.fn((key: string) => `T(${key})`),
     refreshSettingsPanel: vi.fn(),
     ...overrides,
   };
@@ -171,12 +171,19 @@ describe('createThemeControls — syn toggle click', () => {
 describe('createThemeControls — setLang', () => {
   it('flips lang + persists + syncs <html lang>', () => {
     const deps = makeDeps();
+    // Stick a data-i18n element into the doc so applyI18n has work
+    // — that way we can prove setLang() called it via the t() spy.
+    const tagged = document.createElement('span');
+    tagged.setAttribute('data-i18n', 'k');
+    document.body.appendChild(tagged);
     const controls = createThemeControls(deps);
     controls.setLang('jp');
     expect(deps.prefs.lang).toBe('jp');
     expect(document.documentElement.lang).toBe('ja');
     expect(deps.savePrefs).toHaveBeenCalledOnce();
-    expect(deps.applyI18n).toHaveBeenCalledOnce();
+    // applyI18n is now called internally — t() invoked once per
+    // tagged element confirms the chain.
+    expect(deps.t).toHaveBeenCalledWith('k');
   });
 
   it('flipping back to en sets <html lang> to en', () => {
@@ -184,7 +191,7 @@ describe('createThemeControls — setLang', () => {
       prefs: { theme: 0, synesthesia: false, lang: 'jp' },
       state: { currentTheme: 0, useSynesthesiaMode: false },
       savePrefs: vi.fn(),
-      applyI18n: vi.fn(),
+      t: vi.fn((k: string) => `T(${k})`),
       refreshSettingsPanel: vi.fn(),
     });
     const controls = createThemeControls(deps);
@@ -232,10 +239,135 @@ describe('createThemeControls — boot seeding', () => {
       prefs: { theme: 0, synesthesia: false, lang: 'jp' },
       state: { currentTheme: 0, useSynesthesiaMode: false },
       savePrefs: vi.fn(),
-      applyI18n: vi.fn(),
+      t: vi.fn((k: string) => `T(${k})`),
       refreshSettingsPanel: vi.fn(),
     });
     createThemeControls(deps);
     expect(document.getElementById('langToggleBtn')!.textContent).toContain('日本語');
+  });
+});
+
+// ─── applyI18n (Phase 0d batch 62) ─────────────────────────────────
+
+describe('createThemeControls — applyI18n', () => {
+  function appendI18nFixture(): {
+    elText: HTMLElement;
+    elTitle: HTMLElement;
+    elPlaceholder: HTMLInputElement;
+    elAria: HTMLElement;
+    elMulti: HTMLInputElement;
+    elNone: HTMLElement;
+  } {
+    const root = document.createElement('div');
+    root.id = 'i18n-fixture';
+
+    const elText = document.createElement('span');
+    elText.setAttribute('data-i18n', 'greeting');
+    elText.textContent = 'OLD';
+    root.appendChild(elText);
+
+    const elTitle = document.createElement('button');
+    elTitle.setAttribute('data-i18n-title', 'tipKey');
+    root.appendChild(elTitle);
+
+    const elPlaceholder = document.createElement('input');
+    elPlaceholder.setAttribute('data-i18n-placeholder', 'phKey');
+    root.appendChild(elPlaceholder);
+
+    const elAria = document.createElement('button');
+    elAria.setAttribute('data-i18n-aria-label', 'ariaKey');
+    root.appendChild(elAria);
+
+    const elMulti = document.createElement('input');
+    elMulti.setAttribute('data-i18n', 'multiText');
+    elMulti.setAttribute('data-i18n-placeholder', 'multiPh');
+    root.appendChild(elMulti);
+
+    const elNone = document.createElement('span');
+    elNone.textContent = 'untouched';
+    root.appendChild(elNone);
+
+    document.body.appendChild(root);
+    return { elText, elTitle, elPlaceholder, elAria, elMulti, elNone };
+  }
+
+  it('writes textContent for [data-i18n]', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elText.textContent).toBe('T(greeting)');
+  });
+
+  it('writes title for [data-i18n-title]', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elTitle.title).toBe('T(tipKey)');
+  });
+
+  it('writes placeholder for [data-i18n-placeholder]', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elPlaceholder.placeholder).toBe('T(phKey)');
+  });
+
+  it('writes aria-label for [data-i18n-aria-label]', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elAria.getAttribute('aria-label')).toBe('T(ariaKey)');
+  });
+
+  it('handles multiple data-i18n* on the same element', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elMulti.textContent).toBe('T(multiText)');
+    expect(fx.elMulti.placeholder).toBe('T(multiPh)');
+  });
+
+  it('does not touch elements without any data-i18n*', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elNone.textContent).toBe('untouched');
+  });
+
+  it('dispatches a langchange CustomEvent on window', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const listener = vi.fn();
+    window.addEventListener('langchange', listener);
+    controls.applyI18n();
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener('langchange', listener);
+  });
+
+  it('reads t() fresh per call (lang flip between calls picked up)', () => {
+    let lang: 'en' | 'jp' = 'en';
+    const tFn = vi.fn((k: string) => (lang === 'jp' ? `JP(${k})` : `EN(${k})`));
+    const deps = makeDeps({ t: tFn });
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.applyI18n();
+    expect(fx.elText.textContent).toBe('EN(greeting)');
+    lang = 'jp';
+    controls.applyI18n();
+    expect(fx.elText.textContent).toBe('JP(greeting)');
+  });
+
+  it('setLang() invokes applyI18n internally', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    const fx = appendI18nFixture();
+    controls.setLang('jp');
+    expect(fx.elText.textContent).toBe('T(greeting)');
   });
 });
