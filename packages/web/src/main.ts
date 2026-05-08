@@ -55,6 +55,7 @@ import * as PrefsStorage from './prefs-storage';
 import * as LayoutDetect from './layout-detect';
 import * as MidiPorts from './midi-ports';
 import * as MidiRescan from './midi-rescan';
+import * as MidiInit from './midi-init';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as ViewportLayout from './viewport-layout';
 import * as OsmdInit from './osmd-init';
@@ -127,6 +128,7 @@ declare global {
     LayoutDetect: typeof LayoutDetect;
     MidiPorts: typeof MidiPorts;
     MidiRescan: typeof MidiRescan;
+    MidiInit: typeof MidiInit;
     BleMidiConnect: typeof BleMidiConnect;
     ViewportLayout: typeof ViewportLayout;
     OsmdInit: typeof OsmdInit;
@@ -266,6 +268,8 @@ declare global {
 
   var MidiRescan: typeof import('./midi-rescan');
 
+  var MidiInit: typeof import('./midi-init');
+
   var BleMidiConnect: typeof import('./ble-midi-connect');
 
   var ViewportLayout: typeof import('./viewport-layout');
@@ -365,6 +369,7 @@ declare global {
 (globalThis as unknown as Window).LayoutDetect = LayoutDetect;
 (globalThis as unknown as Window).MidiPorts = MidiPorts;
 (globalThis as unknown as Window).MidiRescan = MidiRescan;
+(globalThis as unknown as Window).MidiInit = MidiInit;
 (globalThis as unknown as Window).BleMidiConnect = BleMidiConnect;
 (globalThis as unknown as Window).ViewportLayout = ViewportLayout;
 (globalThis as unknown as Window).OsmdInit = OsmdInit;

@@ -3167,73 +3167,11 @@
       _midiPorts.detach(/** @type {any} */ (port));
     }
 
-    async function initWebMIDI() {
-      if (midiInput._accessRequested) return;
-      midiInput._accessRequested = true;
-      if (!navigator.requestMIDIAccess) {
-        if (isAppleMobile()) {
-          midiInput.platformBlocked = true;
-          console.log('[MIDI] iOS/iPadOS detected — Web MIDI is unavailable on Safari/WebKit. '
-            + 'Use a desktop browser, Steam Deck, or the "Web MIDI Browser" iOS app for BLE-MIDI.');
-        } else {
-          console.log('[MIDI] Web MIDI API not available in this browser');
-        }
-        setInputIndicator();
-        return;
-      }
-      try {
-        const access = await ensureMidiAccess();
-        const allPorts = gatherMidiInputs(access);
-        console.log('[MIDI] available input ports: ' + allPorts.length);
-        for (const p of allPorts) {
-          console.log('[MIDI]   - "' + p.name + '" mfg="' + (p.manufacturer || '') + '"'
-            + ' state=' + p.state + ' connection=' + p.connection);
-        }
-        // Strict pass — by-the-spec, attach only `state === 'connected'`.
-        // This is the "normal" path that fires on desktop Chrome, Steam Deck,
-        // Android Chrome, and the future Capacitor native build.
-        let attached = false;
-        for (const port of allPorts) {
-          if (port.state === 'connected' && attachMidiPort(port)) {
-            attached = true;
-            break;
-          }
-        }
-        // @WMB-WORKAROUND (Phase 0d): second-pass attach ignoring state.
-        // Web MIDI Browser sometimes reports a pre-paired BLE-MIDI keyboard
-        // with state='unknown' or 'pending' until the page actively opens
-        // it. attachMidiPort still rejects virtual/system ports, so this
-        // doesn't loosen the safety filter.
-        if (!attached) {
-          for (const port of allPorts) {
-            if (attachMidiPort(port)) {
-              console.log('[MIDI] attached non-connected port (WMB quirk): ' + port.name);
-              attached = true;
-              break;
-            }
-          }
-        }
-        // /@WMB-WORKAROUND
-        // Bug-fix (2026-05-07): when the user opens the page BEFORE
-        // connecting their keyboard in Web MIDI Browser, allPorts is []
-        // and the legacy code did nothing — the user had to manually
-        // tap 🔄 Rescan to reconnect. statechange events from WMB are
-        // unreliable (polyfill quirks), so the only robust safety net
-        // is to start the rescan poller immediately when no port
-        // attached on first try. Stops itself once anything connects.
-        if (!attached) {
-          console.log('[MIDI] no port attached yet — starting auto-rescan poller');
-          showMidiWaitingHint();
-          startMidiAutoRescan();
-        }
-      } catch (e) {
-        console.warn('[MIDI] requestMIDIAccess failed:', e instanceof Error ? e.message : String(e));
-        // Even on access failure, keep polling — Web MIDI Browser sometimes
-        // rejects the very first call (permission UI) but accepts a retry.
-        showMidiWaitingHint();
-        startMidiAutoRescan();
-      }
-    }
+    // Phase 0d batch 57: 67-line first-time Web MIDI initialization
+    // moved to packages/web/src/midi-init.ts. The forwarder keeps the
+    // legacy short name for the two callsites inside initAudio() and
+    // the practice-flow wire-up (search "initWebMIDI:").
+    async function initWebMIDI() { return _midiInit.initWebMIDI(); }
 
     // Surface a quiet "waiting for MIDI" hint so users on iPad / WMB know
     // the app is actively listening for their keyboard, not silently broken.
@@ -3331,6 +3269,30 @@
     // through the thunk wired in batch 20.
     function startMidiAutoRescan() { _midiRescan.startAutoRescan(); }
     function stopMidiAutoRescan() { _midiRescan.stopAutoRescan(); }
+
+    // Phase 0d batch 57: 67-line initWebMIDI orchestrator extracted
+    // to midi-init.ts. All deps thunked because ensureMidiAccess /
+    // gatherMidiInputs / attachMidiPort / showMidiWaitingHint /
+    // startMidiAutoRescan are function declarations either above or
+    // below this site — the thunks late-bind so call order doesn't
+    // matter. midiInput's mutable fields (`_accessRequested`,
+    // `platformBlocked`) flow through the shared ref directly.
+    const _midiInit = MidiInit.createMidiInit({
+      midiInput: /** @type {import('./midi-init').MidiInitInputRef} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      navigator,
+      isAppleMobile: () => isAppleMobile(),
+      setInputIndicator,
+      ensureMidiAccess: () => ensureMidiAccess(),
+      gatherMidiInputs: (access) =>
+        /** @type {import('./midi-init').MidiInitDeps['gatherMidiInputs']} */ (
+          /** @type {any} */ (gatherMidiInputs)
+        )(/** @type {any} */ (access)),
+      attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
+      showMidiWaitingHint: () => showMidiWaitingHint(),
+      startMidiAutoRescan: () => startMidiAutoRescan(),
+    });
 
     // ========================================
     // BLE-MIDI via Web Bluetooth
