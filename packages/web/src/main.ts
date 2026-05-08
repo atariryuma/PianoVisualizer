@@ -72,6 +72,7 @@ import * as OnsetDetect from './onset-detect';
 import * as SessionConfidenceUi from './session-confidence-ui';
 import * as GameStateUpdate from './game-state-update';
 import * as AgcController from './agc-controller';
+import * as HudUpdate from './hud-update';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -131,6 +132,7 @@ declare global {
     SessionConfidenceUi: typeof SessionConfidenceUi;
     GameStateUpdate: typeof GameStateUpdate;
     AgcController: typeof AgcController;
+    HudUpdate: typeof HudUpdate;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -273,6 +275,8 @@ declare global {
   var GameStateUpdate: typeof import('./game-state-update');
 
   var AgcController: typeof import('./agc-controller');
+
+  var HudUpdate: typeof import('./hud-update');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -330,6 +334,7 @@ declare global {
 (globalThis as unknown as Window).SessionConfidenceUi = SessionConfidenceUi;
 (globalThis as unknown as Window).GameStateUpdate = GameStateUpdate;
 (globalThis as unknown as Window).AgcController = AgcController;
+(globalThis as unknown as Window).HudUpdate = HudUpdate;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

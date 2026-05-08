@@ -1607,21 +1607,9 @@
     const _encState = PianoCore.initEncouragementState();
     const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
     /** @param {import('@piano/core').EncouragementOutput} out */
-    function _showEncouragementUI(out) {
-      if (out.kind !== 'show') return;
-      DOM.encouragement.textContent = t(out.messageKey);
-      DOM.encouragement.classList.remove('visible');
-      DOM.encouragement.classList.add('entering');
-      void DOM.encouragement.offsetWidth; // force reflow to restart animation
-      DOM.encouragement.classList.remove('entering');
-      DOM.encouragement.classList.add('visible');
-      triggerEffect(out.effect);
-    }
-    function _mirrorEncStateToLegacy() {
-      state.currentEncouragementTier = _encState.currentTier;
-      state.lastEncouragementTimeMs = _encState.lastShownTimeMs;
-      state.encouragementHideTimeMs = _encState.hideTimeMs > 0 ? _encState.hideTimeMs : 0;
-    }
+    // Phase 0d batch 44: _showEncouragementUI/_mirrorEncStateToLegacy
+    // collapsed into HudUpdate.createHudUpdate. The mirror call from
+    // resetSession is inlined below at the reset site.
 
     // Ripples — Phase 0b.3: delegated to @piano/core.
     // Same monkey-patch pattern as Particle: keep legacy positional
@@ -2059,69 +2047,35 @@
     // v9: updateHUD — encouragement instead of numbers
     // ========================================
     /** @param {number} timeMs */
-    function updateHUD(timeMs) {
-      // v9: Check encouragement tiers (find highest matching tier)
-      // Tier-change check (climb fires show, drop silently lowers currentTier)
-      const _comboOut = PianoCore.applyEncouragementEvent(
-        _encState,
-        { type: 'comboChanged', combo: state.combo, timeMs },
-        _encOpts
-      );
-      _showEncouragementUI(_comboOut);
-      // Hide-tick: fires once when display window elapses
-      const _hideOut = PianoCore.applyEncouragementEvent(_encState, { type: 'hideTick', timeMs }, _encOpts);
-      if (_hideOut.kind === 'hide') DOM.encouragement.classList.remove('visible');
-      _mirrorEncStateToLegacy();
-
-      // Flow gauge — quantize style writes to whole-percent buckets so the
-      // browser doesn't reparse a fresh gradient string 60×/sec on iPad.
-      const flowPct = Math.round(state.flow);
-      if (flowPct !== _lastFlowPctWritten) {
-        _lastFlowPctWritten = flowPct;
-        DOM.flowFill.style.height = flowPct + '%';
-        const hue = flowPct * 1.2 + 200;
-        DOM.flowFill.style.background = 'linear-gradient(to top,hsl(' + hue + ',70%,40%),hsl(' + (hue + 40) + ',80%,60%))';
-        DOM.flowFill.style.boxShadow = '0 0 ' + (flowPct * 0.3) + 'px hsl(' + hue + ',70%,60%)';
-        // Mirror the visual fill into the wrapper's aria-valuenow so screen
-        // readers report the meter's actual value (was stuck at 0/100).
-        const gauge = DOM.flowFill.parentElement;
-        if (gauge) gauge.setAttribute('aria-valuenow', String(flowPct));
-      }
-    }
-    let _lastFlowPctWritten = -1;
+    // Phase 0d batch 44: HUD writer (encouragement banner + flow gauge)
+    // moved to packages/web/src/hud-update.ts.
+    const _hudUpdate = HudUpdate.createHudUpdate(
+      /** @type {import('./hud-update').HudUpdateDeps} */ ({
+        state: /** @type {any} */ (state),
+        encState: _encState,
+        encOpts: _encOpts,
+        applyEncouragementEvent: PianoCore.applyEncouragementEvent,
+        encouragementEl: DOM.encouragement,
+        flowFillEl: DOM.flowFill,
+        t,
+        triggerEffect,
+      })
+    );
+    /** @param {number} timeMs */
+    function updateHUD(timeMs) { _hudUpdate.tick(timeMs); }
 
     // ========================================
-    // Debug overlay (v9)
+    // Debug overlay (v9) — Phase 0d batch 44.
     // ========================================
-    function updateDebugOverlay() {
-      if (!state.debugMode) return;
-      const gateMs = Math.max(0, CONFIG.ONSET_GATE_DURATION_MS - (performance.now() - state.lastOnsetTimeMs));
-      const voiceSupp = state.agcVoiceSuppressUntilMs > performance.now() ? 'SUPP' : 'ok';
-      DOM.debugOverlay.textContent =
-        'v9 YIN+Harm+SoftAGC | FLUX: ' + state.debugLastFlux.toFixed(1) +
-        '  THR: ' + state.debugLastThreshold.toFixed(1) +
-        '  SPR: ' + (state.debugLastSpread * 100).toFixed(0) + '%' +
-        '\nFLAT: ' + state.debugLastFlatness.toFixed(3) +
-        '  CREST: ' + state.debugLastCrest.toFixed(1) +
-        '  HARM: ' + state.debugHarmonicity.toFixed(3) +
-        '  ' + state.debugOnsetReason +
-        '\nGATE: ' + (state.debugGateOpen ? 'OPEN ' + (gateMs / 1000).toFixed(1) + 's' : 'CLOSED') +
-        '  RMS: ' + state.debugLastRms.toFixed(4) +
-        '  AGC: x' + state.debugAgcGain.toFixed(1) + ' ' + voiceSupp +
-        '\nPITCH: ' + (state.debugLastPitch > 0 ? state.debugLastPitch.toFixed(1) + 'Hz' : '---') +
-        '  CONF: ' + state.debugLastConf.toFixed(2) +
-        '  NOTE: ' + (state.debugIsGoodNote ? 'YES' : 'no') +
-        '  PLAY: ' + (state.debugIsActivePlay ? 'ON' : 'off') +
-        '\nSESSION: ' + state.debugSessionState.toUpperCase() +
-        '  S.CONF: ' + (state.debugSessionConf * 100).toFixed(0) + '%' +
-        '\nQUALITY: ' + (state.qualityScore * 100).toFixed(0) + '%' +
-        '  R:' + (state.rhythmScore * 100).toFixed(0) +
-        ' D:' + (state.dynamicsScore * 100).toFixed(0) +
-        ' S:' + (state.stabilityScore * 100).toFixed(0) +
-        '\nFLOW: ' + state.flow.toFixed(1) +
-        '  COMBO: ' + state.combo +
-        '  STAGE: ' + state.currentStage;
-    }
+    const _debugOverlay = HudUpdate.createDebugOverlay(
+      /** @type {import('./hud-update').DebugOverlayDeps} */ ({
+        state: /** @type {any} */ (state),
+        overlayEl: DOM.debugOverlay,
+        tuning: { onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS },
+        now: () => performance.now(),
+      })
+    );
+    function updateDebugOverlay() { _debugOverlay.tick(); }
 
     // ========================================
     // Energy calculation
@@ -2375,7 +2329,10 @@
       state.activeQuestId = null;
       state.lastQuestCheckMs = 0;
       PianoCore.resetEncouragementState(_encState);
-      _mirrorEncStateToLegacy();
+      // Inline of the old _mirrorEncStateToLegacy (factory owns this now).
+      state.currentEncouragementTier = _encState.currentTier;
+      state.lastEncouragementTimeMs = _encState.lastShownTimeMs;
+      state.encouragementHideTimeMs = _encState.hideTimeMs > 0 ? _encState.hideTimeMs : 0;
       state.lastGoodNoteTimeMs = 0;
       state.lastSilenceStartMs = -1;
       state.lastPitchSemitones = null;
@@ -2414,7 +2371,7 @@
       DOM.questLabel.textContent = '';
       DOM.questToast.classList.remove('show');
       DOM.flowFill.style.height = '0%';
-      _lastFlowPctWritten = -1;   // invalidate updateHUD cache so next tick re-paints
+      _hudUpdate.invalidateFlowCache();   // next updateHUD tick re-paints the gauge
       DOM.sessionStatus.classList.remove('visible');
       DOM.sessionStatus.textContent = '';
       DOM.playTime.textContent = '0:00';
