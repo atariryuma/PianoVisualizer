@@ -4578,107 +4578,35 @@
     // Section build + start
     // ========================================
     /** @param {number} sectionIdx @returns {OsmdLikeNote[]} */
+    // Phase 0d batch 34: section / full-song timeline builders +
+    // hand-range scanner moved to packages/web/src/section-notes.ts.
+    /** @param {number} sectionIdx */
     function buildSectionNotes(sectionIdx) {
-      const sec = currentSong.sections[sectionIdx];
-      const speedFactor = 100 / practice.tempoPct;
-      /** @type {OsmdLikeNote[]} */
-      const out = [];
-      const handFilter = practice.handFilter;   // 'R' / 'L' / null
-      for (const n of currentSong.notes ?? []) {
-        if (n.timeSec >= sec.startSec && n.timeSec < sec.endSec) {
-          const relSec = n.timeSec - sec.startSec;
-          // One-hand mode: notes from the other hand are marked _filtered=true and pre-hit so
-          // the currentNoteIdx skip-past loop advances over them (the cursor moves too).
-          // Lane drawing and stats exclude _filtered notes.
-          const filtered = !!handFilter && n.hand !== handFilter;
-          out.push({
-            hand: n.hand,
-            midi: n.midi,
-            timeSec: n.timeSec,
-            durSec: n.durSec,
-            timeMs: relSec * 1000 * speedFactor + COUNT_IN_MS,
-            durMs: n.durSec * 1000 * speedFactor,
-            measureIdx: n.measureIdx,
-            inBarQuarters: n.inBarQuarters,
-            cursorJump: n.cursorJump,
-            hit: filtered,
-            missed: false,
-            _filtered: filtered
-          });
-        }
-      }
-      out.sort((a, b) => a.timeMs - b.timeMs);
-      return out;
+      return /** @type {OsmdLikeNote[]} */ (
+        /** @type {any} */ (
+          SectionNotes.buildSectionNotes(sectionIdx, {
+            song: /** @type {any} */ (currentSong),
+            practice: /** @type {any} */ (practice),
+            countInMs: COUNT_IN_MS,
+          })
+        )
+      );
     }
-
-    // Listen-mode "全曲再生" timeline. Same shape as buildSectionNotes but the
-    // start anchor is the song's first note (t0) instead of a section boundary,
-    // so every section flows back-to-back without resync gaps. Section-only
-    // scoring/unlocks intentionally don't apply here — listen mode is read-only.
-    //
-    // Tempo is locked to 100%: full-song listen is the "performance" experience,
-    // and a slowed-down whole song feels off (4 minutes of half-speed Für Elise).
-    // Kids who want to study slowly should pick a single section in section
-    // listen — that path keeps practice.tempoPct so 60% / 75% / 90% all work
-    // there. Tempo unlocks also don't gate listening: the full song is always
-    // the "real thing", so they can hear the goal from day 1.
     /** @returns {OsmdLikeNote[]} */
     function buildFullSongNotes() {
-      const speedFactor = 1;   // hardcoded — see comment above
-      const handFilter = practice.handFilter;
-      /** @type {OsmdLikeNote[]} */
-      const out = [];
-      const songNotes = currentSong.notes ?? [];
-      if (!songNotes.length) return out;
-      // Anchor on the first note so the count-in lands right before it. Using
-      // sections[0].startSec instead would leave silence before the first
-      // attack on songs whose first section header sits a beat or two early.
-      let t0 = Infinity;
-      for (const n of songNotes) if (n.timeSec < t0) t0 = n.timeSec;
-      if (!isFinite(t0)) t0 = 0;
-      for (const n of songNotes) {
-        const filtered = !!handFilter && n.hand !== handFilter;
-        out.push({
-          hand: n.hand,
-          midi: n.midi,
-          timeSec: n.timeSec,
-          durSec: n.durSec,
-          timeMs: (n.timeSec - t0) * 1000 * speedFactor + COUNT_IN_MS,
-          durMs: n.durSec * 1000 * speedFactor,
-          measureIdx: n.measureIdx,
-          inBarQuarters: n.inBarQuarters,
-          cursorJump: n.cursorJump,
-          hit: filtered,
-          missed: false,
-          _filtered: filtered
-        });
-      }
-      out.sort((a, b) => a.timeMs - b.timeMs);
-      return out;
+      return /** @type {OsmdLikeNote[]} */ (
+        /** @type {any} */ (
+          SectionNotes.buildFullSongNotes({
+            song: /** @type {any} */ (currentSong),
+            practice: /** @type {any} */ (practice),
+            countInMs: COUNT_IN_MS,
+          })
+        )
+      );
     }
-
-    // Per-hand MIDI range used by the lane drawer to map pitch → x-position.
-    // Computed once per section so the hot path doesn't re-scan every frame.
     /** @param {OsmdLikeNote[]} sectionNotes */
     function computeHandRanges(sectionNotes) {
-      let lhMin = 200, lhMax = 0, rhMin = 200, rhMax = 0;
-      let lhCount = 0, rhCount = 0;
-      for (const n of sectionNotes) {
-        if (n.hand === 'L') {
-          if (n.midi < lhMin) lhMin = n.midi;
-          if (n.midi > lhMax) lhMax = n.midi;
-          lhCount++;
-        } else {
-          if (n.midi < rhMin) rhMin = n.midi;
-          if (n.midi > rhMax) rhMax = n.midi;
-          rhCount++;
-        }
-      }
-      if (rhCount === 0) { rhMin = 60; rhMax = 72; }
-      if (lhCount === 0) { lhMin = 48; lhMax = 60; }
-      if (rhMax <= rhMin) rhMax = rhMin + 1;
-      if (lhMax <= lhMin) lhMax = lhMin + 1;
-      return { lhMin, lhMax, rhMin, rhMax };
+      return SectionNotes.computeHandRanges(/** @type {any} */ (sectionNotes));
     }
 
     /** @param {number} sectionIdx */
