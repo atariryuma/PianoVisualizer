@@ -1030,77 +1030,29 @@
       }
     }
 
-    /** @type {Promise<unknown>|null} */
-    let _micAcquiring = null;
-    async function acquireMic() {
-      if (micStream) return;
-      // Concurrency guard: two concurrent callers (resumeMic racing the
-      // safety-net timeout from initAudio) would each await a separate
-      // getUserMedia call; one stream survives, the other leaks (track
-      // stays live → privacy LED stuck on). Share the in-flight promise.
-      if (_micAcquiring) return _micAcquiring;
-      _micAcquiring = (async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
-          if (micStream) {
-            // A concurrent caller won the race; stop our redundant tracks.
-            stream.getTracks().forEach(t => t.stop());
-            return;
-          }
-          micStream = stream;
-          micSourceNode = audioCtx.createMediaStreamSource(stream);
-          micSourceNode.connect(gainNode);
-          gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-          gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
-          state.micSuspended = false;
-          // Clear any stale failure flag from a prior race-timeout — if the
-          // user eventually clicked Allow after the safety-net timeout fired,
-          // we still get here and need to update the UI gates that read this
-          // flag.
-          if (state.micPermissionFailed) {
-            state.micPermissionFailed = false;
-            if (typeof refreshIntroHint === 'function') refreshIntroHint();
-            if (typeof DOM !== 'undefined' && DOM.micMeter) DOM.micMeter.classList.add('visible');
-          }
-          console.log('[AUDIO] Mic acquired');
-        } finally {
-          _micAcquiring = null;
-        }
-      })();
-      return _micAcquiring;
-    }
-
-    // Tear down the mic when MIDI takes over: silence the graph, disconnect
-    // the source, and stop all tracks (the privacy LED follows track state).
-    function suspendMic() {
-      if (state.micSuspended) return;
-      state.micSuspended = true;
-      gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-      if (micSourceNode) {
-        // disconnect can throw InvalidAccessError if already disconnected.
-        try { micSourceNode.disconnect(); } catch (e) {}
-        micSourceNode = null;
-      }
-      if (micStream) {
-        micStream.getTracks().forEach(t => t.stop());
-        micStream = null;
-      }
-      // Clear stale mic-derived state so the radar / quality reset cleanly.
-      state.adaptiveSilenceRms = null;
-      state.recentPitches = [];
-      console.log('[AUDIO] Mic suspended (MIDI active)');
-    }
-
-    // Re-acquire mic when MIDI detaches mid-session.
-    async function resumeMic() {
-      if (!audioCtx || !state.micSuspended) return;
-      try {
-        await acquireMic();
-      } catch (e) {
-        console.warn('[AUDIO] Failed to resume mic:', e.message || e);
-      }
-    }
+    // Phase 0d batch 56: mic acquire / suspend / resume (concurrency
+    // lock + privacy-LED hygiene + adaptiveSilenceRms reset) moved to
+    // packages/web/src/mic-lifecycle.ts.
+    const _micLifecycle = MicLifecycle.createMicLifecycle(
+      /** @type {import('./mic-lifecycle').MicLifecycleDeps} */ ({
+        state: /** @type {any} */ (state),
+        micConstraints: MIC_CONSTRAINTS,
+        getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+        getAudioCtx: () => /** @type {any} */ (audioCtx),
+        getGainNode: () => /** @type {any} */ (gainNode),
+        getMicStream: () => micStream,
+        setMicStream: (s) => { micStream = /** @type {any} */ (s); },
+        getMicSourceNode: () => micSourceNode,
+        setMicSourceNode: (n) => { micSourceNode = /** @type {any} */ (n); },
+        micMeterEl: DOM.micMeter,
+        refreshIntroHint: () => {
+          if (typeof refreshIntroHint === 'function') refreshIntroHint();
+        },
+      })
+    );
+    async function acquireMic() { return _micLifecycle.acquire(); }
+    function suspendMic() { _micLifecycle.suspend(); }
+    async function resumeMic() { return _micLifecycle.resume(); }
 
     // ========================================
     // Canvas
