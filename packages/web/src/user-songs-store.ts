@@ -175,7 +175,7 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-         
+
         console.warn('[UserSongs] mxl unzip failed for ' + record.id + ': ' + msg);
       }
     } else if (!isMxl && !xmlText) {
@@ -226,7 +226,7 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
       return all.length;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-       
+
       console.warn('[UserSongs] load failed:', msg);
       return 0;
     }
