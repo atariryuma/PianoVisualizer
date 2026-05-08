@@ -69,6 +69,7 @@ import * as PracticeProgress from './practice-progress';
 import * as ShellHelpers from './shell-helpers';
 import * as StartPracticeSection from './start-practice-section';
 import * as OnsetDetect from './onset-detect';
+import * as SessionConfidenceUi from './session-confidence-ui';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -125,6 +126,7 @@ declare global {
     ShellHelpers: typeof ShellHelpers;
     StartPracticeSection: typeof StartPracticeSection;
     OnsetDetect: typeof OnsetDetect;
+    SessionConfidenceUi: typeof SessionConfidenceUi;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -261,6 +263,8 @@ declare global {
   var StartPracticeSection: typeof import('./start-practice-section');
 
   var OnsetDetect: typeof import('./onset-detect');
+
+  var SessionConfidenceUi: typeof import('./session-confidence-ui');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -315,6 +319,7 @@ declare global {
 (globalThis as unknown as Window).ShellHelpers = ShellHelpers;
 (globalThis as unknown as Window).StartPracticeSection = StartPracticeSection;
 (globalThis as unknown as Window).OnsetDetect = OnsetDetect;
+(globalThis as unknown as Window).SessionConfidenceUi = SessionConfidenceUi;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

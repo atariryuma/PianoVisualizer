@@ -1743,106 +1743,28 @@
     // ========================================
     // Session Confidence Layer
     // ========================================
+    // Phase 0d batch 41: 100-line session-confidence ring buffer +
+    // state machine + sessionStatus DOM driver moved to
+    // packages/web/src/session-confidence-ui.ts.
+    const _sessionConfidenceDeps = /** @type {import('./session-confidence-ui').SessionConfidenceDeps} */ ({
+      state: /** @type {any} */ (state),
+      sessionRing,
+      tuning: {
+        sampleIntervalMs: CONFIG.SESSION_SAMPLE_INTERVAL_MS,
+        windowMs: CONFIG.SESSION_WINDOW_MS,
+        confirmThreshold: CONFIG.SESSION_CONFIRM_THRESHOLD,
+        loseThreshold: CONFIG.SESSION_LOSE_THRESHOLD,
+        warmupMs: CONFIG.SESSION_WARMUP_MS,
+        motivationGoalMs: CONFIG.MOTIVATION_GOAL_MS,
+        ringCap: SESSION_RING_CAP,
+      },
+      dom: { sessionStatus: DOM.sessionStatus },
+      t,
+      triggerEffect,
+    });
     /** @param {number} timeMs @param {boolean} isPianoDetected */
     function updateSessionConfidence(timeMs, isPianoDetected) {
-      if (timeMs - state.lastSessionSampleMs < CONFIG.SESSION_SAMPLE_INTERVAL_MS) return;
-      state.lastSessionSampleMs = timeMs;
-
-      // Push to ring buffer (reuse pre-allocated slot, zero allocation)
-      // When full, the slot at head is the oldest sample and must be removed first.
-      const entry = sessionRing[state.sessionRingHead];
-      if (state.sessionRingSize === SESSION_RING_CAP && entry.isPiano) {
-        state.sessionPianoCount--;
-      }
-      entry.timeMs = timeMs;
-      entry.isPiano = isPianoDetected;
-      if (isPianoDetected) state.sessionPianoCount++;
-      if (state.sessionRingSize < SESSION_RING_CAP) {
-        state.sessionRingSize++;
-      } else {
-        state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
-      }
-      state.sessionRingHead = (state.sessionRingHead + 1) % SESSION_RING_CAP;
-
-      // Expire samples outside time window (O(1) amortized)
-      const windowStart = timeMs - CONFIG.SESSION_WINDOW_MS;
-      while (state.sessionRingSize > 0 && sessionRing[state.sessionRingTail].timeMs < windowStart) {
-        if (sessionRing[state.sessionRingTail].isPiano) state.sessionPianoCount--;
-        state.sessionRingTail = (state.sessionRingTail + 1) % SESSION_RING_CAP;
-        state.sessionRingSize--;
-      }
-
-      if (state.sessionRingSize < 3) {
-        state.sessionConfidence = 0;
-        return;
-      }
-
-      // O(1) confidence — no iteration needed
-      state.sessionConfidence = state.sessionPianoCount / state.sessionRingSize;
-
-      state.debugSessionConf = state.sessionConfidence;
-
-      const prevState = state.sessionState;
-
-      switch (state.sessionState) {
-        case 'waiting':
-          if (state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
-            state.sessionState = 'warmup';
-            state.sessionStartMs = timeMs;
-          }
-          break;
-
-        case 'warmup':
-          if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
-            state.sessionState = 'waiting';
-          } else if (timeMs - state.sessionStartMs >= CONFIG.SESSION_WARMUP_MS
-            && state.sessionConfidence >= CONFIG.SESSION_CONFIRM_THRESHOLD) {
-            state.sessionState = 'performing';
-            state.sessionPerformingStartMs = timeMs;
-            state.goalWindowStartMs = timeMs;
-          }
-          break;
-
-        case 'performing':
-          if (state.sessionConfidence < CONFIG.SESSION_LOSE_THRESHOLD) {
-            state.sessionState = 'warmup';
-            state.sessionStartMs = timeMs;
-          }
-          break;
-      }
-
-      if (prevState !== 'performing' && state.sessionState === 'performing') {
-        state.goalWindowStartMs = timeMs;
-      }
-
-      state.debugSessionState = state.sessionState;
-
-      // Update visual indicator
-      if (state.sessionState === 'warmup') {
-        const warmupProgress = Math.min(1, (timeMs - state.sessionStartMs) / CONFIG.SESSION_WARMUP_MS);
-        const dots = Math.floor(warmupProgress * 3) + 1;
-        DOM.sessionStatus.textContent = t('listeningFmt', { p: '\u266B '.repeat(dots) });
-        DOM.sessionStatus.classList.add('visible');
-      } else if (state.sessionState === 'performing') {
-        if (state.goalWindowStartMs <= 0) state.goalWindowStartMs = timeMs;
-        const elapsedGoal = timeMs - state.goalWindowStartMs;
-        if (elapsedGoal >= CONFIG.MOTIVATION_GOAL_MS) {
-          state.goalCompletedCount++;
-          state.goalWindowStartMs = timeMs;
-          state.goalCelebrateUntilMs = timeMs + 2200;
-          triggerEffect('radiance');
-        }
-
-        if (timeMs < state.goalCelebrateUntilMs) {
-          DOM.sessionStatus.textContent = t('goalCelebrate');
-        } else {
-          const remainSec = Math.max(0, Math.ceil((CONFIG.MOTIVATION_GOAL_MS - (timeMs - state.goalWindowStartMs)) / 1000));
-          DOM.sessionStatus.textContent = t('goalCountdownFmt', { v: remainSec });
-        }
-        DOM.sessionStatus.classList.add('visible');
-      } else {
-        DOM.sessionStatus.classList.remove('visible');
-      }
+      SessionConfidenceUi.updateSessionConfidence(timeMs, isPianoDetected, _sessionConfidenceDeps);
     }
 
     // v10: Magic Quest System \u2014 Phase 0b.3: state machine in @piano/core.
