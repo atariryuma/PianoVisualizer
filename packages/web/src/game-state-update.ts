@@ -124,7 +124,7 @@ export interface GameStateOnsetState {
  *  whatever shape the shell hands in (the actual shape has more
  *  fields like `nameKey`, `prefix`, `minFlow`; we don't use them
  *  here). */
- 
+
 export type GameStateStageDef = any;
 
 export interface GameStateUpdateDeps {

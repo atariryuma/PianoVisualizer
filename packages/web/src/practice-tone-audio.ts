@@ -37,11 +37,10 @@ export interface ToneLibRef {
   };
 }
 
- 
 export type ToneSynthCtor = any;
- 
+
 export type ToneSynthOptions = any;
- 
+
 export type ToneMembraneOptions = any;
 
 /** Minimal instrument surface — covers the ctor methods we use here
@@ -55,7 +54,7 @@ export type ToneMembraneOptions = any;
 export interface ToneInstrument {
   toDestination(): ToneInstrument;
   volume: { value: number };
-   
+
   triggerAttackRelease(...args: any[]): unknown;
 }
 

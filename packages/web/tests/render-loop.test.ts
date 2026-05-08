@@ -49,36 +49,33 @@ function makeFixture(over: { spectrumDeps?: unknown | null; running?: boolean } 
   const deps: RenderLoopDeps = {
     state,
     modules: {
-       
       RenderFrame: { runRenderFramePrelude: spies.runRenderFramePrelude as any },
-       
+
       MicPipeline: { tickMicPipeline: spies.tickMicPipeline as any },
       RenderMid: {
-         
         tickNoteDisplayFade: spies.tickNoteDisplayFade as any,
-         
+
         spawnAmbientParticle: spies.spawnAmbientParticle as any,
-         
+
         runSpectrumBars: spies.runSpectrumBars as any,
       },
-       
+
       RenderLate: { runRenderLate: spies.runRenderLate as any },
     },
     builders: {
-       
       buildFrameDeps: buildFrameDeps as any,
-       
+
       buildMicPipelineDeps: buildMicPipelineDeps as any,
-       
+
       buildNoteFadeDeps: buildNoteFadeDeps as any,
-       
+
       buildAmbientDeps: buildAmbientDeps as any,
-       
+
       buildSpectrumDeps: buildSpectrumDeps as any,
-       
+
       buildLateDeps: buildLateDeps as any,
     },
-     
+
     raf: raf as any,
   };
 

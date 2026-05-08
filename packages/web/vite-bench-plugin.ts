@@ -63,7 +63,6 @@ export function benchPlugin(): Plugin {
         try {
           writeFileSync(path, body, 'utf8');
         } catch (e) {
-           
           console.warn('[bench-plugin] failed to write', path, e);
         }
         res.statusCode = 200;

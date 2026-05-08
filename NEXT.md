@@ -6,12 +6,12 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2 + Phase 0d follow-on, batches 32-38)**.
-**22 new typed modules** plus the autonomous bench harness landed across the
-session. `legacy-app.js` is now **5,809 lines** (was 6,861 at session start,
-**−1,052 net** — first time the shell has crossed below the 6,000-line mark).
-**1,689 tests** total (786 core, 903 web; **+545 this session**). `pnpm verify`
-clean. Bench **11/11 passing across every commit**, frame avg 5.2–7.1 ms.
+Last refreshed: **2026-05-08 (cycle 2 + extended, batches 39-43)**. **27 new
+typed modules** plus the autonomous bench harness landed across the session.
+`legacy-app.js` is now **5,335 lines** (was 6,861 at session start, **−1,526
+net** — pacing toward Phase 0e DoD). **1,779 tests** total (786 core, 993 web;
+**+635 this session**). `pnpm verify` clean. Bench **11/11 passing across every
+commit**, frame avg 5.2–7.1 ms.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -82,6 +82,23 @@ every commit.**
 - batch 38 — `shell-helpers.ts`: setupHiDPICanvas, notePitchClass, midiToFreq,
   noteStateLabel, midiToPitchName, midiToFullName (-10 lines, +36 tests). All
   pure-functions; bilingual (EN/JP) note-name table parameterized.
+- batch 39 — `start-practice-section.ts`: 209-line orchestrator for the kid's '▶
+  Start practice' big-bang setup (-163 lines, +36 tests). Score lazy-load,
+  per-section state reset, HUD writes, OSMD cursor, audio mode branching
+  (guided/rhythm/listen), audio-offset probe.
+- batch 40 — `onset-detect.ts`: 152-line multi-feature audio onset classifier
+  (-112 lines, +15 tests). 5-condition gate (flux/spread/flatness/crest/
+  harmonicity) + adaptive threshold + practice-mode hysteresis + AGC voice
+  suppression counters.
+- batch 41 — `session-confidence-ui.ts`: 100-line ring-buffer state-machine,
+  sessionStatus DOM driver (-78 lines, +13 tests). waiting -> warmup ->
+  performing transitions, motivation goal celebration.
+- batch 42 — `game-state-update.ts`: 173-line per-frame game-state reducer (-117
+  lines, +18 tests). Pitch median, adaptive RMS floor, onset routing, combo/flow
+  bookkeeping with frame-rate-independent decay, stage transitions with
+  celebration.
+- batch 43 — `agc-controller.ts`: 25-line software AGC reducer (-4 lines net, +8
+  tests). Asymmetric attack/release, voice-suppression cap.
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -96,105 +113,109 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 
 ## ✅ Completed (rotated out — see ROADMAP 0b.2)
 
-| #   | Module                        | Tests | Where                                           |
-| --- | ----------------------------- | ----- | ----------------------------------------------- |
-| 1   | `audio/chord.ts`              | 12    | `packages/core/src/audio/chord.ts`              |
-| 2   | `audio/yin.ts`                | 16    | `packages/core/src/audio/yin.ts`                |
-| 3   | `audio/spectral.ts`           | 18    | `packages/core/src/audio/spectral.ts`           |
-| 4   | `audio/harmonicity.ts`        | 7     | `packages/core/src/audio/harmonicity.ts`        |
-| 5   | `audio/audio-context.ts`      | 10    | `packages/core/src/audio/audio-context.ts`      |
-| 6   | `audio/agc.ts`                | 13    | `packages/core/src/audio/agc.ts`                |
-| 7   | `audio/onset.ts`              | 11    | `packages/core/src/audio/onset.ts`              |
-| 8   | `library/musicxml-meta.ts`    | 4     | `packages/core/src/library/musicxml-meta.ts`    |
-| 9   | `library/auto-section.ts`     | 11    | `packages/core/src/library/auto-section.ts`     |
-| 10  | `library/user-songs.ts`       | 15    | `packages/core/src/library/user-songs.ts`       |
-| 11  | `state/session-confidence.ts` | 17    | `packages/core/src/state/session-confidence.ts` |
-| 12  | `state/quality.ts`            | 27    | `packages/core/src/state/quality.ts`            |
-| 13  | `i18n/`                       | 23    | `packages/core/src/i18n/index.ts` + strings.ts  |
-| 14  | `config.ts`                   | 17    | `packages/core/src/config.ts`                   |
-| 15  | `state/midi-state.ts`         | 21    | `packages/core/src/state/midi-state.ts`         |
-| 16  | `state/practice-state.ts`     | 41    | `packages/core/src/state/practice-state.ts`     |
-| 17  | `render/particles.ts`         | 34    | `packages/core/src/render/particles.ts`         |
-| 18  | `render/ripples.ts`           | 10    | `packages/core/src/render/ripples.ts`           |
-| 19  | `render/effects.ts`           | 17    | `packages/core/src/render/effects.ts`           |
-| 20  | `render/keyboard.ts`          | 16    | `packages/core/src/render/keyboard.ts`          |
-| 21  | `render/lane.ts`              | 18    | `packages/core/src/render/lane.ts`              |
-| 22  | `render/background.ts`        | 17    | `packages/core/src/render/background.ts`        |
-| 23  | `render/theme.ts`             | 17    | `packages/core/src/render/theme.ts`             |
-| 24  | `render/spectrum.ts`          | 12    | `packages/core/src/render/spectrum.ts`          |
-| 25  | `render/center-glow.ts`       | 9     | `packages/core/src/render/center-glow.ts`       |
-| 26  | `render/stage.ts`             | 19    | `packages/core/src/render/stage.ts`             |
-| 27  | `state/flow-meter.ts`         | 27    | `packages/core/src/state/flow-meter.ts`         |
-| 28  | `state/encouragement.ts`      | 22    | `packages/core/src/state/encouragement.ts`      |
-| 29  | `state/quest-tracker.ts`      | 16    | `packages/core/src/state/quest-tracker.ts`      |
-| 30  | `state/quality-history.ts`    | 16    | `packages/core/src/state/quality-history.ts`    |
-| 31  | `state/pitch-stability.ts`    | 26    | `packages/core/src/state/pitch-stability.ts`    |
-| 32  | `audio/chord-window.ts`       | 16    | `packages/core/src/audio/chord-window.ts`       |
-| 33  | `state/wake-up-flash.ts`      | 14    | `packages/core/src/state/wake-up-flash.ts`      |
-| 34  | `state/streak.ts`             | 19    | `packages/core/src/state/streak.ts`             |
-| 35  | `render/midi-beams.ts`        | 8     | `packages/core/src/render/midi-beams.ts`        |
-| 36  | `library/score-timing.ts`     | 16    | `packages/core/src/library/score-timing.ts`     |
-| 37  | `library/measure-timing.ts`   | 13    | `packages/core/src/library/measure-timing.ts`   |
-| 38  | `library/playback-order.ts`   | 17    | `packages/core/src/library/playback-order.ts`   |
-| 39  | `web/audio-scheduler.ts`      | —     | `packages/web/src/audio-scheduler.ts`           |
-| 40  | `library/merge-tied-notes.ts` | 15    | `packages/core/src/library/merge-tied-notes.ts` |
-| 41  | `library/diag-load.ts`        | 15    | `packages/core/src/library/diag-load.ts`        |
-| 42  | `state/practice-progress.ts`  | 15    | `packages/core/src/state/practice-progress.ts`  |
-| 43  | `web/note-extractor.ts`       | —     | `packages/web/src/note-extractor.ts`            |
-| 44  | shape typedefs (state etc.)   | —     | `packages/web/src/legacy-app.js` (top of file)  |
-| 45  | `@param` sweep (60+ helpers)  | —     | `packages/web/src/legacy-app.js`                |
-| 46  | Phase 0c.5 — `// @ts-check`   | —     | `packages/web/src/legacy-app.js` (top of file)  |
-| 47  | `web/wakelock.ts`             | —     | `packages/web/src/wakelock.ts`                  |
-| 48  | web tests (3 shell modules)   | 46    | `packages/web/tests/*.test.ts`                  |
-| 49  | `web/section-editor.ts`       | 20    | `packages/web/src/section-editor.ts`            |
-| 50  | `web/settings-panel.ts`       | 20    | `packages/web/src/settings-panel.ts`            |
-| 51  | i18n wire-up via `createT`    | —     | `packages/web/src/legacy-app.js` (-301 lines)   |
-| 52  | `web/audio-init.ts`           | 21    | `packages/web/src/audio-init.ts`                |
-| 53  | feat: 全曲再生 listen toggle  | —     | `packages/web/src/legacy-app.js` (+88 lines)    |
-| 54  | `web/user-songs-ui.ts`        | 31    | `packages/web/src/user-songs-ui.ts`             |
-| 55  | `web/theme-controls.ts`       | 17    | `packages/web/src/theme-controls.ts`            |
-| 56  | `web/practice-flow.ts`        | 21    | `packages/web/src/practice-flow.ts`             |
-| 57  | `web/song-panel-controls.ts`  | 12    | `packages/web/src/song-panel-controls.ts`       |
-| 58  | `web/song-panel-render.ts`    | 31    | `packages/web/src/song-panel-render.ts`         |
-| 59  | `web/practice-tick.ts`        | 20    | `packages/web/src/practice-tick.ts`             |
-| 60  | `web/result-card.ts`          | 27    | `packages/web/src/result-card.ts`               |
-| 61  | `web/session-summary.ts`      | 17    | `packages/web/src/session-summary.ts`           |
-| 62  | `web/render-frame.ts`         | 18    | `packages/web/src/render-frame.ts`              |
-| 63  | `web/dev-mode.ts`             | 24    | `packages/web/src/dev-mode.ts` (in-app testing) |
-| 64  | `web/render-mid.ts`           | 14    | `packages/web/src/render-mid.ts`                |
-| 65  | `web/render-late.ts`          | 16    | `packages/web/src/render-late.ts`               |
-| 66  | `web/practice-lane.ts`        | 19    | `packages/web/src/practice-lane.ts`             |
-| 67  | `web/section-editor.ts`       | 20    | `packages/web/src/section-editor.ts`            |
-| 68  | `web/midi-render.ts`          | 9     | `packages/web/src/midi-render.ts`               |
-| 69  | bench harness (autorun+wh)    | 7     | `packages/web/vite-bench-plugin.ts` + bench.mjs |
-| 70  | `web/mic-pipeline.ts`         | 28    | `packages/web/src/mic-pipeline.ts`              |
-| 71  | `web/midi-handlers.ts`        | 29    | `packages/web/src/midi-handlers.ts`             |
-| 72  | `web/midi-indicator.ts`       | 33    | `packages/web/src/midi-indicator.ts`            |
-| 73  | `web/ble-midi-parser.ts`      | 19    | `packages/web/src/ble-midi-parser.ts`           |
-| 74  | `web/midi-dispatch.ts`        | 22    | `packages/web/src/midi-dispatch.ts`             |
-| 75  | `web/prefs-storage.ts`        | 21    | `packages/web/src/prefs-storage.ts`             |
-| 76  | `web/layout-detect.ts`        | 25    | `packages/web/src/layout-detect.ts`             |
-| 77  | `web/midi-ports.ts`           | 37    | `packages/web/src/midi-ports.ts`                |
-| 78  | `web/midi-rescan.ts`          | 25    | `packages/web/src/midi-rescan.ts`               |
-| 79  | `web/ble-midi-connect.ts`     | 18    | `packages/web/src/ble-midi-connect.ts`          |
-| 80  | `web/viewport-layout.ts`      | 21    | `packages/web/src/viewport-layout.ts`           |
-| 81  | `web/osmd-init.ts`            | 21    | `packages/web/src/osmd-init.ts`                 |
-| 82  | `web/render-loop.ts`          | 13    | `packages/web/src/render-loop.ts`               |
-| 83  | `web/score-loader.ts`         | 22    | `packages/web/src/score-loader.ts`              |
-| 84  | `web/osmd-cursor.ts`          | 24    | `packages/web/src/osmd-cursor.ts`               |
-| 85  | `web/practice-tone-audio.ts`  | 17    | `packages/web/src/practice-tone-audio.ts`       |
-| 86  | `web/section-notes.ts`        | 23    | `packages/web/src/section-notes.ts`             |
-| 87  | `web/intro-hint-ui.ts`        | 19    | `packages/web/src/intro-hint-ui.ts`             |
-| 88  | `web/practice-scoring.ts`     | 41    | `packages/web/src/practice-scoring.ts`          |
-| 89  | `web/practice-progress.ts`    | 14    | `packages/web/src/practice-progress.ts`         |
-| 90  | `web/shell-helpers.ts`        | 36    | `packages/web/src/shell-helpers.ts`             |
+| #   | Module                          | Tests | Where                                           |
+| --- | ------------------------------- | ----- | ----------------------------------------------- |
+| 1   | `audio/chord.ts`                | 12    | `packages/core/src/audio/chord.ts`              |
+| 2   | `audio/yin.ts`                  | 16    | `packages/core/src/audio/yin.ts`                |
+| 3   | `audio/spectral.ts`             | 18    | `packages/core/src/audio/spectral.ts`           |
+| 4   | `audio/harmonicity.ts`          | 7     | `packages/core/src/audio/harmonicity.ts`        |
+| 5   | `audio/audio-context.ts`        | 10    | `packages/core/src/audio/audio-context.ts`      |
+| 6   | `audio/agc.ts`                  | 13    | `packages/core/src/audio/agc.ts`                |
+| 7   | `audio/onset.ts`                | 11    | `packages/core/src/audio/onset.ts`              |
+| 8   | `library/musicxml-meta.ts`      | 4     | `packages/core/src/library/musicxml-meta.ts`    |
+| 9   | `library/auto-section.ts`       | 11    | `packages/core/src/library/auto-section.ts`     |
+| 10  | `library/user-songs.ts`         | 15    | `packages/core/src/library/user-songs.ts`       |
+| 11  | `state/session-confidence.ts`   | 17    | `packages/core/src/state/session-confidence.ts` |
+| 12  | `state/quality.ts`              | 27    | `packages/core/src/state/quality.ts`            |
+| 13  | `i18n/`                         | 23    | `packages/core/src/i18n/index.ts` + strings.ts  |
+| 14  | `config.ts`                     | 17    | `packages/core/src/config.ts`                   |
+| 15  | `state/midi-state.ts`           | 21    | `packages/core/src/state/midi-state.ts`         |
+| 16  | `state/practice-state.ts`       | 41    | `packages/core/src/state/practice-state.ts`     |
+| 17  | `render/particles.ts`           | 34    | `packages/core/src/render/particles.ts`         |
+| 18  | `render/ripples.ts`             | 10    | `packages/core/src/render/ripples.ts`           |
+| 19  | `render/effects.ts`             | 17    | `packages/core/src/render/effects.ts`           |
+| 20  | `render/keyboard.ts`            | 16    | `packages/core/src/render/keyboard.ts`          |
+| 21  | `render/lane.ts`                | 18    | `packages/core/src/render/lane.ts`              |
+| 22  | `render/background.ts`          | 17    | `packages/core/src/render/background.ts`        |
+| 23  | `render/theme.ts`               | 17    | `packages/core/src/render/theme.ts`             |
+| 24  | `render/spectrum.ts`            | 12    | `packages/core/src/render/spectrum.ts`          |
+| 25  | `render/center-glow.ts`         | 9     | `packages/core/src/render/center-glow.ts`       |
+| 26  | `render/stage.ts`               | 19    | `packages/core/src/render/stage.ts`             |
+| 27  | `state/flow-meter.ts`           | 27    | `packages/core/src/state/flow-meter.ts`         |
+| 28  | `state/encouragement.ts`        | 22    | `packages/core/src/state/encouragement.ts`      |
+| 29  | `state/quest-tracker.ts`        | 16    | `packages/core/src/state/quest-tracker.ts`      |
+| 30  | `state/quality-history.ts`      | 16    | `packages/core/src/state/quality-history.ts`    |
+| 31  | `state/pitch-stability.ts`      | 26    | `packages/core/src/state/pitch-stability.ts`    |
+| 32  | `audio/chord-window.ts`         | 16    | `packages/core/src/audio/chord-window.ts`       |
+| 33  | `state/wake-up-flash.ts`        | 14    | `packages/core/src/state/wake-up-flash.ts`      |
+| 34  | `state/streak.ts`               | 19    | `packages/core/src/state/streak.ts`             |
+| 35  | `render/midi-beams.ts`          | 8     | `packages/core/src/render/midi-beams.ts`        |
+| 36  | `library/score-timing.ts`       | 16    | `packages/core/src/library/score-timing.ts`     |
+| 37  | `library/measure-timing.ts`     | 13    | `packages/core/src/library/measure-timing.ts`   |
+| 38  | `library/playback-order.ts`     | 17    | `packages/core/src/library/playback-order.ts`   |
+| 39  | `web/audio-scheduler.ts`        | —     | `packages/web/src/audio-scheduler.ts`           |
+| 40  | `library/merge-tied-notes.ts`   | 15    | `packages/core/src/library/merge-tied-notes.ts` |
+| 41  | `library/diag-load.ts`          | 15    | `packages/core/src/library/diag-load.ts`        |
+| 42  | `state/practice-progress.ts`    | 15    | `packages/core/src/state/practice-progress.ts`  |
+| 43  | `web/note-extractor.ts`         | —     | `packages/web/src/note-extractor.ts`            |
+| 44  | shape typedefs (state etc.)     | —     | `packages/web/src/legacy-app.js` (top of file)  |
+| 45  | `@param` sweep (60+ helpers)    | —     | `packages/web/src/legacy-app.js`                |
+| 46  | Phase 0c.5 — `// @ts-check`     | —     | `packages/web/src/legacy-app.js` (top of file)  |
+| 47  | `web/wakelock.ts`               | —     | `packages/web/src/wakelock.ts`                  |
+| 48  | web tests (3 shell modules)     | 46    | `packages/web/tests/*.test.ts`                  |
+| 49  | `web/section-editor.ts`         | 20    | `packages/web/src/section-editor.ts`            |
+| 50  | `web/settings-panel.ts`         | 20    | `packages/web/src/settings-panel.ts`            |
+| 51  | i18n wire-up via `createT`      | —     | `packages/web/src/legacy-app.js` (-301 lines)   |
+| 52  | `web/audio-init.ts`             | 21    | `packages/web/src/audio-init.ts`                |
+| 53  | feat: 全曲再生 listen toggle    | —     | `packages/web/src/legacy-app.js` (+88 lines)    |
+| 54  | `web/user-songs-ui.ts`          | 31    | `packages/web/src/user-songs-ui.ts`             |
+| 55  | `web/theme-controls.ts`         | 17    | `packages/web/src/theme-controls.ts`            |
+| 56  | `web/practice-flow.ts`          | 21    | `packages/web/src/practice-flow.ts`             |
+| 57  | `web/song-panel-controls.ts`    | 12    | `packages/web/src/song-panel-controls.ts`       |
+| 58  | `web/song-panel-render.ts`      | 31    | `packages/web/src/song-panel-render.ts`         |
+| 59  | `web/practice-tick.ts`          | 20    | `packages/web/src/practice-tick.ts`             |
+| 60  | `web/result-card.ts`            | 27    | `packages/web/src/result-card.ts`               |
+| 61  | `web/session-summary.ts`        | 17    | `packages/web/src/session-summary.ts`           |
+| 62  | `web/render-frame.ts`           | 18    | `packages/web/src/render-frame.ts`              |
+| 63  | `web/dev-mode.ts`               | 24    | `packages/web/src/dev-mode.ts` (in-app testing) |
+| 64  | `web/render-mid.ts`             | 14    | `packages/web/src/render-mid.ts`                |
+| 65  | `web/render-late.ts`            | 16    | `packages/web/src/render-late.ts`               |
+| 66  | `web/practice-lane.ts`          | 19    | `packages/web/src/practice-lane.ts`             |
+| 67  | `web/section-editor.ts`         | 20    | `packages/web/src/section-editor.ts`            |
+| 68  | `web/midi-render.ts`            | 9     | `packages/web/src/midi-render.ts`               |
+| 69  | bench harness (autorun+wh)      | 7     | `packages/web/vite-bench-plugin.ts` + bench.mjs |
+| 70  | `web/mic-pipeline.ts`           | 28    | `packages/web/src/mic-pipeline.ts`              |
+| 71  | `web/midi-handlers.ts`          | 29    | `packages/web/src/midi-handlers.ts`             |
+| 72  | `web/midi-indicator.ts`         | 33    | `packages/web/src/midi-indicator.ts`            |
+| 73  | `web/ble-midi-parser.ts`        | 19    | `packages/web/src/ble-midi-parser.ts`           |
+| 74  | `web/midi-dispatch.ts`          | 22    | `packages/web/src/midi-dispatch.ts`             |
+| 75  | `web/prefs-storage.ts`          | 21    | `packages/web/src/prefs-storage.ts`             |
+| 76  | `web/layout-detect.ts`          | 25    | `packages/web/src/layout-detect.ts`             |
+| 77  | `web/midi-ports.ts`             | 37    | `packages/web/src/midi-ports.ts`                |
+| 78  | `web/midi-rescan.ts`            | 25    | `packages/web/src/midi-rescan.ts`               |
+| 79  | `web/ble-midi-connect.ts`       | 18    | `packages/web/src/ble-midi-connect.ts`          |
+| 80  | `web/viewport-layout.ts`        | 21    | `packages/web/src/viewport-layout.ts`           |
+| 81  | `web/osmd-init.ts`              | 21    | `packages/web/src/osmd-init.ts`                 |
+| 82  | `web/render-loop.ts`            | 13    | `packages/web/src/render-loop.ts`               |
+| 83  | `web/score-loader.ts`           | 22    | `packages/web/src/score-loader.ts`              |
+| 84  | `web/osmd-cursor.ts`            | 24    | `packages/web/src/osmd-cursor.ts`               |
+| 85  | `web/practice-tone-audio.ts`    | 17    | `packages/web/src/practice-tone-audio.ts`       |
+| 86  | `web/section-notes.ts`          | 23    | `packages/web/src/section-notes.ts`             |
+| 87  | `web/intro-hint-ui.ts`          | 19    | `packages/web/src/intro-hint-ui.ts`             |
+| 88  | `web/practice-scoring.ts`       | 41    | `packages/web/src/practice-scoring.ts`          |
+| 89  | `web/practice-progress.ts`      | 14    | `packages/web/src/practice-progress.ts`         |
+| 90  | `web/shell-helpers.ts`          | 36    | `packages/web/src/shell-helpers.ts`             |
+| 91  | `web/start-practice-section.ts` | 36    | `packages/web/src/start-practice-section.ts`    |
+| 92  | `web/onset-detect.ts`           | 15    | `packages/web/src/onset-detect.ts`              |
+| 93  | `web/session-confidence-ui.ts`  | 13    | `packages/web/src/session-confidence-ui.ts`     |
+| 94  | `web/game-state-update.ts`      | 18    | `packages/web/src/game-state-update.ts`         |
+| 95  | `web/agc-controller.ts`         | 8     | `packages/web/src/agc-controller.ts`            |
 
-**Status: 1,689/1,689 tests green (786 core + 903 web), 0 lint errors, 0 type
+**Status: 1,779/1,779 tests green (786 core + 993 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
-avg 5.2–7.1 ms. `legacy-app.js`: 5,809 lines (was 9,000+ at Phase 0a; 6,861 at
-session start this cycle, **−1,052 net** across 21 shell-shrinking batches + 1
-architectural batch — first time the shell has crossed below the 6,000-line
-mark, biggest single-session reduction in the project's history).
+avg 5.2–7.1 ms. `legacy-app.js`: 5,335 lines (was 9,000+ at Phase 0a; 6,861 at
+session start this cycle, **−1,526 net** across 26 shell-shrinking batches + 1
+architectural batch).
 
 ---
 

@@ -100,14 +100,12 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
 
       // RenderPedals quirk — see header note.
       try {
-         
         (inst as any).EngravingRules.RenderPedals = false;
       } catch (e) {
         console.warn('[OSMD] could not disable pedal render: ' + (e as Error).message);
       }
       // CursorIgnoreRepetitions — see header note.
       try {
-         
         (inst as any).EngravingRules.CursorIgnoreRepetitions = true;
       } catch {
         /* older OSMD: option doesn't exist, behavior is the same */
@@ -124,7 +122,7 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
       // Activate Repetition objects so the iterator performs back-
       // jumps. See header note.
       const repSet = new Set<{ UserNumberOfRepetitions?: number; NumberOfRepetitions?: number }>();
-       
+
       const measures: any[] = (inst as any).Sheet?.SourceMeasures || [];
       for (const m of measures) {
         for (const list of [m.FirstRepetitionInstructions, m.LastRepetitionInstructions]) {
@@ -145,7 +143,6 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
           ' repetitions=' +
           repSet.size +
           ' Sheet.Repetitions=' +
-           
           ((inst as any).Sheet?.Repetitions?.length || 0)
       );
 
@@ -166,7 +163,7 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
       }
 
       // Cursor show/reset — see header note.
-       
+
       const cursor = (inst as any).cursor;
       if (cursor) {
         try {

@@ -97,4 +97,18 @@ export default [
       eqeqeq: ['warn', 'always', { null: 'ignore' }],
     },
   },
+  // Node scripts (bench harness, build helpers) — they import 'node:*' and
+  // touch process.env / process.argv / process.stdout. Add Node globals.
+  {
+    files: ['**/scripts/**/*.mjs', '**/scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        global: 'readonly',
+      },
+    },
+  },
 ];
