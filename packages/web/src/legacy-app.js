@@ -2301,54 +2301,31 @@
     //   identical to the deleted legacy implementation.
     const USER_DB_NAME = PianoCore.USER_DB_NAME;
     const USER_DB_STORE = PianoCore.USER_DB_STORE;
-    /** @type {Promise<IDBDatabase>|null} */
-    let _userDbPromise = null;
-    function openUserDb() {
-      if (_userDbPromise) return _userDbPromise;
-      _userDbPromise = PianoCore.openUserDb();
-      return _userDbPromise;
-    }
-    async function userDbAll() {
-      return PianoCore.userDbAll(await openUserDb());
-    }
+    // Phase 0d batch 49: lazy IDBDatabase handle cache + .mxl unzip
+    // moved to packages/web/src/user-songs-mxl.ts. Forwarders below
+    // preserve the legacy short-name surface (openUserDb, userDbAll,
+    // userDbPut, userDbDelete, unzipMxlToXmlText).
+    const _userDb = UserSongsMxl.createUserDb({
+      openUserDb: () => PianoCore.openUserDb(),
+      userDbAll: PianoCore.userDbAll,
+      userDbPut: PianoCore.userDbPut,
+      userDbDelete: PianoCore.userDbDelete,
+    });
+    function openUserDb() { return _userDb.open(); }
+    async function userDbAll() { return _userDb.all(); }
     /** @param {import('@piano/core').UserSongRecord} record */
-    async function userDbPut(record) {
-      return PianoCore.userDbPut(await openUserDb(), record);
-    }
+    async function userDbPut(record) { return _userDb.put(/** @type {any} */ (record)); }
     /** @param {string} id */
-    async function userDbDelete(id) {
-      return PianoCore.userDbDelete(await openUserDb(), id);
-    }
+    async function userDbDelete(id) { return _userDb.delete(id); }
     const parseMusicXmlMetadata = PianoCore.parseMusicXmlMetadata;
     const collectSectionCandidates = PianoCore.collectSectionCandidates;
     const autoSectionDefs = PianoCore.autoSectionDefs;
 
-    // Unzip an .mxl blob and return the inner MusicXML text. Used both at
-    // add-time (to extract metadata) and at register-time (to feed OSMD a
-    // plain XML blob — blob: URLs strip filename/MIME hints, so OSMD can't
-    // reliably auto-detect a zip via the URL alone, especially on Android
-    // Chrome where it parses the bytes as XML and fails).
     /** @param {Blob} blob */
     async function unzipMxlToXmlText(blob) {
       const JSZipLib = window.JSZip || (typeof JSZip !== 'undefined' ? JSZip : null);
       if (!JSZipLib) throw new Error('JSZip not available — cannot read .mxl');
-      const zip = await JSZipLib.loadAsync(await blob.arrayBuffer());
-      let scorePath = null;
-      const containerFile = zip.file('META-INF/container.xml');
-      if (containerFile) {
-        const containerXml = await containerFile.async('text');
-        const m = containerXml.match(/full-path="([^"]+)"/);
-        if (m) scorePath = m[1];
-      }
-      if (!scorePath) {
-        for (const name of Object.keys(zip.files)) {
-          if (name.endsWith('.xml') && !name.startsWith('META-INF')) { scorePath = name; break; }
-        }
-      }
-      if (!scorePath) throw new Error('No score file inside .mxl archive');
-      const scoreFile = zip.file(scorePath);
-      if (!scoreFile) throw new Error('Score file vanished from zip mid-parse: ' + scorePath);
-      return scoreFile.async('text');
+      return UserSongsMxl.unzipMxlToXmlText(blob, { jszip: /** @type {any} */ (JSZipLib) });
     }
 
     // Promote a stored-or-just-fetched record into the SONGS registry. Returns
