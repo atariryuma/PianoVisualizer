@@ -2452,156 +2452,147 @@
     // Main Loop
     // ========================================
     /** @param {number} timeMs */
-    function loop(timeMs) {
-      if (!state.running) return;
-      requestAnimationFrame(loop);
-
-      // Phase 0d batch 9a: frame setup + atmospheric layers + wake-up
-      // flash + glow pulse + center glow + shimmer overlay live in
-      // packages/web/src/render-frame.ts. Returns the dt + theme + glow
-      // value the rest of the loop needs.
-      const { dt, theme } = RenderFrame.runRenderFramePrelude(timeMs, {
-        ctx,
-        state: /** @type {import('./render-frame').RenderFrameStateRef} */ (
-          /** @type {any} */ (state)
-        ),
-        getScreen: () => ({ W, H }),
-        themes: /** @type {ReadonlyArray<import('./render-frame').RenderFrameTheme>} */ (
-          /** @type {any} */ (CONFIG.THEMES)
-        ),
-        drawBgStars,
-        drawAurora,
-        drawGroundFlowers,
-        decayWakeUpFlash: PianoCore.decayWakeUpFlash,
-        drawCenterGlow: PianoCore.drawCenterGlow,
-        wufOpts: WUF_OPTS,
-        getEnergy,
-      });
-
-      // Phase 0d batch 18: mic frame pipeline (YIN throttle + AGC +
-      // mic meter + game-state + practice tick + mic-driven note
-      // spawn) lives in packages/web/src/mic-pipeline.ts. Returns
-      // `{ isGoodNote }` so the caller can route follow-up work.
-      const { isGoodNote } = MicPipeline.tickMicPipeline(timeMs, dt, {
-        analyser,
-        audioCtx,
-        freqArray,
-        detectPitchYIN,
-        updateAGC,
-        updateGameState,
-        state: /** @type {import('./mic-pipeline').MicPipelineState} */ (
-          /** @type {any} */ (state)
-        ),
-        practice: /** @type {import('./mic-pipeline').MicPipelinePracticeRef} */ (
-          /** @type {any} */ (practice)
-        ),
-        midiInput: /** @type {import('./mic-pipeline').MicPipelineMidiRef} */ (
-          /** @type {any} */ (midiInput)
-        ),
-        micMeter: DOM.micMeter,
-        micMeterFill: DOM.micMeterFill,
-        introHint: DOM.introHint,
-        hideIntroHint,
-        updatePractice,
-        freqToNote: /** @type {(freq: number) => import('./mic-pipeline').NoteDescriptor | null} */ (
-          /** @type {any} */ (freqToNote)
-        ),
-        getNoteColor,
-        spawnBurst,
-        spawnStream,
-        ripples: /** @type {import('./mic-pipeline').RipplesArray} */ (
-          /** @type {any} */ (ripples)
-        ),
-        Ripple: /** @type {import('./mic-pipeline').RippleCtor} */ (
-          /** @type {any} */ (Ripple)
-        ),
-        showNoteDisplay,
-        triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
-        wufOpts: WUF_OPTS,
-        theme,
-        screen: { W, H },
-        config: {
-          MIN_NOTE_INTERVAL_MS: CONFIG.MIN_NOTE_INTERVAL_MS,
-          PITCH_MIN_HZ: CONFIG.PITCH_MIN_HZ,
-          PIANO_KEY_MIN: CONFIG.PIANO_KEY_MIN,
-          PIANO_KEY_COUNT: CONFIG.PIANO_KEY_COUNT,
-        },
-      });
-      void isGoodNote; // currently unused after extraction; reserved for future hooks
-
-      // Phase 0d batch 9b: note-display fade + ambient particle spawn
-      // + spectrum bars moved to packages/web/src/render-mid.ts. The
-      // silence gate (`smoothEnergy > 0.03`) still lives in the caller
-      // so silent frames skip the spectrum work entirely.
-      RenderMid.tickNoteDisplayFade(timeMs, {
-        noteDisplayEl: DOM.noteDisplay,
-        state: /** @type {import('./render-mid').RenderMidStateRef} */ (
-          /** @type {any} */ (state)
-        ),
-        noteDisplayDurationMs: CONFIG.NOTE_DISPLAY_DURATION_MS,
-      });
-
-      RenderMid.spawnAmbientParticle({
-        state: /** @type {import('./render-mid').RenderMidStateRef} */ (
-          /** @type {any} */ (state)
-        ),
-        theme,
-        screen: { W, H },
-        particles: /** @type {import('./render-mid').ParticlesArray} */ (
-          /** @type {any} */ (particles)
-        ),
-        maxParticles: CONFIG.MAX_PARTICLES,
-        ambientChance: CONFIG.AMBIENT_PARTICLE_CHANCE,
-        Particle: /** @type {import('./render-mid').ParticleCtor} */ (
-          /** @type {any} */ (Particle)
-        ),
-      });
-
-      if (analyser && state.smoothEnergy > 0.03) {
-        RenderMid.runSpectrumBars({
+    // Phase 0d batch 30: per-frame orchestrator moved to
+    // packages/web/src/render-loop.ts. The factory composes the four
+    // sub-module phases (RenderFrame / MicPipeline / RenderMid /
+    // RenderLate) and self-rAFs while state.running. The shell hands
+    // in deps-builders so per-frame fresh values (analyser, audioCtx,
+    // theme color list) flow through closures rather than being
+    // captured at factory-build time.
+    const _renderLoop = RenderLoop.createRenderLoop({
+      state: /** @type {{running: boolean}} */ (
+        /** @type {any} */ (state)
+      ),
+      modules: { RenderFrame, MicPipeline, RenderMid, RenderLate },
+      builders: {
+        buildFrameDeps: () => ({
           ctx,
-          dataArray,
-          sampleRate: audioCtx.sampleRate,
-          fftSize: analyser.fftSize,
-          pianoFreqMin: CONFIG.PIANO_FREQ_MIN,
-          pianoFreqMax: CONFIG.PIANO_FREQ_MAX,
-          barCount: CONFIG.BAR_COUNT,
-          themeColors: theme.colors,
-          flow: state.flow,
+          state: /** @type {import('./render-frame').RenderFrameStateRef} */ (
+            /** @type {any} */ (state)
+          ),
+          getScreen: () => ({ W, H }),
+          themes: /** @type {ReadonlyArray<import('./render-frame').RenderFrameTheme>} */ (
+            /** @type {any} */ (CONFIG.THEMES)
+          ),
+          drawBgStars,
+          drawAurora,
+          drawGroundFlowers,
+          decayWakeUpFlash: PianoCore.decayWakeUpFlash,
+          drawCenterGlow: PianoCore.drawCenterGlow,
+          wufOpts: WUF_OPTS,
+          getEnergy,
+        }),
+        buildMicPipelineDeps: (_timeMs, _dt, theme) => ({
+          analyser,
+          audioCtx,
+          freqArray,
+          detectPitchYIN,
+          updateAGC,
+          updateGameState,
+          state: /** @type {import('./mic-pipeline').MicPipelineState} */ (
+            /** @type {any} */ (state)
+          ),
+          practice: /** @type {import('./mic-pipeline').MicPipelinePracticeRef} */ (
+            /** @type {any} */ (practice)
+          ),
+          midiInput: /** @type {import('./mic-pipeline').MicPipelineMidiRef} */ (
+            /** @type {any} */ (midiInput)
+          ),
+          micMeter: DOM.micMeter,
+          micMeterFill: DOM.micMeterFill,
+          introHint: DOM.introHint,
+          hideIntroHint,
+          updatePractice,
+          freqToNote: /** @type {(freq: number) => import('./mic-pipeline').NoteDescriptor | null} */ (
+            /** @type {any} */ (freqToNote)
+          ),
+          getNoteColor,
+          spawnBurst,
+          spawnStream,
+          ripples: /** @type {import('./mic-pipeline').RipplesArray} */ (
+            /** @type {any} */ (ripples)
+          ),
+          Ripple: /** @type {import('./mic-pipeline').RippleCtor} */ (
+            /** @type {any} */ (Ripple)
+          ),
+          showNoteDisplay,
+          triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
+          wufOpts: WUF_OPTS,
+          theme,
           screen: { W, H },
-          drawSpectrumBars: PianoCore.drawSpectrumBars,
-        });
-      }
-
-      // Phase 0d batch 9c: late-frame draw + tail (MIDI beams,
-      // ripples + particles update/draw/cull, chord display, virtual
-      // keyboard, practice lane, quest + playtime + debug HUD) live
-      // in packages/web/src/render-late.ts.
-      RenderLate.runRenderLate(timeMs, {
-        ctx,
-        ripples: /** @type {import('./render-late').RippleArray} */ (
-          /** @type {any} */ (ripples)
-        ),
-        particles: /** @type {import('./render-late').ParticleArray} */ (
-          /** @type {any} */ (particles)
-        ),
-        midiInput: /** @type {import('./render-late').RenderLateMidiRef} */ (
-          /** @type {any} */ (midiInput)
-        ),
-        practice: /** @type {import('./render-late').RenderLatePracticeRef} */ (
-          /** @type {any} */ (practice)
-        ),
-        isFreeplayActive,
-        maxParticles: CONFIG.MAX_PARTICLES,
-        drawMidiBeams,
-        drawMidiChordDisplay,
-        drawMidiKeyboard,
-        drawPracticeLane,
-        updateQuestState,
-        updatePlayTime,
-        updateDebugOverlay,
-      });
-    }
+          config: {
+            MIN_NOTE_INTERVAL_MS: CONFIG.MIN_NOTE_INTERVAL_MS,
+            PITCH_MIN_HZ: CONFIG.PITCH_MIN_HZ,
+            PIANO_KEY_MIN: CONFIG.PIANO_KEY_MIN,
+            PIANO_KEY_COUNT: CONFIG.PIANO_KEY_COUNT,
+          },
+        }),
+        buildNoteFadeDeps: () => ({
+          noteDisplayEl: DOM.noteDisplay,
+          state: /** @type {import('./render-mid').RenderMidStateRef} */ (
+            /** @type {any} */ (state)
+          ),
+          noteDisplayDurationMs: CONFIG.NOTE_DISPLAY_DURATION_MS,
+        }),
+        buildAmbientDeps: (theme) => ({
+          state: /** @type {import('./render-mid').RenderMidStateRef} */ (
+            /** @type {any} */ (state)
+          ),
+          theme,
+          screen: { W, H },
+          particles: /** @type {import('./render-mid').ParticlesArray} */ (
+            /** @type {any} */ (particles)
+          ),
+          maxParticles: CONFIG.MAX_PARTICLES,
+          ambientChance: CONFIG.AMBIENT_PARTICLE_CHANCE,
+          Particle: /** @type {import('./render-mid').ParticleCtor} */ (
+            /** @type {any} */ (Particle)
+          ),
+        }),
+        buildSpectrumDeps: (theme) => {
+          if (!analyser || !(state.smoothEnergy > 0.03)) return null;
+          return {
+            ctx,
+            dataArray,
+            sampleRate: audioCtx.sampleRate,
+            fftSize: analyser.fftSize,
+            pianoFreqMin: CONFIG.PIANO_FREQ_MIN,
+            pianoFreqMax: CONFIG.PIANO_FREQ_MAX,
+            barCount: CONFIG.BAR_COUNT,
+            themeColors: theme.colors,
+            flow: state.flow,
+            screen: { W, H },
+            drawSpectrumBars: PianoCore.drawSpectrumBars,
+          };
+        },
+        buildLateDeps: () => ({
+          ctx,
+          ripples: /** @type {import('./render-late').RippleArray} */ (
+            /** @type {any} */ (ripples)
+          ),
+          particles: /** @type {import('./render-late').ParticleArray} */ (
+            /** @type {any} */ (particles)
+          ),
+          midiInput: /** @type {import('./render-late').RenderLateMidiRef} */ (
+            /** @type {any} */ (midiInput)
+          ),
+          practice: /** @type {import('./render-late').RenderLatePracticeRef} */ (
+            /** @type {any} */ (practice)
+          ),
+          isFreeplayActive,
+          maxParticles: CONFIG.MAX_PARTICLES,
+          drawMidiBeams,
+          drawMidiChordDisplay,
+          drawMidiKeyboard,
+          drawPracticeLane,
+          updateQuestState,
+          updatePlayTime,
+          updateDebugOverlay,
+        }),
+      },
+    });
+    /** @param {number} timeMs */
+    function loop(timeMs) { _renderLoop.tick(timeMs); }
 
     // True only when the canvas / HUD is the front-most surface (i.e. the
     // user is actually free-playing, not picking a song or reviewing a result).
