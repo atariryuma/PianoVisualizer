@@ -1272,40 +1272,16 @@
       lang: 'en'             // 'en' | 'jp' — practice-flow UI language
     });
     /** @template T @param {string} key @param {T} fallback @returns {T} */
-    function loadJSON(key, fallback) {
-      try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
-      catch (e) { return fallback; }
-    }
-    let _localStorageQuotaWarned = false;
+    // Phase 0d batch 23: prefs storage (loadJSON / saveJSON +
+    // sanitizePrefs accept-list) moved to packages/web/src/prefs-storage.ts.
+    // The shell rebinds to the legacy short names so the rest of the
+    // file (10 callsites + dev-mode self-test) keeps working.
+    const _prefsStore = PrefsStorage.createJSONStore();
+    /** @template T @param {string} key @param {T} fallback @returns {T} */
+    function loadJSON(key, fallback) { return _prefsStore.loadJSON(key, fallback); }
     /** @param {string} key @param {unknown} val */
-    function saveJSON(key, val) {
-      try { localStorage.setItem(key, JSON.stringify(val)); }
-      catch (e) {
-        // Safari Private Mode + storage-full both throw QuotaExceededError.
-        // Without this, settings appear to apply but vanish on reload.
-        if (!_localStorageQuotaWarned) {
-          _localStorageQuotaWarned = true;
-          console.warn('[PREFS] localStorage write failed (' + (/** @type {Error} */ (e)?.name || 'Err') + '). Settings will not persist.');
-        }
-      }
-    }
-    // Sanitize loaded prefs: an out-of-range theme/lang from a tampered
-    // localStorage payload would otherwise silently break the UI (no active
-    // theme dot, mis-rendered text). Drop unknown keys; clamp known ones.
-    /** @param {any} raw @returns {Partial<PrefsShape>} */
-    function sanitizePrefs(raw) {
-      if (!raw || typeof raw !== 'object') return {};
-      const out = {};
-      if (typeof raw.theme === 'number' && raw.theme >= 0 && raw.theme < 4) out.theme = raw.theme | 0;
-      if (typeof raw.synesthesia === 'boolean') out.synesthesia = raw.synesthesia;
-      if (raw.audioOffsetMs === null || (typeof raw.audioOffsetMs === 'number' && isFinite(raw.audioOffsetMs))) {
-        out.audioOffsetMs = raw.audioOffsetMs;
-      }
-      if (typeof raw.debug === 'boolean') out.debug = raw.debug;
-      if (raw.lang === 'en' || raw.lang === 'jp') out.lang = raw.lang;
-      return out;
-    }
-    Object.assign(prefs, sanitizePrefs(loadJSON('pianoViz_prefs', {})));
+    function saveJSON(key, val) { _prefsStore.saveJSON(key, val); }
+    Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
     function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
 
     // ========================================
