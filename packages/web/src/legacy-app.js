@@ -4015,31 +4015,13 @@
     /** @param {{data: ArrayLike<number>|null|undefined}} e */
     function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
 
-    // Verify the previously-attached MIDI port is still alive after the page
-    // came back from background. iOS WMB silently kills the onmidimessage
-    // handler when the page is suspended; the port object stays around but
-    // events no longer flow. Returns true if the port is still connected and
-    // the handler has been re-bound; false if it's gone (caller should rescan).
-    async function verifyMidiAlive() {
-      if (!midiInput.enabled || !midiInput.port || !_midiAccess) return false;
-      // BLE-MIDI installs a synthetic `midiInput.port` (just a `{ name }`
-      // marker) that is NOT a member of `_midiAccess.inputs`. Looking it up
-      // in the WebMIDI port list would always miss → detach the live BLE
-      // session as collateral on every visibility-resume. Health for BLE is
-      // tracked by the GATT `gattserverdisconnected` listener in connectBleMidi.
-      if (bleMidi && bleMidi.connected) return true;
-      const ports = gatherMidiInputs(_midiAccess);
-      const stillThere = ports.find(p => p === midiInput.port && p.state === 'connected');
-      if (!stillThere) {
-        try { detachMidiPort(midiInput.port); } catch (e) {}
-        return false;
-      }
-      // Re-bind unconditionally. Cheap; idempotent on a healthy port; required on a suspended one.
-      // The MIDIInput|{name:string} union narrows here because `stillThere` was
-      // found in the WebMIDI inputs list (real MIDIInput, not the BLE marker).
-      /** @type {MIDIInput} */ (midiInput.port).onmidimessage = onMidiMessageHandler;
-      return true;
-    }
+    // Phase 0d batch 25: attach / detach / verifyAlive moved to
+    // packages/web/src/midi-ports.ts. The factory is built later (after
+    // suspendMic / resumeMic / setInputIndicator / startMidiAutoRescan
+    // are all in scope) and re-bound here as `_midiPorts`. verifyMidiAlive
+    // forwards to it so the visibility-resume callsite stays unchanged.
+    /** @returns {Promise<boolean>} */
+    function verifyMidiAlive() { return _midiPorts.verifyAlive(_midiAccess); }
 
     // Phase 0d batch 5: graph builder + recovery seam live in
     // packages/web/src/audio-init.ts. The shell exposes mutators so the
@@ -4273,76 +4255,47 @@
     /** @param {{name?:string|null, manufacturer?:string|null}|null} port */
     function isVirtualMidiPort(port) { return _midiIndicator.isVirtualMidiPort(port); }
 
-    // Returns true if the port was successfully attached, false if it was skipped
-    // (virtual/system port). Callers can use the return to decide whether to keep
-    // searching the port list.
-    /** @param {MIDIInput|null} port */
+    // Phase 0d batch 25: attach / detach lives in
+    // packages/web/src/midi-ports.ts. The factory is built right
+    // below this declaration (after suspendMic / resumeMic /
+    // setInputIndicator / start+stopMidiAutoRescan are in scope —
+    // forward-declared above) so the legacy short names can re-bind
+    // straight away.
+    const _midiPorts = MidiPorts.createMidiPorts({
+      midiInput: /** @type {import('./midi-ports').MidiPortsInputRef} */ (
+        /** @type {any} */ (midiInput)
+      ),
+      state: /** @type {import('./midi-ports').MidiPortsStateRef} */ (
+        /** @type {any} */ (state)
+      ),
+      // Thunked: bleMidi's `const` lives further down the file (TDZ
+      // dance — the factory is built before the BLE state object).
+      getBleMidi: () => /** @type {import('./midi-ports').MidiPortsBleRef} */ (
+        /** @type {any} */ (bleMidi)
+      ),
+      hasAudioCtx: () => !!audioCtx,
+      suspendMic,
+      resumeMic,
+      onMidiMessageHandler,
+      setInputIndicator,
+      isVirtualMidiPort,
+      refreshIntroHint: () =>
+        typeof refreshIntroHint === 'function' && refreshIntroHint(),
+      showHitChip: (kind, msg) => showHitChip(kind, msg),
+      micMeter: DOM.micMeter,
+      startMidiAutoRescan,
+      stopMidiAutoRescan,
+      t,
+    });
+    /** @param {MIDIInput|null} port @returns {boolean} */
     function attachMidiPort(port) {
-      if (!port || midiInput.port === port) return true;
-      if (isVirtualMidiPort(port)) {
-        console.log('[MIDI] skip virtual/system port: ' + port.name);
-        return false;
-      }
-      const wasMidiOn = midiInput.enabled;
-      if (midiInput.port && 'onmidimessage' in midiInput.port) {
-        midiInput.port.onmidimessage = null;
-      }
-      midiInput.port = port;
-      midiInput.enabled = true;
-      midiInput.lastEventTime = 0;
-      // v13: MIDI is the new authoritative source — drop the mic so the
-      // privacy LED goes off and YIN/AGC/onset stop chewing CPU.
-      if (!wasMidiOn && audioCtx && !state.micSuspended) {
-        suspendMic();
-      }
-      // @WMB-WORKAROUND (Phase 0d): explicit port.open() before the
-      // handler bind. The Web MIDI spec says assigning onmidimessage
-      // implicitly opens, but Web MIDI Browser's polyfill doesn't always
-      // honor that — pre-paired BLE-MIDI keyboards end up attached but
-      // silent. open() on already-open ports is a spec-defined no-op so
-      // it's safe to call unconditionally; rejection (rare) is logged
-      // and we bind the handler anyway. Native iOS/Android (Capacitor)
-      // doesn't need this — CoreMIDI / android.media.midi own the open.
-      try {
-        const openResult = /** @type {{open?: () => Promise<unknown>}} */ (port).open?.();
-        if (openResult && typeof openResult.catch === 'function') {
-          openResult.catch((e) => console.warn('[MIDI] port.open() rejected:',
-            e instanceof Error ? e.message : String(e)));
-        }
-      } catch (e) {
-        console.warn('[MIDI] port.open() threw:', e instanceof Error ? e.message : String(e));
-      }
-      // /@WMB-WORKAROUND
-      port.onmidimessage = onMidiMessageHandler;
-      setInputIndicator();
-      if (typeof refreshIntroHint === 'function') refreshIntroHint();
-      DOM.micMeter?.classList.remove('visible');
-      stopMidiAutoRescan();
-      showHitChip('good', t('midiConnectedFmt', { v: port.name || 'MIDI' }));
-      console.log('[MIDI] connected: ' + port.name + ' (state=' + port.state
-        + ' connection=' + port.connection + ')');
-      return true;
+      return _midiPorts.attach(/** @type {import('./midi-ports').MidiPortRef|null} */ (
+        /** @type {any} */ (port)
+      ));
     }
-
     /** @param {MIDIInput|{name:string}|null} port */
     function detachMidiPort(port) {
-      if (!port || midiInput.port !== port) return;
-      if ('onmidimessage' in port) port.onmidimessage = null;
-      midiInput.port = null;
-      midiInput.enabled = false;
-      setInputIndicator();
-      console.log('[MIDI] disconnected');
-      // v13: Bring the mic back on a deliberate detach so the user can
-      // keep playing acoustically without restarting the app.
-      if (audioCtx && state.micSuspended) {
-        resumeMic();
-      }
-      // Restart silent polling so a hot-replug picks up automatically. This
-      // handles "browser sees keyboard but app dropped it" — the user doesn't
-      // need to know what happened, the next 2.5 s tick reconnects.
-      if (state.micPermissionFailed || state.micIntentionallySkipped) {
-        startMidiAutoRescan();
-      }
+      _midiPorts.detach(/** @type {any} */ (port));
     }
 
     async function initWebMIDI() {
@@ -4473,28 +4426,13 @@
       return _midiAccess;
     }
 
-    // Defensive iteration of access.inputs: handles both Map (per spec) and
-    // plain-object polyfill shapes.
+    // Phase 0d batch 25: defensive iteration of access.inputs moved
+    // to packages/web/src/midi-ports.ts (pure helper).
     /** @param {MIDIAccess} access */
     function gatherMidiInputs(access) {
-      /** @type {MIDIInput[]} */
-      const out = [];
-      const inputs = access && access.inputs;
-      if (!inputs) return out;
-      if (typeof inputs.values === 'function') {
-        for (const p of inputs.values()) out.push(p);
-      } else if (typeof inputs.forEach === 'function') {
-        inputs.forEach((/** @type {MIDIInput} */ p) => out.push(p));
-      } else if (typeof inputs === 'object') {
-        // Plain-object polyfill (older Chromium / Web MIDI Browser shapes).
-        // The wider lookup is necessary because MIDIInputMap doesn't expose
-        // an index signature.
-        for (const k in /** @type {Record<string, MIDIInput>} */ (/** @type {unknown} */ (inputs))) {
-          const p = /** @type {Record<string, MIDIInput>} */ (/** @type {unknown} */ (inputs))[k];
-          if (p && (p.type === 'input' || p.type == null)) out.push(p);
-        }
-      }
-      return out;
+      return /** @type {MIDIInput[]} */ (
+        /** @type {any} */ (MidiPorts.gatherMidiInputs(access))
+      );
     }
 
     /** @param {boolean} [silent] */
