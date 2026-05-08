@@ -6,10 +6,11 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-08 (cycle 2)**. 8 new typed modules + autonomous bench
-harness landed in this session. `legacy-app.js` is **6,675 lines** (was 6,861 at
-session start, **-186 lines net**). **1,358 tests** (786 core + 572 web; **+214
-tests this session**). `pnpm verify` clean.
+Last refreshed: **2026-05-08 (cycle 2 + MIDI port batches)**. 11 new typed
+modules + autonomous bench harness landed in this session. `legacy-app.js` is
+**6,455 lines** (was 6,861 at session start, **-406 lines net** — biggest
+single-session reduction in the project's history). **1,438 tests** (786 core +
+652 web; **+294 tests this session**). `pnpm verify` clean.
 
 **Headless bench harness — landed batch 17 (autonomous feedback loop)**:
 `pnpm --filter @piano/web bench` from a single Bash call spawns vite preview,
@@ -40,6 +41,15 @@ every commit.**
   list with quota-exceeded debouncing (-24 lines, +21 tests).
 - batch 24 — `layout-detect.ts`: pure viewport classifier (-9 lines, +25 tests).
   Pinned every named device the comments mention.
+- batch 25 — `midi-ports.ts`: attach + detach + verifyAlive + gatherMidiInputs
+  polyfill helper (-64 lines, +37 tests). Closes the WMB visibility-resume
+  re-bind contract.
+- batch 26 — `midi-rescan.ts`: MIDIAccess cache + manual rescan + ramped
+  auto-rescan poller (-109 lines, +25 tests). **Biggest single batch.**
+  Injectable now()/setTimeout for deterministic poller tests.
+- batch 27 — `ble-midi-connect.ts`: Web Bluetooth GATT connect path + GATT
+  disconnect handler (-47 lines, +18 tests). Closes the BLE-MIDI cluster
+  alongside ble-midi-parser (batch 21).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -132,12 +142,16 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 74  | `web/midi-dispatch.ts`        | 22    | `packages/web/src/midi-dispatch.ts`             |
 | 75  | `web/prefs-storage.ts`        | 21    | `packages/web/src/prefs-storage.ts`             |
 | 76  | `web/layout-detect.ts`        | 25    | `packages/web/src/layout-detect.ts`             |
+| 77  | `web/midi-ports.ts`           | 37    | `packages/web/src/midi-ports.ts`                |
+| 78  | `web/midi-rescan.ts`          | 25    | `packages/web/src/midi-rescan.ts`               |
+| 79  | `web/ble-midi-connect.ts`     | 18    | `packages/web/src/ble-midi-connect.ts`          |
 
-**Status: 1,358/1,358 tests green (786 core + 572 web), 0 lint errors, 0 type
-errors, 0 residual TS errors. `pnpm verify` clean.** Bench: 11/11 passed, frame
-avg 5.3-7.1ms across the session. `legacy-app.js`: 6,675 lines (was 9,000+ at
-Phase 0a; 6,861 at session start this cycle, -186 net across 7 shell-shrinking
-batches).
+**Status: 1,438/1,438 tests green (786 core + 652 web), 0 lint errors, 0 type
+errors, 0 residual TS errors. `pnpm verify` clean.** Bench: 11/11 passed across
+every commit, frame avg 5.2–7.1 ms. `legacy-app.js`: 6,455 lines (was 9,000+ at
+Phase 0a; 6,861 at session start this cycle, **-406 net** across 10
+shell-shrinking batches + 1 architectural batch — biggest single-session
+reduction in the project's history).
 
 ---
 
