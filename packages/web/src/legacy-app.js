@@ -2483,61 +2483,32 @@
     // race against a rapid `selectSong()` that changes `currentSong`
     // mid-load — the IIFE would then fetch the wrong song's XML and feed
     // a foreign repeat structure into the in-flight song's note timeline.
+    // Phase 0d batch 53: fetchPlaybackOrder + expandNotesByPlaybackOrder
+    // moved to packages/web/src/playback-order.ts. The xmlText cache,
+    // cumulative-sum fallback, and OSMD-shaped last-bar branch all
+    // ride along.
+    const _playbackOrder = PlaybackOrder.createPlaybackOrder({
+      fns: {
+        parsePlaybackOrderFromXml: PianoCore.parsePlaybackOrderFromXml,
+        expandNotesByPlaybackOrder: /** @type {any} */ (PianoCore.expandNotesByPlaybackOrder),
+      },
+      fetch: (...args) => fetch(...args),
+    });
     /** @param {SongRec} [forSong] */
     async function fetchPlaybackOrder(forSong) {
-      const targetSong = forSong || currentSong;
-      let text = targetSong._xmlText;
-      if (!text) {
-        const res = await fetch(targetSong.xmlUrl);
-        if (!res.ok) throw new Error('XML fetch failed: ' + res.status);
-        text = await res.text();
-      }
-      return PianoCore.parsePlaybackOrderFromXml(text);
+      return _playbackOrder.fetchPlaybackOrder(/** @type {any} */ (forSong || currentSong));
     }
-
-    // Re-time per-measure notes following the playback order. The core
-    // module wants explicit measureStartSec + measureDurSec arrays —
-    // compute durSec from the cumulative startSec diff (with an OSMD-
-    // shaped fallback for the last bar when the caller didn't pre-build
-    // a full timing table).
     /** @param {Parameters<typeof PianoCore.expandNotesByPlaybackOrder>[0]} baseNotes
      *  @param {Parameters<typeof PianoCore.expandNotesByPlaybackOrder>[1]} order
      *  @param {ReadonlyArray<{TempoInBPM?:number, Duration?:{realValue:number}}>} measures
      *  @param {number[]=} sourceMeasureStartSec */
     function expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec) {
-      let measureStartSec;
-      let measureDurSec;
-      if (sourceMeasureStartSec && sourceMeasureStartSec.length === measures.length) {
-        measureStartSec = sourceMeasureStartSec;
-        measureDurSec = new Array(measures.length).fill(0);
-        for (let i = 0; i < measures.length; i++) {
-          const m = measures[i];
-          if (i + 1 < measures.length) {
-            measureDurSec[i] = measureStartSec[i + 1] - measureStartSec[i];
-          } else {
-            const bpm = m?.TempoInBPM || 72;
-            measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
-          }
-        }
-      } else {
-        // Fallback path: cumulative sum of per-bar durations from OSMD
-        // shapes. Used by legacy callers that don't pre-build a full
-        // XML timing table.
-        measureStartSec = new Array(measures.length).fill(0);
-        measureDurSec = new Array(measures.length).fill(0);
-        let prevBpm = 72;
-        for (let i = 0; i < measures.length; i++) {
-          const m = measures[i];
-          const bpm = m?.TempoInBPM || prevBpm;
-          measureDurSec[i] = (m?.Duration?.realValue || 0.25) * 4 * 60 / bpm;
-          if (i > 0) measureStartSec[i] = measureStartSec[i - 1] + measureDurSec[i - 1];
-          prevBpm = bpm;
-        }
-      }
-      return PianoCore.expandNotesByPlaybackOrder(baseNotes, order, {
-        startSec: measureStartSec,
-        durSec: measureDurSec,
-      });
+      return _playbackOrder.expandNotesByPlaybackOrder(
+        /** @type {any} */ (baseNotes),
+        /** @type {any} */ (order),
+        /** @type {any} */ (measures),
+        sourceMeasureStartSec
+      );
     }
 
     // Load-time DIAG dump — Phase 0c: delegated to
