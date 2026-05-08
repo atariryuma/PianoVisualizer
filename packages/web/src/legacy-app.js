@@ -1829,27 +1829,11 @@
     // Quality Scoring — simplified for kids
     // ========================================
 
-    // Quality scoring + coaching — Phase 0b.3: delegated to @piano/core.
-    // Adapters bind legacy state.* / CONFIG.* to core's pure scoring API.
+    // Phase 0d batch 45: 54-line quality-score per-frame reducer +
+    // its three compute-axis adapters + the growth-trend / coaching-
+    // feedback wrappers all moved to packages/web/src/quality-update.ts.
+    // We still need clamp01 for unrelated callers below.
     const clamp01 = PianoCore.clamp01;
-    const _qualityOpts = () => ({
-      ioiIdealCV: CONFIG.IOI_IDEAL_CV,
-      ioiMaxCV: CONFIG.IOI_MAX_CV,
-      dynamicsIdealCVMin: CONFIG.DYNAMICS_IDEAL_CV_MIN,
-      dynamicsIdealCVMax: CONFIG.DYNAMICS_IDEAL_CV_MAX,
-      weights: {
-        rhythm: CONFIG.SCORE_RHYTHM_WEIGHT,
-        dynamics: CONFIG.SCORE_DYNAMICS_WEIGHT,
-        stability: CONFIG.SCORE_STABILITY_WEIGHT,
-      },
-      smoothing: CONFIG.SCORE_SMOOTHING,
-      growthWindowMs: CONFIG.GROWTH_WINDOW_MS,
-    });
-    const computeRhythmScore = () => PianoCore.computeRhythmScore(state.ioiHistory, _qualityOpts());
-    const computeDynamicsScore = () =>
-      PianoCore.computeDynamicsScore(state.amplitudeHistory, _qualityOpts());
-    const computeStabilityScore = () =>
-      PianoCore.computeStabilityScore(state.pitchStability, state.sessionConfidence);
 
     // Per-onset ring-buffer maintenance — Phase 0b.3: delegated to
     // @piano/core/state/quality-history. Mic onset detector and MIDI note-on
@@ -1900,62 +1884,39 @@
     // based so 144Hz screens don't fade twice as fast as 60Hz ones.
     const WUF_OPTS = { triggerLevel: 0.2, halfLifeSec: 0.071 };
 
+    // Phase 0d batch 45: per-frame quality-score reducer moved to
+    // packages/web/src/quality-update.ts.
+    const _qualityUpdate = QualityUpdate.createQualityUpdate(
+      /** @type {import('./quality-update').QualityUpdateDeps} */ ({
+        state: /** @type {any} */ (state),
+        tuning: {
+          updateIntervalMs: CONFIG.SCORE_UPDATE_INTERVAL_MS,
+          rhythmWeight: CONFIG.SCORE_RHYTHM_WEIGHT,
+          dynamicsWeight: CONFIG.SCORE_DYNAMICS_WEIGHT,
+          stabilityWeight: CONFIG.SCORE_STABILITY_WEIGHT,
+          smoothing: CONFIG.SCORE_SMOOTHING,
+          displayedScoreFloor: 0.25,
+        },
+        scoringOpts: {
+          ioiIdealCV: CONFIG.IOI_IDEAL_CV,
+          ioiMaxCV: CONFIG.IOI_MAX_CV,
+          dynamicsIdealCVMin: CONFIG.DYNAMICS_IDEAL_CV_MIN,
+          dynamicsIdealCVMax: CONFIG.DYNAMICS_IDEAL_CV_MAX,
+          growthWindowMs: CONFIG.GROWTH_WINDOW_MS,
+        },
+        fns: {
+          computeRhythmScore: PianoCore.computeRhythmScore,
+          computeDynamicsScore: PianoCore.computeDynamicsScore,
+          computeStabilityScore: PianoCore.computeStabilityScore,
+          updateGrowthTrend: PianoCore.updateGrowthTrend,
+          buildCoachingFeedback: PianoCore.buildCoachingFeedback,
+        },
+        qualityScoreEl: DOM.qualityScore,
+        t,
+      })
+    );
     /** @param {number} timeMs */
-    function updateGrowthTrend(timeMs) {
-      const result = PianoCore.updateGrowthTrend(
-        state.qualityHistory,
-        timeMs,
-        state.displayedQualityScore,
-        _qualityOpts()
-      );
-      state.qualityHistory = result.history;
-      state.growthScore = result.growthScore;
-    }
-
-    function buildCoachingFeedback() {
-      const fb = PianoCore.buildCoachingFeedback({
-        rhythm: state.rhythmScore,
-        dynamics: state.dynamicsScore,
-        stability: state.stabilityScore,
-        growthScore: state.growthScore,
-      });
-      state.feedbackGood = t('strengthFmt', { v: t(fb.strengthKey) });
-      state.feedbackNext = t('nextStepFmt', { v: t(fb.nextKey) });
-    }
-
-    /** @param {number} timeMs */
-    function updateQualityScores(timeMs) {
-      if (timeMs - state.lastScoreUpdateMs < CONFIG.SCORE_UPDATE_INTERVAL_MS) return;
-      state.lastScoreUpdateMs = timeMs;
-
-      state.rhythmScore = computeRhythmScore();
-      state.dynamicsScore = computeDynamicsScore();
-      state.stabilityScore = computeStabilityScore();
-
-      state.qualityScore =
-        state.rhythmScore * CONFIG.SCORE_RHYTHM_WEIGHT +
-        state.dynamicsScore * CONFIG.SCORE_DYNAMICS_WEIGHT +
-        state.stabilityScore * CONFIG.SCORE_STABILITY_WEIGHT;
-
-      state.displayedQualityScore += (state.qualityScore - state.displayedQualityScore) * CONFIG.SCORE_SMOOTHING;
-      updateGrowthTrend(timeMs);
-      buildCoachingFeedback();
-
-      if ((state.sessionState === 'performing' || state.sessionState === 'warmup') && state.displayedQualityScore > 0.25) {
-        const rhythmPct = Math.round(state.rhythmScore * 100);
-        const dynamicsPct = Math.round(state.dynamicsScore * 100);
-        const stabilityPct = Math.round(state.stabilityScore * 100);
-        const growthPts = Math.round(state.growthScore * 100);
-        const growthText = growthPts >= 0 ? '+' + growthPts : '' + growthPts;
-        DOM.qualityScore.textContent =
-          'Rhythm ' + rhythmPct + '% | Dynamics ' + dynamicsPct + '% | Stability ' + stabilityPct + '%\n' +
-          'Last 30s growth: ' + growthText + 'pt\n' +
-          state.feedbackGood + ' -> ' + state.feedbackNext;
-        DOM.qualityScore.classList.add('visible');
-      } else {
-        DOM.qualityScore.classList.remove('visible');
-      }
-    }
+    function updateQualityScores(timeMs) { _qualityUpdate.tick(timeMs); }
 
     // ========================================
     // Software AGC — with v9 voice suppression
