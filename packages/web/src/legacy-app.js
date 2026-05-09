@@ -122,22 +122,11 @@
     } = _fx;
 
     // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
-    // Encouragement / quest reducer state + onset/pitch hysteresis frames
-    // are owned by ShellGameUpdate (batch 116). The 4 option bags + the
-    // audio-offset default are still pulled here because shell-midi-handlers
-    // / shell-render-loop / shell-practice / settings-panel consume them.
-    // PianoCore feature primitives (detectPitchYIN / freqToNote / spectral-*
-    // / coefficientOfVariation / computeHarmonicity) are read inside the
-    // shells from globalThis.PianoCore directly (batch 120).
     const clamp01 = PianoCore.clamp01;
     const _coreOpts = CoreOpts.createCoreOpts({
-      config: CONFIG,
-      detectChord: /** @type {any} */ (PianoCore.detectChord),
+      config: CONFIG, detectChord: /** @type {any} */ (PianoCore.detectChord),
     });
-    const QH_OPTS_MIDI = _coreOpts.qhOptsMidi;
-    const PS_OPTS = _coreOpts.psOpts;
-    const CW_OPTS = _coreOpts.cwOpts;
-    const WUF_OPTS = _coreOpts.wufOpts;
+    const { qhOptsMidi: QH_OPTS_MIDI, psOpts: PS_OPTS, cwOpts: CW_OPTS, wufOpts: WUF_OPTS } = _coreOpts;
     const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
 
     const _gameUpdate = ShellGameUpdate.createShellGameUpdate(/** @type {any} */ ({
@@ -153,8 +142,6 @@
       getScreen: _vp.getScreen,
       stageLabel, remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
     }));
-    // updateMultiFeatureOnset / updateSessionConfidence / updateQualityScores
-    // / updateHUD are consumed only inside ShellGameUpdate now — dropped.
     const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
       _gameUpdate;
 
