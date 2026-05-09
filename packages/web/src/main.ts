@@ -115,6 +115,7 @@ import * as ShellI18n from './shell-i18n';
 import * as ShellPracticeLane from './shell-practice-lane';
 import * as ShellSettings from './shell-settings';
 import * as ShellDevMode from './shell-dev-mode';
+import * as ShellBootstrap from './shell-bootstrap';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -217,6 +218,7 @@ declare global {
     ShellPracticeLane: typeof ShellPracticeLane;
     ShellSettings: typeof ShellSettings;
     ShellDevMode: typeof ShellDevMode;
+    ShellBootstrap: typeof ShellBootstrap;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -445,6 +447,8 @@ declare global {
   var ShellSettings: typeof import('./shell-settings');
 
   var ShellDevMode: typeof import('./shell-dev-mode');
+
+  var ShellBootstrap: typeof import('./shell-bootstrap');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -545,6 +549,7 @@ declare global {
 (globalThis as unknown as Window).ShellPracticeLane = ShellPracticeLane;
 (globalThis as unknown as Window).ShellSettings = ShellSettings;
 (globalThis as unknown as Window).ShellDevMode = ShellDevMode;
+(globalThis as unknown as Window).ShellBootstrap = ShellBootstrap;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`
@@ -563,4 +568,4 @@ if (typeof caches !== 'undefined') {
     .catch(() => {});
 }
 
-await import('./legacy-app.js');
+ShellBootstrap.boot();
