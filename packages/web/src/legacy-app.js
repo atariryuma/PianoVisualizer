@@ -204,48 +204,22 @@
     let laneLabelL = t('laneLeft');
     let laneLabelR = t('laneRight');
 
-    /** @type {InstanceType<typeof PianoCore.Particle>[]} */
-    let particles = [];
-    /** @type {InstanceType<typeof PianoCore.Ripple>[]} */
-    let ripples = [];
-    const _particleEffects = ParticleEffects.createParticleEffects({
-      pianoCore: /** @type {any} */ (PianoCore),
-      getScreen: () => ({ W, H }),
-      config: /** @type {any} */ (CONFIG),
-      state: /** @type {any} */ (state),
-      // `practice` is declared further down the file — use a getter
-      // proxy so .enabled is read at call-time (post-init), not at
-      // factory-build time (TDZ).
-      practice: /** @type {any} */ ({
-        get enabled() { return practice?.enabled ?? false; },
-      }),
-      particles: /** @type {any} */ (particles),
-      ripples: /** @type {any} */ (ripples),
+    // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
+    const _fx = ShellEffects.createShellEffects(/** @type {any} */ ({
+      pianoCore: PianoCore, ctx, state, config: CONFIG,
+      getPractice: () => practice,
       perfTier: PERF_TIER_RESOLVED,
-    });
-    const Particle = _particleEffects.Particle;
-    const Ripple = _particleEffects.Ripple;
-    const getNoteColor = _particleEffects.getNoteColor;
-    const spawnBurst = _particleEffects.spawnBurst;
-    const spawnStream = _particleEffects.spawnStream;
-    const effectGlowPulse = _particleEffects.effectGlowPulse;
-    const effectStarShower = _particleEffects.effectStarShower;
-    const effectFlowerBurst = _particleEffects.effectFlowerBurst;
-    const effectGoldenBurst = _particleEffects.effectGoldenBurst;
-    const triggerEffect = _particleEffects.triggerEffect;
-
-    const _themeColors = () => CONFIG.THEMES[state.currentTheme].colors;
-    /** @param {number} _time */
-    const drawBgStars = (_time) => {
-      const bg = _canvasResize.getBgStars();
-      if (!bg) return;
-      PianoCore.drawBgStars(ctx, /** @type {any} */ (bg), { flow: state.flow, themeColors: _themeColors() });
-    };
-    const _bgOpts = (/** @type {number} */ time) => ({
-      screenW: W, screenH: H, flow: state.flow, themeColors: _themeColors(), timeMs: time,
-    });
-    /** @param {number} time */ const drawAurora = (time) => PianoCore.drawAurora(ctx, _bgOpts(time));
-    /** @param {number} time */ const drawGroundFlowers = (time) => PianoCore.drawGroundFlowers(ctx, _bgOpts(time));
+      getScreen: () => ({ W, H }),
+      getBgStars: () => _canvasResize.getBgStars(),
+    }));
+    const particles = _fx.particles, ripples = _fx.ripples;
+    const Particle = _fx.Particle, Ripple = _fx.Ripple;
+    const getNoteColor = _fx.getNoteColor;
+    const spawnBurst = _fx.spawnBurst, spawnStream = _fx.spawnStream;
+    const effectGlowPulse = _fx.effectGlowPulse;
+    const effectStarShower = _fx.effectStarShower, effectFlowerBurst = _fx.effectFlowerBurst;
+    const effectGoldenBurst = _fx.effectGoldenBurst, triggerEffect = _fx.triggerEffect;
+    const drawBgStars = _fx.drawBgStars, drawAurora = _fx.drawAurora, drawGroundFlowers = _fx.drawGroundFlowers;
 
     const detectPitchYIN = PianoCore.detectPitchYIN;
     const freqToNote = PianoCore.freqToNote;
