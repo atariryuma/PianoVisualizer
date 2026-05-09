@@ -598,10 +598,13 @@
       return UserSongsMxl.unzipMxlToXmlText(blob, { jszip: /** @type {any} */ (JSZipLib) });
     }
 
-    // Promote a stored-or-just-fetched record into the SONGS registry.
+    // Promote stored-or-just-fetched records into the SONGS registry.
+    // (Renamed _userSongs → _userSongStore to free the short name for the
+    // UserSongsUi result later — UserSongsUi consumers reference these
+    // methods via direct property access so no forwarder layer is needed.)
     const USER_SONG_URL_TIMEOUT_MS = 30000;
     const USER_SONG_MAX_BYTES = 20 * 1024 * 1024; // 20 MB
-    const _userSongs = UserSongsStore.createUserSongsStore(
+    const _userSongStore = UserSongsStore.createUserSongsStore(
       /** @type {import('./user-songs-store').UserSongsStoreDeps} */ ({
         userDb: /** @type {any} */ (_userDb), userDbStoreName: USER_DB_STORE,
         unzipMxlToXmlText: /** @type {any} */ (unzipMxlToXmlText),
@@ -616,17 +619,9 @@
         url: URL, now: () => Date.now(), random: () => Math.random(),
       })
     );
-    /** @param {import('@piano/core').UserSongRecord} record */
-    async function registerUserSong(record) { return _userSongs.register(/** @type {any} */ (record)); }
-    async function loadUserSongs() { return _userSongs.loadAll(); }
-    /** @param {Blob} blob @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
-    async function addUserSongFromBlob(blob, opts) { return /** @type {any} */ (_userSongs.addFromBlob(blob, opts)); }
-    /** @param {string} url @param {{filename?:string, source?:string, allowAcceptSession?:boolean, titleOverride?:string, composerOverride?:string}} [opts] */
-    async function addUserSongFromUrl(url, opts) { return /** @type {any} */ (_userSongs.addFromUrl(url, opts)); }
-    /** @param {string} id @param {string} newTitle @param {string} newComposer */
-    async function renameUserSong(id, newTitle, newComposer) { return _userSongs.rename(id, newTitle, newComposer); }
+    async function loadUserSongs() { return _userSongStore.loadAll(); }
     /** @param {string} id */
-    async function removeUserSong(id) { return _userSongs.remove(id); }
+    async function removeUserSong(id) { return _userSongStore.remove(id); }
 
     // ========================================
     const _onlineLibrary = OnlineLibrary.createOnlineLibrary({
@@ -716,39 +711,13 @@
     });
     function osmdScrollToCursor() { _osmdCursor.scrollToCursor(); }
 
-    // OSMD adapter — implements @piano/core's OsmdAdapter interface.
-    // extractNotes is a thin shim; real extraction happens in
-    // loadCurrentSong (needs xmlMeasureTiming + scoreTiming).
-    /** @type {import('@piano/core').OsmdAdapter} */
-    const osmdAdapter = {
-      async load(url) {
-        if (currentSong) currentSong.mxlUrl = url;
-        await initOsmd();
-      },
-      isLoaded() { return !!osmd; },
-      extractNotes(opts) {
-        // Shell extractNotesFromOsmd → `{notes, measureStartSec, measureBpm, _diag}`
-        const ret = extractNotesFromOsmd(/** @type {any} */ (opts?.xmlMeasureTiming), null);
-        return {
-          notes: ret.notes,
-          measureTiming: ret.measureStartSec.map((startSec, i) => ({ startSec, bpm: ret.measureBpm[i] ?? 72 })),
-        };
-      },
-      cursorTo(measureIdx, inBarQuarters) { _osmdCursor.setCursorToNote({ measureIdx, inBarQuarters }); },
-      resetCursor() { _osmdCursor.resetToStart(); },
-      showCursor() { try { if (osmd && osmd.cursor) osmd.cursor.show(); } catch (_) {} },
-      hideCursor() { try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {} },
-      getCursorGeometry() {
-        if (!osmd || !osmd.cursor || !osmd.cursor.cursorElement) return null;
-        return { offsetTop: osmd.cursor.cursorElement.offsetTop, offsetHeight: osmd.cursor.cursorElement.offsetHeight || 30 };
-      },
-      // Color param on the interface is ignored — implementation hard-codes HIGHLIGHT_FILL.
-      highlightCurrentNotes() { _osmdCursor.highlightCurrentNotes(); },
-      clearHighlights() { _osmdCursor.clearHighlights(); },
-    };
+    // OSMD adapter — moved to packages/web/src/osmd-adapter.ts (batch 99).
+    const osmdAdapter = OsmdAdapterMod.createOsmdAdapter({
+      getOsmd: () => osmd, getCurrentSong: () => currentSong,
+      initOsmd, extractNotesFromOsmd, cursor: _osmdCursor,
+    });
     // Promote to globalThis so Phase 0c-extracted modules can resolve it
-    // from typed code without an import (matches the Tone / OSMD / JSZip
-    // / PianoCore globals seeded by main.ts).
+    // bare (matches the Tone / OSMD / JSZip / PianoCore main.ts globals).
     globalThis.osmdAdapter = osmdAdapter;
 
     // ── Practice state + tunable constants ──
@@ -1392,8 +1361,12 @@
         getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
         getLibrary: () => ONLINE_LIBRARY,
         setLibrary: (entries) => { ONLINE_LIBRARY = entries; },
-        fetchLibrary, addUserSongFromBlob, addUserSongFromUrl,
-        renameUserSong, removeUserSong, registerUserSong,
+        fetchLibrary,
+        addUserSongFromBlob: _userSongStore.addFromBlob,
+        addUserSongFromUrl: _userSongStore.addFromUrl,
+        renameUserSong: _userSongStore.rename,
+        removeUserSong: _userSongStore.remove,
+        registerUserSong: _userSongStore.register,
         userDbAll, userDbPut, unzipMxlToXmlText,
         autoSectionDefs: PianoCore.autoSectionDefs,
         // Thunk so a future reorder of the section-editor wire-up can't
