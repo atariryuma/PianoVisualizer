@@ -73,39 +73,7 @@
     Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
     function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
 
-    // ── i18n — practice-flow strings + t() (Phase 0d batch 4) ──
-    /** @type {(key: string, vars?: Record<string, string|number>) => string} */
-    const t = PianoCore.createT(PianoCore.T_STRINGS, {
-      getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
-      userResolver: (id, which) => {
-        // SONGS is declared later — userResolver only fires post-init.
-        const song = SONGS?.[id];
-        if (!song) return null;
-        if (which === 'userTitle') return song._userTitle || id;
-        if (which === 'userComposer') return song._userComposer || '';
-        return null;
-      },
-    });
-
-    function applyI18n() { _themeControls.applyI18n(); }
-    /** @param {import('./piano-config').PianoConfig['STAGES'][number]} stage */
-    const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
-
-    // setLang exposed by _themeControls below (batch 7a).
-    const _themeControls = ThemeControls.createThemeControls(/** @type {any} */ ({
-      prefs, state, savePrefs,
-      t: (/** @type {any} */ key) => t(key),
-      refreshSettingsPanel: () => refreshSettingsPanel(),
-    }));
-    const applyTheme = _themeControls.applyTheme;
-    const applySynesthesia = _themeControls.applySynesthesia;
-    const setLang = _themeControls.setLang;
-    // Seed UI from persisted prefs; createThemeControls' own click handlers
-    // take it from there.
-    applyTheme(prefs.theme);
-    applySynesthesia(prefs.synesthesia);
-
-    // ── Settings panel ──
+    // ── Settings panel modal-focus ──
     const modalFocus = ModalFocus.createModalFocus({
       document,
       requestAnimationFrame: (cb) => requestAnimationFrame(cb),
@@ -146,29 +114,28 @@
       ],
     }).install();
 
-    // Boot-time i18n seed — set <html lang> + walk [data-i18n*] once. Page
-    // loads on the title screen — body class drives the home-button hide
-    // (no 🏠 when home is right here) + any future title-only styling.
-    document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
-    applyI18n();
-    document.body.classList.add('title-screen');
-    // langchange handler — refresh hot-path caches + re-render screens
-    // with imperative (set-from-JS) localized text. applyI18n only walks
-    // [data-i18n*] attrs; these labels need explicit redraw.
-    window.addEventListener('langchange', () => {
-      _practice.refreshLangCaches();
-      if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
-      if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
-        const sec = currentSong.sections?.[practice.sectionIdx];
-        if (sec) DOM.ptbSection.textContent = t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-      }
-      if (DOM.sectionResult?.classList.contains('visible')) renderResultCard();
-      if (DOM.sessionSummary?.classList.contains('visible')) renderSessionSummaryText(false);
-      if (DOM.stageLabel && state.currentStage > 0) {
-        DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[state.currentStage]);
-      }
-      if (state.lastIntroDiag) state.lastIntroDiag();
-    });
+    // ── i18n + theme shell — moved to packages/web/src/shell-i18n.ts (batch 115).
+    // Bundles t() + stageLabel + applyI18n + theme controls + boot-time
+    // <html lang>/applyI18n/title-screen seed + the langchange re-renderer.
+    const _i18n = ShellI18n.createShellI18n(/** @type {any} */ ({
+      document, prefs, state, config: CONFIG,
+      getSongs: () => SONGS,
+      savePrefs,
+      refreshSettingsPanel: () => refreshSettingsPanel(),
+      dom: DOM,
+      getCurrentSong: () => currentSong,
+      getPractice: () => practice,
+      refreshLangCaches: () => _practice.refreshLangCaches(),
+      renderSongPanel: () => renderSongPanel(),
+      renderResultCard: () => renderResultCard(),
+      renderSessionSummaryText: (/** @type {any} */ animate) => renderSessionSummaryText(animate),
+    }));
+    const t = _i18n.t;
+    const stageLabel = _i18n.stageLabel;
+    const applyI18n = _i18n.applyI18n;
+    const applyTheme = _i18n.applyTheme;
+    const applySynesthesia = _i18n.applySynesthesia;
+    const setLang = _i18n.setLang;
 
     // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
     const _fx = ShellEffects.createShellEffects(/** @type {any} */ ({
