@@ -34,74 +34,21 @@
     const sessionRing = new Array(SESSION_RING_CAP);
     for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i] = { timeMs: 0, isPiano: false };
 
-    // ── Audio — dual analyser + software AGC ──
-    // Singletons populated by initAudio() / rebuildAudioGraph(). Cast
-    // to `any` because every reader is gated by `state.running` which
-    // is set after init; pre-init reads never happen at runtime.
-    /** @type {any} */ let audioCtx = null;
-    /** @type {any} */ let analyser = null;
-    /** @type {any} */ let onsetAnalyser = null;
-    /** @type {any} */ let gainNode = null;
-    /** @type {any} */ let dataArray = null;
-    /** @type {any} */ let freqArray = null;
-    /** @type {any} */ let onsetDataArray = null;
-    /** @type {MediaStream | null} */ let micStream = null;
-    /** @type {MediaStreamAudioSourceNode | null} */ let micSourceNode = null;
-
-    async function initAudio() {
-      // [Bug fix 2026-05-09] Idempotent re-entry: re-using the existing
-      // AudioContext keeps Tone.js's Transport binding intact so a
-      // title-round-trip doesn't silently break listen mode.
-      if (audioCtx && audioCtx.state !== 'closed') {
-        if (audioCtx.state === 'suspended') {
-          try { await audioCtx.resume(); } catch (_e) { /* best-effort */ }
-        }
-        console.log('[AUDIO] re-entry — reusing existing AudioContext (state=' + audioCtx.state + ')');
-        // Probe MIDI again so an externally-attached keyboard since
-        // the last init shows up. Mic state was already set last
-        // time we ran the init flow; don't disturb it.
-        try { await initWebMIDI(); } catch (e) { /* fall back to mic */ }
-        return;
-      }
-
-      console.log("Initializing Audio...");
-      audioCtx = AudioInit.createAudioContext();
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-        console.log("AudioContext resumed @" + audioCtx.sampleRate + "Hz");
-      }
-      // [DIAG-AUDIOCTX] Watch for unexpected state transitions
-      AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED);
-
-      // Audio graph (sourceless): gain → analyser, gain → onsetAnalyser.
-      rebuildAudioGraph(null);
-
-      await _micLifecycle.decideInitialInputMode();
-    }
-
-    const _micLifecycle = MicLifecycle.createMicLifecycle(
-      /** @type {import('./mic-lifecycle').MicLifecycleDeps} */ ({
-        state: /** @type {any} */ (state),
-        micConstraints: AudioInit.MIC_CONSTRAINTS,
-        getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
-        getAudioCtx: () => /** @type {any} */ (audioCtx),
-        getGainNode: () => /** @type {any} */ (gainNode),
-        getMicStream: () => micStream,
-        setMicStream: (s) => { micStream = /** @type {any} */ (s); },
-        getMicSourceNode: () => micSourceNode,
-        setMicSourceNode: (n) => { micSourceNode = /** @type {any} */ (n); },
-        micMeterEl: DOM.micMeter,
-        refreshIntroHint: () => refreshIntroHint(),
-        midiInput: /** @type {any} */ ({
-          get enabled() { return midiInput?.enabled ?? false; },
-        }),
-        initWebMIDI: () => initWebMIDI(),
-        isAppleMobile: () => isAppleMobile(),
-        hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
-      })
-    );
-    function suspendMic() { _micLifecycle.suspend(); }
-    async function resumeMic() { return _micLifecycle.resume(); }
+    // ── Audio shell — moved to packages/web/src/shell-audio.ts (batch 104).
+    const _audio = ShellAudio.createShellAudio(/** @type {any} */ ({
+      state, getPractice: () => practice,
+      config: { FFT_SIZE: CONFIG.FFT_SIZE, SMOOTHING: CONFIG.SMOOTHING, ONSET_FFT_SIZE: CONFIG.ONSET_FFT_SIZE, ONSET_SMOOTHING: CONFIG.ONSET_SMOOTHING },
+      micMeterEl: DOM.micMeter,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      getMidiInputEnabled: () => midiInput?.enabled ?? false,
+      initWebMIDI: () => initWebMIDI(),
+      isAppleMobile: () => isAppleMobile(),
+      refreshIntroHint: () => refreshIntroHint(),
+      stopPracticeAudio: () => stopPracticeAudio(),
+    }));
+    const initAudio = _audio.initAudio;
+    const suspendMic = _audio.suspendMic;
+    const resumeMic = _audio.resumeMic;
 
     // ── Canvas (CSS pixel dimensions; mirrors _canvasResize.getDimensions()) ──
     let W = 0;
@@ -323,7 +270,7 @@
       config: CONFIG,
       getOnsetHysteresisFrames: () => ONSET_HYSTERESIS_FRAMES,
       features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation },
-      getOnsetAnalyser: () => onsetAnalyser, getOnsetDataArray: () => onsetDataArray, getAudioCtx: () => audioCtx,
+      getOnsetAnalyser: _audio.getOnsetAnalyser, getOnsetDataArray: _audio.getOnsetDataArray, getAudioCtx: _audio.getAudioCtx,
     });
     /** @param {number} timeMs @param {number} currentPitchHz */
     function updateMultiFeatureOnset(timeMs, currentPitchHz) {
@@ -405,7 +352,7 @@
         maxGain: CONFIG.AGC_MAX_GAIN, minGain: CONFIG.AGC_MIN_GAIN, targetRms: CONFIG.AGC_TARGET_RMS,
         attackCoeff: CONFIG.AGC_ATTACK_COEFF, releaseCoeff: CONFIG.AGC_RELEASE_COEFF,
       },
-      getGainNode: () => gainNode, getAudioCtx: () => audioCtx,
+      getGainNode: _audio.getGainNode, getAudioCtx: _audio.getAudioCtx,
     });
     /** @param {number} timeMs @param {number} postGainRms */
     function updateAGC(timeMs, postGainRms) {
@@ -460,13 +407,14 @@
 
     // ── Energy calculation ──
     function getEnergy() {
-      if (!analyser || state.micSuspended) return 0;
-      analyser.getByteFrequencyData(dataArray);
+      const a = _audio.getAnalyser(), data = _audio.getDataArray(), ctx2 = _audio.getAudioCtx();
+      if (!a || state.micSuspended) return 0;
+      a.getByteFrequencyData(data);
       let sum = 0;
-      const binHz = audioCtx.sampleRate / analyser.fftSize;
+      const binHz = ctx2.sampleRate / a.fftSize;
       const s = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
-      const e = Math.min(Math.floor(CONFIG.PIANO_FREQ_MAX / binHz), dataArray.length);
-      for (let i = s; i < e; i++) sum += dataArray[i];
+      const e = Math.min(Math.floor(CONFIG.PIANO_FREQ_MAX / binHz), data.length);
+      for (let i = s; i < e; i++) sum += data[i];
       return sum / ((e - s) * 255);
     }
 
@@ -483,8 +431,8 @@
       getMidiInput: () => /** @type {any} */ (midiInput),
       config: /** @type {any} */ (CONFIG),
       getScreen: () => ({ W, H }),
-      getAudioCtx: () => audioCtx, getAnalyser: () => analyser,
-      getDataArray: () => dataArray, getFreqArray: () => /** @type {any} */ (freqArray),
+      getAudioCtx: _audio.getAudioCtx, getAnalyser: _audio.getAnalyser,
+      getDataArray: _audio.getDataArray, getFreqArray: /** @type {any} */ (_audio.getFreqArray),
       particles, ripples, Particle, Ripple,
       dom: /** @type {any} */ (DomBag.pickDom(DOM,
         'micMeter', 'micMeterFill', 'introHint', 'noteDisplay',
@@ -676,66 +624,24 @@
       prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
     ));
 
-    // ── Section banner + Wake Lock + audio-graph helpers ──
+    // ── Section banner + Wake Lock ──
     /** @param {any} sec */ function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
-
-    const _audioGraphCfg = {
-      fftSize: CONFIG.FFT_SIZE, smoothing: CONFIG.SMOOTHING,
-      onsetFftSize: CONFIG.ONSET_FFT_SIZE, onsetSmoothing: CONFIG.ONSET_SMOOTHING,
-    };
-    /** Spread a freshly-built graph onto the shell-local node refs. Shared by
-     *  rebuildAudioGraph() (initAudio) + _audioRecovery.applyContext (visibility
-     *  recovery) so the two stay in lock-step. */
-    function _applyAudioGraph(/** @type {any} */ g) {
-      gainNode = g.gainNode; analyser = g.analyser; onsetAnalyser = g.onsetAnalyser;
-      dataArray = g.dataArray; freqArray = g.freqArray; onsetDataArray = g.onsetDataArray;
-      micSourceNode = g.micSourceNode;
-    }
-    function _resetOnsetState() { state.prevSpectrum = null; state.spectralFluxHistory = []; }
-    /** @param {MediaStream|null} prevMicStream */
-    function rebuildAudioGraph(prevMicStream) {
-      _applyAudioGraph(AudioInit.buildAudioGraph(audioCtx, prevMicStream, _audioGraphCfg, !!state.micSuspended));
-      _resetOnsetState();
-    }
-
-    // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone is
-    // unreliable on iOS WKWebView — close + recreate the AudioContext on
-    // visibility / devicechange.
-    const _audioRecovery = AudioInit.createAudioRecovery({
-      getSnapshot: () => ({ audioCtx, gainNode, analyser, onsetAnalyser, micSourceNode, micStream }),
-      applyContext: (newCtx, graph) => {
-        audioCtx = newCtx;
-        _applyAudioGraph(graph);
-        // [DIAG-AUDIOCTX] Re-bind the state listener — the old one went away with the old context.
-        AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED, undefined, '(post-recovery)');
-      },
-      isMicSuspended: () => !!state.micSuspended,
-      config: _audioGraphCfg,
-      resetOnsetState: _resetOnsetState,
-      onAfterRecovery: () => {
-        // iOS WKWebView contract: post-background the audio engine is
-        if (practice.enabled) {
-          practice.enabled = false;
-          try { stopPracticeAudio(); } catch (_) {}
-        }
-      },
-    });
 
     // ── MIDI shell — the entire MIDI cluster (state + dispatch + indicator
     //   + ports + rescan + init + intro-diag + BLE-MIDI + audio-lifecycle
     //   hook) lives in packages/web/src/shell-midi.ts (Phase 0d batch 101).
     const _midi = ShellMidi.createShellMidi(/** @type {any} */ ({
       state, practice,
-      getAudioCtx: () => audioCtx,
+      getAudioCtx: _audio.getAudioCtx,
       dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput, introHint: DOM.introHint, micMeter: DOM.micMeter },
       t, navigator,
       suspendMic, resumeMic,
       refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
       onMidiNoteOn, onMidiNoteOff, onMidiCC, matchNoteOnset,
-      recover: () => _audioRecovery.recover(),
+      recover: _audio.recover,
       isRunning: () => !!state.running,
       requestWakeLock: () => requestWakeLock(),
     }));
@@ -1110,7 +1016,7 @@
       domAddSong: { modal: DOM_ADDSONG.modal },
       state, practice, prefs, midiInput, midiState, ctx, particles, ripples,
       getScreen: () => ({ W, H }),
-      getAudioCtx: () => audioCtx, getCurrentSong: () => currentSong,
+      getAudioCtx: _audio.getAudioCtx, getCurrentSong: () => currentSong,
       openUserDb: () => openUserDb(), userDbAll: () => userDbAll(),
       userDbPut: (rec) => userDbPut(/** @type {any} */ (rec)),
       removeUserSong: (id) => removeUserSong(id),
