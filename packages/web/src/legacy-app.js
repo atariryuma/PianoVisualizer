@@ -59,8 +59,7 @@
     // ── Theme switching + persisted user preferences ──
     const prefs = /** @type {any} */ (PracticeStateInit.createInitialPrefs());
     const _prefsStore = PrefsStorage.createJSONStore();
-    /** @param {any} key @param {any} fallback */ function loadJSON(key, fallback) { return _prefsStore.loadJSON(key, fallback); }
-    /** @param {any} key @param {any} val */ function saveJSON(key, val) { _prefsStore.saveJSON(key, val); }
+    const { loadJSON, saveJSON } = _prefsStore;
     Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
     function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
 
