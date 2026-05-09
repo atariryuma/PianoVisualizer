@@ -215,15 +215,10 @@
     function updatePlayTime(timeMs) {
       if (DOM.playTime) DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
     }
-    /** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h */
-    function setupHiDPICanvas(canvas, w, h) {
-      return /** @type {CanvasRenderingContext2D} */ (ShellHelpers.setupHiDPICanvas(canvas, w, h));
-    }
-
     // ── Session summary + reset — moved to packages/web/src/shell-session-state.ts (batch 111).
     const _sess = ShellSessionState.createShellSessionState(/** @type {any} */ ({
       state, config: CONFIG, dom: DOM, t,
-      loadJSON, saveJSON, stageLabel, formatTime, setupHiDPICanvas,
+      loadJSON, saveJSON, stageLabel, formatTime, setupHiDPICanvas: ShellHelpers.setupHiDPICanvas,
       sessionRing, sessionRingCap: SESSION_RING_CAP,
       questState: _gameUpdate.questState, encState: _gameUpdate.encState,
       getMidiState: () => midiState,
@@ -424,7 +419,7 @@
       hideIntroHint: () => _ui.hideIntroHint(),
       resetSession,
       effectGoldenBurst, effectStarShower, effectFlowerBurst,
-      setupHiDPICanvas, clamp01,
+      setupHiDPICanvas: ShellHelpers.setupHiDPICanvas, clamp01,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
       getHeight: () => _vp.getScreen().H,
       byId,
