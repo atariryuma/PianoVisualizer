@@ -25,8 +25,8 @@ import * as AgcController from './agc-controller';
 import * as GameStateUpdate from './game-state-update';
 import * as HudUpdate from './hud-update';
 import * as DomBag from './dom-bag';
+import * as CoreOpts from './core-opts';
 
- 
 export interface ShellGameUpdateDeps {
   state: any;
   /** practice / midiInput forward-declared in the shell — getter access. */
@@ -36,8 +36,6 @@ export interface ShellGameUpdateDeps {
   /** session-confidence ring buffer + cap. */
   sessionRing: Array<{ timeMs: number; isPiano: boolean }>;
   sessionRingCap: number;
-  onsetHysteresisFrames: number;
-  pitchMedianFrames: number;
   /** Spectral-feature primitives — re-exposed by the shell from PianoCore. */
   features: {
     computeSpectralFlatness: any;
@@ -58,11 +56,6 @@ export interface ShellGameUpdateDeps {
   };
   /** _coreOpts wrapper — the four option bags the reducers consume. */
   coreOpts: { qhOptsMic: any; qhOptsMidi: any; psOpts: any; cwOpts: any; wufOpts: any };
-  encState: any;
-  encOpts: any;
-  questState: any;
-  questOpts: any;
-  questAllDoneSentinel: string;
   /** DOM bag — every @-i18n-driven element the reducers touch. */
   dom: any;
   t: any;
@@ -100,18 +93,37 @@ export interface ShellGameUpdate {
   /** Internal HUD update — the shell exposes this so session-reset can drain
    *  the flow-cache + the hudUpdate factory result. */
   invalidateFlowCache: () => void;
+  /** Reducer state owned by this shell — exposed so ShellSessionState
+   *  (which only resets, never advances) can drain them on reset. */
+  encState: any;
+  questState: any;
 }
 
 export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdate {
   const { state, dom, t } = deps;
   const PianoCore: any = (globalThis as any).PianoCore;
 
+  // ── Per-tick reducer state owned by this shell. encState/questState
+  // are exposed on the result so ShellSessionState can drain them on
+  // reset (it only resets, never advances). questState shares the
+  // underlying completedIds array with state.completedQuests so the two
+  // stay in sync without per-tick copies.
+  const encState = PianoCore.initEncouragementState();
+  const encOpts = {
+    tiers: deps.config.ENCOURAGEMENT_TIERS,
+    displayMs: deps.config.ENCOURAGEMENT_DISPLAY_MS,
+  };
+  const questState = PianoCore.initQuestTrackerState();
+  questState.completedIds = state.completedQuests;
+  const questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
+  const QUEST_ALL_DONE = 'ALL_DONE';
+
   // ── Multi-feature onset detection ──
   const _onsetDetectDeps = OnsetDetect.buildOnsetDetectDeps({
     state,
     getPractice: deps.getPractice,
     config: deps.config,
-    getOnsetHysteresisFrames: () => deps.onsetHysteresisFrames,
+    getOnsetHysteresisFrames: () => CoreOpts.ONSET_HYSTERESIS_FRAMES,
     features: deps.features,
     getOnsetAnalyser: deps.audio.getOnsetAnalyser,
     getOnsetDataArray: deps.audio.getOnsetDataArray,
@@ -143,12 +155,12 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
   // ── Quest tick ──
   const _questStateUpdate = QuestStateUpdate.createQuestStateUpdate({
     state,
-    trackerState: deps.questState,
+    trackerState: questState,
     quests: deps.config.QUESTS,
-    allDoneSentinel: deps.questAllDoneSentinel,
+    allDoneSentinel: QUEST_ALL_DONE,
     applyQuestTick: PianoCore.applyQuestTick,
     observation: state, // quest.condition reads state.combo, state.flow, etc.
-    questOpts: deps.questOpts,
+    questOpts,
     dom: DomBag.pickDom(
       dom,
       'toastTitle',
@@ -219,8 +231,8 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
   // ── HUD update + debug overlay ──
   const _hudUpdate = HudUpdate.createHudUpdate({
     state,
-    encState: deps.encState,
-    encOpts: deps.encOpts,
+    encState,
+    encOpts,
     applyEncouragementEvent: PianoCore.applyEncouragementEvent,
     encouragementEl: dom.encouragement,
     flowFillEl: dom.flowFill,
@@ -242,7 +254,7 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
     state,
     getPractice: deps.getPractice,
     getMidiInput: deps.getMidiInput,
-    getPitchMedianFrames: () => deps.pitchMedianFrames,
+    getPitchMedianFrames: () => CoreOpts.PITCH_MEDIAN_FRAMES,
     config: deps.config,
     qhOptsMic: deps.coreOpts.qhOptsMic,
     psOpts: deps.coreOpts.psOpts,
@@ -297,5 +309,7 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
     updateDebugOverlay,
     getEnergy,
     invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
+    encState,
+    questState,
   };
 }

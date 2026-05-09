@@ -163,27 +163,20 @@
     const computeHarmonicity = PianoCore.computeHarmonicity;
 
     // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
+    // Encouragement / quest reducer state + onset/pitch hysteresis frames
+    // are owned by ShellGameUpdate (batch 116). The 4 option bags + the
+    // audio-offset default are still pulled here because shell-midi-handlers
+    // / shell-render-loop / shell-practice / settings-panel consume them.
     const clamp01 = PianoCore.clamp01;
     const _coreOpts = CoreOpts.createCoreOpts({
       config: CONFIG,
       detectChord: /** @type {any} */ (PianoCore.detectChord),
     });
-    const QH_OPTS_MIC = _coreOpts.qhOptsMic;
     const QH_OPTS_MIDI = _coreOpts.qhOptsMidi;
     const PS_OPTS = _coreOpts.psOpts;
     const CW_OPTS = _coreOpts.cwOpts;
     const WUF_OPTS = _coreOpts.wufOpts;
     const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
-    const ONSET_HYSTERESIS_FRAMES = CoreOpts.ONSET_HYSTERESIS_FRAMES;
-    const PITCH_MEDIAN_FRAMES = CoreOpts.PITCH_MEDIAN_FRAMES;
-    const _encState = PianoCore.initEncouragementState();
-    const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
-    const _questState = PianoCore.initQuestTrackerState();
-    // Share the underlying array so state.completedQuests stays in sync
-    // automatically (no per-tick copy needed).
-    _questState.completedIds = state.completedQuests;
-    const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
-    const QUEST_ALL_DONE = 'ALL_DONE';
 
     const _gameUpdate = ShellGameUpdate.createShellGameUpdate(/** @type {any} */ ({
       state,
@@ -191,13 +184,9 @@
       getMidiInput: () => midiInput,
       config: CONFIG,
       sessionRing, sessionRingCap: SESSION_RING_CAP,
-      onsetHysteresisFrames: ONSET_HYSTERESIS_FRAMES,
-      pitchMedianFrames: PITCH_MEDIAN_FRAMES,
       features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation },
       audio: _audio,
       coreOpts: _coreOpts,
-      encState: _encState, encOpts: _encOpts,
-      questState: _questState, questOpts: _questOpts, questAllDoneSentinel: QUEST_ALL_DONE,
       dom: DOM, t,
       spawnBurst, effectGoldenBurst, effectStarShower, triggerEffect,
       getScreen: _vp.getScreen,
@@ -264,7 +253,7 @@
       state, config: CONFIG, dom: DOM, t,
       loadJSON, saveJSON, stageLabel, formatTime, setupHiDPICanvas,
       sessionRing, sessionRingCap: SESSION_RING_CAP,
-      questState: _questState, encState: _encState,
+      questState: _gameUpdate.questState, encState: _gameUpdate.encState,
       getMidiState: () => midiState,
       particles, ripples,
       invalidateFlowCache: () => _gameUpdate.invalidateFlowCache(),
