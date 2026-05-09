@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-92 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,727 lines** (was
-5,100 at the prior NEXT refresh, **−3,373 across 42 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-94 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,629 lines** (was
+5,100 at the prior NEXT refresh, **−3,471 across 44 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
@@ -215,6 +215,26 @@ every commit.**
   guards removed (`osmd`, `DOM_ADDSONG`); double/triple-cast collapses on
   `ensureMidiAccess`, `gatherMidiInputs`, `attachMidiPort` / `detachMidiPort`.
   (-124, −6.7% — 1,851 → 1,727).
+- **batch 93 (commit `2f9033f`)** — dead-code sweep: 19 unused const + 7 unused
+  forwarder-function declarations removed (`FOCAL_LENGTH`, `NEAR_CLIPPING`,
+  `project3D`, `MAX_PARTICLES_3D`, `PERF_TIER`, `effectShimmer` /
+  `effectColorWave` / `effectGlowParticles` / `effectRadiance`, `STAR_TIERS`,
+  `BLE_MIDI_SERVICE` / `BLE_MIDI_CHAR`, `USER_DB_NAME`,
+  `collectSectionCandidates`, `_osmdInitPromise`, `defaultSongProgress`,
+  `notePitchClass`, `midiToFreq`, `drawStar` / `drawFlower`; forwarders
+  `acquireMic`, `detectLayout`, `mergeTiedNotes`, `userDbDelete`,
+  `libraryEntryFromGhFile`, `effectiveTempoPct`, `refreshMidiBadge`,
+  `clearIntroDiagCache`, `transitionToSection`; shell-local `safeLeft`).
+  Verified each via `grep -cE '\b<id>\b'`: no consumers anywhere. (-43, −2.5% —
+  1,727 → 1,684).
+- **batch 94 (commit `1189a60`)** — forwarder inlining + TDZ-guard
+  simplification: 4 OSMD-cursor forwarders inlined into `osmdAdapter` (each used
+  once); `spawnMidiNoteVisuals`, `noInputAvailable`, `KB_*` consts removed
+  (dead); 5 `typeof xxx === 'function' && xxx()` guards collapsed to direct
+  calls (function declarations are hoisted — no TDZ risk);
+  `typeof midiInput !== 'undefined' ? midiInput.enabled : false` →
+  `midiInput?.enabled ?? false` (same semantics, shorter). (-55, −3.3% — 1,684 →
+  1,629).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -353,11 +373,10 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **1,727 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,350
-net** across 22 batches in `685d5df` + `3785326` (batch 91) + `aa02e92` (batch
-92), plus the parallel `f3f226c` tie-aware OSMD cursor fix; **−7,273 net** since
-Phase 0a baseline).
+Start click) reports zero console errors. `legacy-app.js`: **1,629 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,448
+net** across 24 batches in `685d5df` + 91 / 92 / 93 / 94, plus the parallel
+`f3f226c` tie-aware OSMD cursor fix; **−7,371 net** since Phase 0a baseline).
 
 ---
 
