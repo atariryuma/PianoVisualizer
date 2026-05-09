@@ -1,195 +1,8 @@
     // @ts-check
     'use strict';
 
-    // ============================================================
-    // Phase 0c boundary types (JSDoc).
-    //
-    // These typedefs document the long-lived shapes that get passed
-    // around between most functions in this file. They're not enforced
-    // (checkJs is off; this file is too large to flip on without a
-    // major refactor pass), but:
-    //
-    //   * Editors respect them — IntelliSense gets meaningfully better.
-    //   * As Phase 0c extracts focused modules into TS, those modules
-    //     can reference these via `import('./legacy-app.js').StateShape`
-    //     so the boundary stays typed even before the legacy file
-    //     itself is converted.
-    //   * Future agents reading the file get a structured map of the
-    //     "what IS state.X, practice.X, midiState.X" question that
-    //     used to require grepping 7000+ lines.
-    //
-    // Add fields here as they become relevant to extraction. Don't
-    // try to mirror every field — these are BOUNDARY types, intended
-    // for cross-module communication.
-    //
-    // Style note: typedefs use the markerless form `@typedef Name`
-    // (NOT `@typedef {object} Name`). Under `checkJs: true` + strict,
-    // TS narrows `{object}`-marked typedefs to the bare lowercase
-    // `object` type — every property access on the typedef then errors
-    // as "does not exist on type 'object'". The markerless form lets
-    // the `@property` lines build the interface cleanly.
-    // ============================================================
-
-    /**
-     * The per-note record used by the practice lane, OSMD cursor walker,
-     * and scoring. Wider than @piano/core's `OsmdNote` — carries
-     * lane-render fields and per-section copies.
-     *
-     * @typedef OsmdLikeNote
-     * @property {number} midi               MIDI note (0–127).
-     * @property {'L'|'R'} hand              Hand assignment.
-     * @property {number} timeSec            Onset (s) at authored tempo. Always set on song.notes (ExpandedNote stage).
-     * @property {number} durSec             Duration (s) at authored tempo.
-     * @property {number} timeMs             Onset at the kid's chosen tempoPct. Set on practice.sectionNotes; song.notes carries this too as a redundant copy after `buildSectionNotes`.
-     * @property {number} durMs              Duration at the kid's chosen tempoPct.
-     * @property {number} measureIdx         0-based MusicXML measure index.
-     * @property {number} inBarQuarters      Position in the bar (quarter-note units).
-     * @property {boolean=} tieStart
-     * @property {boolean=} tieEnd
-     * @property {boolean=} hit              Set by the practice tick when matched.
-     * @property {boolean=} missed           Set when the hit window closes unmatched.
-     * @property {boolean=} _filtered        One-hand mode: pre-flagged hit so the cursor auto-skips.
-     * @property {number|null=} cursorJump   OSMD cursor target measure (rare; for repeat-jump notes). null on sequential notes.
-     * @property {number=}  holdStartMs      Set by onMidiNoteOn when this note becomes a pending hold.
-     * @property {number=}  expectedDurMs    Cached for finalizeNoteHold's duration scoring.
-     * @property {number=}  expectedEndMs    Cached for finalizeNoteHold's duration scoring.
-     * @property {number=}  onTimeMs         Cached for finalizeNoteHold's duration scoring.
-     */
-
-    /**
-     * @typedef PracticeStateShape
-     *   The cross-section practice transport state. Lives at module
-     *   scope as `practice`. Mode-specific fields (e.g. `ghostOn`)
-     *   are read by both the audio scheduler and the lane renderer.
-     * @property {boolean} enabled
-     * @property {number} sectionIdx
-     * @property {number} tempoPct                    60 / 75 / 90 / 100.
-     * @property {'guided'|'rhythm'|'listen'} mode
-     * @property {boolean} ghostOn
-     * @property {boolean} metronomeOn
-     * @property {boolean} fullSongMode               Listen-only: play every section back-to-back.
-     * @property {number} startAudioTime              Tone.now() at section start.
-     * @property {OsmdLikeNote[]} sectionNotes        Active section's note list.
-     * @property {number} currentNoteIdx              Next-to-resolve idx in sectionNotes.
-     * @property {number} hits
-     * @property {number} misses
-     * @property {number} timingScoreSum
-     * @property {number} durationScoreSum
-     * @property {number} durationScoredCount
-     * @property {Map<number, OsmdLikeNote>} pendingHolds  Note → OsmdLikeNote being held; finalizeNoteHold reads `holdStartMs` + `durMs` (set on hit + section build).
-     * @property {number} sectionCombo
-     * @property {number} sectionBestCombo
-     * @property {'L'|'R'|null} handFilter
-     * @property {number} audioOffsetMs
-     * @property {import('@piano/core').PracticeProgress|null} progress
-     * @property {boolean} _completing
-     * @property {ReturnType<typeof setTimeout>|null} [_completionTimer]
-     * @property {number} _lastProgUpdate
-     * @property {number} [_cursorScanIdx]            Per-frame note-scan position.
-     * @property {number} [_lastCursorNoteIdx]        Last cursor-walked target.
-     * @property {number} [_dbgNextLog]               Next ms timestamp at which to emit a debug log.
-     * @property {number} [_sectionTargetCount]       Total scoreable notes in active section.
-     * @property {{mode:string, secId:string, stars:number, unlockedTempo:number|null, unlockedSecKey:string|null, streakDays:number|null, fullSong?:boolean}|null} [_lastResult]
-     * @property {number} [laneDrawFromIdx]           Amortized cursor for lane-render culling.
-     * @property {{lhMin:number, lhMax:number, rhMin:number, rhMax:number}} [handRanges]
-     */
-
-    /**
-     * @typedef MidiStateShape
-     *   Live MIDI runtime state. Held under `midiState`.
-     * @property {Map<number, {velocity:number, onTimeMs:number, synColor?:string}>} activeNotes
-     * @property {boolean} sustainOn
-     * @property {Set<number>} sustainedNotes
-     * @property {{midi:number, timeMs:number}[]} recentOnsets   Chord-window deque.
-     * @property {string} lastChordName
-     * @property {number} lastChordTimeMs
-     */
-
-    /**
-     * @typedef MidiInputShape
-     *   Held under `midiInput`. Tracks the active Web MIDI / BLE-MIDI port +
-     *   coarse health flags consumed by the mic-vs-MIDI arbitration loop.
-     * @property {boolean} enabled
-     * @property {MIDIInput|{name:string}|null} port
-     * @property {boolean} _accessRequested
-     * @property {boolean} platformBlocked
-     * @property {number} [lastEventTime]
-     */
-
-    /**
-     * @typedef BestScoresShape
-     *   Persisted in localStorage as `pianoViz_best`. Returned from
-     *   `saveBestScores` and embedded in `state._lastSummary.bestStat`.
-     * @property {number} bestCombo
-     * @property {number} peakFlow
-     * @property {number} totalSessions
-     */
-
-    /**
-     * @typedef LastSummaryShape
-     *   Cached so `renderSessionSummaryText` can replay the same numbers when
-     *   the user toggles language without restarting the session.
-     * @property {number} bestCombo
-     * @property {number} stageIdx
-     * @property {number} elapsed
-     * @property {string[]} completedQuests
-     * @property {BestScoresShape} bestStat
-     */
-
-
-
-    /**
-     * @typedef SectionDef
-     *   Per-section quest layout in a song's sectionDefs array. Matches
-     *   `@piano/core`'s `BuildSectionsInputDef`: descKey + startMeasure
-     *   are required so the section assembler can deterministically
-     *   resolve the section's start window and i18n key.
-     * @property {string} id
-     * @property {string} nameKey
-     * @property {string} descKey
-     * @property {number} startMeasure
-     * @property {boolean=} isBoss
-     */
-
-    /**
-     * @typedef SongRec
-     *   Library song record — both built-in (fur_elise, alla_turca) and
-     *   user-added entries share this shape. Fields prefixed `_` are
-     *   load-time scratch / late-bound (XML cache, OSMD-derived BPM).
-     * @property {string} id
-     * @property {string} titleKey
-     * @property {string} composerKey
-     * @property {string=} icon
-     * @property {string} mxlUrl   Empty for user songs (use _isUser check instead).
-     * @property {string} xmlUrl
-     * @property {SectionDef[]=} sectionDefs
-     * @property {OsmdLikeNote[]|null} notes
-     * @property {number} totalSec
-     * @property {Array<{id:string, nameKey:string, descKey?:string, startMeasure?:number, startSec:number, endSec:number, isBoss?:boolean}>} sections
-     * @property {Array<{measure:number, repeat?:number}>} playbackOrder
-     * @property {boolean} _loaded
-     * @property {Promise<unknown>|null} _loadingPromise
-     * @property {string=} _xmlText
-     * @property {boolean=} _bpmRescaled
-     * @property {number=} bpm
-     * @property {string=} _userTitle
-     * @property {string=} _userComposer
-     * @property {boolean=} _isUser
-     * @property {string=} titleJp
-     * @property {string=} composerJp
-     * @property {Error|string=} _loadError
-     * @property {{accuracy:number, timing:number, stars:number}=} _lastResult
-     */
-
-    /**
-     * @typedef PrefsShape
-     *   Persisted user preferences (localStorage `pianoViz_prefs`).
-     * @property {number} theme               0..3
-     * @property {boolean} synesthesia
-     * @property {number|null} audioOffsetMs  null = auto-detect.
-     * @property {boolean} debug
-     * @property {'en'|'jp'} lang
-     */
+    // Phase 0c boundary JSDoc typedefs deleted — types now live in
+    // each per-module .ts file. Cast sites use /** @type {any} */.
 
     // PWA registration — failure is non-fatal (HTTPS required, self-signed certs may reject).
     if ('serviceWorker' in navigator) {
@@ -200,12 +13,6 @@
       });
     }
 
-    // Phase 0d batch 65: Remote logging cluster (HTTPS LAN dev-server
-    // forwarder + console overrides + window.onerror) moved to
-    // packages/web/src/remote-log.ts. Both the boolean enable flag
-    // and the queue function are kept under their legacy short names
-    // so the 29 callsites across this file (DIAG-FRAME, DIAG-FULLSONG,
-    // dumpLoadDiagnostics, etc.) keep working unchanged.
     const _remoteLog = RemoteLog.createRemoteLog();
     const REMOTE_LOG_ENABLED = _remoteLog.enabled;
     /** @param {string|object} msg */
@@ -214,51 +21,24 @@
 
     console.log("App Started: Piano Visualizer");
 
-    // Phase 0d batch 68: 200-line CONFIG literal + 14-line QUESTS
-    // table moved verbatim to packages/web/src/piano-config.ts.
-    // The shell still mutates MAX_PARTICLES / SHADOW_BLUR_ENABLED /
-    // AMBIENT_PARTICLE_CHANCE at boot from the perf-tier override
-    // (preserved below — search "CONFIG.MAX_PARTICLES =").
-    const CONFIG = /** @type {import('./piano-config').PianoConfig} */ (
-      /** @type {any} */ (PianoConfig.createPianoConfig())
+    const CONFIG = /** @type {any} */ (PianoConfig.createPianoConfig()
     );
 
-
-    // Phase 0d batch 66: 100-line DOM bag (every getElementById in
-    // the shell) moved to packages/web/src/dom-bag.ts. The bag is
-    // typed non-null because every entry is guaranteed to exist in
-    // index.html — the shell crashes on first DOM access otherwise.
     /** @type {Record<string, HTMLElement>} */
     const DOM = /** @type {any} */ (DomBag.createDomBag(document).bag);
     const ctx = /** @type {CanvasRenderingContext2D} */ (
       /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d')
     );
 
-    // Phase 0d batch 67: 130-line game-state initial values moved
-    // to packages/web/src/game-state-init.ts. Pre-declaring every
-    // dynamic field keeps V8's hidden class stable across the
-    // per-frame hot path; the factory returns a fresh object each
-    // call so a future full-reseed (post audio-recovery) can rebuild.
-    const state = /** @type {import('./game-state-init').InitialGameState} */ (
-      /** @type {any} */ (GameStateInit.createInitialGameState())
+    const state = /** @type {any} */ (GameStateInit.createInitialGameState()
     );
 
-    // ========================================
-    // Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime)
-    // ========================================
+    // ── Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime) ──
     const SESSION_RING_CAP = 100;
     const sessionRing = new Array(SESSION_RING_CAP);
     for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i] = { timeMs: 0, isPiano: false };
 
-    // ========================================
-    // Audio — dual analyser + software AGC
-    // ========================================
-    // Audio-graph singletons. Typed as non-null because every call-site
-    // reads them only after `initAudio()` has populated them; the IIFE
-    // bootstraps from `startBtn.click → initAudio → loop()`, so any
-    // code path that touches these post-init is guaranteed a live value.
-    // The casts pin TS to the post-init view; the runtime values are
-    // null until init, but no reader fires before that.
+    // ── Audio — dual analyser + software AGC ──
     /** @type {AudioContext} */
     let audioCtx = /** @type {AudioContext} */ (/** @type {unknown} */ (null));
     /** @type {AnalyserNode} */
@@ -278,35 +58,14 @@
     /** @type {MediaStreamAudioSourceNode | null} v13: rewireable source between gainNode and the live mic */
     let micSourceNode = null;
 
-    // Phase 0d batch 5: audio context + graph builder live in
-    // packages/web/src/audio-init.ts. Aliases keep the short identifiers
-    // working at all the legacy callsites unchanged.
     const MIC_CONSTRAINTS = AudioInit.MIC_CONSTRAINTS;
     const AUDIO_SAMPLE_RATE = AudioInit.AUDIO_SAMPLE_RATE;
     const createAudioContext = AudioInit.createAudioContext;
 
     async function initAudio() {
-      // [Bug fix 2026-05-09] Idempotent reuse of the AudioContext.
-      //
-      // The previous code unconditionally created a new AudioContext
-      // on every call. When the kid went back to the title screen
-      // and clicked ▶ Start again, this orphaned the previous ctx
-      // (and the gainNode / analyser graph attached to it). The
-      // result: the second ▶ Start built a new shell-side audio
-      // graph, but Tone.js was still bound to the original ctx (we
-      // intentionally never call Tone.setContext after init — see
-      // audio-init.ts header note). The Tone.Transport scheduling
-      // path silently no-ops against an orphaned ctx, the kid sees
-      // count-in beeps that never play, and listen mode appears to
-      // do nothing. Server.log timeline at 2026-05-09 03:03:24
-      // confirms: fresh AudioContext (currentTime=0.000) → Transport
-      // never started → user clicks Quit → Reset.
-      //
-      // The fix: skip the whole graph rebuild when audioCtx already
-      // exists and isn't closed. Just resume from suspended on
-      // re-entry. Tone's context stays the same across the session,
-      // so its Transport / synth state survives the title-round-trip
-      // intact.
+      // [Bug fix 2026-05-09] Idempotent re-entry: re-using the existing
+      // AudioContext keeps Tone.js's Transport binding intact so a
+      // title-round-trip doesn't silently break listen mode.
       if (audioCtx && audioCtx.state !== 'closed') {
         if (audioCtx.state === 'suspended') {
           try { await audioCtx.resume(); } catch (_e) { /* best-effort */ }
@@ -326,30 +85,14 @@
         console.log("AudioContext resumed @" + audioCtx.sampleRate + "Hz");
       }
       // [DIAG-AUDIOCTX] Watch for unexpected state transitions
-      // (suspended / interrupted) — these correlate with audio
-      // glitches and the playback-restart symptoms. Phase 0d batch 63:
-      // shared helper in audio-init.ts.
       AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED);
 
       // Audio graph (sourceless): gain → analyser, gain → onsetAnalyser.
-      // Phase 0d batch 63: deduped with rebuildAudioGraph — both paths
-      // build the same gain → analyser graph + reset prevSpectrum. The
-      // first-time call passes null for prevMicStream because the mic
-      // wire-up is decided in the MIDI-probe block below.
       rebuildAudioGraph(null);
 
-      // Phase 0d batch 64: 38-line MIDI-probe + 3-way input-source
-      // decision (MIDI-detected / iOS-WMB-skip / mic-acquire-with-
-      // timeout) folded into mic-lifecycle.ts decideInitialInputMode().
-      // The factory closes over its own deps; the shell only needs
-      // to hand over `initWebMIDI` + isAppleMobile + hasRequestMIDIAccess
-      // (all done at factory wire-up below — search "_micLifecycle").
       await _micLifecycle.decideInitialInputMode();
     }
 
-    // Phase 0d batch 56: mic acquire / suspend / resume (concurrency
-    // lock + privacy-LED hygiene + adaptiveSilenceRms reset) moved to
-    // packages/web/src/mic-lifecycle.ts.
     const _micLifecycle = MicLifecycle.createMicLifecycle(
       /** @type {import('./mic-lifecycle').MicLifecycleDeps} */ ({
         state: /** @type {any} */ (state),
@@ -365,11 +108,6 @@
         refreshIntroHint: () => {
           if (typeof refreshIntroHint === 'function') refreshIntroHint();
         },
-        // Phase 0d batch 64: input-mode decision deps. midiInput +
-        // initWebMIDI + isAppleMobile are forward-declared further
-        // down the file (function declarations hoist; consts are
-        // wrapped in thunks so the lookup happens at call-time
-        // when the audio session boots).
         midiInput: /** @type {any} */ ({
           get enabled() {
             return typeof midiInput !== 'undefined' ? midiInput.enabled : false;
@@ -384,15 +122,7 @@
     function suspendMic() { _micLifecycle.suspend(); }
     async function resumeMic() { return _micLifecycle.resume(); }
 
-    // ========================================
-    // Canvas
-    // ========================================
-    // Phase 0d batch 59: canvas resize + bg-stars maybeReinit + the
-    // initBgStars factory all moved into viewport-layout.ts. The
-    // shell keeps `let W` / `let H` / etc. as shadow vars so the 50+
-    // existing reads across legacy-app.js don't have to thread the
-    // dimensions bag through; they're updated from the factory's
-    // returned snapshot after each resize() call.
+    // ── Canvas ──
     /** @type {number} canvas width in CSS pixels */
     let W = 0;
     /** @type {number} canvas height in CSS pixels */
@@ -402,14 +132,15 @@
     let kbHeight = 50;
     let safeLeft = 0;
     let safeRight = 0;
+    const PERF_TIER_RESOLVED = PianoCore.detectPerfTier();
+    const PERF_PROFILE = PianoCore.PERF_PROFILES[PERF_TIER_RESOLVED];
     const _canvasResize = ViewportLayout.createCanvasResize({
       canvas: /** @type {HTMLCanvasElement} */ (DOM.canvas),
       ctx,
       isRunning: () => !!state.running,
       getStarCount: () => PERF_PROFILE.bgStarCount,
       initBackground: (opts) =>
-        /** @type {import('./viewport-layout').BgStarsField} */ (
-          /** @type {any} */ (PianoCore.initBackground(opts))
+        /** @type {any} */ (PianoCore.initBackground(opts)
         ),
     });
     function resize() {
@@ -426,27 +157,12 @@
     window.addEventListener('resize', resize);
 
     // Single source of truth for "where things live on the screen": JS
-    // decides the layout mode and measures the top UI cluster's bottom;
-    // CSS computes the regions from --top-cluster-bottom / --kb-height
-    // and the body[data-layout="..."] selectors. drawPracticeLane reads
-    // currentLayoutMode (cached below) to switch between stacked and
-    // split-h rendering.
-    // Phase 0d batch 28: syncLayout + refreshOsmdRect + onResizeBurst
-    // + cached OSMD rect + currentLayoutMode + per-write skip caches
-    // moved to packages/web/src/viewport-layout.ts. The shell holds
-    // the cachedOsmdRect ref so drawPracticeLane reads it every
-    // frame without going through the factory.
     const cachedOsmdRect = ViewportLayout.makeCachedOsmdRect();
     const _viewportLayout = ViewportLayout.createViewportLayout({
-      dom: {
-        practiceTopBar: DOM.practiceTopBar,
-        themeBar: DOM.themeBar,
-        osmdContainer: DOM.osmdContainer,
-      },
+      dom: { practiceTopBar: DOM.practiceTopBar, themeBar: DOM.themeBar, osmdContainer: DOM.osmdContainer, },
       getKbHeight: () => kbHeight,
       cachedOsmdRect,
     });
-    /** @returns {string} */
     function detectLayout() { return _viewportLayout.getCurrentLayoutMode(); }
     function refreshOsmdRect() { _viewportLayout.refreshOsmdRect(); }
     function syncLayout() { _viewportLayout.syncLayout(); }
@@ -462,38 +178,18 @@
       if (DOM.osmdContainer) new ResizeObserver(refreshOsmdRect).observe(DOM.osmdContainer);
     }
 
-    // ========================================
-    // Theme switching + persisted user preferences
-    // ========================================
-    /** @type {PrefsShape} */
-    const prefs = /** @type {any} */ ({
-      theme: 0,
-      synesthesia: false,
-      audioOffsetMs: null,   // null = auto-detect from AudioContext.outputLatency
-      debug: false,
-      lang: 'en'             // 'en' | 'jp' — practice-flow UI language
-    });
+    // ── Theme switching + persisted user preferences ──
+    const prefs = /** @type {any} */ (PracticeStateInit.createInitialPrefs()
+    );
     /** @template T @param {string} key @param {T} fallback @returns {T} */
-    // Phase 0d batch 23: prefs storage (loadJSON / saveJSON +
-    // sanitizePrefs accept-list) moved to packages/web/src/prefs-storage.ts.
-    // The shell rebinds to the legacy short names so the rest of the
-    // file (10 callsites + dev-mode self-test) keeps working.
     const _prefsStore = PrefsStorage.createJSONStore();
     /** @template T @param {string} key @param {T} fallback @returns {T} */
-    function loadJSON(key, fallback) { return _prefsStore.loadJSON(key, fallback); }
-    /** @param {string} key @param {unknown} val */
-    function saveJSON(key, val) { _prefsStore.saveJSON(key, val); }
+    /** @param {any} key @param {any} fallback */ function loadJSON(key, fallback) { return _prefsStore.loadJSON(key, fallback); }
+    /** @param {any} key @param {any} val */ function saveJSON(key, val) { _prefsStore.saveJSON(key, val); }
     Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
     function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
 
-    // ========================================
-    // i18n — practice-flow strings + t() (Phase 0d batch 4)
-    // ========================================
-    // Translation table + t() helper now live in @piano/core. The shell
-    // wires `prefs.lang` (reactive — read fresh on every call so language
-    // switches don't need a closure rebuild) and a `userResolver` for the
-    // synthetic `__userTitle:<id>` / `__userComposer:<id>` keys that
-    // pull from the in-memory SONGS map (built from IndexedDB at boot).
+    // ── i18n — practice-flow strings + t() (Phase 0d batch 4) ──
     /** @type {(key: string, vars?: Record<string, string|number>) => string} */
     const t = PianoCore.createT(PianoCore.T_STRINGS, {
       getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
@@ -506,38 +202,18 @@
       },
     });
 
-    // Phase 0d batch 62: applyI18n DOM walker moved to
-    // theme-controls.ts (sibling of setLang). Forwarder thunk lives
-    // here because the function is referenced before _themeControls
-    // is created (the createThemeControls call below uses a thunk
-    // for applyI18n to break the previous circular dep).
     function applyI18n() { _themeControls.applyI18n(); }
 
     // setLang moved to theme-controls.ts (Phase 0d batch 7a) — exposed
     // as `_themeControls.setLang` after createThemeControls() runs below.
 
-    // Stage label — Phase 0b.3: delegated to @piano/core.
     /** @param {import('./piano-config').PianoConfig['STAGES'][number]} stage */
     const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
 
-    // Phase 0d batch 7a: theme bar + synesthesia toggle + lang toggle
-    // moved to packages/web/src/theme-controls.ts. The shell still owns
-    // `applyI18n()` and `refreshSettingsPanel()`; the controls module
-    // calls back into them via the deps object.
-    // refreshSettingsPanel + applyI18n are forward-declared below /
-    // already declared above; we wire them through a thunk so a future
-    // re-order can't capture stale placeholder refs.
     const _themeControls = ThemeControls.createThemeControls({
-      prefs: /** @type {import('./theme-controls').ThemeControlsPrefs} */ (
-        /** @type {any} */ (prefs)
-      ),
-      state: /** @type {import('./theme-controls').ThemeControlsStateRef} */ (
-        /** @type {any} */ (state)
-      ),
+      prefs: /** @type {any} */ (prefs),
+      state: /** @type {any} */ (state),
       savePrefs,
-      // Phase 0d batch 62: applyI18n DOM walker now lives inside
-      // theme-controls.ts, so we just hand it the translator + the
-      // settings-panel refresh callback.
       t: (key) => t(key),
       refreshSettingsPanel: () => refreshSettingsPanel(),
     });
@@ -549,84 +225,30 @@
     applyTheme(prefs.theme);
     applySynesthesia(prefs.synesthesia);
 
-    // ========================================
-    // Settings panel
-    // ========================================
-    // Modal focus management helpers. modalFocus.open captures the element
-    // that had focus before the modal opened, moves focus to the first
-    // interactive descendant, and installs a Tab-cycling guard. Close
-    // restores focus and removes the guard. Called from every open/close
-    // pair so a keyboard / assistive-tech user can dismiss without a mouse
-    // and never tab into the (visually obscured) page beneath.
-    // Phase 0d batch 47: 57-line tab-trap + restore-focus helper moved
-    // to packages/web/src/modal-focus.ts.
+    // ── Settings panel ──
     const modalFocus = ModalFocus.createModalFocus({
       document,
       requestAnimationFrame: (cb) => requestAnimationFrame(cb),
     });
 
-    // Settings panel — Phase 0d batch 3: extracted to
-    // packages/web/src/settings-panel.ts. The shell wires the DOM bag +
-    // shared state refs (prefs, practice, state, midiInput) and forwards
-    // the few cross-module callbacks (rescanMidi, connectBleMidi,
-    // showSessionSummary). We forward-declare openSettings /
-    // closeSettings / refreshSettingsPanel because the ESC handler
-    // (line ~1865) and other call sites reference them by short name;
-    // the createSettingsPanel call site lower in the file rebinds them
-    // (search "settings-panel wire-up").
-    /** @type {() => void} */
-    let openSettings = () => {};
-    /** @type {() => void} */
-    let closeSettings = () => {};
-    /** @type {() => void} */
-    let refreshSettingsPanel = () => {};
-    // Section-editor + user-songs UI placeholders (Phase 0d batches 2 + 6).
-    // Both modals' lifecycle lives in their respective .ts modules; the
-    // placeholders here let the ESC handler + cross-cutting callsites
-    // reference the short names without TDZ surprises. Reassigned at the
-    // bottom-anchored wire-up site (search for "user-songs wire-up").
-    /** @type {(songId: string) => Promise<void>} */
-    let openSectionEditor = async () => {};
-    /** @type {() => void} */
-    let closeSectionEditor = () => {};
-    /** @type {() => void} */
-    let openAddSongModal = () => {};
-    /** @type {() => void} */
-    let closeAddSongModal = () => {};
-    /** @type {() => void} */
-    let renderUserSongButtons = () => {};
-    // Practice-flow placeholder — Phase 0d batch 7b. Reassigned after
-    // createPracticeFlow() runs lower in the file. The songBack click
-    // handler closes over this binding to drive returnToTitle without
-    // creating a circular dep on practice-flow.ts before the wire-up.
-    /** @type {() => void} */
-    let returnToTitle = () => {};
-    // Result-card placeholder — Phase 0d batch 10. Reassigned after
-    // createResultCard() runs near the bottom of the file. The
-    // practice-tick wire-up captures `completePracticeSection` via a
-    // thunk so the live binding is looked up at section-complete time,
-    // not at IIFE-eval time (which would hit TDZ).
-    /** @type {() => void} */
-    let completePracticeSection = () => {};
-    /** @type {() => void} */
-    let renderResultCard = () => {};
-    // Session-summary placeholders — Phase 0d batch 11. Reassigned at
-    // createSessionSummary() wire-up below. Settings-panel deps already
-    // pass `() => showSessionSummary()` (a thunk) so the late binding
-    // works through that path; langchange listener also late-binds.
-    /** @type {() => void} */
-    let showSessionSummary = () => {};
-    /** @type {(animate: boolean) => void} */
-    let renderSessionSummaryText = (_animate) => {};
+    // Forward-decl placeholders — reassigned by createXxx wire-ups
+    // further down. Avoids TDZ in ESC handler / langchange listener /
+    // settings-panel deps that close over the short names.
+    /** @type {() => void} */ let openSettings = () => {};
+    /** @type {() => void} */ let closeSettings = () => {};
+    /** @type {() => void} */ let refreshSettingsPanel = () => {};
+    /** @type {(songId: string) => Promise<void>} */ let openSectionEditor = async () => {};
+    /** @type {() => void} */ let closeSectionEditor = () => {};
+    /** @type {() => void} */ let openAddSongModal = () => {};
+    /** @type {() => void} */ let closeAddSongModal = () => {};
+    /** @type {() => void} */ let renderUserSongButtons = () => {};
+    /** @type {() => void} */ let returnToTitle = () => {};
+    /** @type {() => void} */ let completePracticeSection = () => {};
+    /** @type {() => void} */ let renderResultCard = () => {};
+    /** @type {() => void} */ let showSessionSummary = () => {};
+    /** @type {(animate: boolean) => void} */ let renderSessionSummaryText = (_animate) => {};
     /** @type {(combo: number, flow: number) => import('./session-summary').BestScores} */
-    let saveBestScores = (_c, _f) => /** @type {import('./session-summary').BestScores} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
-    // Phase 0d batch 61: single ordered ESC handler for every modal
-    // moved to modal-focus.ts createEscRouter(). Each route is a
-    // priority + isOpen() predicate + close() — the router sorts by
-    // priority and fires the topmost open one. SECEDIT + ADDSONG are
-    // forward-declared (their wire-up runs further down the file)
-    // so we read them through `typeof DOM_SECEDIT !== 'undefined'`
-    // guards inside the predicate thunks.
+    let saveBestScores = (_c, _f) => /** @type {any} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
     ModalFocus.createEscRouter({
       document,
       routes: [
@@ -664,36 +286,24 @@
       ],
     }).install();
 
-    // settings-panel wire-up moved below — see "settings-panel wire-up".
-    // Reason: createSettingsPanel needs `practice`, `midiInput`, and
-    // `DEFAULT_AUDIO_OFFSET_MS` which are declared further down the file.
-    // The forward-declared placeholders above are reassigned at the
-    // bottom-anchored call site (search for the matching marker comment).
+    // settings-panel wire-up runs below (after practice + midiInput +
+    // DEFAULT_AUDIO_OFFSET_MS are declared); applyDebug seed lives there.
 
-    // Phase 0d batch 70: applyDebug + click wire-up moved to
-    // settings-panel.ts createSettingsPanel(). The shell's seed call
-    // (`_settings.applyDebug(prefs.debug)`) lives at the panel
-    // wire-up site below — search "settings-panel wire-up".
-
-    // Language toggle wiring (en ↔ jp) lives in theme-controls.ts now.
-    // The shell still seeds the document language from persisted prefs on
-    // boot — applyI18n is the cross-cutting DOM walker, kept in shell.
+    // Boot-time i18n seed — set <html lang> + walk [data-i18n*] once.
     document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
     applyI18n();
     // Page loads on the title screen — body class drives the home-button hide
     // (no point in 🏠 when home is right here) and any future title-only styling.
     document.body.classList.add('title-screen');
     window.addEventListener('langchange', () => {
-      // Refresh hot-path caches read from the per-frame lane draw.
+      // Refresh hot-path caches + re-render screens with imperative
+      // (non-data-i18n) localized text — applyI18n only walks
+      // [data-i18n*], so these set-from-JS labels need explicit redraw.
       if (typeof activeNoteNames !== 'undefined') {
         activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
       }
       laneLabelL = t('laneLeft');
       laneLabelR = t('laneRight');
-
-      // Re-render every screen with imperatively-set localized text. applyI18n
-      // walks [data-i18n], but these elements don't carry that — they're set
-      // from JS at event time, so we have to refresh them ourselves.
       if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
       if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
         const sec = currentSong.sections?.[practice.sectionIdx];
@@ -704,177 +314,71 @@
       if (DOM.stageLabel && state.currentStage > 0) {
         DOM.stageLabel.textContent = stageLabel(CONFIG.STAGES[state.currentStage]);
       }
-      // Re-run the cached intro diagnostic in the new language (if one's showing).
       if (state.lastIntroDiag) state.lastIntroDiag();
     });
     // Lane labels — recomputed on lang change, used in the per-frame draw.
     let laneLabelL = t('laneLeft');
     let laneLabelR = t('laneRight');
 
-    // 3D projection — Phase 0b.3: delegated to @piano/core.
     // Adapter passes the closure W/H so call sites stay positional.
     const FOCAL_LENGTH = PianoCore.FOCAL_LENGTH;
     const NEAR_CLIPPING = PianoCore.NEAR_CLIPPING;
     /** @param {number} x @param {number} y @param {number} z @param {number} size */
     const project3D = (x, y, z, size) => PianoCore.project3D(x, y, z, size, { screenW: W, screenH: H });
 
-    // Particle system (3D) \u2014 Phase 0b.3: delegated to @piano/core.
-    // Monkey-patch core's Particle.prototype.draw so the legacy positional
-    // draw(c) signature continues to work everywhere \u2014 closures provide
-    // the deps that the new API takes via opts.
     /** @type {InstanceType<typeof PianoCore.Particle>[]} */
     let particles = [];
-    const _coreParticleDraw = PianoCore.Particle.prototype.draw;
-    PianoCore.Particle.prototype.draw = function (/** @type {CanvasRenderingContext2D} */ c) {
-      // [Bug fix 2026-05-09 — Issue 2 frame drops]
-      //
-      // useShadow gate had two conditions:
-      //   1. SHADOW_BLUR_ENABLED (perf-tier flag, true for high/mid)
-      //   2. particles.length < 300 (auto-disable above the cap)
-      //
-      // Server.log [DIAG-FRAME] analysis revealed dt=33-50ms spikes
-      // during active listen-mode playback with particles=159-380 —
-      // shadowBlur on the per-particle ctx is the dominant cost on
-      // Canvas2D (forces software raster on every render). Disabling
-      // shadowBlur during active practice cuts per-particle frame
-      // time roughly in half.
-      //
-      // Why only during practice: during free-play / on the title
-      // screen, the particle effects are the main visual interest
-      // and the kid isn't audio-sensitive. During practice the kid
-      // is focused on playing — they need stutter-free playback +
-      // count-in beeps, not shadow halos.
-      return _coreParticleDraw.call(this, c, {
-        screenW: W,
-        screenH: H,
-        useShadow:
-          CONFIG.SHADOW_BLUR_ENABLED &&
-          particles.length < 300 &&
-          !practice.enabled,
-      });
-    };
-    const Particle = PianoCore.Particle;
+    /** @type {InstanceType<typeof PianoCore.Ripple>[]} */
+    let ripples = [];
+    const _particleEffects = ParticleEffects.createParticleEffects({
+      pianoCore: /** @type {any} */ (PianoCore),
+      getScreen: () => ({ W, H }),
+      config: /** @type {any} */ (CONFIG),
+      state: /** @type {any} */ (state),
+      // `practice` is declared further down the file — use a getter
+      // proxy so .enabled is read at call-time (post-init), not at
+      // factory-build time (TDZ).
+      practice: /** @type {import('./particle-effects').ParticleEffectsPracticeRef} */ (
+        /** @type {any} */ ({
+          get enabled() {
+            return typeof practice !== 'undefined' ? practice.enabled : false;
+          },
+        })
+      ),
+      particles: /** @type {any} */ (particles),
+      ripples: /** @type {any} */ (ripples),
+      perfTier: PERF_TIER_RESOLVED,
+    });
+    const Particle = _particleEffects.Particle;
+    const Ripple = _particleEffects.Ripple;
+    const PERF_TIER = _particleEffects.PERF_TIER;
+    const MAX_PARTICLES_3D = _particleEffects.MAX_PARTICLES_3D;
+    const getNoteColor = _particleEffects.getNoteColor;
+    const spawnBurst = _particleEffects.spawnBurst;
+    const spawnStream = _particleEffects.spawnStream;
+    const effectGlowPulse = _particleEffects.effectGlowPulse;
+    const effectGlowParticles = _particleEffects.effectGlowParticles;
+    const effectColorWave = _particleEffects.effectColorWave;
+    const effectStarShower = _particleEffects.effectStarShower;
+    const effectFlowerBurst = _particleEffects.effectFlowerBurst;
+    const effectShimmer = _particleEffects.effectShimmer;
+    const effectRadiance = _particleEffects.effectRadiance;
+    const effectGoldenBurst = _particleEffects.effectGoldenBurst;
+    const triggerEffect = _particleEffects.triggerEffect;
 
-    // drawStar / drawFlower — Phase 0b.3: drop-in from @piano/core.
+    // drawStar / drawFlower — drop-in from @piano/core (still used by
+    // other modules).
     const drawStar = PianoCore.drawStar;
     const drawFlower = PianoCore.drawFlower;
 
-    // Device performance tier — Phase 0b.3: delegated to @piano/core.
-    // detectPerfTier() applies the same Apple-Silicon/iPad/cores/mem heuristic
-    // and respects localStorage.pianoViz_perfTier override.
-    const PERF_TIER = PianoCore.detectPerfTier();
-    const PERF_PROFILE = PianoCore.PERF_PROFILES[PERF_TIER];
-    console.log('[PERF] tier=' + PERF_TIER + ' particles=' + PERF_PROFILE.maxParticles3D
-      + ' shadowBlur=' + PERF_PROFILE.shadowBlur);
-
-    // Override the static CONFIG flags so existing reads pick up the tier.
-    CONFIG.SHADOW_BLUR_ENABLED = PERF_PROFILE.shadowBlur;
-    CONFIG.MAX_PARTICLES = PERF_PROFILE.maxParticles3D + 200;   // 2D + 3D combined cap
-    CONFIG.AMBIENT_PARTICLE_CHANCE = PERF_PROFILE.ambientChance;
-
-    const MAX_PARTICLES_3D = PERF_PROFILE.maxParticles3D;
-    // Sentinel for state.activeQuestId when every quest in CONFIG.QUESTS is cleared.
+    // Sentinel for state.activeQuestId when every quest in
+    // CONFIG.QUESTS is cleared.
     const QUEST_ALL_DONE = 'ALL_DONE';
 
-    // getNoteColor — Phase 0b.3: adapter passes legacy CONFIG.NOTE_COLORS.
-    /** @param {string} noteName */
-    const getNoteColor = (noteName) => PianoCore.getNoteColor(noteName, CONFIG.NOTE_COLORS);
-
-    // spawnBurst / spawnStream — Phase 0b.3: adapter passes legacy closure
-    // state (W/H/themeColors/flow/MAX_PARTICLES_3D) via opts so call sites
-    // stay positional.
-    /** @param {string=} overrideColor */
-    const _spawnOpts = (overrideColor) => ({
-      screenW: W,
-      screenH: H,
-      themeColors: CONFIG.THEMES[state.currentTheme].colors,
-      flow: state.flow,
-      // [Bug fix 2026-05-09 — Issue 2 frame drops] Hard-cap the
-      // burst pool at 200 during practice. Each note-hit spawns
-      // 5-30 particles; without this cap a 4-hits/sec listen run
-      // can chain to 600+ resident particles within 5 seconds and
-      // every render frame pushes 30-50ms.
-      maxParticles: practice.enabled ? 200 : MAX_PARTICLES_3D,
-      overrideColor,
-    });
-    /** @param {number} screenX @param {number} screenY @param {number} count @param {number} energy @param {string=} overrideColor */
-    const spawnBurst = (screenX, screenY, count, energy, overrideColor) =>
-      PianoCore.spawnBurst(particles, screenX, screenY, count, energy, _spawnOpts(overrideColor));
-    /** @param {number} screenX @param {number} screenY @param {number} energy @param {string=} overrideColor */
-    const spawnStream = (screenX, screenY, energy, overrideColor) =>
-      PianoCore.spawnStream(particles, screenX, screenY, energy, _spawnOpts(overrideColor));
-
-    // Encouragement effects — Phase 0b.3: 8 effects + triggerEffect dispatcher
-    // delegated to @piano/core via a single deps-bag adapter.
-    const _effectDeps = () => ({
-      particles,
-      ripples,
-      themeColors: CONFIG.THEMES[state.currentTheme].colors,
-      screenW: W,
-      screenH: H,
-      // [Bug fix 2026-05-09 — Issue 2 frame drops] Same 200-cap
-      // during practice as _spawnOpts above. Encouragement effects
-      // (golden-burst, shimmer, etc.) fire on combos and would
-      // otherwise burst 30-100 particles into an already-saturated
-      // pool.
-      maxParticles: practice.enabled ? 200 : MAX_PARTICLES_3D,
-      state, // EffectGameState slice — effects mutate glowPulseIntensity, shimmerPhase, shimmerStartMs
-    });
-    const effectGlowPulse = () => PianoCore.effectGlowPulse(_effectDeps());
-    const effectGlowParticles = () => PianoCore.effectGlowParticles(_effectDeps());
-    const effectColorWave = () => PianoCore.effectColorWave(_effectDeps());
-    /** @param {number=} count */
-    const effectStarShower = (count) => PianoCore.effectStarShower(_effectDeps(), count);
-    const effectFlowerBurst = () => PianoCore.effectFlowerBurst(_effectDeps());
-    const effectShimmer = () => PianoCore.effectShimmer(_effectDeps());
-    const effectRadiance = () => PianoCore.effectRadiance(_effectDeps());
-    const effectGoldenBurst = () => PianoCore.effectGoldenBurst(_effectDeps());
-    /** @param {string} name */
-    const triggerEffect = (name) => PianoCore.triggerEffect(name, _effectDeps());
-
-    // Encouragement tier escalator — Phase 0b.3: state machine in @piano/core.
-    // Legacy state.currentEncouragementTier / lastEncouragementTimeMs /
-    // encouragementHideTimeMs are mirrored from the core state each tick so
-    // existing reads (resetSession, quest predicates, debug overlay) keep
-    // working unchanged.
     const _encState = PianoCore.initEncouragementState();
     const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
-    /** @param {import('@piano/core').EncouragementOutput} out */
-    // Phase 0d batch 44: _showEncouragementUI/_mirrorEncStateToLegacy
-    // collapsed into HudUpdate.createHudUpdate. The mirror call from
-    // resetSession is inlined below at the reset site.
-
-    // Ripples — Phase 0b.3: delegated to @piano/core.
-    // Same monkey-patch pattern as Particle: keep legacy positional
-    // r.update() / r.draw(c) call sites by injecting closures into the
-    // shared prototype.
-    /** @type {InstanceType<typeof PianoCore.Ripple>[]} */
-    let ripples = [];
-    const _coreRippleUpdate = PianoCore.Ripple.prototype.update;
-    PianoCore.Ripple.prototype.update = function () {
-      return _coreRippleUpdate.call(this, { flow: state.flow });
-    };
-    const _coreRippleDraw = PianoCore.Ripple.prototype.draw;
-    PianoCore.Ripple.prototype.draw = function (/** @type {CanvasRenderingContext2D} */ c) {
-      // [Bug fix 2026-05-09 — Issue 2 frame drops] Same shadowBlur
-      // disable as Particle.draw above. Ripples spawn 1-3 per note
-      // hit during practice; with shadowBlur on each ripple costs
-      // 2-4ms; multi-ripple frames push past the 16.7 ms budget.
-      return _coreRippleDraw.call(this, c, {
-        flow: state.flow,
-        useShadow:
-          CONFIG.SHADOW_BLUR_ENABLED && ripples.length < 15 && !practice.enabled,
-      });
-    };
-    const Ripple = PianoCore.Ripple;
 
     // ========================================
-    // Background composites — Phase 0b.3: delegated to @piano/core.
-    // Star field stored as { stars: [...] } via initBackground; drawBgStars
-    // mutates the twinkle phase in-place. Aurora + flowers are pure draws.
-    // Phase 0d batch 59: the bg-stars field + initBgStars factory now
-    // live inside _canvasResize (declared above). The shell only
-    // reads the field through getBgStars() at draw time.
     const _themeColors = () => CONFIG.THEMES[state.currentTheme].colors;
     /** @param {number} _time */
     const drawBgStars = (_time) => {
@@ -901,13 +405,6 @@
         timeMs: time,
       });
 
-    // ========================================
-    // Audio analysis — Phase 0b.3: delegated to @piano/core.
-    // ========================================
-    // YIN pitch detection, freq-to-note, 4 spectral features, and the v9
-    // harmonicity gate are all drop-in replaced by the bundle. Same
-    // algorithms, same defaults (CONFIG values match core's DEFAULTS).
-    // The scratch buffers (_diffBuf / _cmndfBuf) live inside core's module.
     const detectPitchYIN = PianoCore.detectPitchYIN;
     const freqToNote = PianoCore.freqToNote;
     const computeSpectralFlatness = PianoCore.computeSpectralFlatness;
@@ -916,42 +413,13 @@
     const coefficientOfVariation = PianoCore.coefficientOfVariation;
     const computeHarmonicity = PianoCore.computeHarmonicity;
 
-    // ========================================
-    // Multi-Feature Onset Detection (v9 — with harmonicity)
-    // ========================================
-    // Phase 0d batch 40: 152-line multi-feature onset detector
-    // (5-condition gate + adaptive flux threshold + practice-mode
-    // hysteresis + AGC voice-suppression counters) moved to
-    // packages/web/src/onset-detect.ts.
-    const _onsetDetectDeps = /** @type {import('./onset-detect').OnsetDetectDeps} */ ({
+    // ── Multi-Feature Onset Detection (v9 — with harmonicity) ──
+    const _onsetDetectDeps = OnsetDetect.buildOnsetDetectDeps({
       state: /** @type {any} */ (state),
       getPractice: () => /** @type {any} */ (practice),
-      tuning: {
-        pitchMinHz: CONFIG.PITCH_MIN_HZ,
-        fluxFreqMinHz: CONFIG.FLUX_FREQ_MIN_HZ,
-        fluxFreqMaxHz: CONFIG.FLUX_FREQ_MAX_HZ,
-        onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS,
-        onsetSpreadMinChange: CONFIG.ONSET_SPREAD_MIN_CHANGE,
-        onsetSpreadThreshold: CONFIG.ONSET_SPREAD_THRESHOLD,
-        onsetSpreadMax: CONFIG.ONSET_SPREAD_MAX,
-        flatnessPianoMin: CONFIG.FLATNESS_PIANO_MIN,
-        crestVoiceMax: CONFIG.CREST_VOICE_MAX,
-        spectralFluxThreshold: CONFIG.SPECTRAL_FLUX_THRESHOLD,
-        spectralFluxAdaptiveK: CONFIG.SPECTRAL_FLUX_ADAPTIVE_K,
-        spectralFluxHistorySize: CONFIG.SPECTRAL_FLUX_HISTORY_SIZE,
-        centroidHistorySize: CONFIG.CENTROID_HISTORY_SIZE,
-        harmonicityMin: CONFIG.HARMONICITY_MIN,
-        harmonicityMinPractice: CONFIG.HARMONICITY_MIN_PRACTICE,
-        onsetCooldownMs: CONFIG.ONSET_COOLDOWN_MS,
-        getOnsetHysteresisFrames: () => ONSET_HYSTERESIS_FRAMES,
-        agcVoiceRmsMin: CONFIG.AGC_VOICE_RMS_MIN,
-        agcVoiceRejectCount: CONFIG.AGC_VOICE_REJECT_COUNT,
-        agcVoiceSuppressMs: CONFIG.AGC_VOICE_SUPPRESS_MS,
-      },
-      features: {
-        computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid,
-        computeHarmonicity, coefficientOfVariation,
-      },
+      config: CONFIG,
+      getOnsetHysteresisFrames: () => ONSET_HYSTERESIS_FRAMES,
+      features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation, },
       getOnsetAnalyser: () => onsetAnalyser,
       getOnsetDataArray: () => onsetDataArray,
       getAudioCtx: () => audioCtx,
@@ -961,12 +429,7 @@
       return OnsetDetect.updateMultiFeatureOnset(timeMs, currentPitchHz, _onsetDetectDeps);
     }
 
-    // ========================================
-    // Session Confidence Layer
-    // ========================================
-    // Phase 0d batch 41: 100-line session-confidence ring buffer +
-    // state machine + sessionStatus DOM driver moved to
-    // packages/web/src/session-confidence-ui.ts.
+    // ── Session Confidence Layer ──
     const _sessionConfidenceDeps = /** @type {import('./session-confidence-ui').SessionConfidenceDeps} */ ({
       state: /** @type {any} */ (state),
       sessionRing,
@@ -988,10 +451,6 @@
       SessionConfidenceUi.updateSessionConfidence(timeMs, isPianoDetected, _sessionConfidenceDeps);
     }
 
-    // v10: Magic Quest System \u2014 Phase 0b.3: state machine in @piano/core.
-    // _questState owns completedIds + lastCheckMs internally (mirrored back
-    // to legacy state.completedQuests / state.lastQuestCheckMs for any
-    // outside reader: summary cards, save/load, debug overlay).
     const _questState = PianoCore.initQuestTrackerState();
     // Share the underlying array so state.completedQuests stays in sync
     // automatically (no per-tick copy needed).
@@ -999,9 +458,6 @@
     const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
 
     /** @param {number} timeMs */
-    // Phase 0d batch 46: 58-line quest-state per-frame reducer +
-    // celebration UI dispatcher moved to packages/web/src/
-    // quest-state-update.ts.
     const _questStateUpdate = QuestStateUpdate.createQuestStateUpdate(
       /** @type {import('./quest-state-update').QuestUpdateDeps} */ ({
         state: /** @type {any} */ (state),
@@ -1011,14 +467,7 @@
         applyQuestTick: PianoCore.applyQuestTick,
         observation: state, // quest.condition reads state.combo, state.flow, etc.
         questOpts: _questOpts,
-        dom: {
-          toastTitle: DOM.toastTitle,
-          toastSub: DOM.toastSub,
-          questToast: DOM.questToast,
-          questLabel: DOM.questLabel,
-          questDots: DOM.questDots,
-          questDisplay: DOM.questDisplay,
-        },
+        dom: { toastTitle: DOM.toastTitle, toastSub: DOM.toastSub, questToast: DOM.questToast, questLabel: DOM.questLabel, questDots: DOM.questDots, questDisplay: DOM.questDisplay, },
         t,
         spawnBurst,
         effectGoldenBurst,
@@ -1027,106 +476,37 @@
         toastHideMs: 2600,
       })
     );
-    /** @param {number} timeMs */
-    function updateQuestState(timeMs) { _questStateUpdate.tick(timeMs); }
+    /** @param {any} timeMs */ function updateQuestState(timeMs) { _questStateUpdate.tick(timeMs); }
 
-    // ========================================
-    // Quality Scoring — simplified for kids
-    // ========================================
+    // ── Quality Scoring — simplified for kids ──
 
-    // Phase 0d batch 45: 54-line quality-score per-frame reducer +
-    // its three compute-axis adapters + the growth-trend / coaching-
-    // feedback wrappers all moved to packages/web/src/quality-update.ts.
-    // We still need clamp01 for unrelated callers below.
     const clamp01 = PianoCore.clamp01;
 
-    // Per-onset ring-buffer maintenance — Phase 0b.3: delegated to
-    // @piano/core/state/quality-history. Mic onset detector and MIDI note-on
-    // both feed the same three buffers (noteOnsetTimes / ioiHistory /
-    // amplitudeHistory); centralizing here keeps debounce + IOI window
-    // identical aside from each path's own debounceMs preference.
-    const QH_OPTS_MIC = {
-      debounceMs: 80,
-      minIoiMs: 100,
-      maxIoiMs: 5000,
-      ioiHistorySize: CONFIG.IOI_HISTORY_SIZE,
-      amplitudeHistorySize: CONFIG.AMPLITUDE_HISTORY_SIZE,
-    };
-    const QH_OPTS_MIDI = { ...QH_OPTS_MIC, debounceMs: 30 };
+    // moved to packages/web/src/core-opts.ts.
+    const _coreOpts = CoreOpts.createCoreOpts({
+      config: CONFIG,
+      detectChord: /** @type {any} */ (PianoCore.detectChord),
+    });
+    const QH_OPTS_MIC = _coreOpts.qhOptsMic;
+    const QH_OPTS_MIDI = _coreOpts.qhOptsMidi;
+    const PS_OPTS = _coreOpts.psOpts;
+    const CW_OPTS = _coreOpts.cwOpts;
+    const WUF_OPTS = _coreOpts.wufOpts;
 
-    // Pitch stability — Phase 0b.3: delegated to @piano/core/state/pitch-stability.
-    // Mic onsets feed pitchHzToSemitones(pitchHz); MIDI feeds midiNum directly.
-    // Both produce continuous-MIDI semitones, so source-switching mid-session
-    // keeps the prior-pitch comparison meaningful (legacy used two parallel
-    // trackers — `state.lastPitch` in Hz and `state.lastMidiNoteForStability`
-    // in MIDI int — and kept them weakly synchronized).
-    const PS_OPTS = {
-      semitoneThreshold: CONFIG.STABILITY_SEMITONE_THRESHOLD,
-      growth: CONFIG.STABILITY_GROWTH,
-      decayOnJump: CONFIG.STABILITY_DECAY_GOOD,
-      idleHalfLifeSec: 5.0,
-      activePlayRate: 0.005,
-      activePlayFloor: 0.2,
-    };
-
-    // Chord aggregation window — Phase 0b.3: delegated to
-    // @piano/core/audio/chord-window. Reducer mutates midiState's recentOnsets
-    // / lastChordName / lastChordTimeMs in place; downstream renderers read
-    // those fields off the same object so wiring is one call per onset.
-    // Note: pull detectChord straight off PianoCore (the local `const
-    // detectChord = PianoCore.detectChord` alias lives ~3000 lines below
-    // this point, which would put us in its TDZ at module-init time).
-    const CW_OPTS = {
-      windowMs: 80,
-      minNotes: 3,
-      repeatCooldownMs: 600,
-      detectChord: PianoCore.detectChord,
-    };
-
-    // Wake-up flash — Phase 0b.3: delegated to @piano/core/state/wake-up-flash.
-    // Half-life ≈0.071s matches the legacy 60Hz `*= 0.85`-per-frame feel
-    // (log(0.5)/log(0.85) ≈ 4.27 frames @ 60fps), but the new decay is time-
-    // based so 144Hz screens don't fade twice as fast as 60Hz ones.
-    const WUF_OPTS = { triggerLevel: 0.2, halfLifeSec: 0.071 };
-
-    // Phase 0d batch 45: per-frame quality-score reducer moved to
     // packages/web/src/quality-update.ts.
     const _qualityUpdate = QualityUpdate.createQualityUpdate(
       /** @type {import('./quality-update').QualityUpdateDeps} */ ({
         state: /** @type {any} */ (state),
-        tuning: {
-          updateIntervalMs: CONFIG.SCORE_UPDATE_INTERVAL_MS,
-          rhythmWeight: CONFIG.SCORE_RHYTHM_WEIGHT,
-          dynamicsWeight: CONFIG.SCORE_DYNAMICS_WEIGHT,
-          stabilityWeight: CONFIG.SCORE_STABILITY_WEIGHT,
-          smoothing: CONFIG.SCORE_SMOOTHING,
-          displayedScoreFloor: 0.25,
-        },
-        scoringOpts: {
-          ioiIdealCV: CONFIG.IOI_IDEAL_CV,
-          ioiMaxCV: CONFIG.IOI_MAX_CV,
-          dynamicsIdealCVMin: CONFIG.DYNAMICS_IDEAL_CV_MIN,
-          dynamicsIdealCVMax: CONFIG.DYNAMICS_IDEAL_CV_MAX,
-          growthWindowMs: CONFIG.GROWTH_WINDOW_MS,
-        },
-        fns: {
-          computeRhythmScore: PianoCore.computeRhythmScore,
-          computeDynamicsScore: PianoCore.computeDynamicsScore,
-          computeStabilityScore: PianoCore.computeStabilityScore,
-          updateGrowthTrend: PianoCore.updateGrowthTrend,
-          buildCoachingFeedback: PianoCore.buildCoachingFeedback,
-        },
+        tuning: { updateIntervalMs: CONFIG.SCORE_UPDATE_INTERVAL_MS, rhythmWeight: CONFIG.SCORE_RHYTHM_WEIGHT, dynamicsWeight: CONFIG.SCORE_DYNAMICS_WEIGHT, stabilityWeight: CONFIG.SCORE_STABILITY_WEIGHT, smoothing: CONFIG.SCORE_SMOOTHING, displayedScoreFloor: 0.25, },
+        scoringOpts: { ioiIdealCV: CONFIG.IOI_IDEAL_CV, ioiMaxCV: CONFIG.IOI_MAX_CV, dynamicsIdealCVMin: CONFIG.DYNAMICS_IDEAL_CV_MIN, dynamicsIdealCVMax: CONFIG.DYNAMICS_IDEAL_CV_MAX, growthWindowMs: CONFIG.GROWTH_WINDOW_MS, },
+        fns: { computeRhythmScore: PianoCore.computeRhythmScore, computeDynamicsScore: PianoCore.computeDynamicsScore, computeStabilityScore: PianoCore.computeStabilityScore, updateGrowthTrend: PianoCore.updateGrowthTrend, buildCoachingFeedback: PianoCore.buildCoachingFeedback, },
         qualityScoreEl: DOM.qualityScore,
         t,
       })
     );
-    /** @param {number} timeMs */
-    function updateQualityScores(timeMs) { _qualityUpdate.tick(timeMs); }
+    /** @param {any} timeMs */ function updateQualityScores(timeMs) { _qualityUpdate.tick(timeMs); }
 
-    // ========================================
-    // Software AGC — with v9 voice suppression
-    // ========================================
-    // Phase 0d batch 43: 25-line software AGC reducer moved to
+    // ── Software AGC — with v9 voice suppression ──
     // packages/web/src/agc-controller.ts.
     const _agcDeps = /** @type {import('./agc-controller').AgcControllerDeps} */ ({
       state: /** @type {any} */ (state),
@@ -1148,43 +528,17 @@
       AgcController.updateAGC(timeMs, postGainRms, _agcDeps);
     }
 
-    // ========================================
-    // Game Logic — 4-layer architecture (v9)
-    // ========================================
-    // Phase 0d batch 42: 173-line per-frame game-state reducer moved to
-    // packages/web/src/game-state-update.ts. Deps wire-up references
-    // hoisted function declarations from later in this scope.
-    const _gameStateDeps = /** @type {import('./game-state-update').GameStateUpdateDeps} */ ({
+    // ── Game Logic — 4-layer architecture (v9) ──
+    const _gameStateDeps = GameStateUpdate.buildGameStateUpdateDeps({
       state: /** @type {any} */ (state),
       getPractice: () => /** @type {any} */ (practice),
       getMidiInput: () => /** @type {any} */ (midiInput),
       getPitchMedianFrames: () => PITCH_MEDIAN_FRAMES,
-      tuning: {
-        pitchMinHz: CONFIG.PITCH_MIN_HZ,
-        pitchMinHzPractice: CONFIG.PITCH_MIN_HZ_PRACTICE,
-        pitchMaxHz: CONFIG.PITCH_MAX_HZ,
-        confidenceThreshold: CONFIG.CONFIDENCE_THRESHOLD,
-        goodNoteRms: CONFIG.GOOD_NOTE_RMS,
-        onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS,
-        comboWindowMs: CONFIG.COMBO_WINDOW_MS,
-        silenceDecayStartMs: CONFIG.SILENCE_DECAY_START_MS,
-        silenceHardDecayMs: CONFIG.SILENCE_HARD_DECAY_MS,
-        flowDecaySoft: CONFIG.FLOW_DECAY_SOFT,
-        flowDecayHard: CONFIG.FLOW_DECAY_HARD,
-        comboDecayRate: CONFIG.COMBO_DECAY_RATE,
-        noiseRmsThreshold: CONFIG.NOISE_RMS_THRESHOLD,
-        noisePenaltyCooldownMs: CONFIG.NOISE_PENALTY_COOLDOWN_MS,
-        flowNoisePenalty: CONFIG.FLOW_NOISE_PENALTY,
-        comboNoisePenalty: CONFIG.COMBO_NOISE_PENALTY,
-        flowGainBase: CONFIG.FLOW_GAIN_BASE,
-        flowGainComboMax: CONFIG.FLOW_GAIN_COMBO_MAX,
-        flowGainStabilityMax: CONFIG.FLOW_GAIN_STABILITY_MAX,
-        flowGainQualityMax: CONFIG.FLOW_GAIN_QUALITY_MAX,
-      },
-      stages: /** @type {any} */ (CONFIG.STAGES),
+      config: CONFIG,
       qhOptsMic: QH_OPTS_MIC,
       psOpts: PS_OPTS,
-      core: {
+      // PianoCore signatures are slightly wider than the consumed
+      core: /** @type {any} */ ({
         applyOnsetToHistory: PianoCore.applyOnsetToHistory,
         applyOnsetPitch: PianoCore.applyOnsetPitch,
         applyActivePlay: PianoCore.applyActivePlay,
@@ -1192,7 +546,7 @@
         stageForFlow: PianoCore.stageForFlow,
         classifyStageTransition: PianoCore.classifyStageTransition,
         pitchHzToSemitones: PianoCore.pitchHzToSemitones,
-      },
+      }),
       updateMultiFeatureOnset,
       updateSessionConfidence,
       updateQualityScores,
@@ -1209,11 +563,8 @@
     function updateGameState(timeMs, dt, pitchResult) {
       return GameStateUpdate.updateGameState(timeMs, dt, pitchResult, _gameStateDeps);
     }
-    // ========================================
-    // v9: updateHUD — encouragement instead of numbers
-    // ========================================
+    // ── v9: updateHUD — encouragement instead of numbers ──
     /** @param {number} timeMs */
-    // Phase 0d batch 44: HUD writer (encouragement banner + flow gauge)
     // moved to packages/web/src/hud-update.ts.
     const _hudUpdate = HudUpdate.createHudUpdate(
       /** @type {import('./hud-update').HudUpdateDeps} */ ({
@@ -1227,12 +578,9 @@
         triggerEffect,
       })
     );
-    /** @param {number} timeMs */
-    function updateHUD(timeMs) { _hudUpdate.tick(timeMs); }
+    /** @param {any} timeMs */ function updateHUD(timeMs) { _hudUpdate.tick(timeMs); }
 
-    // ========================================
-    // Debug overlay (v9) — Phase 0d batch 44.
-    // ========================================
+    // ── Debug overlay (v9) — Phase 0d batch 44. ──
     const _debugOverlay = HudUpdate.createDebugOverlay(
       /** @type {import('./hud-update').DebugOverlayDeps} */ ({
         state: /** @type {any} */ (state),
@@ -1243,9 +591,7 @@
     );
     function updateDebugOverlay() { _debugOverlay.tick(); }
 
-    // ========================================
-    // Energy calculation
-    // ========================================
+    // ── Energy calculation ──
     function getEnergy() {
       if (!analyser || state.micSuspended) return 0;
       analyser.getByteFrequencyData(dataArray);
@@ -1257,198 +603,69 @@
       return sum / ((e - s) * 255);
     }
 
-    // ========================================
-    // Main Loop
-    // ========================================
+    // ── Main Loop ──
     /** @param {number} timeMs */
-    // Phase 0d batch 30: per-frame orchestrator moved to
-    // packages/web/src/render-loop.ts. The factory composes the four
-    // sub-module phases (RenderFrame / MicPipeline / RenderMid /
-    // RenderLate) and self-rAFs while state.running. The shell hands
-    // in deps-builders so per-frame fresh values (analyser, audioCtx,
-    // theme color list) flow through closures rather than being
-    // captured at factory-build time.
-    const _renderLoop = RenderLoop.createRenderLoop({
-      state: /** @type {{running: boolean}} */ (
-        /** @type {any} */ (state)
-      ),
-      modules: { RenderFrame, MicPipeline, RenderMid, RenderLate },
-      builders: {
-        buildFrameDeps: () => ({
-          ctx,
-          state: /** @type {import('./render-frame').RenderFrameStateRef} */ (
-            /** @type {any} */ (state)
-          ),
-          getScreen: () => ({ W, H }),
-          themes: /** @type {ReadonlyArray<import('./render-frame').RenderFrameTheme>} */ (
-            /** @type {any} */ (CONFIG.THEMES)
-          ),
-          drawBgStars,
-          drawAurora,
-          drawGroundFlowers,
-          decayWakeUpFlash: PianoCore.decayWakeUpFlash,
-          drawCenterGlow: PianoCore.drawCenterGlow,
-          wufOpts: WUF_OPTS,
-          getEnergy,
-        }),
-        buildMicPipelineDeps: (_timeMs, _dt, theme) => ({
-          analyser,
-          audioCtx,
-          freqArray,
-          detectPitchYIN,
-          updateAGC,
-          updateGameState,
-          state: /** @type {import('./mic-pipeline').MicPipelineState} */ (
-            /** @type {any} */ (state)
-          ),
-          practice: /** @type {import('./mic-pipeline').MicPipelinePracticeRef} */ (
-            /** @type {any} */ (practice)
-          ),
-          midiInput: /** @type {import('./mic-pipeline').MicPipelineMidiRef} */ (
-            /** @type {any} */ (midiInput)
-          ),
-          micMeter: DOM.micMeter,
-          micMeterFill: DOM.micMeterFill,
-          introHint: DOM.introHint,
-          hideIntroHint,
-          updatePractice,
-          freqToNote: /** @type {(freq: number) => import('./mic-pipeline').NoteDescriptor | null} */ (
-            /** @type {any} */ (freqToNote)
-          ),
-          getNoteColor,
-          spawnBurst,
-          spawnStream,
-          ripples: /** @type {import('./mic-pipeline').RipplesArray} */ (
-            /** @type {any} */ (ripples)
-          ),
-          Ripple: /** @type {import('./mic-pipeline').RippleCtor} */ (
-            /** @type {any} */ (Ripple)
-          ),
-          showNoteDisplay,
-          triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
-          wufOpts: WUF_OPTS,
-          theme,
-          screen: { W, H },
-          config: {
-            MIN_NOTE_INTERVAL_MS: CONFIG.MIN_NOTE_INTERVAL_MS,
-            PITCH_MIN_HZ: CONFIG.PITCH_MIN_HZ,
-            PIANO_KEY_MIN: CONFIG.PIANO_KEY_MIN,
-            PIANO_KEY_COUNT: CONFIG.PIANO_KEY_COUNT,
-          },
-        }),
-        buildNoteFadeDeps: () => ({
-          noteDisplayEl: DOM.noteDisplay,
-          state: /** @type {import('./render-mid').RenderMidStateRef} */ (
-            /** @type {any} */ (state)
-          ),
-          noteDisplayDurationMs: CONFIG.NOTE_DISPLAY_DURATION_MS,
-        }),
-        buildAmbientDeps: (theme) => ({
-          state: /** @type {import('./render-mid').RenderMidStateRef} */ (
-            /** @type {any} */ (state)
-          ),
-          theme,
-          screen: { W, H },
-          particles: /** @type {import('./render-mid').ParticlesArray} */ (
-            /** @type {any} */ (particles)
-          ),
-          // [Bug fix 2026-05-09 — Issue 2 frame drops] During active
-          // practice, lower the cap to 200 so a note-hit burst can't
-          // chain into a 600+ particle frame. The render layer also
-          // disables shadowBlur during practice; the two together
-          // halve per-frame paint cost on Canvas2D. Outside practice
-          // (free-play / title), keep the full per-perf-tier cap so
-          // ambient atmosphere isn't degraded.
-          maxParticles: practice.enabled ? 200 : CONFIG.MAX_PARTICLES,
-          // [Bug fix 2026-05-09] Same idea — kill the per-frame
-          // ambient roll during practice so even idle frames don't
-          // accumulate sprites the kid doesn't notice anyway.
-          ambientChance: practice.enabled ? 0 : CONFIG.AMBIENT_PARTICLE_CHANCE,
-          Particle: /** @type {import('./render-mid').ParticleCtor} */ (
-            /** @type {any} */ (Particle)
-          ),
-        }),
-        buildSpectrumDeps: (theme) => {
-          if (!analyser || !(state.smoothEnergy > 0.03)) return null;
-          return {
-            ctx,
-            dataArray,
-            sampleRate: audioCtx.sampleRate,
-            fftSize: analyser.fftSize,
-            pianoFreqMin: CONFIG.PIANO_FREQ_MIN,
-            pianoFreqMax: CONFIG.PIANO_FREQ_MAX,
-            barCount: CONFIG.BAR_COUNT,
-            themeColors: theme.colors,
-            flow: state.flow,
-            screen: { W, H },
-            drawSpectrumBars: PianoCore.drawSpectrumBars,
-          };
-        },
-        buildLateDeps: () => ({
-          ctx,
-          ripples: /** @type {import('./render-late').RippleArray} */ (
-            /** @type {any} */ (ripples)
-          ),
-          particles: /** @type {import('./render-late').ParticleArray} */ (
-            /** @type {any} */ (particles)
-          ),
-          midiInput: /** @type {import('./render-late').RenderLateMidiRef} */ (
-            /** @type {any} */ (midiInput)
-          ),
-          practice: /** @type {import('./render-late').RenderLatePracticeRef} */ (
-            /** @type {any} */ (practice)
-          ),
-          isFreeplayActive,
-          maxParticles: CONFIG.MAX_PARTICLES,
-          drawMidiBeams,
-          drawMidiChordDisplay,
-          drawMidiKeyboard,
-          drawPracticeLane,
-          updateQuestState,
-          updatePlayTime,
-          updateDebugOverlay,
-        }),
+    const _renderLoop = RenderLoopWireup.wireRenderLoop({
+      renderLoop: RenderLoop,
+      renderFrame: RenderFrame,
+      micPipeline: MicPipeline,
+      renderMid: RenderMid,
+      renderLate: RenderLate,
+      pianoCore: PianoCore,
+      ctx,
+      state: /** @type {any} */ (state),
+      // practice / midiInput / updatePractice are forward-declared
+      // below; thunks defer the read until the builders fire
+      // (post-IIFE) so we don't TDZ at wireup time.
+      getPractice: () => /** @type {any} */ (practice),
+      getMidiInput: () => /** @type {any} */ (midiInput),
+      config: /** @type {any} */ (CONFIG),
+      getScreen: () => ({ W, H }),
+      getAudioCtx: () => audioCtx,
+      getAnalyser: () => analyser,
+      getDataArray: () => dataArray,
+      getFreqArray: () => /** @type {any} */ (freqArray),
+      particles,
+      ripples,
+      Particle,
+      Ripple,
+      dom: {
+        micMeter: DOM.micMeter,
+        micMeterFill: DOM.micMeterFill,
+        introHint: DOM.introHint,
+        noteDisplay: DOM.noteDisplay,
+        startScreen: DOM.startScreen,
+        songPanel: DOM.songPanel,
+        sessionSummary: DOM.sessionSummary,
+        sectionResult: DOM.sectionResult,
       },
-      // [DIAG-FRAME] Frame-drop watchdog. Only allocates the ring +
-      // fires logs when REMOTE_LOG_ENABLED (dev / HTTPS) — production
-      // pays nothing. Threshold 33 ms ≈ 30 fps; cooldown 1 s prevents
-      // a long GC pause from flooding the log. Context dump captures
-      // particles / ripples count, audioCtx state, Tone Transport
-      // position, practice mode + section, mic-suspended flag —
-      // everything we need to root-cause stutter without a re-deploy.
-      frameDropWatch: REMOTE_LOG_ENABLED
-        ? {
-            thresholdMs: 33,
-            cooldownMs: 1000,
-            ringLen: 60,
-            getContext: () => ({
-              particles: particles.length,
-              ripples: ripples.length,
-              sectionNotes: practice.sectionNotes ? practice.sectionNotes.length : 0,
-              currentNoteIdx: practice.currentNoteIdx,
-              practiceMode: practice.mode,
-              fullSongMode: practice.fullSongMode,
-              practiceEnabled: practice.enabled,
-              audioCtxState: audioCtx ? audioCtx.state : null,
-              audioCtxSampleRate: audioCtx ? audioCtx.sampleRate : null,
-              transportState:
-                typeof Tone !== 'undefined' && Tone.Transport ? Tone.Transport.state : null,
-              transportPosition:
-                typeof Tone !== 'undefined' && Tone.Transport ? Tone.Transport.position : null,
-              micSuspended: state.micSuspended,
-              flow: state.flow,
-              combo: state.combo,
-              sessionState: state.sessionState,
-            }),
-            onDrop: (stats, ctx) => {
-              // eslint-disable-next-line no-console
-              console.log('[DIAG-FRAME] drop ' + JSON.stringify({ ...stats, ...ctx }));
-            },
-          }
-        : undefined,
+      drawBgStars,
+      drawAurora,
+      drawGroundFlowers,
+      detectPitchYIN,
+      updateAGC,
+      updateGameState,
+      hideIntroHint,
+      getUpdatePractice: () => updatePractice,
+      freqToNote: /** @type {any} */ (freqToNote),
+      getNoteColor,
+      spawnBurst,
+      spawnStream,
+      showNoteDisplay,
+      isFreeplayActive,
+      drawMidiBeams,
+      drawMidiChordDisplay,
+      drawMidiKeyboard,
+      drawPracticeLane,
+      updateQuestState,
+      updatePlayTime,
+      updateDebugOverlay,
+      getEnergy,
+      wufOpts: WUF_OPTS,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      getTone: () => (typeof Tone !== 'undefined' ? Tone : null),
     });
-    /** @param {number} timeMs */
-    function loop(timeMs) { _renderLoop.tick(timeMs); }
+    /** @param {any} timeMs */ function loop(timeMs) { _renderLoop.tick(timeMs); }
 
     // True only when the canvas / HUD is the front-most surface (i.e. the
     // user is actually free-playing, not picking a song or reviewing a result).
@@ -1462,10 +679,6 @@
     }
 
     // ========================================
-    // Shared helpers (kept in shell — used by both the session-summary
-    // module + the per-frame loop / other render call sites).
-    // ========================================
-    // formatTime — Phase 0b: delegated to @piano/core/util/format.
     const formatTime = PianoCore.formatTime;
     /** @param {number} timeMs */
     function updatePlayTime(timeMs) {
@@ -1481,13 +694,7 @@
       );
     }
 
-    // ========================================
-    // Session summary modal — Phase 0d batch 11 wire-up
-    // ========================================
-    // saveBestScores + renderSessionSummaryText + showSessionSummary
-    // + drawRadarChart now live in packages/web/src/session-summary.ts.
-    // The shell wraps the factory result in the legacy short names so
-    // settings-panel deps + the langchange listener stay unchanged.
+    // ── Session summary modal — Phase 0d batch 11 wire-up ──
     {
       const _sessionSummary = SessionSummary.createSessionSummary({
         dom: /** @type {import('./session-summary').SessionSummaryDom} */ ({
@@ -1499,12 +706,8 @@
           sumBest: DOM.sumBest,
           radarChart: /** @type {HTMLCanvasElement} */ (DOM.radarChart),
         }),
-        state: /** @type {import('./session-summary').SessionSummaryStateRef} */ (
-          /** @type {any} */ (state)
-        ),
-        config: /** @type {import('./session-summary').SessionSummaryConfig} */ (
-          /** @type {any} */ (CONFIG)
-        ),
+        state: /** @type {any} */ (state),
+        config: /** @type {any} */ (CONFIG),
         loadJSON,
         saveJSON,
         stageLabel,
@@ -1517,7 +720,6 @@
       showSessionSummary = _sessionSummary.showSessionSummary;
     }
 
-    // Phase 0d batch 48: 85-line full-session-reset reducer moved to
     // packages/web/src/session-reset.ts.
     const _sessionReset = SessionReset.createSessionReset(
       /** @type {import('./session-reset').SessionResetDeps} */ ({
@@ -1530,13 +732,7 @@
           ripples,
           particles,
         },
-        reducers: {
-          resetQualityHistoryState: PianoCore.resetQualityHistoryState,
-          resetQuestTrackerState: PianoCore.resetQuestTrackerState,
-          resetEncouragementState: PianoCore.resetEncouragementState,
-          resetWakeUpFlashState: PianoCore.resetWakeUpFlashState,
-          resetChordWindowState: PianoCore.resetChordWindowState,
-        },
+        reducers: { resetQualityHistoryState: PianoCore.resetQualityHistoryState, resetQuestTrackerState: PianoCore.resetQuestTrackerState, resetEncouragementState: PianoCore.resetEncouragementState, resetWakeUpFlashState: PianoCore.resetWakeUpFlashState, resetChordWindowState: PianoCore.resetChordWindowState, },
         dom: {
           stageLabel: DOM.stageLabel,
           encouragement: DOM.encouragement,
@@ -1559,24 +755,11 @@
     );
     function resetSession() { _sessionReset.reset(); }
 
-    // ========================================
-    // v12: Practice Mode — Für Elise
-    // ========================================
-
-    // Note encoding: [startBeat16th, midi, dur16ths]
-    // 3/8 time, 6 sixteenths per measure. Right-hand melody only (kid-friendly).
-    // Coverage: opening A theme + B section + return.
-    // Songs are loaded lazily from public-domain MusicXML. Each song carries its own
-    // OSMD-extracted notes / sections / cursor map. currentSong points at the song
-    // the kid picked from the start screen. selectSong(id) switches and resets OSMD.
-    //
-    // sectionDefs: per-song quest layout. Each def starts at startMeasure (0-indexed
-    // source-score measure number); the section runs until the next def's
-    // startMeasure (or end-of-song). Boundaries are chosen at musical landmarks
-    // (theme returns, key changes, climaxes) so a kid never gets cut off mid-phrase.
-    /** @param {string} id @param {string} titleKey @param {string} composerKey @param {string} icon @param {SectionDef[]} sectionDefs @returns {SongRec} */
+    // ── v12: Practice Mode — songs lazily-loaded MusicXML, sectionDefs
+    //   = per-song quest layout (startMeasure → next def's startMeasure). ──
+    /** @param {string} id @param {string} titleKey @param {string} composerKey @param {string} icon @param {any[]} sectionDefs @returns {any} */
     function makeSong(id, titleKey, composerKey, icon, sectionDefs) {
-      return /** @type {SongRec} */ (/** @type {any} */ ({
+      return /** @type {any} */ (/** @type {any} */ ({
         id,
         titleKey,
         composerKey,
@@ -1593,7 +776,7 @@
         _loadingPromise: null
       }));
     }
-    /** @type {Record<string, SongRec>} */
+    /** @type {any} */
     const SONGS = {
       // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
       // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
@@ -1613,30 +796,11 @@
     };
     let currentSong = SONGS.fur_elise;
 
-    // ========================================
-    // User-added songs — IndexedDB persistence
-    //   Schema: db `pianoViz_v1`, store `userSongs` keyed by id.
-    //   Record: { id, title, composer, mxlBlob, sectionDefs, addedAt, source }
-    //
-    //   Songs added by the user (drop a file, paste a jsDelivr URL, or pick from
-    //   the curated library) are persisted as Blobs in IndexedDB. On load they're
-    //   merged into SONGS, get a synthetic mxlUrl via URL.createObjectURL so the
-    //   existing OSMD load path doesn't need to know they came from local cache,
-    //   and surface alongside the hardcoded songs in the picker.
-    // ========================================
-    // Library — Phase 0b.3: delegated to @piano/core.
-    // - User song IndexedDB ops (open / all / put / delete) wired through
-    //   PianoCore's stateless versions but with the legacy connection-cache
-    //   pattern preserved (call sites pass no db arg).
-    // - parseMusicXmlMetadata + auto-section heuristic — pure DOM-only,
-    //   drop-in. Core uses globalThis.DOMParser so the browser path is
-    //   identical to the deleted legacy implementation.
+    // ── User-added songs (IndexedDB-backed; merged into SONGS at boot) ──
+    // DB `pianoViz_v1`, store `userSongs`. PianoCore stateless ops live below;
+    // parseMusicXmlMetadata + auto-section heuristic delegate to @piano/core.
     const USER_DB_NAME = PianoCore.USER_DB_NAME;
     const USER_DB_STORE = PianoCore.USER_DB_STORE;
-    // Phase 0d batch 49: lazy IDBDatabase handle cache + .mxl unzip
-    // moved to packages/web/src/user-songs-mxl.ts. Forwarders below
-    // preserve the legacy short-name surface (openUserDb, userDbAll,
-    // userDbPut, userDbDelete, unzipMxlToXmlText).
     const _userDb = UserSongsMxl.createUserDb({
       openUserDb: () => PianoCore.openUserDb(),
       userDbAll: PianoCore.userDbAll,
@@ -1661,16 +825,6 @@
     }
 
     // Promote a stored-or-just-fetched record into the SONGS registry. Returns
-    // the song so the caller can selectSong(...) it immediately.
-    //
-    // For .mxl records we always feed OSMD a plain-XML blob URL (built from
-    // the cached `record.xmlText` if present, else lazily unzipped here and
-    // written back to IndexedDB so subsequent loads are instant). This sidesteps
-    // OSMD's blob-MIME-detection issue on Android Chrome.
-    // Phase 0d batch 51: 175-line user-songs persistence cluster
-    // (registerUserSong / loadUserSongs / addUserSongFromBlob /
-    // addUserSongFromUrl / renameUserSong / removeUserSong) moved to
-    // packages/web/src/user-songs-store.ts.
     const USER_SONG_URL_TIMEOUT_MS = 30000;
     const USER_SONG_MAX_BYTES = 20 * 1024 * 1024; // 20 MB
     const _userSongs = UserSongsStore.createUserSongsStore(
@@ -1678,10 +832,7 @@
         userDb: /** @type {any} */ (_userDb),
         userDbStoreName: USER_DB_STORE,
         unzipMxlToXmlText: /** @type {any} */ (unzipMxlToXmlText),
-        fns: {
-          parseMusicXmlMetadata: /** @type {any} */ (parseMusicXmlMetadata),
-          autoSectionDefs: /** @type {any} */ (autoSectionDefs),
-        },
+        fns: { parseMusicXmlMetadata: /** @type {any} */ (parseMusicXmlMetadata), autoSectionDefs: /** @type {any} */ (autoSectionDefs), },
         songs: /** @type {any} */ (SONGS),
         getPractice: () => /** @type {any} */ (practice),
         savePracticeProgress: () => savePracticeProgress(),
@@ -1708,15 +859,6 @@
     /** @param {string} id */
     async function removeUserSong(id) { return _userSongs.remove(id); }
 
-
-    // ========================================
-    // Online library — MuseTrainer full catalog via GitHub API
-    //   Phase 0d batch 52: 140-line constants + JP overrides table
-    //   + libraryEntryFromGhFile + fetchLibrary moved to
-    //   packages/web/src/online-library.ts. Forwarders below keep
-    //   the legacy short-name surface; ONLINE_LIBRARY remains a
-    //   shell-mutable let so the existing user-songs UI deps wire-
-    //   up (getLibrary/setLibrary/fetchLibrary) keeps working.
     // ========================================
     const _onlineLibrary = OnlineLibrary.createOnlineLibrary({
       libraryEntryFromGhFile: /** @type {any} */ (PianoCore.libraryEntryFromGhFile),
@@ -1724,25 +866,15 @@
       localStorage,
       now: () => Date.now(),
     });
-    /** @param {Parameters<typeof PianoCore.libraryEntryFromGhFile>[0]} f */
-    function libraryEntryFromGhFile(f) { return _onlineLibrary.entryFromGhFile(/** @type {any} */ (f)); }
+    /** @param {any} f */ function libraryEntryFromGhFile(f) { return _onlineLibrary.entryFromGhFile(/** @type {any} */ (f)); }
     /** @param {boolean} [force] */
     async function fetchLibrary(force) { return _onlineLibrary.fetchEntries(force); }
     /** @type {Array<Partial<import('@piano/core').LibraryEntry> & {url:string, label:string, icon:string}>} */
     let ONLINE_LIBRARY = OnlineLibrary.LIBRARY_SEED.slice();
 
     // Convert per-song measure-based sectionDefs into time-anchored sections by
-    // finding the first occurrence of each boundary measure in the unfolded note
-    // timeline. This keeps sections contiguous in playback time even when the
-    // source score has repeats that revisit early measures later.
-    // buildSectionsFromDefs — Phase 0b: delegated to @piano/core/library/auto-section.
     const buildSectionsFromDefs = PianoCore.buildSectionsFromDefs;
 
-    // ========================================
-    // OSMD — single source of truth.
-    //   * Renders the MusicXML score (visual).
-    //   * Walked at load to extract every played note (timing + pitch + hand).
-    //   * Cursor advances one step per onset event during practice (perfect sync).
     // ========================================
     /** @type {any} OSMD instance (typed `any` because OSMD's surface is wide and version-fragile;
      *  consumers go through osmdAdapter for the typed boundary). */
@@ -1750,12 +882,6 @@
     /** @type {Promise<any> | null} */
     let _osmdInitPromise = null;
 
-    // Phase 0d batch 29: OSMD ctor + load + render + repetition
-    // activation + cursor show/reset moved to packages/web/src/osmd-init.ts.
-    // The shell still owns the `osmd` ref because many other callsites
-    // (extractNotesFromOsmd, osmdScrollToCursor, setOsmdCursorToNote,
-    // clearNoteHighlights, highlightCurrentNotes, drawPracticeLane)
-    // read it directly.
     const _osmdInit = OsmdInit.createOsmdInit({
       opensheetmusicdisplay:
         typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
@@ -1767,10 +893,6 @@
       return osmd;
     }
 
-    // Tied-note coalescer — Phase 0c: delegated to
-    // @piano/core/library/merge-tied-notes. The legacy shim toggles
-    // sample collection off when REMOTE_LOG_ENABLED is false so the
-    // production hot path doesn't pay for the per-merge toFixed + push.
     /** @param {Parameters<typeof PianoCore.mergeTiedNotes>[0]} notes */
     function mergeTiedNotes(notes) {
       return PianoCore.mergeTiedNotes(notes, {
@@ -1778,12 +900,6 @@
       });
     }
 
-    // OSMD note extractor — Phase 0c: delegated to
-    // packages/web/src/note-extractor.ts (typed shell module). Pure
-    // timing primitives live in @piano/core/library/score-timing
-    // (computeLeadingMeasureBpms / timeAtInBarQuarters); the OSMD
-    // walker stays at the shell because it touches OSMD's iterator
-    // surface directly.
     /** @param {import('@piano/core').MeasureTimingResult|null|undefined} xmlMeasureTiming
      *  @param {import('@piano/core').ScoreTiming|null|undefined} scoreTiming */
     function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
@@ -1795,30 +911,12 @@
     }
 
     // Parse the raw MusicXML for everything that affects playback timing —
-    // Phase 0c: delegated to @piano/core/library/score-timing. The legacy
-    // shim preserves the original signature; downstream call sites keep
-    // working unchanged.
     const parseScoreTimingFromXml = PianoCore.parseScoreTimingFromXml;
 
-    // Per-measure (start, dur) seconds — Phase 0c: delegated to
     // @piano/core/library/measure-timing. Handles mid-bar tempo events
     // and partial-measure exporters (la Campanella m=5 case).
     const buildMeasureTimingFromXml = PianoCore.buildMeasureTimingFromXml;
 
-    // Playback-order + note re-timer — Phase 0c: delegated to
-    // @piano/core/library/playback-order. The legacy shell keeps the
-    // fetch + xmlText caching dance (handles blob: URLs from just-
-    // imported user songs and races against a rapid selectSong).
-    //
-    // `forSong` is captured by `loadCurrentScore` (the song record at the
-    // time loading started). Reading the global `currentSong` here would
-    // race against a rapid `selectSong()` that changes `currentSong`
-    // mid-load — the IIFE would then fetch the wrong song's XML and feed
-    // a foreign repeat structure into the in-flight song's note timeline.
-    // Phase 0d batch 53: fetchPlaybackOrder + expandNotesByPlaybackOrder
-    // moved to packages/web/src/playback-order.ts. The xmlText cache,
-    // cumulative-sum fallback, and OSMD-shaped last-bar branch all
-    // ride along.
     const _playbackOrder = PlaybackOrder.createPlaybackOrder({
       fns: {
         parsePlaybackOrderFromXml: PianoCore.parsePlaybackOrderFromXml,
@@ -1826,7 +924,7 @@
       },
       fetch: (...args) => fetch(...args),
     });
-    /** @param {SongRec} [forSong] */
+    /** @param {any} [forSong] */
     async function fetchPlaybackOrder(forSong) {
       return _playbackOrder.fetchPlaybackOrder(/** @type {any} */ (forSong || currentSong));
     }
@@ -1843,7 +941,6 @@
       );
     }
 
-    // Load-time DIAG dump — Phase 0c: delegated to
     // @piano/core/library/diag-load. The shim threads the legacy
     // remoteLog as the injected logger.
     /** @param {Parameters<typeof PianoCore.dumpLoadDiagnostics>[0]} p */
@@ -1851,23 +948,15 @@
       PianoCore.dumpLoadDiagnostics(p, remoteLog);
     }
 
-    // Phase 0d batch 31: score-loading orchestrator (initOsmd → XML
-    // parse → notes extract → playback order → expand → sections →
-    // bpm → diag dump → drop xmlText) moved to
-    // packages/web/src/score-loader.ts. Race safety + in-flight
-    // dedupe live in the factory.
     const _scoreLoader = ScoreLoader.createScoreLoader({
       getCurrentSong: () =>
-        /** @type {import('./score-loader').ScoreLoaderSong | null} */ (
-          /** @type {any} */ (currentSong)
-        ),
+        /** @type {any} */ (currentSong),
       initOsmd,
       getOsmd: () => /** @type {any} */ (osmd),
       parseScoreTimingFromXml,
       buildMeasureTimingFromXml,
       extractNotesFromOsmd: (xmlMeasureTiming, scoreTiming) =>
-        /** @type {import('./score-loader').ExtractResult} */ (
-          /** @type {any} */ (extractNotesFromOsmd(xmlMeasureTiming, scoreTiming))
+        /** @type {any} */ (extractNotesFromOsmd(xmlMeasureTiming, scoreTiming)
         ),
       fetchPlaybackOrder: (forSong) => fetchPlaybackOrder(/** @type {any} */ (forSong)),
       expandNotesByPlaybackOrder: (baseNotes, order, measures, srcMeasureStartSec) =>
@@ -1893,11 +982,6 @@
     });
     async function loadCurrentScore() { await _scoreLoader.loadCurrentScore(); }
 
-    // Phase 0d batch 32: 5 OSMD cursor functions
-    // (osmdScrollToCursor / osmdResetToStart / clearNoteHighlights /
-    // highlightCurrentNotes / setOsmdCursorToNote) moved to
-    // packages/web/src/osmd-cursor.ts. The factory closes over the
-    // scroll-throttle timestamp + the highlighted-paths tracker.
     const _osmdCursor = OsmdCursor.createOsmdCursor({
       getOsmd: () => /** @type {any} */ (osmd),
       getContainer: () => DOM.osmdContainer,
@@ -1906,21 +990,11 @@
     function osmdResetToStart() { _osmdCursor.resetToStart(); }
     function clearNoteHighlights() { _osmdCursor.clearHighlights(); }
     function highlightCurrentNotes() { _osmdCursor.highlightCurrentNotes(); }
-    /** @param {{measureIdx:number, inBarQuarters:number}} note */
-    function setOsmdCursorToNote(note) { _osmdCursor.setCursorToNote(note); }
+    /** @param {any} note */ function setOsmdCursorToNote(note) { _osmdCursor.setCursorToNote(note); }
 
-    // OSMD adapter — implements @piano/core/adapters/osmd-adapter's
-    // OsmdAdapter interface. Phase 0c modules will consume the adapter
-    // (typed against the interface) instead of touching the OSMD object
-    // graph directly. The adapter is a thin wrapper around the existing
-    // legacy functions; the heavy lifting (initOsmd / extractNotesFromOsmd
-    // / setOsmdCursorToNote / etc.) stays put until the TS migration.
-    //
-    // Note: extractNotes here is a thin shim — the real extraction is
-    // driven from `loadCurrentSong()` because it depends on additional
-    // shell state (xmlMeasureTiming, scoreTiming) that the adapter
-    // shouldn't have to know about. Kept on the adapter so Phase 0c
-    // can find the call site via the interface.
+    // OSMD adapter — implements @piano/core's OsmdAdapter interface.
+    // extractNotes is a thin shim; real extraction happens in
+    // loadCurrentSong (needs xmlMeasureTiming + scoreTiming).
     /** @type {import('@piano/core').OsmdAdapter} */
     const osmdAdapter = {
       async load(url) {
@@ -1932,9 +1006,6 @@
       },
       extractNotes(opts) {
         // Shell extractNotesFromOsmd returns `{notes, measureStartSec, measureBpm, _diag}`
-        // — adapt to OsmdExtractResult's `{notes, measureTiming}` shape. The
-        // current consumer (loadCurrentScore) reads via the shell function
-        // directly, so the adapter form is here for Phase 0d/future modules.
         const ret = extractNotesFromOsmd(
           /** @type {any} */ (opts?.xmlMeasureTiming),
           null
@@ -1981,35 +1052,16 @@
     // / PianoCore globals seeded by main.ts).
     globalThis.osmdAdapter = osmdAdapter;
 
-    // ========================================
-    // Practice state + tunable constants
-    // ========================================
-    // Count-in is aligned with the lane lookahead so the first note literally
-    // enters from the top of the lane on beat 1 and reaches the hit line on "GO!".
-    // Both are recomputed per section in recomputePracticeTimings() so the count-in
-    // beats follow the actual song tempo (a 72 BPM piece counts in 833 ms/beat,
-    // not a generic 1 s/beat). Initial values cover the case where a section is
-    // started before any score has loaded — they get overwritten immediately.
+    // ── Practice state + tunable constants ──
     let COUNT_IN_MS = 4000;            // pre-roll before the first note (4 beats)
     let LANE_LOOKAHEAD_MS = 4000;      // how far ahead notes appear in the lane
 
     // Song's quarter-note duration at the kid's chosen tempo. Falls back to a
-    // gentle 72 BPM @ 60% if the score hasn't yielded a tempo yet.
-    // practiceBeatMs / count-in derivation — Phase 0b: delegated to @piano/core.
-    // Full-song listen forces 100% (see buildFullSongNotes) so the count-in
-    // beats and lane lookahead match the actual playback speed instead of the
-    // user's section-listen tempoPct selection.
-    // Phase 0d batch 55: practice-timing trio (effectiveTempoPct +
-    // practiceBeatMs + recomputePracticeTimings) + showSectionBanner
-    // moved to packages/web/src/practice-timings.ts.
     const _practiceTimings = PracticeTimings.createPracticeTimings(
       /** @type {import('./practice-timings').PracticeTimingsDeps} */ ({
         getPractice: () => /** @type {any} */ (practice),
         getCurrentSong: () => /** @type {any} */ (currentSong),
-        fns: {
-          practiceBeatMs: PianoCore.practiceBeatMs,
-          computePracticeTimings: PianoCore.computePracticeTimings,
-        },
+        fns: { practiceBeatMs: PianoCore.practiceBeatMs, computePracticeTimings: PianoCore.computePracticeTimings, },
         setCountInMs: (ms) => { COUNT_IN_MS = ms; },
         setLaneLookaheadMs: (ms) => { LANE_LOOKAHEAD_MS = ms; },
         getPracticeLane: () => /** @type {any} */ (_practiceLane),
@@ -2021,84 +1073,27 @@
     function practiceBeatMs() { return _practiceTimings.practiceBeatMs(); }
     function recomputePracticeTimings() { _practiceTimings.recomputePracticeTimings(); }
     // Asymmetric hit windows: early presses are punished much harder than late
-    // ones. Pedagogical reason — kids should learn to *wait for the beat*, not
-    // anticipate it; reaction-lag is also natural and partly compensates for
-    // audio output latency. Symmetric windows let kids develop a "rush ahead"
-    // habit that's hard to unlearn.
-    // Hit-window + duration-tolerance constants — Phase 0b.3: re-exported
-    // from @piano/core (same values, single source of truth).
     const HIT_WINDOW_EARLY_MS = PianoCore.HIT_WINDOW_EARLY_MS;
     const HIT_WINDOW_MS = PianoCore.HIT_WINDOW_MS;
     const PERFECT_MS = PianoCore.PERFECT_MS;
     const CHORD_MATE_TOLERANCE_MS = PianoCore.CHORD_MATE_TOLERANCE_MS;
     const DURATION_MIN_TOL_MS = PianoCore.DURATION_MIN_TOL_MS;
     const DURATION_TOL_FRACTION = PianoCore.DURATION_TOL_FRACTION;
-    // Audio output latency compensation. Speaker buffer delay means the kid hears
-    // the metronome ~30-100ms after Tone schedules it, so a press timed to the
-    // audible beat registers as "late" without compensation. We try to read
-    // AudioContext.outputLatency at session start; this default covers the case
-    // where the browser returns 0 (Firefox / older Safari) or unreliable values.
-    const DEFAULT_AUDIO_OFFSET_MS = 40;
-    // Mic-only safety nets — empirically tuned for iPad acoustic-piano practice.
-    // ONSET_HYSTERESIS_FRAMES = 1 effectively disables the hysteresis (single-frame
-    // onsets allowed). Bumping to 2 helps reject one-frame spectral spikes but also
-    // drops short staccato notes in practice.
-    const ONSET_HYSTERESIS_FRAMES = 1;
-    const PITCH_MEDIAN_FRAMES = 5;      // ring buffer length for octave-error correction
+    // packages/web/src/core-opts.ts (with full inline rationale).
+    const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
+    const ONSET_HYSTERESIS_FRAMES = CoreOpts.ONSET_HYSTERESIS_FRAMES;
+    const PITCH_MEDIAN_FRAMES = CoreOpts.PITCH_MEDIAN_FRAMES;
 
-    const practice = /** @type {PracticeStateShape} */ (/** @type {any} */ ({
-      enabled: false,
-      sectionIdx: 0,
-      tempoPct: 60,                    // 60 / 75 / 90 / 100  (slower → bigger speedFactor)
-      // 'guided' = score waits for the kid to play each note. No timeouts, no
-      //            auto-playback. Wrong notes get a gentle nudge, never penalty.
-      // 'rhythm' = traditional rhythm-game mode that follows tempo strictly.
-      mode: 'guided',
-      ghostOn: false,
-      metronomeOn: false,
-      // Listen-only: when true, startPracticeSection builds a timeline that
-      // concatenates every section so the song plays straight through. Hidden
-      // (and ignored) for guided / rhythm — those modes still drive a single
-      // section at a time so scoring + unlocks remain section-scoped.
-      fullSongMode: false,
-      // Single audio-clock reference — locks visuals to Tone.js scheduled events.
-      // elapsed_ms = (Tone.now() - startAudioTime) * 1000
-      startAudioTime: 0,
-      sectionNotes: [],                // [{hand, midi, timeMs, durMs, hit, missed}]
-      currentNoteIdx: 0,
-      hits: 0,
-      misses: 0,
-      timingScoreSum: 0,
-      // Note-length scoring: only filled in rhythm mode. In guided mode the cursor
-      // freezes on the current note so there's no audio clock to compare against.
-      durationScoreSum: 0,
-      durationScoredCount: 0,
-      pendingHolds: new Map(),
-      sectionCombo: 0,
-      sectionBestCombo: 0,
-      // Hand filter. 'R' = right only, 'L' = left only, null = both hands.
-      // Filtered notes are pre-flagged hit at section start so the cursor auto-skips them.
-      handFilter: null,
-      // Subtracted from practiceRealElapsedMs so a press timed to the audible
-      // beat scores PERFECT. Set in startPracticeSection from
-      // AudioContext.outputLatency, or from the user's saved override
-      // (prefs.audioOffsetMs) if they've adjusted the slider.
-      audioOffsetMs: prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
-      progress: null,
-      _completing: false,
-      _lastProgUpdate: 0
-    }));
+    const practice = /** @type {any} */ (
+        PracticeStateInit.createInitialPractice(
+          prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
+        )
+    );
 
-    // ========================================
-    // Section banner
-    // ========================================
-    /** @param {{nameKey:string, isBoss?:boolean}} sec */
-    function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
+    // ── Section banner ──
+    /** @param {any} sec */ function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
 
     // Screen Wake Lock — Phase 0d: extracted to packages/web/src/wakelock.ts.
-    // The shell calls requestWakeLock() at start-of-session / page-resume and
-    // releaseWakeLock() at end-of-session / page-hide. Module is pinned as
-    // PianoWakeLock (not "WakeLock" — that's the lib.dom WakeLock interface).
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
 
@@ -2106,28 +1101,10 @@
     // verifyMidiAlive both use this so re-binding after a suspend produces
     // exactly the same routing.
     /** @param {MIDIMessageEvent} e */
-    // Phase 0d batch 22: byte → handler dispatch (incl. BLE-redelivery
-    // dedupe) moved to packages/web/src/midi-dispatch.ts. The factory
-    // is created later in the file (after onMidiNoteOn / matchNoteOnset
-    // are in scope) and assigned to `_midiDispatch`. Forward-declared
-    // wrappers re-bind the legacy short names so this handler — which
-    // is wired onto port.onmidimessage at MIDI-attach time, before the
-    // factory is built — can call through.
-    /** @param {{data: ArrayLike<number>|null|undefined}} e */
-    function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
+    /** @param {any} e */ function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
 
-    // Phase 0d batch 25: attach / detach / verifyAlive moved to
-    // packages/web/src/midi-ports.ts. The factory is built later (after
-    // suspendMic / resumeMic / setInputIndicator / startMidiAutoRescan
-    // are all in scope) and re-bound here as `_midiPorts`. verifyMidiAlive
-    // forwards to it so the visibility-resume callsite stays unchanged.
-    /** @returns {Promise<boolean>} */
     function verifyMidiAlive() { return _midiPorts.verifyAlive(_midiAccess); }
 
-    // Phase 0d batch 5: graph builder + recovery seam live in
-    // packages/web/src/audio-init.ts. The shell exposes mutators so the
-    // module can replace the audio nodes atomically while the rest of
-    // the legacy code keeps reading the short identifiers.
     /** @param {MediaStream|null} prevMicStream */
     function rebuildAudioGraph(prevMicStream) {
       const graph = AudioInit.buildAudioGraph(audioCtx, prevMicStream, {
@@ -2149,12 +1126,6 @@
     }
 
     // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone
-    // does NOT recover audio after iOS backgrounds the page — the only
-    // reliable fix is closing the context and creating a fresh one. The
-    // recovery closure (re-entrancy guard + node-disconnect → close →
-    // rebuild) lives in audio-init.ts. The shell hands it readers/writers
-    // for the audio nodes + the after-recovery hooks (Tone.js note: do
-    // NOT call `Tone.setContext` here — see audio-init.ts comment).
     const _audioRecovery = AudioInit.createAudioRecovery({
       getSnapshot: () => ({
         audioCtx, gainNode, analyser, onsetAnalyser, micSourceNode, micStream
@@ -2170,46 +1141,26 @@
         micSourceNode = graph.micSourceNode;
         // [DIAG-AUDIOCTX] Re-bind the state listener onto the new
         // context — the old one's onstatechange went away with it.
-        // Phase 0d batch 63: shared helper in audio-init.ts.
         AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED, undefined, '(post-recovery)');
       },
       isMicSuspended: () => !!state.micSuspended,
-      config: {
-        fftSize: CONFIG.FFT_SIZE,
-        smoothing: CONFIG.SMOOTHING,
-        onsetFftSize: CONFIG.ONSET_FFT_SIZE,
-        onsetSmoothing: CONFIG.ONSET_SMOOTHING,
-      },
+      config: { fftSize: CONFIG.FFT_SIZE, smoothing: CONFIG.SMOOTHING, onsetFftSize: CONFIG.ONSET_FFT_SIZE, onsetSmoothing: CONFIG.ONSET_SMOOTHING, },
       resetOnsetState: () => {
         state.prevSpectrum = null;
         state.spectralFluxHistory = [];
       },
       onAfterRecovery: () => {
         // iOS WKWebView contract: post-background the audio engine is
-        // dead until the page reloads. Stop the active section so the
-        // lane stops scrolling against a stale Tone.js clock; the kid
-        // still sees the visual pipeline (mic + canvas) come back to life.
         if (practice.enabled) {
           practice.enabled = false;
           try { stopPracticeAudio(); } catch (_) {}
         }
       },
     });
-    /** @returns {Promise<void>} */
     function recoverAudioContext() { return _audioRecovery.recover(); }
 
-    // Phase 0d batch 60: visibilitychange + devicechange handlers
-    // moved into audio-init.ts as createAudioLifecycle({...}). The
-    // factory install() call lives further down (after midiInput +
-    // verifyMidiAlive + rescanMidi + startMidiAutoRescan are all
-    // declared) — search "_audioLifecycle.install()".
-
     // ========================================
-    // Input layer — Web MIDI (preferred) + microphone fallback.
-    // Both sources funnel into matchNoteOnset(midi, isExact). When a MIDI keyboard is
-    // connected, mic input is suppressed automatically (single source of truth).
-    // ========================================
-    const midiInput = /** @type {MidiInputShape} */ (/** @type {any} */ ({
+    const midiInput = /** @type {any} */ (/** @type {any} */ ({
       enabled: false,           // true while a MIDI input port is connected
       port: null,
       _accessRequested: false,
@@ -2219,49 +1170,22 @@
     }));
 
     // Single point of MIDI message dispatch — called from Web MIDI port handler
-    // (above) and from the BLE-MIDI parser. Updates lastEventTime so the loop's
-    // mic-vs-MIDI arbitration knows MIDI is live.
-    //
-    // Android BLE stack occasionally redelivers the same packet, causing the
-    // same note-on to arrive twice within a few ms. That makes the practice
-    // cursor advance twice for one keypress and the score get out of sync.
-    // Drop identical note-ons within 30ms — well below human-playable speed.
-    // Phase 0d batch 22: MIDI byte router lives in
-    // packages/web/src/midi-dispatch.ts. The factory closes over the
-    // BLE-redelivery dedupe state; `_midiDispatch.reset()` is called
-    // from session reset to clear the dedupe cache.
     const _midiDispatch = MidiDispatch.createMidiDispatch({
-      midiInput: /** @type {import('./midi-dispatch').MidiDispatchInputRef} */ (
-        /** @type {any} */ (midiInput)
-      ),
-      practice: /** @type {import('./midi-dispatch').MidiDispatchPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
+      midiInput: /** @type {any} */ (midiInput),
+      practice: /** @type {any} */ (practice),
       pulseMidiBadge,
       onMidiNoteOn,
       onMidiNoteOff,
       onMidiCC,
       matchNoteOnset,
     });
-    /** @param {number} status @param {number} a @param {number} b */
-    function dispatchMidiMessage(status, a, b) { _midiDispatch.dispatch(status, a, b); }
+    /** @param {any} status @param {any} a @param {any} b */ function dispatchMidiMessage(status, a, b) { _midiDispatch.dispatch(status, a, b); }
 
-    // Phase 0d batch 20: MIDI badge + topbar input pill + UA cache
-    // + virtual-port filter moved to packages/web/src/midi-indicator.ts.
-    // The factory closes over the badge-pulse timer + cached UA result;
-    // shell rebinds to the existing short function names so the rest
-    // of the file (event wiring, MIDI port attach/detach) keeps reading
-    // them as plain function refs.
     const _midiIndicator = MidiIndicator.createMidiIndicator({
-      midiInput: /** @type {import('./midi-indicator').MidiIndicatorMidiInput} */ (
-        /** @type {any} */ (midiInput)
-      ),
+      midiInput: /** @type {any} */ (midiInput),
       dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput },
       t,
       // Thunked: _midiRescan's `const` lives further down the file
-      // (TDZ — same dance as bleMidi in midi-ports). The indicator
-      // pill reads this once per setInputIndicator() call, never at
-      // factory-build time, so the access is safe.
       isRescanRunning: () => _midiRescan.isRescanRunning(),
       hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
     });
@@ -2269,42 +1193,11 @@
     function refreshMidiBadge() { _midiIndicator.refreshBadge(); }
     function isAppleMobile() { return _midiIndicator.isAppleMobile(); }
 
-    // ╔════════════════════════════════════════════════════════════════════╗
-    // ║ Web MIDI Browser (WMB) workarounds — TEMPORARY, scheduled for      ║
-    // ║ removal after Phase 1 (Capacitor native build).                    ║
-    // ║                                                                    ║
-    // ║ WMB is a third-party iOS app that polyfills the Web MIDI API in    ║
-    // ║ WebKit (which Apple has refused to implement — Bug 107250). Its    ║
-    // ║ polyfill has known quirks the spec doesn't cover; we work around   ║
-    // ║ them so Pages-deployed iPad users have a functional MIDI path.    ║
-    // ║                                                                    ║
-    // ║ Once `packages/plugins/capacitor-piano-midi/` ships in Phase 1     ║
-    // ║ (CoreMIDI on iOS, android.media.midi on Android), iPad users use  ║
-    // ║ the native app instead and these hacks become dead code.          ║
-    // ║                                                                    ║
-    // ║ Cleanup recipe (one-line grep + audit):                           ║
-    // ║   $ grep -nE "@WMB-WORKAROUND" packages/web/src/legacy-app.js     ║
-    // ║   then delete each tagged block. Each block carries enough        ║
-    // ║   context that removing it shouldn't require reading the rest of  ║
-    // ║   the file. The universal patterns it sits next to                ║
-    // ║   (auto-rescan poller, visibility-resume re-enumeration, badge    ║
-    // ║   waiting state, manual rescan-on-tap) STAY — those help every    ║
-    // ║   platform, not just WMB.                                          ║
-    // ║                                                                    ║
-    // ║ Marker count to remove (at this commit): 5 blocks                 ║
-    // ║   1. attachMidiPort()      — explicit port.open() call            ║
-    // ║   2. initWebMIDI()         — second-pass attach ignoring state    ║
-    // ║   3. rescanMidi()          — second-pass attach ignoring state    ║
-    // ║   4. _scheduleNextRescan() — every-2-tick force-fresh in fast win ║
-    // ║   5. (this header — leave or remove together)                     ║
-    // ╚════════════════════════════════════════════════════════════════════╝
+    // WMB (Web MIDI Browser iOS) workarounds bracketed by
 
     function setInputIndicator() { _midiIndicator.setInputIndicator(); }
 
     // Tapping the input badge in the practice topbar triggers a manual rescan
-    // (verbose, surfaces diagnostic in introHint on failure). Cheap escape hatch
-    // for "iPad / Web MIDI Browser doesn't auto-detect after re-pairing" — beats
-    // diving into Settings → Rescan.
     DOM.ptbInput?.addEventListener('click', () => {
       if (midiInput.enabled || midiInput.platformBlocked) return;
       console.log('[MIDI] manual rescan triggered by topbar badge tap');
@@ -2314,27 +1207,14 @@
     // Virtual-port filter moved to packages/web/src/midi-indicator.ts —
     // re-bind to the short name so the existing enumeration callsites
     // keep working unchanged.
-    /** @param {{name?:string|null, manufacturer?:string|null}|null} port */
-    function isVirtualMidiPort(port) { return _midiIndicator.isVirtualMidiPort(port); }
+    /** @param {any} port */ function isVirtualMidiPort(port) { return _midiIndicator.isVirtualMidiPort(port); }
 
-    // Phase 0d batch 25: attach / detach lives in
-    // packages/web/src/midi-ports.ts. The factory is built right
-    // below this declaration (after suspendMic / resumeMic /
-    // setInputIndicator / start+stopMidiAutoRescan are in scope —
-    // forward-declared above) so the legacy short names can re-bind
-    // straight away.
     const _midiPorts = MidiPorts.createMidiPorts({
-      midiInput: /** @type {import('./midi-ports').MidiPortsInputRef} */ (
-        /** @type {any} */ (midiInput)
-      ),
-      state: /** @type {import('./midi-ports').MidiPortsStateRef} */ (
-        /** @type {any} */ (state)
-      ),
+      midiInput: /** @type {any} */ (midiInput),
+      state: /** @type {any} */ (state),
       // Thunked: bleMidi's `const` lives further down the file (TDZ
       // dance — the factory is built before the BLE state object).
-      getBleMidi: () => /** @type {import('./midi-ports').MidiPortsBleRef} */ (
-        /** @type {any} */ (bleMidi)
-      ),
+      getBleMidi: () => /** @type {any} */ (bleMidi),
       hasAudioCtx: () => !!audioCtx,
       suspendMic,
       resumeMic,
@@ -2351,19 +1231,13 @@
     });
     /** @param {MIDIInput|null} port @returns {boolean} */
     function attachMidiPort(port) {
-      return _midiPorts.attach(/** @type {import('./midi-ports').MidiPortRef|null} */ (
-        /** @type {any} */ (port)
-      ));
+      return _midiPorts.attach(/** @type {any} */ (port));
     }
     /** @param {MIDIInput|{name:string}|null} port */
     function detachMidiPort(port) {
       _midiPorts.detach(/** @type {any} */ (port));
     }
 
-    // Phase 0d batch 57: 67-line first-time Web MIDI initialization
-    // moved to packages/web/src/midi-init.ts. The forwarder keeps the
-    // legacy short name for the two callsites inside initAudio() and
-    // the practice-flow wire-up (search "initWebMIDI:").
     async function initWebMIDI() { return _midiInit.initWebMIDI(); }
 
     // Surface a quiet "waiting for MIDI" hint so users on iPad / WMB know
@@ -2372,26 +1246,11 @@
     function showMidiWaitingHint() { _introDiag.showMidiWaitingHint(); }
 
     // MIDI rescan — two-stage connection attempt:
-    // (1) connect via the normal filter; (2) if that fails, force-connect ignoring the virtual filter.
-    // silent=true skips UI updates on failure (used by auto-retry).
-    // Cached MIDIAccess. Per spec the inputs collection updates live with
-    // onstatechange events, so we only need to request once and re-iterate
-    // for rescans. Re-requesting bypasses cached permission on some polyfills
-    // and may also fail outside the original user gesture.
     /** @type {MIDIAccess|null} */
-    // Phase 0d batch 26: ensureMidiAccess + rescanMidi + auto-rescan
-    // poller moved to packages/web/src/midi-rescan.ts. The factory
-    // is built right after attachMidiPort / detachMidiPort are
-    // declared so all the callbacks resolve. _midiAccess is only
-    // exposed via the factory (verifyMidiAlive reads it through the
-    // closure here, not the legacy outer scope). Forward-declared
-    // for the verify path that still needs the raw access ref.
     /** @type {MIDIAccess|null} */
     let _midiAccess = null;
     const _midiRescan = MidiRescan.createMidiRescan({
-      midiInput: /** @type {import('./midi-ports').MidiPortsInputRef} */ (
-        /** @type {any} */ (midiInput)
-      ),
+      midiInput: /** @type {any} */ (midiInput),
       attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
       detachMidiPort: (port) => detachMidiPort(/** @type {any} */ (port)),
       isAppleMobile: () => isAppleMobile(),
@@ -2405,9 +1264,6 @@
       setInputIndicator,
       navigator,
       // [Bug fix 2026-05-09] Pause auto-rescan during active
-      // practice. requestMIDIAccess({force:true}) triggered residual
-      // dt=50ms frame spikes on every 5th tick — see midi-rescan.ts
-      // header comment.
       isPaused: () => !!practice.enabled,
     });
     /** @param {boolean} [force] @returns {Promise<MIDIAccess>} */
@@ -2417,7 +1273,6 @@
       return _midiAccess;
     }
 
-    // Phase 0d batch 25: defensive iteration of access.inputs moved
     // to packages/web/src/midi-ports.ts (pure helper).
     /** @param {MIDIAccess} access */
     function gatherMidiInputs(access) {
@@ -2426,20 +1281,12 @@
       );
     }
 
-    // Phase 0d batch 26: rescan body lives in midi-rescan.ts. The
-    // forwarder keeps the legacy short name + JSDoc for any
-    // remaining callsites (manual rescan tap on the badge, settings
-    // panel rescan button, etc.).
-    /** @param {boolean} [silent] @returns {Promise<boolean>} */
-    function rescanMidi(silent) { return _midiRescan.rescan(silent); }
+    /** @param {any} [silent] */ function rescanMidi(silent) { return _midiRescan.rescan(silent); }
 
     // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
     // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
     // か再スキャンの明示的な操作までは再表示しない。
     /** @param {string} line1 @param {string} [line2] */
-    // Phase 0d batch 50: 22-line intro-hint diagnostic system
-    // (set / show / clear / showMidiWaitingHint) moved to
-    // packages/web/src/intro-diag.ts.
     const _introDiag = IntroDiag.createIntroDiag(
       /** @type {import('./intro-diag').IntroDiagDeps} */ ({
         state: /** @type {any} */ (state),
@@ -2449,59 +1296,33 @@
         t,
       })
     );
-    /** @param {string} line1 @param {string} [line2] */
-    function setIntroHintDiagnostic(line1, line2) { _introDiag.setDiagnostic(line1, line2); }
-    /** @param {() => void} thunk */
-    function showIntroDiag(thunk) { _introDiag.showDiag(thunk); }
+    /** @param {any} line1 @param {any} line2 */ function setIntroHintDiagnostic(line1, line2) { _introDiag.setDiagnostic(line1, line2); }
+    /** @param {any} thunk */ function showIntroDiag(thunk) { _introDiag.showDiag(thunk); }
     function clearIntroDiagCache() { _introDiag.clearCache(); }
 
-    // Phase 0d batch 26: auto-rescan poller (ramped cadence + WMB
-    // force-fresh quirks) lives in midi-rescan.ts. Forwarders keep
-    // the legacy short names so existing callsites unchanged. The
-    // indicator's hourglass state reads `_midiRescan.isRescanRunning()`
-    // through the thunk wired in batch 20.
     function startMidiAutoRescan() { _midiRescan.startAutoRescan(); }
     function stopMidiAutoRescan() { _midiRescan.stopAutoRescan(); }
 
-    // Phase 0d batch 57: 67-line initWebMIDI orchestrator extracted
-    // to midi-init.ts. All deps thunked because ensureMidiAccess /
-    // gatherMidiInputs / attachMidiPort / showMidiWaitingHint /
-    // startMidiAutoRescan are function declarations either above or
-    // below this site — the thunks late-bind so call order doesn't
-    // matter. midiInput's mutable fields (`_accessRequested`,
-    // `platformBlocked`) flow through the shared ref directly.
     const _midiInit = MidiInit.createMidiInit({
-      midiInput: /** @type {import('./midi-init').MidiInitInputRef} */ (
-        /** @type {any} */ (midiInput)
-      ),
+      midiInput: /** @type {any} */ (midiInput),
       navigator,
       isAppleMobile: () => isAppleMobile(),
       setInputIndicator,
       ensureMidiAccess: () => ensureMidiAccess(),
       gatherMidiInputs: (access) =>
-        /** @type {import('./midi-init').MidiInitDeps['gatherMidiInputs']} */ (
-          /** @type {any} */ (gatherMidiInputs)
-        )(/** @type {any} */ (access)),
+        /** @type {any} */ (gatherMidiInputs)(/** @type {any} */ (access)),
       attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
       showMidiWaitingHint: () => showMidiWaitingHint(),
       startMidiAutoRescan: () => startMidiAutoRescan(),
     });
 
-    // Phase 0d batch 60: cross-cutting visibilitychange + devicechange
-    // listener cluster moved to audio-init.ts createAudioLifecycle().
-    // Wired here (after midiInput + verifyMidiAlive + rescanMidi +
-    // startMidiAutoRescan are declared) so all closures resolve.
     AudioInit.createAudioLifecycle({
       getAudioCtx: () => audioCtx,
       recover: () => recoverAudioContext(),
       isRunning: () => !!state.running,
       requestWakeLock: () => requestWakeLock(),
-      navigator: /** @type {import('./audio-init').AudioLifecycleNavigator} */ (
-        /** @type {any} */ (navigator)
-      ),
-      midiInput: /** @type {import('./audio-init').AudioLifecycleMidiRef} */ (
-        /** @type {any} */ (midiInput)
-      ),
+      navigator: /** @type {any} */ (navigator),
+      midiInput: /** @type {any} */ (midiInput),
       verifyMidiAlive: () => verifyMidiAlive(),
       clearMidiAccessCache: () => {
         _midiAccess = null;
@@ -2511,15 +1332,6 @@
     }).install();
 
     // ========================================
-    // BLE-MIDI via Web Bluetooth
-    //   Android Chrome's Web MIDI exposes USB devices only — Bluetooth keyboards
-    //   never appear there. Web Bluetooth IS available on Android Chrome though,
-    //   so we connect over BLE-MIDI directly using the standard service UUID.
-    //   Same path also helps desktop Chrome users whose BLE-MIDI device isn't
-    //   surfaced via Web MIDI.
-    // ========================================
-    // BLE-MIDI service / characteristic UUIDs are re-exported from
-    // packages/web/src/ble-midi-connect.ts (single source of truth).
     const BLE_MIDI_SERVICE = BleMidiConnect.BLE_MIDI_SERVICE;
     const BLE_MIDI_CHAR    = BleMidiConnect.BLE_MIDI_CHAR;
 
@@ -2534,26 +1346,14 @@
     // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
     // use we ignore timestamps and extract MIDI messages of types we care about.
     /** @param {ArrayBuffer} buf */
-    // Phase 0d batch 21: BLE-MIDI 1.0 packet decoding moved to
-    // packages/web/src/ble-midi-parser.ts. The shell wraps it in a
-    // 1-line forwarder so the BLE characteristic listener keeps the
-    // unchanged callsite (`parseBleMidiPacket(buf)`).
     /** @param {ArrayBuffer} buf */
     function parseBleMidiPacket(buf) {
       BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage);
     }
 
-    // Phase 0d batch 27: Web Bluetooth GATT connect path moved to
-    // packages/web/src/ble-midi-connect.ts. The forwarder keeps the
-    // legacy short name so the settings-panel BLE button + any other
-    // callsite stays unchanged.
     const _bleConnect = BleMidiConnect.createBleMidiConnect({
-      bleMidi: /** @type {import('./ble-midi-connect').BleMidiState} */ (
-        /** @type {any} */ (bleMidi)
-      ),
-      midiInput: /** @type {import('./midi-ports').MidiPortsInputRef} */ (
-        /** @type {any} */ (midiInput)
-      ),
+      bleMidi: /** @type {any} */ (bleMidi),
+      midiInput: /** @type {any} */ (midiInput),
       hasAudioCtx: () => !!audioCtx,
       state: { get micSuspended() { return state.micSuspended; }, set micSuspended(v) { state.micSuspended = v; } },
       suspendMic,
@@ -2571,14 +1371,6 @@
     async function connectBleMidi() { await _bleConnect.connect(); }
 
     // ─── settings-panel wire-up ──────────────────────────────────────
-    // Settings-panel modal lifecycle + audio-offset slider + rescan/BLE/
-    // reset buttons — Phase 0d batch 3: extracted to
-    // packages/web/src/settings-panel.ts. Wired here (after practice,
-    // midiInput, rescanMidi, connectBleMidi are all in scope) and
-    // re-binds the forward-declared `openSettings` / `closeSettings` /
-    // `refreshSettingsPanel` placeholders earlier in the file so call
-    // sites (ESC handler, refreshSettingsPanel from showSessionSummary)
-    // keep working.
     {
       const _settings = SettingsPanel.createSettingsPanel({
         dom: /** @type {import('./settings-panel').SettingsPanelDom} */ ({
@@ -2593,7 +1385,6 @@
           bleBtn: DOM.settingsBleBtn,
           resetBtn: DOM.settingsResetBtn,
           inputStatus: DOM.settingsInputStatus,
-          // Phase 0d batch 70 fold — debug toggle + overlay.
           debugToggle: DOM.settingsDebugToggle,
           debugOverlay: DOM.debugOverlay,
         }),
@@ -2612,23 +1403,13 @@
       openSettings = _settings.open;
       closeSettings = _settings.close;
       refreshSettingsPanel = _settings.refresh;
-      // Phase 0d batch 70 fold — seed the debug overlay UI from
       // persisted prefs. The toggle's click handler is attached
       // inside createSettingsPanel and self-persists via savePrefs.
       _settings.applyDebug(prefs.debug);
     }
 
     // ========================================
-    // v13: MIDI Free-Play
-    //   - per-note polyphonic visuals (mic could only do monophonic)
-    //   - velocity → particle/ripple energy
-    //   - sustain pedal (CC 64) keeps notes lit until released
-    //   - simple chord recognition for triads/sevenths
-    //   - virtual on-screen 88-key keyboard with live key highlights
-    //   - sustained vertical light beams while keys are held
-    //   - left/right hand zones split at C4 (midi 60)
-    // ========================================
-    const midiState = /** @type {MidiStateShape} */ (/** @type {any} */ ({
+    const midiState = /** @type {any} */ (/** @type {any} */ ({
       activeNotes: new Map(),     // midiNum -> { velocity, onTimeMs, synColor }
       sustainOn: false,
       sustainedNotes: new Set(),  // released keys held by pedal
@@ -2637,10 +1418,6 @@
       lastChordTimeMs: 0,
     }));
 
-    // Chord detection — Phase 0b.3: delegated to @piano/core's drop-in
-    // implementation (same algorithm, same NOTE_NAMES table, same CHORD_DICT).
-    // PianoCore is loaded via <script> in index.html before app.js, so it's
-    // safe to alias at parse time.
     const detectChord = PianoCore.detectChord;
 
     /** @param {number} midiNum */
@@ -2648,7 +1425,6 @@
       return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
     }
 
-    // Per-note color helpers — Phase 0b.3: delegated to @piano/core.
     /** @param {number} midiNum */
     const noteThemeColor = (midiNum) =>
       PianoCore.noteThemeColor(midiNum, CONFIG.THEMES[state.currentTheme]);
@@ -2674,92 +1450,58 @@
       DOM.noteDisplay.classList.add('visible');
     }
 
-    // Phase 0d batch 19: MIDI note-on / note-off / CC handlers +
-    // spawnMidiNoteVisuals moved to packages/web/src/midi-handlers.ts.
-    // The shell still owns the deps bag (closure refs) so legacy
-    // callsites of `onMidiNoteOn` / `onMidiNoteOff` / `onMidiCC` keep
-    // their existing function-name surface.
-    /** @returns {import('./midi-handlers').MidiHandlersDeps} */
-    function _midiHandlerDeps() {
-      return /** @type {import('./midi-handlers').MidiHandlersDeps} */ ({
-        state: /** @type {import('./midi-handlers').MidiHandlersState} */ (
-          /** @type {any} */ (state)
-        ),
-        midiState: /** @type {import('./midi-handlers').MidiHandlersMidiState} */ (
-          /** @type {any} */ (midiState)
-        ),
-        practice: /** @type {import('./midi-handlers').MidiHandlersPracticeRef} */ (
-          /** @type {any} */ (practice)
-        ),
-        midiToScreenX,
-        noteThemeColor,
-        synColorFor,
-        spawnBurst,
-        spawnStream,
-        ripples: /** @type {import('./midi-handlers').RipplesArray} */ (
-          /** @type {any} */ (ripples)
-        ),
-        Ripple: /** @type {import('./midi-handlers').RippleCtor} */ (
-          /** @type {any} */ (Ripple)
-        ),
-        hideIntroHint,
-        showNoteDisplay,
-        effectGlowPulse,
-        finalizeNoteHold,
-        applyOnsetToHistory: PianoCore.applyOnsetToHistory,
-        applyOnsetPitch: PianoCore.applyOnsetPitch,
-        applyOnsetToWindow: PianoCore.applyOnsetToWindow,
-        triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
-        qhOptsMidi: QH_OPTS_MIDI,
-        psOpts: PS_OPTS,
-        cwOpts: CW_OPTS,
-        wufOpts: WUF_OPTS,
-        config: {
-          NOTE_NAMES: CONFIG.NOTE_NAMES,
-          COMBO_WINDOW_MS: CONFIG.COMBO_WINDOW_MS,
-        },
-        getHeight: () => H,
-      });
-    }
+    const _midiHandlerDeps = /** @type {import('./midi-handlers').MidiHandlersDeps} */ ({
+      state: /** @type {any} */ (state),
+      midiState: /** @type {any} */ (midiState),
+      practice: /** @type {any} */ (practice),
+      midiToScreenX,
+      noteThemeColor,
+      synColorFor,
+      spawnBurst,
+      spawnStream,
+      ripples: /** @type {any} */ (ripples),
+      Ripple: /** @type {any} */ (Ripple),
+      hideIntroHint,
+      showNoteDisplay,
+      effectGlowPulse,
+      finalizeNoteHold,
+      applyOnsetToHistory: PianoCore.applyOnsetToHistory,
+      applyOnsetPitch: PianoCore.applyOnsetPitch,
+      applyOnsetToWindow: PianoCore.applyOnsetToWindow,
+      triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
+      qhOptsMidi: QH_OPTS_MIDI,
+      psOpts: PS_OPTS,
+      cwOpts: CW_OPTS,
+      wufOpts: WUF_OPTS,
+      config: { NOTE_NAMES: CONFIG.NOTE_NAMES, COMBO_WINDOW_MS: CONFIG.COMBO_WINDOW_MS },
+      getHeight: () => H,
+    });
 
     /** @param {number} midiNum @param {number} velocity @param {string=} synColor */
     function spawnMidiNoteVisuals(midiNum, velocity, synColor) {
-      MidiHandlers.spawnMidiNoteVisuals(midiNum, velocity, synColor, _midiHandlerDeps());
+      MidiHandlers.spawnMidiNoteVisuals(midiNum, velocity, synColor, _midiHandlerDeps);
     }
-
     /** @param {number} midiNum @param {number} velocity */
     function onMidiNoteOn(midiNum, velocity) {
-      MidiHandlers.onMidiNoteOn(midiNum, velocity, _midiHandlerDeps());
+      MidiHandlers.onMidiNoteOn(midiNum, velocity, _midiHandlerDeps);
     }
-
     /** @param {number} midiNum */
     function onMidiNoteOff(midiNum) {
-      MidiHandlers.onMidiNoteOff(midiNum, _midiHandlerDeps());
+      MidiHandlers.onMidiNoteOff(midiNum, _midiHandlerDeps);
     }
-
     /** @param {number} cc @param {number} value */
     function onMidiCC(cc, value) {
-      MidiHandlers.onMidiCC(cc, value, _midiHandlerDeps());
+      MidiHandlers.onMidiCC(cc, value, _midiHandlerDeps);
     }
 
-    // Virtual keyboard tables + drawer — Phase 0b.3: delegated to @piano/core.
     const KB_WHITE = PianoCore.KB_WHITE;
     const KB_BLACK = PianoCore.KB_BLACK;
     const KB_BLACK_LEFT_WHITE_IDX = PianoCore.KB_BLACK_LEFT_WHITE_IDX;
 
-    // Phase 0d batch 16: drawMidiKeyboard / drawMidiBeams /
-    // drawMidiChordDisplay / buildKeyboardHintNotes moved to
-    // packages/web/src/midi-render.ts. The shell wraps the factory
-    // result in the legacy short names so the loop wire-up stays
-    // unchanged.
     const _midiRender = MidiRender.createMidiRender({
       ctx,
-      midiState: /** @type {import('./midi-render').MidiRenderMidiState} */ (
-        /** @type {any} */ (midiState)
-      ),
-      practice: /** @type {import('./midi-render').MidiRenderPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
+      midiState: /** @type {any} */ (midiState),
+      practice: /** @type {any} */ (practice),
       getLayout: () => ({ W, H, kbHeight, kbSafeBottom }),
       drawMidiKeyboard: PianoCore.drawMidiKeyboard,
       drawMidiBeams: PianoCore.drawMidiBeams,
@@ -2769,21 +1511,14 @@
       shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
       sustainLabel: t('sustainLabel'),
     });
-    /** @returns {void} */
     function drawMidiKeyboard() { _midiRender.drawKeyboard(); }
-    /** @param {number} timeMs */
-    function drawMidiBeams(timeMs) { _midiRender.drawBeams(timeMs); }
-    /** @param {number} timeMs */
-    function drawMidiChordDisplay(timeMs) { _midiRender.drawChordDisplay(timeMs); }
+    /** @param {any} timeMs */ function drawMidiBeams(timeMs) { _midiRender.drawBeams(timeMs); }
+    /** @param {any} timeMs */ function drawMidiChordDisplay(timeMs) { _midiRender.drawChordDisplay(timeMs); }
     // Refresh the sustainLabel on language change.
     window.addEventListener('langchange', () =>
       _midiRender.setLabels({ sustainLabel: t('sustainLabel') })
     );
 
-    // Phase 0d batch 36: practice scoring + timing cluster
-    // (medianRecentPitch / matchNoteOnset / finalizeNoteHold /
-    // practiceRealElapsedMs / practiceElapsedMs) moved to
-    // packages/web/src/practice-scoring.ts.
     const _practiceScoring = PracticeScoring.createPracticeScoring({
       state: /** @type {any} */ (state),
       practice: /** @type {any} */ (practice),
@@ -2816,10 +1551,6 @@
     function practiceRealElapsedMs() { return _practiceScoring.practiceRealElapsedMs(); }
     function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
 
-    // Phase 0d batch 37: persisted practice progress (load /
-    // save / per-song lookup / daily-streak record) moved to
-    // packages/web/src/practice-progress.ts. The factory wraps
-    // PianoCore's pure reducers + the prefs-storage adapter.
     const defaultSongProgress = PianoCore.defaultSongProgress;
     const dateKey = PianoCore.formatDateKey;
     const _practiceProgress = PracticeProgress.createPracticeProgress({
@@ -2834,8 +1565,7 @@
     });
     /** @returns {import('@piano/core').PracticeProgress} */
     function loadPracticeProgress() {
-      return /** @type {import('@piano/core').PracticeProgress} */ (
-        /** @type {any} */ (_practiceProgress.load())
+      return /** @type {any} */ (_practiceProgress.load()
       );
     }
     function savePracticeProgress() { _practiceProgress.save(); }
@@ -2844,14 +1574,7 @@
     }
     function recordPracticeDay() { _practiceProgress.recordPracticeDay(); }
 
-    // ========================================
-    // Tone.js helpers
-    // ========================================
-    // Phase 0d batch 33: lazy synth instantiation + count-in
-    // scheduling + Transport-stop teardown moved to
-    // packages/web/src/practice-tone-audio.ts. The factory holds
-    // the two synths in closure state; getInstruments() exposes
-    // them so startPracticeSection can hand them to AudioScheduler.
+    // ── Tone.js helpers ──
     const _practiceToneAudio = PracticeToneAudio.createPracticeToneAudio({
       Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
       audioScheduler: /** @type {any} */ (AudioScheduler),
@@ -2864,68 +1587,40 @@
       _practiceToneAudio.scheduleCountIn(startAudioTime);
     }
 
-    // Phase 0d batch 38: note-utility helpers (notePitchClass /
-    // midiToFreq / n_state / midiToPitchName / midiToName) moved to
-    // packages/web/src/shell-helpers.ts. JP/EN note-names table stays
-    // in the shell since langchange mutates `activeNoteNames` from
-    // outside this cluster.
     const notePitchClass = ShellHelpers.notePitchClass;
     const midiToFreq = ShellHelpers.midiToFreq;
-    /** @param {OsmdLikeNote} n */
-    function n_state(n) { return ShellHelpers.noteStateLabel(n); }
-    // Japanese-mode note names. Kids in JP music ed read ド/レ/ミ on the staff,
-    // so when prefs.lang === 'jp' we surface those instead of C/D/E. Octave
-    // numbers stay as digits — a Japanese kid's textbook also uses C4-style
-    // octave numerals when needed.
-    const NOTE_NAMES_JP = ['ド', 'ド#', 'レ', 'レ#', 'ミ', 'ファ', 'ファ#', 'ソ', 'ソ#', 'ラ', 'ラ#', 'シ'];
+    /** @param {any} n */
+    /** @param {any} n */ function n_state(n) { return ShellHelpers.noteStateLabel(n); }
+    const NOTE_NAMES_JP = CoreOpts.NOTE_NAMES_JP;
     // Hot-path cache — refreshed on langchange so the per-frame lane draw
     // doesn't re-evaluate the prefs.lang ternary 25× per frame.
     let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
     /** @param {number} midi */
-    function midiToPitchName(midi) { return ShellHelpers.midiToPitchName(midi, activeNoteNames); }
+    /** @param {any} midi */ function midiToPitchName(midi) { return ShellHelpers.midiToPitchName(midi, activeNoteNames); }
     /** @param {number} midi */
-    function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
+    /** @param {any} midi */ function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
 
-    // ========================================
-    // Section build + start
-    // ========================================
-    /** @param {number} sectionIdx @returns {OsmdLikeNote[]} */
-    // Phase 0d batch 34: section / full-song timeline builders +
-    // hand-range scanner moved to packages/web/src/section-notes.ts.
+    // ── Section build + start ──
     /** @param {number} sectionIdx */
     function buildSectionNotes(sectionIdx) {
-      return /** @type {OsmdLikeNote[]} */ (
-        /** @type {any} */ (
-          SectionNotes.buildSectionNotes(sectionIdx, {
-            song: /** @type {any} */ (currentSong),
-            practice: /** @type {any} */ (practice),
-            countInMs: COUNT_IN_MS,
-          })
-        )
-      );
+      return SectionNotes.buildSectionNotes(sectionIdx, {
+        song: /** @type {any} */ (currentSong),
+        practice: /** @type {any} */ (practice),
+        countInMs: COUNT_IN_MS,
+      });
     }
-    /** @returns {OsmdLikeNote[]} */
     function buildFullSongNotes() {
-      return /** @type {OsmdLikeNote[]} */ (
-        /** @type {any} */ (
-          SectionNotes.buildFullSongNotes({
-            song: /** @type {any} */ (currentSong),
-            practice: /** @type {any} */ (practice),
-            countInMs: COUNT_IN_MS,
-          })
-        )
-      );
+      return SectionNotes.buildFullSongNotes({
+        song: /** @type {any} */ (currentSong),
+        practice: /** @type {any} */ (practice),
+        countInMs: COUNT_IN_MS,
+      });
     }
-    /** @param {OsmdLikeNote[]} sectionNotes */
+    /** @param {any[]} sectionNotes */
     function computeHandRanges(sectionNotes) {
-      return SectionNotes.computeHandRanges(/** @type {any} */ (sectionNotes));
+      return SectionNotes.computeHandRanges(sectionNotes);
     }
 
-    // Phase 0d batch 39: 209-line startPracticeSection orchestrator
-    // moved to packages/web/src/start-practice-section.ts. The factory
-    // closes over all the shell-side hooks (DOM bag, OSMD adapter, Tone,
-    // AudioScheduler, _practiceToneAudio.getInstruments, etc.) so the
-    // legacy short name is a 1-line forwarder.
     const _startPracticeSection = StartPracticeSection.createStartPracticeSection({
       state: /** @type {any} */ (state),
       practice: /** @type {any} */ (practice),
@@ -2942,13 +1637,7 @@
       setInputIndicator,
       requestWakeLock,
       showSectionBanner,
-      dom: {
-        ptbSection: DOM.ptbSection,
-        ptbTempo: DOM.ptbTempo,
-        ptbProgress: DOM.ptbProgress,
-        practiceHud: DOM.practiceHud,
-        osmdContainer: DOM.osmdContainer,
-      },
+      dom: { ptbSection: DOM.ptbSection, ptbTempo: DOM.ptbTempo, ptbProgress: DOM.ptbProgress, practiceHud: DOM.practiceHud, osmdContainer: DOM.osmdContainer, },
       loadCurrentScore: () => loadCurrentScore(),
       recomputePracticeTimings,
       buildSectionNotes,
@@ -2972,21 +1661,11 @@
 
     function stopPracticeAudio() { _practiceToneAudio.stopPracticeAudio(); }
 
-    // ========================================
-    // Per-frame practice tick — Phase 0d batch 8 wire-up
-    // ========================================
-    // updatePractice implementation lives in
-    // packages/web/src/practice-tick.ts. The shell wraps the factory
-    // result in the legacy short name and the render-loop calls it
-    // each frame while practice is active.
+    // ── Per-frame practice tick — Phase 0d batch 8 wire-up ──
     const updatePractice = PracticeTick.createPracticeTick({
       dom: { ptbProgress: DOM.ptbProgress },
-      practice: /** @type {import('./practice-tick').PracticeTickPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
-      midiInput: /** @type {import('./practice-tick').PracticeTickMidiInput} */ (
-        /** @type {any} */ (midiInput)
-      ),
+      practice: /** @type {any} */ (practice),
+      midiInput: /** @type {any} */ (midiInput),
       getOsmd: () => /** @type {any} */ (typeof osmd !== 'undefined' ? osmd : null),
       practiceElapsedMs,
       hitWindowMs: HIT_WINDOW_MS,
@@ -3004,24 +1683,10 @@
     });
 
     // ========================================
-    // Draw falling notes lane
-    //   Lane is split into LH (left half) and RH (right half). Notes fall from the top
-    //   toward the hit line. Time-to-pixel scale = (laneHeight - 40) / LANE_LOOKAHEAD_MS.
-    // ========================================
-    // Practice lane wire-up (Phase 0d batch 15)
-    // ========================================
-    // drawPracticeLane + lane view/opts/timing scaffolding moved to
-    // packages/web/src/practice-lane.ts. The shell wraps the factory
-    // result so the legacy short name stays callable from the loop +
-    // render-late deps without churn.
     const _practiceLane = PracticeLane.createPracticeLane({
       ctx,
-      practice: /** @type {import('./practice-lane').PracticeLanePracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
-      state: /** @type {import('./practice-lane').PracticeLaneStateRef} */ (
-        /** @type {any} */ (state)
-      ),
+      practice: /** @type {any} */ (practice),
+      state: /** @type {any} */ (state),
       midiInput,
       getLayout: () => ({
         W,
@@ -3081,22 +1746,8 @@
 
     // ========================================
     // Hit feedback chip (DOM)
-    // Phase 0d batch 35: showHitChip + refreshIntroHint +
-    // hideIntroHint + noInputAvailable + alertAudioInitError moved
-    // to packages/web/src/intro-hint-ui.ts. The chip-throttle
-    // timestamp lives in the factory closure (no more shell-scoped
-    // `_lastChipMs`).
-    // Phase 0d batch 58: showRunningUI folded into intro-hint-ui.ts
-    // (same conceptual seam — the running-state UI cluster, calls
-    // refreshIntroHint internally). New deps: startScreen / hud /
-    // micMeter DOM, practice ref, requestWakeLock + rescan thunks.
     const _introHintUi = IntroHintUi.createIntroHintUi({
-      dom: {
-        introHint: DOM.introHint,
-        startScreen: DOM.startScreen,
-        hud: DOM.hud,
-        micMeter: DOM.micMeter,
-      },
+      dom: { introHint: DOM.introHint, startScreen: DOM.startScreen, hud: DOM.hud, micMeter: DOM.micMeter, },
       state: /** @type {any} */ (state),
       midiInput: /** @type {any} */ (midiInput),
       practice: /** @type {any} */ (practice),
@@ -3106,50 +1757,25 @@
       startMidiAutoRescan: () => startMidiAutoRescan(),
       rescanMidi: (silent) => rescanMidi(silent),
     });
-    /** @param {string} kind @param {string} text */
-    function showHitChip(kind, text) { _introHintUi.showHitChip(kind, text); }
+    /** @param {any} kind @param {any} text */ function showHitChip(kind, text) { _introHintUi.showHitChip(kind, text); }
 
-    // ========================================
-    // Section complete → result screen
-    // ========================================
+    // ── Section complete → result screen ──
     const SECTION_IDS = ['A1', 'B', 'A2'];
 
     // Result-screen tier + unlock gating delegated to @piano/core
-    // (resolveResultTier / computeUnlocks). RESULT_TIERS / TEMPO_TIERS / streak
-    // milestone constants now live in practice-state.ts.
-    // durPct is null in guided mode (no audio clock to score length against), in
-    // which case the dur threshold is skipped.
     const STAR_TIERS = PianoCore.STAR_TIERS;
     const computeStars = PianoCore.computeStars;
     const resolveResultTier = PianoCore.resolveResultTier;
     const computeUnlocks = PianoCore.computeUnlocks;
 
     // ─── result-card wire-up (Phase 0d batch 10) ───────────────────
-    // renderResultCard + completePracticeSection + drawHistoryChart
-    // moved to packages/web/src/result-card.ts. The shell wraps the
-    // factory result so the legacy short names keep working at every
-    // callsite (langchange listener, practice-tick deps).
     const _resultCard = ResultCard.createResultCard({
-      dom: /** @type {import('./result-card').ResultCardDom} */ ({
-        sectionResult: DOM.sectionResult,
-        resTitle: DOM.resTitle,
-        resSectionName: DOM.resSectionName,
-        resStars: DOM.resStars,
-        resAcc: DOM.resAcc,
-        resTiming: DOM.resTiming,
-        resDuration: DOM.resDuration,
-        resDurationRow: DOM.resDurationRow,
-        resCombo: DOM.resCombo,
-        resMsg: DOM.resMsg,
-        resUnlock: DOM.resUnlock,
-        resHistoryWrap: DOM.resHistoryWrap,
-        resHistoryChart: /** @type {HTMLCanvasElement} */ (DOM.resHistoryChart),
-        resNext: DOM.resNext,
-        resTryPlay: DOM.resTryPlay,
-      }),
-      practice: /** @type {import('./result-card').ResultCardPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
+      dom: /** @type {any} */ (DomBag.pickDom(DOM,
+        'sectionResult', 'resTitle', 'resSectionName', 'resStars', 'resAcc',
+        'resTiming', 'resDuration', 'resDurationRow', 'resCombo', 'resMsg',
+        'resUnlock', 'resHistoryWrap', 'resHistoryChart', 'resNext', 'resTryPlay',
+      )),
+      practice: /** @type {any} */ (practice),
       getCurrentSong: () => /** @type {any} */ (currentSong),
       songProg: () => /** @type {any} */ (songProg()),
       sectionIds: SECTION_IDS,
@@ -3171,35 +1797,14 @@
     renderResultCard = _resultCard.renderResultCard;
     completePracticeSection = _resultCard.completePracticeSection;
 
-    // ========================================
-    // Song panel UI building — Phase 0d batch 7d wire-up
-    // ========================================
-    // The renderSongPanel implementation now lives in
-    // packages/web/src/song-panel-render.ts. createSongPanelRender
-    // returns a closure the shell calls under the legacy short name
-    // and hands into other modules via their deps bags (practice-flow,
-    // song-panel-controls, user-songs-ui all call renderSongPanel after
-    // their state mutations).
+    // ── Song panel UI building — Phase 0d batch 7d wire-up ──
     const _songPanelRender = SongPanelRender.createSongPanelRender({
-      dom: /** @type {import('./song-panel-render').SongPanelRenderDom} */ ({
-        songTitle: DOM.songTitle,
-        songComposer: DOM.songComposer,
-        streakCount: DOM.streakCount,
-        streakCal: DOM.streakCal,
-        songBpmHint: DOM.songBpmHint,
-        tempoRow: DOM.tempoRow,
-        sectionList: DOM.sectionList,
-        ghostToggle: DOM.ghostToggle,
-        metronomeToggle: DOM.metronomeToggle,
-        ghostRow: DOM.ghostRow,
-        metronomeRow: DOM.metronomeRow,
-        fullSongRow: DOM.fullSongRow,
-        fullSongToggle: DOM.fullSongToggle,
-        songStart: DOM.songStart,
-      }),
-      practice: /** @type {import('./song-panel-render').SongPanelPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
+      dom: /** @type {any} */ (DomBag.pickDom(DOM,
+        'songTitle', 'songComposer', 'streakCount', 'streakCal', 'songBpmHint',
+        'tempoRow', 'sectionList', 'ghostToggle', 'metronomeToggle', 'ghostRow',
+        'metronomeRow', 'fullSongRow', 'fullSongToggle', 'songStart',
+      )),
+      practice: /** @type {any} */ (practice),
       getCurrentSong: () => /** @type {any} */ (currentSong),
       songProg: () => /** @type {any} */ (songProg()),
       t,
@@ -3207,104 +1812,46 @@
     });
     const renderSongPanel = _songPanelRender.render;
 
-    // Phase 0d batch 7c: hand picker + mode picker + practice toggles
-    // (ghost / metronome / full-song) + songBack moved to
-    // packages/web/src/song-panel-controls.ts. Wired below in one
-    // createSongPanelControls() call (search "song-panel wire-up").
-
     // v13: Central invariant — whenever audio is alive and we are NOT on the title
-    // screen, the global UI (theme bar with the home button + flow gauge HUD) must
-    // be visible. Without this helper, paths like (returnToTitle → song panel →
-    // back) leave the user on a bare canvas with no controls. Call this anywhere
-    // we transition from title or a panel back into an in-session view.
-    // True when we have no input alive AND don't expect to recover one without
-    // user help. iOS-WMB intentionally skips the mic but is still happy to wait
-    // for a MIDI keyboard — that is NOT the "no input" state we want to nag about.
     function noInputAvailable() { return _introHintUi.noInputAvailable(); }
     // refreshIntroHint moved to packages/web/src/intro-hint-ui.ts (batch 35).
     function refreshIntroHint() { _introHintUi.refreshIntroHint(); }
 
-    // Phase 0d batch 58: 23-line title→running UI transition folded
-    // into intro-hint-ui.ts (same conceptual seam as refreshIntroHint
-    // / hideIntroHint, which it calls internally).
     function showRunningUI() { _introHintUi.showRunningUI(); }
 
     function hideIntroHint() { _introHintUi.hideIntroHint(); }
 
-    /** @param {unknown} e */
-    function alertAudioInitError(e) { _introHintUi.alertAudioInitError(e); }
+    /** @param {any} e */ function alertAudioInitError(e) { _introHintUi.alertAudioInitError(e); }
 
     // ─── song-panel wire-up ─────────────────────────────────────────
-    // Ties together the song-panel buttons that were extracted into
-    // packages/web/src/song-panel-controls.ts (hand row, mode row,
-    // ghost / metronome / full-song toggles, songBack).
     SongPanelControls.createSongPanelControls({
-      dom: {
-        ghostToggle: DOM.ghostToggle,
-        metronomeToggle: DOM.metronomeToggle,
-        fullSongToggle: DOM.fullSongToggle,
-        songBack: DOM.songBack,
-      },
-      practice: /** @type {import('./song-panel-controls').SongPanelPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
+      dom: { ghostToggle: DOM.ghostToggle, metronomeToggle: DOM.metronomeToggle, fullSongToggle: DOM.fullSongToggle, songBack: DOM.songBack, },
+      practice: /** @type {any} */ (practice),
       renderSongPanel,
       // Thunk so the placeholder-then-reassigned `returnToTitle` reads
       // its live binding at click time (after createPracticeFlow runs).
       returnToTitle: () => returnToTitle(),
     });
 
-    DOM.songStart.addEventListener('click', async () => {
-      if (state.starting) return;
-      // Defer hiding the song panel until initAudio resolves — otherwise an
-      // initAudio failure leaves the user on a bare canvas (the previous
-      // selectSong has already hidden the title screen).
-      try {
-        if (!state.running) {
-          state.starting = true;
-          await initAudio();
-          DOM.songPanel.classList.remove('visible');
-          showRunningUI();
-          initBgStars();
-          state.running = true;
-          state.lastFrameTimeMs = 0;
-          state.sessionStartTimeMs = performance.now();
-          requestAnimationFrame(loop);
-        } else {
-          DOM.songPanel.classList.remove('visible');
-          // Re-entry while audio is already alive — make sure HUD/theme bar are
-          // shown again in case we got here via returnToTitle.
-          showRunningUI();
-        }
-        await startPracticeSection(practice.sectionIdx);
-      } catch (e) {
-        alertAudioInitError(e);
-        // Restore the song panel so the user has a path back; without this
-        // a partial-failure path strands them on a blank canvas.
-        DOM.songPanel.classList.add('visible');
-      } finally {
-        state.starting = false;
-      }
+    // packages/web/src/boot-session.ts as installSongStartButton.
+    BootSession.installSongStartButton(DOM.songStart, {
+      state: /** @type {any} */ (state),
+      practice: /** @type {any} */ (practice),
+      initAudio,
+      showRunningUI,
+      initBgStars,
+      loop,
+      alertAudioInitError,
+      startPracticeSection: (idx) => startPracticeSection(idx),
+      songPanel: DOM.songPanel,
     });
 
-    // Phase 0d batch 54: 45-line selectSong moved to
-    // packages/web/src/select-song.ts. Mutable currentSong + osmd
-    // flow through getter/setter thunks; forward-declared
-    // showRunningUI / renderSongPanel / initWebMIDI / loadCurrentScore
-    // are also thunks so the factory builds before they're declared.
     const _selectSong = SelectSong.createSelectSong(
       /** @type {import('./select-song').SelectSongDeps} */ ({
         songs: /** @type {any} */ (SONGS),
         state: /** @type {any} */ (state),
         practice: /** @type {any} */ (practice),
-        dom: {
-          osmdContainer: DOM.osmdContainer,
-          songTitle: DOM.songTitle,
-          songComposer: DOM.songComposer,
-          startScreen: DOM.startScreen,
-          songPanel: DOM.songPanel,
-          questDisplay: DOM.questDisplay,
-        },
+        dom: { osmdContainer: DOM.osmdContainer, songTitle: DOM.songTitle, songComposer: DOM.songComposer, startScreen: DOM.startScreen, songPanel: DOM.songPanel, questDisplay: DOM.questDisplay, },
         getCurrentSong: () => /** @type {any} */ (currentSong),
         setCurrentSong: (s) => { currentSong = /** @type {any} */ (s); },
         getOsmd: () => osmd,
@@ -3319,8 +1866,7 @@
         remoteLogEnabled: REMOTE_LOG_ENABLED,
       })
     );
-    /** @param {string} songId */
-    function selectSong(songId) { _selectSong.selectSong(songId); }
+    /** @param {any} songId */ function selectSong(songId) { _selectSong.selectSong(songId); }
 
     document.querySelectorAll('.practice-song-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -3329,13 +1875,7 @@
       });
     });
 
-    // ========================================
-    // Add-song modal + Section editor — Phase 0d batches 2, 6 wire-up
-    // ========================================
-    // Both modals' DOM bags stay in the shell because the global ESC
-    // handler reads them via `typeof DOM_X !== 'undefined'`. The modal
-    // logic + event handlers + export/import all live in
-    // packages/web/src/user-songs-ui.ts and section-editor.ts respectively.
+    // ── Add-song modal + Section editor — Phase 0d batches 2, 6 wire-up ──
     /** @type {Record<string, HTMLElement> & {tabs: NodeListOf<Element>, bodies: NodeListOf<Element>}} */
     const DOM_ADDSONG = /** @type {any} */ ({
       modal: document.getElementById('addSongModal'),
@@ -3373,15 +1913,9 @@
     // ─── section-editor wire-up ─────────────────────────────────────
     {
       const _sectionEditor = SectionEditor.createSectionEditor({
-        dom: /** @type {import('./section-editor').SectionEditorDom} */ ({
-          modal: DOM_SECEDIT.modal,
-          help: DOM_SECEDIT.help,
-          rows: DOM_SECEDIT.rows,
-          error: DOM_SECEDIT.error,
-          cancelBtn: DOM_SECEDIT.cancelBtn,
-          saveBtn: DOM_SECEDIT.saveBtn,
-          closeBtn: DOM_SECEDIT.closeBtn,
-        }),
+        dom: /** @type {any} */ (DomBag.pickDom(DOM_SECEDIT,
+          'modal', 'help', 'rows', 'error', 'cancelBtn', 'saveBtn', 'closeBtn',
+        )),
         openUserDb,
         userDbStoreName: USER_DB_STORE,
         unzipMxlToXmlText,
@@ -3406,26 +1940,12 @@
     // ─── user-songs wire-up ─────────────────────────────────────────
     {
       const _userSongs = UserSongsUi.createUserSongsUi({
-        dom: /** @type {import('./user-songs-ui').UserSongsUiDom} */ ({
-          modal: DOM_ADDSONG.modal,
-          btn: DOM_ADDSONG.btn,
-          closeBtn: DOM_ADDSONG.closeBtn,
-          tabs: DOM_ADDSONG.tabs,
-          bodies: DOM_ADDSONG.bodies,
-          libraryList: DOM_ADDSONG.libraryList,
-          libraryStatus: DOM_ADDSONG.libraryStatus,
-          librarySearch: DOM_ADDSONG.librarySearch,
-          fileInput: DOM_ADDSONG.fileInput,
-          pdCheckbox: DOM_ADDSONG.pdCheckbox,
-          urlInput: DOM_ADDSONG.urlInput,
-          fetchBtn: DOM_ADDSONG.fetchBtn,
-          status: DOM_ADDSONG.status,
-          myList: DOM_ADDSONG.myList,
-          userSongList: DOM_ADDSONG.userSongList,
-          exportBtn: DOM_ADDSONG.exportBtn,
-          importBtn: DOM_ADDSONG.importBtn,
-          importInput: DOM_ADDSONG.importInput,
-        }),
+        dom: /** @type {any} */ (DomBag.pickDom(DOM_ADDSONG,
+          'modal', 'btn', 'closeBtn', 'tabs', 'bodies',
+          'libraryList', 'libraryStatus', 'librarySearch',
+          'fileInput', 'pdCheckbox', 'urlInput', 'fetchBtn', 'status',
+          'myList', 'userSongList', 'exportBtn', 'importBtn', 'importInput',
+        )),
         songs: SONGS,
         getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
         getLibrary: () => ONLINE_LIBRARY,
@@ -3468,547 +1988,74 @@
     });
 
     // Request persistent storage so iOS Safari ITP / Chrome eviction policies
-    // are less likely to wipe IndexedDB during a long pause between practice
-    // sessions. Safari currently returns false, but it doesn't hurt to ask;
-    // Chrome / Edge / Android Chrome honor it for "installed" PWAs.
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist().then(granted => {
         if (granted) console.log('[Storage] persistent storage granted');
       }).catch(() => {});
     }
 
-    // ─── Dev mode (Phase 0d batch 12) ───────────────────────────────
-    // Activated by `?dev=1` URL param (persisted via localStorage), or
-    // by 5 quick taps on the start-screen tagline. Hidden in production.
-    DevMode.createDevMode({
+    DevModeWireup.installDevMode({
       triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
-      // Vite-injected at build time (see packages/web/vite.config.ts
-      // `define`). Picks up the short git SHA + build date so the
-      // 📋 Copy report can identify which commit produced it.
       versionLabel:
         (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') +
         ' ' +
         (typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''),
-      tests: /** @type {import('./dev-mode').SelfTest[]} */ ([
-        {
-          name: 'localStorage round-trip',
-          run: () => {
-            const k = '__pianoViz_dev_test__';
-            try {
-              localStorage.setItem(k, 'x');
-              const v = localStorage.getItem(k);
-              localStorage.removeItem(k);
-              return { ok: v === 'x' };
-            } catch (e) {
-              return { ok: false, detail: /** @type {Error} */ (e).message };
-            }
-          },
-        },
-        {
-          name: 'IndexedDB user-songs DB opens',
-          run: async () => {
-            try {
-              const db = await openUserDb();
-              db.close();
-              return { ok: true };
-            } catch (e) {
-              return { ok: false, detail: /** @type {Error} */ (e).message };
-            }
-          },
-        },
-        {
-          name: 'Module wire-up — every extracted module is on globalThis',
-          run: () => {
-            const expected = [
-              'PianoCore', 'AudioScheduler', 'NoteExtractor', 'PianoWakeLock',
-              'SectionEditor', 'SettingsPanel', 'AudioInit', 'UserSongsUi',
-              'ThemeControls', 'PracticeFlow', 'SongPanelControls',
-              'SongPanelRender', 'PracticeTick', 'ResultCard', 'SessionSummary',
-              'RenderFrame', 'DevMode',
-            ];
-            /** @type {string[]} */
-            const missing = [];
-            for (const k of expected) {
-              if (typeof (/** @type {any} */ (globalThis))[k] === 'undefined') missing.push(k);
-            }
-            return { ok: missing.length === 0, detail: missing.length ? 'missing: ' + missing.join(', ') : undefined };
-          },
-        },
-        {
-          name: 'DOM bag — critical elements all queryable',
-          run: () => {
-            const ids = [
-              'canvas', 'startScreen', 'startBtn', 'hud', 'songPanel',
-              'sectionResult', 'sessionSummary', 'addSongModal', 'sectionEditModal',
-              'settingsPanel', 'practiceHud', 'osmdContainer',
-            ];
-            /** @type {string[]} */
-            const missing = ids.filter(id => !document.getElementById(id));
-            return { ok: missing.length === 0, detail: missing.length ? 'missing: ' + missing.join(', ') : undefined };
-          },
-        },
-        {
-          name: 'i18n — t() returns localized non-empty strings',
-          run: () => {
-            const samples = ['startPractice', 'settings', 'micInput', 'tier1Title', 'addSongBtn'];
-            /** @type {string[]} */
-            const failed = samples.filter(k => {
-              const v = t(k);
-              return !v || v === k;
-            });
-            return { ok: failed.length === 0, detail: failed.length ? 'failed keys: ' + failed.join(', ') : undefined };
-          },
-        },
-        {
-          name: 'AudioContext — create, resume, close (no leak)',
-          run: async () => {
-            try {
-              const c = AudioInit.createAudioContext();
-              if (c.state === 'suspended') {
-                try { await c.resume(); } catch (_) { /* user-gesture-required outside this path is fine */ }
-              }
-              const sr = c.sampleRate;
-              await c.close();
-              return { ok: sr > 0, detail: 'sampleRate=' + sr + 'Hz' };
-            } catch (e) {
-              return { ok: false, detail: /** @type {Error} */ (e).message };
-            }
-          },
-        },
-        {
-          name: 'Web MIDI — API present (or iPad WMB)',
-          run: () => {
-            const hasMidi = typeof navigator.requestMIDIAccess === 'function';
-            const isApple = isAppleMobile();
-            const ok = hasMidi || !isApple; // OK if MIDI is present, OR not iPad (mic mode is fine)
-            const detail = hasMidi
-              ? 'navigator.requestMIDIAccess present'
-              : isApple
-                ? 'iPad without WMB — mic mode'
-                : 'NO Web MIDI';
-            return { ok, detail };
-          },
-        },
-        {
-          name: 'Service Worker — registered',
-          run: async () => {
-            if (!('serviceWorker' in navigator)) {
-              return { ok: false, detail: 'SW API not available' };
-            }
-            const reg = await navigator.serviceWorker.getRegistration();
-            return { ok: !!reg, detail: reg ? 'scope=' + reg.scope : 'no registration' };
-          },
-        },
-        {
-          name: 'Wake Lock API present',
-          run: () => {
-            const hasWL = !!(navigator.wakeLock && navigator.wakeLock.request);
-            return { ok: hasWL, detail: hasWL ? 'OK' : 'not supported (Safari iOS < 16.4 / older Android)' };
-          },
-        },
-        {
-          name: 'Prefs — round-trip via savePrefs/loadJSON',
-          run: () => {
-            const saved = JSON.parse(localStorage.getItem('pianoViz_prefs') || '{}');
-            const ok = typeof saved === 'object' && saved !== null;
-            return { ok, detail: 'theme=' + saved.theme + ' lang=' + saved.lang };
-          },
-        },
-      ]),
-      benchmarks: /** @type {import('./dev-mode').SelfTest[]} */ ([
-        {
-          name: 'Frame timing — 60 frames, expect avg dt < 18ms',
-          run: async () => {
-            // Synthetic frame-rate probe. Capture 60 raf ticks and
-            // compute the arithmetic mean. Doesn't depend on
-            // state.running — raf fires independently.
-            const samples = /** @type {number[]} */ ([]);
-            await new Promise((resolve) => {
-              let prev = performance.now();
-              let count = 0;
-              const tick = (/** @type {number} */ now) => {
-                samples.push(now - prev);
-                prev = now;
-                count++;
-                if (count >= 60) resolve(undefined);
-                else requestAnimationFrame(tick);
-              };
-              requestAnimationFrame(tick);
-            });
-            // Drop the first sample (warmup / hidden-tab carry-over).
-            const dts = samples.slice(1);
-            const avg = dts.reduce((s, d) => s + d, 0) / dts.length;
-            const max = Math.max(...dts);
-            const ok = avg < 18; // 60fps + a tiny margin
-            return { ok, detail: 'avg=' + avg.toFixed(1) + 'ms max=' + max.toFixed(1) + 'ms' };
-          },
-        },
-        {
-          name: 'Modal lifecycle — settings open + close + ESC',
-          run: () => {
-            const before = DOM.settingsPanel.classList.contains('visible');
-            openSettings();
-            const opened = DOM.settingsPanel.classList.contains('visible');
-            closeSettings();
-            const closed = DOM.settingsPanel.classList.contains('visible');
-            const ok = !before && opened && !closed;
-            return { ok, detail: 'before=' + before + ' opened=' + opened + ' closed=' + closed };
-          },
-        },
-        {
-          name: 'Modal lifecycle — add-song open + close',
-          run: () => {
-            openAddSongModal();
-            const opened = DOM_ADDSONG.modal.classList.contains('visible');
-            closeAddSongModal();
-            const closed = DOM_ADDSONG.modal.classList.contains('visible');
-            return { ok: opened && !closed, detail: 'opened=' + opened + ' closed=' + closed };
-          },
-        },
-        {
-          name: 'Theme cycle — flip 0 → 1 → 2 → 3 → 0',
-          run: () => {
-            const original = prefs.theme;
-            /** @type {string[]} */
-            const seen = [];
-            for (const idx of [0, 1, 2, 3, 0]) {
-              applyTheme(idx);
-              seen.push(idx + ':' + state.currentTheme + ':' + prefs.theme);
-            }
-            applyTheme(original); // restore
-            const ok = seen.every((s, i) => {
-              const want = [0, 1, 2, 3, 0][i];
-              return s === want + ':' + want + ':' + want;
-            });
-            return { ok, detail: ok ? 'all 5 cycles ok' : 'mismatch: ' + seen.join(', ') };
-          },
-        },
-        {
-          name: 'Lang cycle — JP ↔ EN flip persists + DOM updates',
-          run: () => {
-            const original = prefs.lang;
-            setLang('jp');
-            const jpHtml = document.documentElement.lang;
-            const jpStartText = t('startPractice');
-            setLang('en');
-            const enHtml = document.documentElement.lang;
-            const enStartText = t('startPractice');
-            setLang(/** @type {'en'|'jp'} */ (original)); // restore
-            const ok =
-              jpHtml === 'ja' &&
-              enHtml === 'en' &&
-              jpStartText !== enStartText &&
-              jpStartText.length > 0 &&
-              enStartText.length > 0;
-            return {
-              ok,
-              detail:
-                'jpHtml=' +
-                jpHtml +
-                ' enHtml=' +
-                enHtml +
-                ' jpText="' +
-                jpStartText +
-                '" enText="' +
-                enStartText +
-                '"',
-            };
-          },
-        },
-        {
-          name: 'Render-loop dispatch — runRenderFramePrelude returns valid dt',
-          run: async () => {
-            // Don't actually start a session; instead call the prelude
-            // directly with the same deps the loop uses. This proves
-            // the wire-up + module call path works end-to-end without
-            // needing audio.
-            const before = state.lastFrameTimeMs;
-            const result = RenderFrame.runRenderFramePrelude(performance.now(), {
-              ctx,
-              state,
-              getScreen: () => ({ W, H }),
-              themes: CONFIG.THEMES,
-              drawBgStars,
-              drawAurora,
-              drawGroundFlowers,
-              decayWakeUpFlash: PianoCore.decayWakeUpFlash,
-              drawCenterGlow: PianoCore.drawCenterGlow,
-              wufOpts: WUF_OPTS,
-              getEnergy,
-            });
-            const ok =
-              typeof result.dt === 'number' &&
-              result.dt > 0 &&
-              result.dt <= 50 &&
-              !!result.theme &&
-              !!result.theme.colors;
-            // Restore lastFrameTimeMs so we don't pollute the real loop.
-            state.lastFrameTimeMs = before;
-            return { ok, detail: 'dt=' + result.dt.toFixed(1) + 'ms theme=' + (result.theme?.colors?.length || 0) + 'colors' };
-          },
-        },
-        {
-          name: 'Behavior — MIDI note injection updates midiState',
-          run: async () => {
-            // onMidiNoteOn early-returns when state.running is false
-            // (no point processing MIDI before audio is alive). The
-            // bench therefore flips state.running true → calls onMidiNoteOn
-            // → asserts midiState.activeNotes was updated → calls
-            // onMidiNoteOff → restores. We deliberately don't assert
-            // particles/ripples spawn because spawnMidiNoteVisuals
-            // depends on the loop running, which we don't kick off
-            // here (raf would race with the bench teardown).
-            const wasRunning = state.running;
-            const wasMidiEnabled = midiInput.enabled;
-            const wasLastEvent = midiInput.lastEventTime;
-            state.running = true;
-            midiInput.enabled = true;
-            midiInput.lastEventTime = performance.now();
-            try {
-              onMidiNoteOn(60, 100);
-              const inActive = midiState.activeNotes.has(60);
-              onMidiNoteOff(60);
-              const cleared = !midiState.activeNotes.has(60);
-              return {
-                ok: inActive && cleared,
-                detail: 'inActive=' + inActive + ' cleared=' + cleared,
-              };
-            } finally {
-              state.running = wasRunning;
-              midiInput.enabled = wasMidiEnabled;
-              midiInput.lastEventTime = wasLastEvent;
-              try { onMidiNoteOff(60); } catch (_) { /* already off */ }
-              // Defensive: if note is still in activeNotes due to
-              // sustainOn race, force-clear so the snapshot is clean.
-              midiState.activeNotes.delete(60);
-              midiState.sustainedNotes.delete(60);
-            }
-          },
-        },
-        {
-          name: 'Behavior — Listen-mode completePracticeSection renders result card',
-          run: async () => {
-            // The bench injects a fake section into currentSong.sections
-            // because the result-card calls `currentSong.sections[idx].id`.
-            // At title screen the song is selected but its score isn't
-            // loaded yet → sections is []. Real production sites only
-            // call completePracticeSection after a real section has been
-            // populated by buildSectionsFromDefs.
-            //
-            // We also exposed a defensive guard in result-card.ts so
-            // an undefined sec returns early without throwing — but
-            // here we want to assert the SUCCESS path renders the card.
-            const saved = {
-              enabled: practice.enabled,
-              mode: practice.mode,
-              sectionNotes: practice.sectionNotes,
-              currentNoteIdx: practice.currentNoteIdx,
-              hits: practice.hits,
-              misses: practice.misses,
-              _sectionTargetCount: practice._sectionTargetCount,
-              _lastResult: practice._lastResult,
-              _completing: practice._completing,
-              fullSongMode: practice.fullSongMode,
-              sectionIdx: practice.sectionIdx,
-            };
-            const wasVisible = DOM.sectionResult.classList.contains('visible');
-            const savedSections = currentSong ? currentSong.sections : null;
-            try {
-              if (currentSong) {
-                currentSong.sections = /** @type {any} */ ([
-                  { id: '__bench', nameKey: 'feA1', isBoss: false },
-                ]);
-              }
-              practice.enabled = true;
-              practice.mode = 'listen';
-              practice.fullSongMode = false;
-              practice.sectionIdx = 0;
-              practice.sectionNotes = [];
-              practice.currentNoteIdx = 0;
-              practice.hits = 0;
-              practice.misses = 0;
-              practice._sectionTargetCount = 0;
-              practice._completing = false;
-              completePracticeSection();
-              const r = practice._lastResult;
-              const ok =
-                r != null &&
-                r.mode === 'listen' &&
-                r.secId === '__bench' &&
-                DOM.sectionResult.classList.contains('visible');
-              return {
-                ok,
-                detail:
-                  'mode=' +
-                  (r?.mode || 'null') +
-                  ' secId=' +
-                  (r?.secId || 'null') +
-                  ' visible=' +
-                  DOM.sectionResult.classList.contains('visible'),
-              };
-            } finally {
-              // Restore — order matters: practice fields first, then
-              // section list, then DOM visibility.
-              Object.assign(practice, saved);
-              if (currentSong && savedSections) currentSong.sections = savedSections;
-              DOM.sectionResult.classList.toggle('visible', wasVisible);
-            }
-          },
-        },
-        {
-          name: 'Behavior — Canvas pixel sampling shows paint after a frame',
-          run: async () => {
-            // Run the frame prelude directly so we know the canvas was touched.
-            RenderFrame.runRenderFramePrelude(performance.now(), {
-              ctx,
-              state,
-              getScreen: () => ({ W, H }),
-              themes: CONFIG.THEMES,
-              drawBgStars,
-              drawAurora,
-              drawGroundFlowers,
-              decayWakeUpFlash: PianoCore.decayWakeUpFlash,
-              drawCenterGlow: PianoCore.drawCenterGlow,
-              wufOpts: WUF_OPTS,
-              getEnergy,
-            });
-            // Sample center pixel
-            try {
-              const px = ctx.getImageData(Math.floor(W / 2), Math.floor(H / 2), 1, 1);
-              const [r, g, b, a] = px.data;
-              // Expect *some* alpha — the bg-fade always paints the full
-              // screen with theme.bg at flow-derived alpha (≥ 0.08).
-              const ok = a > 0;
-              return { ok, detail: 'rgba=(' + r + ',' + g + ',' + b + ',' + a + ')' };
-            } catch (e) {
-              return { ok: false, detail: /** @type {Error} */ (e).message };
-            }
-          },
-        },
-        {
-          name: 'Behavior — i18n DOM walk (every [data-i18n] is translated)',
-          run: () => {
-            const els = document.querySelectorAll('[data-i18n]');
-            /** @type {string[]} */
-            const broken = [];
-            els.forEach((el) => {
-              const key = el.getAttribute('data-i18n');
-              if (!key) return;
-              const text = el.textContent || '';
-              // Translation should NOT equal the raw key, AND should be non-empty.
-              if (!text || text === key) broken.push(key);
-            });
-            const ok = els.length > 5 && broken.length === 0;
-            return {
-              ok,
-              detail:
-                'els=' + els.length + ' broken=' + broken.length +
-                (broken.length ? ' (' + broken.slice(0, 3).join(', ') + ')' : ''),
-            };
-          },
-        },
-        {
-          name: 'Storage stress — 50 IndexedDB put/get/delete cycles',
-          run: async () => {
-            const ts = Date.now();
-            try {
-              for (let i = 0; i < 50; i++) {
-                const id = '__bench_' + ts + '_' + i;
-                const rec = /** @type {any} */ ({
-                  id,
-                  title: 'bench',
-                  composer: '',
-                  mxlBlob: new Blob(['x'], { type: 'text/plain' }),
-                  mimeType: 'application/vnd.recordare.musicxml+zip',
-                  sectionDefs: { type: 'measure-thirds', count: 3 },
-                  addedAt: Date.now(),
-                  source: 'bench',
-                });
-                await userDbPut(rec);
-              }
-              // Drain via userDbAll (no per-key get in shell — read whole list)
-              const all = await userDbAll();
-              const found = all.filter((r) => r.id.startsWith('__bench_' + ts)).length;
-              // Cleanup
-              for (let i = 0; i < 50; i++) {
-                const id = '__bench_' + ts + '_' + i;
-                try { await removeUserSong(id); } catch (_) { /* may already be cleaned */ }
-              }
-              return { ok: found === 50, detail: found + '/50 round-tripped' };
-            } catch (e) {
-              return { ok: false, detail: /** @type {Error} */ (e).message };
-            }
-          },
-        },
-      ]),
-      getDiagSnapshot: () => ({
-        'audioCtx.state': audioCtx ? audioCtx.state : '(none)',
-        'audioCtx.sampleRate': audioCtx ? audioCtx.sampleRate + 'Hz' : '(none)',
-        'audioCtx.currentTime': audioCtx ? audioCtx.currentTime.toFixed(2) + 's' : '(none)',
-        'midiInput.enabled': String(midiInput.enabled),
-        'midiInput.port': midiInput.port?.name || '(none)',
-        'state.running': String(state.running),
-        'state.flow': state.flow.toFixed(1),
-        'state.combo': String(state.combo),
-        'state.currentStage': String(state.currentStage),
-        'state.qualityScore': (state.qualityScore || 0).toFixed(2),
-        'state.smoothEnergy': state.smoothEnergy.toFixed(3),
-        'state.useSynesthesiaMode': String(state.useSynesthesiaMode),
-        'practice.enabled': String(practice.enabled),
-        'practice.mode': practice.mode,
-        'practice.sectionIdx': String(practice.sectionIdx),
-        'practice.tempoPct': String(practice.tempoPct),
-        'practice.fullSongMode': String(practice.fullSongMode),
-        'practice.hits/misses': practice.hits + '/' + practice.misses,
-        'currentSong': currentSong?.id || '(none)',
-        'prefs.theme': String(prefs.theme),
-        'prefs.lang': prefs.lang,
-        'prefs.synesthesia': String(prefs.synesthesia),
-        'prefs.audioOffsetMs': String(prefs.audioOffsetMs),
-        'particles.length': String(particles?.length ?? 0),
-        'ripples.length': String(ripples?.length ?? 0),
-      }),
+      dom: { settingsPanel: DOM.settingsPanel, sectionResult: DOM.sectionResult },
+      domAddSong: { modal: typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG.modal : null },
+      state,
+      practice,
+      prefs,
+      midiInput,
+      midiState,
+      ctx,
+      particles,
+      ripples,
+      getScreen: () => ({ W, H }),
+      getAudioCtx: () => audioCtx,
+      getCurrentSong: () => currentSong,
+      openUserDb: () => openUserDb(),
+      userDbAll: () => userDbAll(),
+      userDbPut: (rec) => userDbPut(/** @type {any} */ (rec)),
+      removeUserSong: (id) => removeUserSong(id),
+      isAppleMobile: () => isAppleMobile(),
+      t,
+      setLang,
+      applyTheme,
+      openSettings: () => openSettings(),
+      closeSettings: () => closeSettings(),
+      openAddSongModal: () => openAddSongModal(),
+      closeAddSongModal: () => closeAddSongModal(),
+      completePracticeSection: () => completePracticeSection(),
+      onMidiNoteOn,
+      onMidiNoteOff,
+      themes: CONFIG.THEMES,
+      drawBgStars,
+      drawAurora,
+      drawGroundFlowers,
+      decayWakeUpFlash: PianoCore.decayWakeUpFlash,
+      drawCenterGlow: PianoCore.drawCenterGlow,
+      wufOpts: WUF_OPTS,
+      getEnergy,
+      renderFrame: RenderFrame,
+      audioInit: AudioInit,
     });
 
     // The legacy floating BLE button is gone — Bluetooth pairing now lives
     // exclusively in the ⚙ settings panel (settingsBleBtn).
 
-    // Phase 0d batch 7b: practice-flow controls (ptbQuit, ptbToggleOsmd,
-    // result-card buttons, sumClose, 🏠 Title buttons, returnToTitle)
-    // moved to packages/web/src/practice-flow.ts. The wire-up below
-    // attaches every listener and exposes returnToTitle + transitionToSection
-    // for the song-panel "Back" button + future module callsites.
     const _practiceFlow = PracticeFlow.createPracticeFlow({
-      dom: /** @type {import('./practice-flow').PracticeFlowDom} */ ({
-        ptbQuit: DOM.ptbQuit,
-        ptbToggleOsmd: DOM.ptbToggleOsmd,
-        resQuit: DOM.resQuit,
-        resRetry: DOM.resRetry,
+      dom: /** @type {any} */ ({
+        ...DomBag.pickDom(DOM,
+          'ptbQuit', 'ptbToggleOsmd', 'resQuit', 'resRetry', 'resNext',
+          'sumClose', 'homeBtn', 'sumHome', 'resHome', 'practiceHud',
+          'osmdContainer', 'songPanel', 'sectionResult', 'sessionSummary',
+          'hud', 'questDisplay', 'micMeter', 'startScreen',
+        ),
         resTryPlay: document.getElementById('resTryPlay'),
-        resNext: DOM.resNext,
-        sumClose: DOM.sumClose,
-        homeBtn: DOM.homeBtn,
-        sumHome: DOM.sumHome,
-        resHome: DOM.resHome,
-        practiceHud: DOM.practiceHud,
-        osmdContainer: DOM.osmdContainer,
-        songPanel: DOM.songPanel,
-        sectionResult: DOM.sectionResult,
-        sessionSummary: DOM.sessionSummary,
-        hud: DOM.hud,
-        questDisplay: DOM.questDisplay,
-        micMeter: DOM.micMeter,
-        startScreen: DOM.startScreen,
       }),
-      practice: /** @type {import('./practice-flow').PracticeFlowPracticeRef} */ (
-        /** @type {any} */ (practice)
-      ),
-      state: /** @type {import('./practice-flow').PracticeFlowStateRef} */ (
-        /** @type {any} */ (state)
-      ),
-      midiState: /** @type {import('./practice-flow').PracticeFlowMidiRef} */ (
-        /** @type {any} */ (midiState)
-      ),
+      practice: /** @type {any} */ (practice),
+      state: /** @type {any} */ (state),
+      midiState: /** @type {any} */ (midiState),
       getCurrentSong: () => /** @type {any} */ (currentSong),
       songProg: () => /** @type {any} */ (songProg()),
       startPracticeSection,
@@ -4025,45 +2072,16 @@
     // Initialize progress on load (so panel works without audio start)
     practice.progress = loadPracticeProgress();
 
-    // ========================================
-    // Start
-    // ========================================
-    // Toggle the loading state on a start-screen mode button. The button's
-    // i18n markup stays intact so language re-renders keep working and a return
-    // to the title screen always finds the button in its resting state.
-    /** @param {HTMLButtonElement} btn @param {boolean} loading */
-    function setStartButtonLoading(btn, loading) {
-      if (!btn) return;
-      btn.classList.toggle('is-loading', !!loading);
-      btn.disabled = !!loading;
-    }
-
-    DOM.startBtn.addEventListener('click', async () => {
-      // Re-entry from title screen while audio is still alive — just resume.
-      if (state.running) {
-        showRunningUI();
-        state.sessionStartTimeMs = performance.now();
-        return;
-      }
-      if (state.starting) return;
-      state.starting = true;
-      setStartButtonLoading(/** @type {HTMLButtonElement} */ (DOM.startBtn), true);
-      try {
-        await initAudio();
-        showRunningUI();
-        initBgStars();
-        state.running = true;
-        state.lastFrameTimeMs = 0;
-        state.sessionStartTimeMs = performance.now();
-        requestAnimationFrame(loop);
-      } catch (e) {
-        alertAudioInitError(e);
-      } finally {
-        // Unconditional reset — even on success, so a later returnToTitle
-        // shows the button in its resting state instead of a frozen "Starting...".
-        setStartButtonLoading(/** @type {HTMLButtonElement} */ (DOM.startBtn), false);
-        state.starting = false;
-      }
+    // ── Start ──
+    // moved to packages/web/src/boot-session.ts.
+    BootSession.installStartButton(DOM.startBtn, {
+      state: /** @type {any} */ (state),
+      practice: /** @type {any} */ (practice),
+      initAudio,
+      showRunningUI,
+      initBgStars,
+      loop,
+      alertAudioInitError,
     });
 
     // sumClose / homeBtn / sumHome / resHome listeners + the

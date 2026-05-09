@@ -118,6 +118,76 @@ export interface OnsetDetectFeatures {
   coefficientOfVariation(arr: readonly number[]): number;
 }
 
+/** CONFIG slice the wireup builder reads. Loose so this module
+ *  stays free of the full PianoConfig type import. */
+export interface OnsetDetectConfig {
+  PITCH_MIN_HZ: number;
+  FLUX_FREQ_MIN_HZ: number;
+  FLUX_FREQ_MAX_HZ: number;
+  ONSET_GATE_DURATION_MS: number;
+  ONSET_SPREAD_MIN_CHANGE: number;
+  ONSET_SPREAD_THRESHOLD: number;
+  ONSET_SPREAD_MAX: number;
+  FLATNESS_PIANO_MIN: number;
+  CREST_VOICE_MAX: number;
+  SPECTRAL_FLUX_THRESHOLD: number;
+  SPECTRAL_FLUX_ADAPTIVE_K: number;
+  SPECTRAL_FLUX_HISTORY_SIZE: number;
+  CENTROID_HISTORY_SIZE: number;
+  HARMONICITY_MIN: number;
+  HARMONICITY_MIN_PRACTICE: number;
+  ONSET_COOLDOWN_MS: number;
+  AGC_VOICE_RMS_MIN: number;
+  AGC_VOICE_REJECT_COUNT: number;
+  AGC_VOICE_SUPPRESS_MS: number;
+}
+
+export interface OnsetDetectShellRefs {
+  state: OnsetDetectStateRef;
+  getPractice: () => OnsetDetectPracticeRef;
+  config: OnsetDetectConfig;
+  getOnsetHysteresisFrames: () => number;
+  features: OnsetDetectFeatures;
+  getOnsetAnalyser: () => OnsetDetectAnalyserRef | null;
+  getOnsetDataArray: () => Uint8Array | null;
+  getAudioCtx: () => OnsetDetectAudioCtxRef | null;
+}
+
+/** Build the OnsetDetectDeps from CONFIG + the shell refs. The
+ *  CONFIG → tuning mapping (~20 lines) lives here now. */
+export function buildOnsetDetectDeps(refs: OnsetDetectShellRefs): OnsetDetectDeps {
+  return {
+    state: refs.state,
+    getPractice: refs.getPractice,
+    tuning: {
+      pitchMinHz: refs.config.PITCH_MIN_HZ,
+      fluxFreqMinHz: refs.config.FLUX_FREQ_MIN_HZ,
+      fluxFreqMaxHz: refs.config.FLUX_FREQ_MAX_HZ,
+      onsetGateDurationMs: refs.config.ONSET_GATE_DURATION_MS,
+      onsetSpreadMinChange: refs.config.ONSET_SPREAD_MIN_CHANGE,
+      onsetSpreadThreshold: refs.config.ONSET_SPREAD_THRESHOLD,
+      onsetSpreadMax: refs.config.ONSET_SPREAD_MAX,
+      flatnessPianoMin: refs.config.FLATNESS_PIANO_MIN,
+      crestVoiceMax: refs.config.CREST_VOICE_MAX,
+      spectralFluxThreshold: refs.config.SPECTRAL_FLUX_THRESHOLD,
+      spectralFluxAdaptiveK: refs.config.SPECTRAL_FLUX_ADAPTIVE_K,
+      spectralFluxHistorySize: refs.config.SPECTRAL_FLUX_HISTORY_SIZE,
+      centroidHistorySize: refs.config.CENTROID_HISTORY_SIZE,
+      harmonicityMin: refs.config.HARMONICITY_MIN,
+      harmonicityMinPractice: refs.config.HARMONICITY_MIN_PRACTICE,
+      onsetCooldownMs: refs.config.ONSET_COOLDOWN_MS,
+      getOnsetHysteresisFrames: refs.getOnsetHysteresisFrames,
+      agcVoiceRmsMin: refs.config.AGC_VOICE_RMS_MIN,
+      agcVoiceRejectCount: refs.config.AGC_VOICE_REJECT_COUNT,
+      agcVoiceSuppressMs: refs.config.AGC_VOICE_SUPPRESS_MS,
+    },
+    features: refs.features,
+    getOnsetAnalyser: refs.getOnsetAnalyser,
+    getOnsetDataArray: refs.getOnsetDataArray,
+    getAudioCtx: refs.getAudioCtx,
+  };
+}
+
 export interface OnsetDetectDeps {
   state: OnsetDetectStateRef;
   /** Read at call time — the legacy shell's `practice` const lives

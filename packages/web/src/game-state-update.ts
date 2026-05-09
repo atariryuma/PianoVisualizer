@@ -127,6 +127,107 @@ export interface GameStateOnsetState {
 
 export type GameStateStageDef = any;
 
+/** CONFIG slice the wireup builder reads. Mirrors PianoConfig but
+ *  declared loose so this module stays @piano/core-free. */
+export interface GameStateUpdateConfig {
+  PITCH_MIN_HZ: number;
+  PITCH_MIN_HZ_PRACTICE: number;
+  PITCH_MAX_HZ: number;
+  CONFIDENCE_THRESHOLD: number;
+  GOOD_NOTE_RMS: number;
+  ONSET_GATE_DURATION_MS: number;
+  COMBO_WINDOW_MS: number;
+  SILENCE_DECAY_START_MS: number;
+  SILENCE_HARD_DECAY_MS: number;
+  FLOW_DECAY_SOFT: number;
+  FLOW_DECAY_HARD: number;
+  COMBO_DECAY_RATE: number;
+  NOISE_RMS_THRESHOLD: number;
+  NOISE_PENALTY_COOLDOWN_MS: number;
+  FLOW_NOISE_PENALTY: number;
+  COMBO_NOISE_PENALTY: number;
+  FLOW_GAIN_BASE: number;
+  FLOW_GAIN_COMBO_MAX: number;
+  FLOW_GAIN_STABILITY_MAX: number;
+  FLOW_GAIN_QUALITY_MAX: number;
+  STAGES: readonly GameStateStageDef[];
+}
+
+/** Slim shell-side bag the wireup builder consumes. `state` /
+ *  `getPractice` / `getMidiInput` etc. are the same shape as
+ *  GameStateUpdateDeps — the builder forwards them through. */
+export interface GameStateWireupShellRefs {
+  state: GameStateRef;
+  getPractice: () => GameStatePracticeRef;
+  getMidiInput: () => GameStateMidiRef;
+  getPitchMedianFrames: () => number;
+  config: GameStateUpdateConfig;
+  qhOptsMic: unknown;
+  psOpts: unknown;
+  core: GameStateCore;
+  updateMultiFeatureOnset: (timeMs: number, pitch: number) => GameStateOnsetState;
+  updateSessionConfidence: (timeMs: number, isActivePlay: boolean) => void;
+  updateQualityScores: (timeMs: number) => void;
+  updateHUD: (timeMs: number) => void;
+  spawnBurst: (x: number, y: number, count: number, energy: number) => void;
+  effectStarShower: (n: number) => void;
+  getScreen: () => { W: number; H: number };
+  stageLabelEl: { textContent: string; classList: { toggle(c: string, on: boolean): void } } | null;
+  stageLabelText: (stage: GameStateStageDef) => string;
+  remoteLogEnabled: boolean;
+  remoteLog: (line: string) => void;
+}
+
+/** Build the GameStateUpdateDeps from the wider shell refs +
+ *  CONFIG slice. The CONFIG → tuning mapping (~20 lines of
+ *  CONFIG.X → tuning.x) lives here now instead of inline in
+ *  legacy-app.js. */
+export function buildGameStateUpdateDeps(refs: GameStateWireupShellRefs): GameStateUpdateDeps {
+  return {
+    state: refs.state,
+    getPractice: refs.getPractice,
+    getMidiInput: refs.getMidiInput,
+    getPitchMedianFrames: refs.getPitchMedianFrames,
+    tuning: {
+      pitchMinHz: refs.config.PITCH_MIN_HZ,
+      pitchMinHzPractice: refs.config.PITCH_MIN_HZ_PRACTICE,
+      pitchMaxHz: refs.config.PITCH_MAX_HZ,
+      confidenceThreshold: refs.config.CONFIDENCE_THRESHOLD,
+      goodNoteRms: refs.config.GOOD_NOTE_RMS,
+      onsetGateDurationMs: refs.config.ONSET_GATE_DURATION_MS,
+      comboWindowMs: refs.config.COMBO_WINDOW_MS,
+      silenceDecayStartMs: refs.config.SILENCE_DECAY_START_MS,
+      silenceHardDecayMs: refs.config.SILENCE_HARD_DECAY_MS,
+      flowDecaySoft: refs.config.FLOW_DECAY_SOFT,
+      flowDecayHard: refs.config.FLOW_DECAY_HARD,
+      comboDecayRate: refs.config.COMBO_DECAY_RATE,
+      noiseRmsThreshold: refs.config.NOISE_RMS_THRESHOLD,
+      noisePenaltyCooldownMs: refs.config.NOISE_PENALTY_COOLDOWN_MS,
+      flowNoisePenalty: refs.config.FLOW_NOISE_PENALTY,
+      comboNoisePenalty: refs.config.COMBO_NOISE_PENALTY,
+      flowGainBase: refs.config.FLOW_GAIN_BASE,
+      flowGainComboMax: refs.config.FLOW_GAIN_COMBO_MAX,
+      flowGainStabilityMax: refs.config.FLOW_GAIN_STABILITY_MAX,
+      flowGainQualityMax: refs.config.FLOW_GAIN_QUALITY_MAX,
+    },
+    stages: refs.config.STAGES,
+    qhOptsMic: refs.qhOptsMic,
+    psOpts: refs.psOpts,
+    core: refs.core,
+    updateMultiFeatureOnset: refs.updateMultiFeatureOnset,
+    updateSessionConfidence: refs.updateSessionConfidence,
+    updateQualityScores: refs.updateQualityScores,
+    updateHUD: refs.updateHUD,
+    spawnBurst: refs.spawnBurst,
+    effectStarShower: refs.effectStarShower,
+    getScreen: refs.getScreen,
+    stageLabelEl: refs.stageLabelEl,
+    stageLabelText: refs.stageLabelText,
+    remoteLogEnabled: refs.remoteLogEnabled,
+    remoteLog: refs.remoteLog,
+  };
+}
+
 export interface GameStateUpdateDeps {
   state: GameStateRef;
   /** Read at call time — the legacy shell's `practice` / `midiInput`

@@ -220,6 +220,23 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'settingsDebugToggle',
 ] as const) as readonly (keyof DomBag)[];
 
+/** Project a subset of an existing DOM bag onto a new object. The
+ *  shell uses this to hand factory `dom: {...}` deps without listing
+ *  each `key: bag.key` line — `pickDom(bag, 'a', 'b', 'c')` returns
+ *  `{ a: bag.a, b: bag.b, c: bag.c }`. Accepts any record-shaped bag
+ *  so the legacy shell's `Record<string, HTMLElement>` cast works
+ *  alongside the typed `DomBag`. */
+export function pickDom<T extends Record<string, HTMLElement>, K extends string>(
+  bag: T,
+  ...keys: K[]
+): Record<K, HTMLElement> {
+  const out = {} as Record<K, HTMLElement>;
+  for (const k of keys) {
+    out[k] = bag[k];
+  }
+  return out;
+}
+
 /** Build the DOM bag. Returns the populated object PLUS a list of
  *  any ids that didn't resolve (development-only safety net — the
  *  shell asserts the list is empty in dev mode). */

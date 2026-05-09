@@ -60,6 +60,12 @@ import * as RemoteLog from './remote-log';
 import * as DomBag from './dom-bag';
 import * as GameStateInit from './game-state-init';
 import * as PianoConfig from './piano-config';
+import * as ParticleEffects from './particle-effects';
+import * as PracticeStateInit from './practice-state-init';
+import * as CoreOpts from './core-opts';
+import * as DevModeWireup from './dev-mode-wireup';
+import * as RenderLoopWireup from './render-loop-wireup';
+import * as BootSession from './boot-session';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as ViewportLayout from './viewport-layout';
 import * as OsmdInit from './osmd-init';
@@ -137,6 +143,12 @@ declare global {
     DomBag: typeof DomBag;
     GameStateInit: typeof GameStateInit;
     PianoConfig: typeof PianoConfig;
+    ParticleEffects: typeof ParticleEffects;
+    PracticeStateInit: typeof PracticeStateInit;
+    CoreOpts: typeof CoreOpts;
+    DevModeWireup: typeof DevModeWireup;
+    RenderLoopWireup: typeof RenderLoopWireup;
+    BootSession: typeof BootSession;
     BleMidiConnect: typeof BleMidiConnect;
     ViewportLayout: typeof ViewportLayout;
     OsmdInit: typeof OsmdInit;
@@ -286,6 +298,18 @@ declare global {
 
   var PianoConfig: typeof import('./piano-config');
 
+  var ParticleEffects: typeof import('./particle-effects');
+
+  var PracticeStateInit: typeof import('./practice-state-init');
+
+  var CoreOpts: typeof import('./core-opts');
+
+  var DevModeWireup: typeof import('./dev-mode-wireup');
+
+  var RenderLoopWireup: typeof import('./render-loop-wireup');
+
+  var BootSession: typeof import('./boot-session');
+
   var BleMidiConnect: typeof import('./ble-midi-connect');
 
   var ViewportLayout: typeof import('./viewport-layout');
@@ -390,6 +414,12 @@ declare global {
 (globalThis as unknown as Window).DomBag = DomBag;
 (globalThis as unknown as Window).GameStateInit = GameStateInit;
 (globalThis as unknown as Window).PianoConfig = PianoConfig;
+(globalThis as unknown as Window).ParticleEffects = ParticleEffects;
+(globalThis as unknown as Window).PracticeStateInit = PracticeStateInit;
+(globalThis as unknown as Window).CoreOpts = CoreOpts;
+(globalThis as unknown as Window).DevModeWireup = DevModeWireup;
+(globalThis as unknown as Window).RenderLoopWireup = RenderLoopWireup;
+(globalThis as unknown as Window).BootSession = BootSession;
 (globalThis as unknown as Window).BleMidiConnect = BleMidiConnect;
 (globalThis as unknown as Window).ViewportLayout = ViewportLayout;
 (globalThis as unknown as Window).OsmdInit = OsmdInit;
