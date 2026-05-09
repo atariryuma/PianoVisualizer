@@ -330,10 +330,8 @@
       getPractice: () => /** @type {any} */ (practice),
       config: CONFIG,
       getOnsetHysteresisFrames: () => ONSET_HYSTERESIS_FRAMES,
-      features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation, },
-      getOnsetAnalyser: () => onsetAnalyser,
-      getOnsetDataArray: () => onsetDataArray,
-      getAudioCtx: () => audioCtx,
+      features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation },
+      getOnsetAnalyser: () => onsetAnalyser, getOnsetDataArray: () => onsetDataArray, getAudioCtx: () => audioCtx,
     });
     /** @param {number} timeMs @param {number} currentPitchHz */
     function updateMultiFeatureOnset(timeMs, currentPitchHz) {
@@ -363,25 +361,18 @@
     _questState.completedIds = state.completedQuests;
     const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
 
-    /** @param {number} timeMs */
-    const _questStateUpdate = QuestStateUpdate.createQuestStateUpdate(
-      /** @type {import('./quest-state-update').QuestUpdateDeps} */ ({
-        state: /** @type {any} */ (state),
-        trackerState: /** @type {any} */ (_questState),
-        quests: CONFIG.QUESTS,
-        allDoneSentinel: QUEST_ALL_DONE,
-        applyQuestTick: PianoCore.applyQuestTick,
-        observation: state, // quest.condition reads state.combo, state.flow, etc.
-        questOpts: _questOpts,
-        dom: /** @type {any} */ (DomBag.pickDom(DOM, 'toastTitle', 'toastSub', 'questToast', 'questLabel', 'questDots', 'questDisplay')),
-        t,
-        spawnBurst,
-        effectGoldenBurst,
-        getScreen: () => ({ W, H }),
-        setTimeout: (fn, ms) => setTimeout(fn, ms),
-        toastHideMs: 2600,
-      })
-    );
+    const _questStateUpdate = QuestStateUpdate.createQuestStateUpdate(/** @type {any} */ ({
+      state, trackerState: _questState,
+      quests: CONFIG.QUESTS, allDoneSentinel: QUEST_ALL_DONE,
+      applyQuestTick: PianoCore.applyQuestTick,
+      observation: state, // quest.condition reads state.combo, state.flow, etc.
+      questOpts: _questOpts,
+      dom: DomBag.pickDom(DOM, 'toastTitle', 'toastSub', 'questToast', 'questLabel', 'questDots', 'questDisplay'),
+      t, spawnBurst, effectGoldenBurst,
+      getScreen: () => ({ W, H }),
+      setTimeout: (/** @type {any} */ fn, /** @type {any} */ ms) => setTimeout(fn, ms),
+      toastHideMs: 2600,
+    }));
     /** @param {any} timeMs */ function updateQuestState(timeMs) { _questStateUpdate.tick(timeMs); }
 
     // ── Quality Scoring — simplified for kids ──
@@ -459,29 +450,20 @@
     // ── v9: updateHUD — encouragement instead of numbers ──
     /** @param {number} timeMs */
     // moved to packages/web/src/hud-update.ts.
-    const _hudUpdate = HudUpdate.createHudUpdate(
-      /** @type {import('./hud-update').HudUpdateDeps} */ ({
-        state: /** @type {any} */ (state),
-        encState: _encState,
-        encOpts: _encOpts,
-        applyEncouragementEvent: PianoCore.applyEncouragementEvent,
-        encouragementEl: DOM.encouragement,
-        flowFillEl: DOM.flowFill,
-        t,
-        triggerEffect,
-      })
-    );
+    const _hudUpdate = HudUpdate.createHudUpdate(/** @type {any} */ ({
+      state, encState: _encState, encOpts: _encOpts,
+      applyEncouragementEvent: PianoCore.applyEncouragementEvent,
+      encouragementEl: DOM.encouragement, flowFillEl: DOM.flowFill,
+      t, triggerEffect,
+    }));
     /** @param {any} timeMs */ function updateHUD(timeMs) { _hudUpdate.tick(timeMs); }
 
     // ── Debug overlay (v9) — Phase 0d batch 44. ──
-    const _debugOverlay = HudUpdate.createDebugOverlay(
-      /** @type {import('./hud-update').DebugOverlayDeps} */ ({
-        state: /** @type {any} */ (state),
-        overlayEl: DOM.debugOverlay,
-        tuning: { onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS },
-        now: () => performance.now(),
-      })
-    );
+    const _debugOverlay = HudUpdate.createDebugOverlay(/** @type {any} */ ({
+      state, overlayEl: DOM.debugOverlay,
+      tuning: { onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS },
+      now: () => performance.now(),
+    }));
     function updateDebugOverlay() { _debugOverlay.tick(); }
 
     // ── Energy calculation ──
@@ -499,17 +481,12 @@
     // ── Main Loop ──
     /** @param {number} timeMs */
     const _renderLoop = RenderLoopWireup.wireRenderLoop({
-      renderLoop: RenderLoop,
-      renderFrame: RenderFrame,
-      micPipeline: MicPipeline,
-      renderMid: RenderMid,
-      renderLate: RenderLate,
-      pianoCore: PianoCore,
+      renderLoop: RenderLoop, renderFrame: RenderFrame, micPipeline: MicPipeline,
+      renderMid: RenderMid, renderLate: RenderLate, pianoCore: PianoCore,
       ctx,
       state: /** @type {any} */ (state),
-      // practice / midiInput / updatePractice are forward-declared
-      // below; thunks defer the read until the builders fire
-      // (post-IIFE) so we don't TDZ at wireup time.
+      // practice / midiInput / updatePractice are forward-declared below; thunks
+      // defer the read until the builders fire (post-IIFE) so we don't TDZ.
       getPractice: () => /** @type {any} */ (practice),
       getMidiInput: () => /** @type {any} */ (midiInput),
       config: /** @type {any} */ (CONFIG),
@@ -528,8 +505,7 @@
       getNoteColor, spawnBurst, spawnStream, showNoteDisplay, isFreeplayActive,
       drawMidiBeams, drawMidiChordDisplay, drawMidiKeyboard, drawPracticeLane,
       updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
-      wufOpts: WUF_OPTS,
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      wufOpts: WUF_OPTS, remoteLogEnabled: REMOTE_LOG_ENABLED,
       getTone: () => (typeof Tone !== 'undefined' ? Tone : null),
     });
     /** @param {any} timeMs */ function loop(timeMs) { _renderLoop.tick(timeMs); }
@@ -691,16 +667,12 @@
     // ========================================
     const _onlineLibrary = OnlineLibrary.createOnlineLibrary({
       libraryEntryFromGhFile: /** @type {any} */ (PianoCore.libraryEntryFromGhFile),
-      fetch: (...args) => fetch(...args),
-      localStorage,
-      now: () => Date.now(),
+      fetch: (...args) => fetch(...args), localStorage, now: () => Date.now(),
     });
     /** @param {boolean} [force] */
     async function fetchLibrary(force) { return _onlineLibrary.fetchEntries(force); }
     /** @type {Array<Partial<import('@piano/core').LibraryEntry> & {url:string, label:string, icon:string}>} */
     let ONLINE_LIBRARY = OnlineLibrary.LIBRARY_SEED.slice();
-
-    // Convert per-song measure-based sectionDefs into time-anchored sections by
     const buildSectionsFromDefs = PianoCore.buildSectionsFromDefs;
 
     // ========================================
@@ -709,8 +681,7 @@
     let osmd = null;
 
     const _osmdInit = OsmdInit.createOsmdInit({
-      opensheetmusicdisplay:
-        typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
+      opensheetmusicdisplay: typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
       getCurrentSong: () => /** @type {any} */ (currentSong),
     });
     async function initOsmd() { osmd = /** @type {any} */ (await _osmdInit.initOsmd()); return osmd; }
@@ -721,11 +692,9 @@
       return NoteExtractor.extractNotesFromOsmd(osmd, { xmlMeasureTiming, scoreTiming, collectDiag: REMOTE_LOG_ENABLED });
     }
 
-    // Parse the raw MusicXML for everything that affects playback timing —
+    // @piano/core/library/{score-timing, measure-timing} — handles mid-bar
+    // tempo events + partial-measure exporters (la Campanella m=5 case).
     const parseScoreTimingFromXml = PianoCore.parseScoreTimingFromXml;
-
-    // @piano/core/library/measure-timing. Handles mid-bar tempo events
-    // and partial-measure exporters (la Campanella m=5 case).
     const buildMeasureTimingFromXml = PianoCore.buildMeasureTimingFromXml;
 
     const _playbackOrder = PlaybackOrder.createPlaybackOrder({
@@ -750,12 +719,9 @@
       );
     }
 
-    // @piano/core/library/diag-load. The shim threads the legacy
-    // remoteLog as the injected logger.
+    // @piano/core/library/diag-load. The shim threads the legacy remoteLog as the logger.
     /** @param {Parameters<typeof PianoCore.dumpLoadDiagnostics>[0]} p */
-    function dumpLoadDiagnostics(p) {
-      PianoCore.dumpLoadDiagnostics(p, remoteLog);
-    }
+    function dumpLoadDiagnostics(p) { PianoCore.dumpLoadDiagnostics(p, remoteLog); }
 
     const _scoreLoader = ScoreLoader.createScoreLoader({
       getCurrentSong: () => /** @type {any} */ (currentSong),
@@ -826,50 +792,40 @@
     let LANE_LOOKAHEAD_MS = 4000;      // how far ahead notes appear in the lane
 
     // Song's quarter-note duration at the kid's chosen tempo. Falls back to a
-    const _practiceTimings = PracticeTimings.createPracticeTimings(
-      /** @type {import('./practice-timings').PracticeTimingsDeps} */ ({
-        getPractice: () => /** @type {any} */ (practice),
-        getCurrentSong: () => /** @type {any} */ (currentSong),
-        fns: { practiceBeatMs: PianoCore.practiceBeatMs, computePracticeTimings: PianoCore.computePracticeTimings, },
-        setCountInMs: (ms) => { COUNT_IN_MS = ms; },
-        setLaneLookaheadMs: (ms) => { LANE_LOOKAHEAD_MS = ms; },
-        getPracticeLane: () => /** @type {any} */ (_practiceLane),
-        sectionBannerEl: DOM.sectionBanner,
-        t,
-      })
-    );
+    const _practiceTimings = PracticeTimings.createPracticeTimings(/** @type {any} */ ({
+      getPractice: () => practice, getCurrentSong: () => currentSong,
+      fns: { practiceBeatMs: PianoCore.practiceBeatMs, computePracticeTimings: PianoCore.computePracticeTimings },
+      setCountInMs: (/** @type {any} */ ms) => { COUNT_IN_MS = ms; },
+      setLaneLookaheadMs: (/** @type {any} */ ms) => { LANE_LOOKAHEAD_MS = ms; },
+      getPracticeLane: () => _practiceLane,
+      sectionBannerEl: DOM.sectionBanner, t,
+    }));
     function practiceBeatMs() { return _practiceTimings.practiceBeatMs(); }
     function recomputePracticeTimings() { _practiceTimings.recomputePracticeTimings(); }
-    // Asymmetric hit windows: early presses are punished much harder than late
+
+    // Hit windows + audio-offset constants — early presses punished harder than late.
     const HIT_WINDOW_EARLY_MS = PianoCore.HIT_WINDOW_EARLY_MS;
     const HIT_WINDOW_MS = PianoCore.HIT_WINDOW_MS;
     const PERFECT_MS = PianoCore.PERFECT_MS;
     const CHORD_MATE_TOLERANCE_MS = PianoCore.CHORD_MATE_TOLERANCE_MS;
     const DURATION_MIN_TOL_MS = PianoCore.DURATION_MIN_TOL_MS;
     const DURATION_TOL_FRACTION = PianoCore.DURATION_TOL_FRACTION;
-    // packages/web/src/core-opts.ts (with full inline rationale).
     const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
     const ONSET_HYSTERESIS_FRAMES = CoreOpts.ONSET_HYSTERESIS_FRAMES;
     const PITCH_MEDIAN_FRAMES = CoreOpts.PITCH_MEDIAN_FRAMES;
 
-    const practice = /** @type {any} */ (
-        PracticeStateInit.createInitialPractice(
-          prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
-        )
-    );
+    const practice = /** @type {any} */ (PracticeStateInit.createInitialPractice(
+      prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
+    ));
 
     // ── Section banner ──
     /** @param {any} sec */ function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
 
-    // Screen Wake Lock — Phase 0d: extracted to packages/web/src/wakelock.ts.
+    // Wake Lock + MIDI message router (forwarders for verifyMidiAlive + attachMidiPort).
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
 
-    // Single source of truth for the port-message handler. attachMidiPort and
-    // verifyMidiAlive both use this so re-binding after a suspend produces
-    // exactly the same routing.
     /** @param {any} e */ function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
-
     function verifyMidiAlive() { return _midiPorts.verifyAlive(_midiAccess); }
 
     const _audioGraphCfg = {
@@ -891,14 +847,15 @@
       _resetOnsetState();
     }
 
-    // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone
+    // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone is
+    // unreliable on iOS WKWebView — close + recreate the AudioContext on
+    // visibility / devicechange.
     const _audioRecovery = AudioInit.createAudioRecovery({
       getSnapshot: () => ({ audioCtx, gainNode, analyser, onsetAnalyser, micSourceNode, micStream }),
       applyContext: (newCtx, graph) => {
         audioCtx = newCtx;
         _applyAudioGraph(graph);
-        // [DIAG-AUDIOCTX] Re-bind the state listener onto the new
-        // context — the old one's onstatechange went away with it.
+        // [DIAG-AUDIOCTX] Re-bind the state listener — the old one went away with the old context.
         AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED, undefined, '(post-recovery)');
       },
       isMicSuspended: () => !!state.micSuspended,
@@ -1015,16 +972,12 @@
     // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
     // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
     // か再スキャンの明示的な操作までは再表示しない。
-    /** @param {string} line1 @param {string} [line2] */
-    const _introDiag = IntroDiag.createIntroDiag(
-      /** @type {import('./intro-diag').IntroDiagDeps} */ ({
-        state: /** @type {any} */ (state),
-        introHintEl: DOM.introHint,
-        isAppleMobile: () => isAppleMobile(),
-        hasRequestMIDIAccess: () => !!navigator.requestMIDIAccess,
-        t,
-      })
-    );
+    const _introDiag = IntroDiag.createIntroDiag(/** @type {any} */ ({
+      state, introHintEl: DOM.introHint,
+      isAppleMobile: () => isAppleMobile(),
+      hasRequestMIDIAccess: () => !!navigator.requestMIDIAccess,
+      t,
+    }));
     /** @param {any} line1 @param {any} line2 */ function setIntroHintDiagnostic(line1, line2) { _introDiag.setDiagnostic(line1, line2); }
     /** @param {any} thunk */ function showIntroDiag(thunk) { _introDiag.showDiag(thunk); }
 
@@ -1044,10 +997,8 @@
     });
 
     AudioInit.createAudioLifecycle({
-      getAudioCtx: () => audioCtx,
-      recover: () => recoverAudioContext(),
-      isRunning: () => !!state.running,
-      requestWakeLock: () => requestWakeLock(),
+      getAudioCtx: () => audioCtx, recover: () => recoverAudioContext(),
+      isRunning: () => !!state.running, requestWakeLock: () => requestWakeLock(),
       navigator: /** @type {any} */ (navigator),
       midiInput: /** @type {any} */ (midiInput),
       verifyMidiAlive: () => verifyMidiAlive(),
@@ -1150,12 +1101,10 @@
       DOM.noteDisplay.classList.add('visible');
     }
 
-    const _midiHandlerDeps = /** @type {import('./midi-handlers').MidiHandlersDeps} */ ({
-      state: /** @type {any} */ (state),
-      midiState: /** @type {any} */ (midiState),
-      practice: /** @type {any} */ (practice),
+    const _midiHandlerDeps = /** @type {any} */ ({
+      state, midiState, practice,
       midiToScreenX, noteThemeColor, synColorFor, spawnBurst, spawnStream,
-      ripples: /** @type {any} */ (ripples), Ripple: /** @type {any} */ (Ripple),
+      ripples, Ripple,
       hideIntroHint, showNoteDisplay, effectGlowPulse, finalizeNoteHold,
       applyOnsetToHistory: PianoCore.applyOnsetToHistory,
       applyOnsetPitch: PianoCore.applyOnsetPitch,
@@ -1178,10 +1127,8 @@
       midiState: /** @type {any} */ (midiState),
       practice: /** @type {any} */ (practice),
       getLayout: () => ({ W, H, kbHeight, kbSafeBottom }),
-      drawMidiKeyboard: PianoCore.drawMidiKeyboard,
-      drawMidiBeams: PianoCore.drawMidiBeams,
-      midiToScreenX,
-      noteThemeColor,
+      drawMidiKeyboard: PianoCore.drawMidiKeyboard, drawMidiBeams: PianoCore.drawMidiBeams,
+      midiToScreenX, noteThemeColor,
       chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
       shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
       sustainLabel: t('sustainLabel'),
@@ -1343,19 +1290,15 @@
       c.closePath();
     }
 
-    // ========================================
-    // Hit feedback chip (DOM)
-    const _introHintUi = IntroHintUi.createIntroHintUi({
-      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'introHint', 'startScreen', 'hud', 'micMeter')),
-      state: /** @type {any} */ (state),
-      midiInput: /** @type {any} */ (midiInput),
-      practice: /** @type {any} */ (practice),
-      t,
+    // ── Intro-hint UI + hit feedback chip ──
+    const _introHintUi = IntroHintUi.createIntroHintUi(/** @type {any} */ ({
+      dom: DomBag.pickDom(DOM, 'introHint', 'startScreen', 'hud', 'micMeter'),
+      state, midiInput, practice, t,
       getHeight: () => H,
       requestWakeLock: () => requestWakeLock(),
       startMidiAutoRescan: () => startMidiAutoRescan(),
-      rescanMidi: (silent) => rescanMidi(silent),
-    });
+      rescanMidi: (/** @type {any} */ silent) => rescanMidi(silent),
+    }));
     /** @param {any} kind @param {any} text */ function showHitChip(kind, text) { _introHintUi.showHitChip(kind, text); }
 
     // ── Section complete → result screen ──
@@ -1379,30 +1322,23 @@
       sectionIds: SECTION_IDS,
       stopPracticeAudio, releaseWakeLock, recordPracticeDay, savePracticeProgress,
       computeStars, resolveResultTier, computeUnlocks,
-      effectGoldenBurst,
-      effectStarShower,
-      effectFlowerBurst,
-      setupHiDPICanvas,
-      clamp01,
-      t,
+      effectGoldenBurst, effectStarShower, effectFlowerBurst,
+      setupHiDPICanvas, clamp01, t,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
     });
     renderResultCard = _resultCard.renderResultCard;
     completePracticeSection = _resultCard.completePracticeSection;
 
     // ── Song panel UI building — Phase 0d batch 7d wire-up ──
-    const _songPanelRender = SongPanelRender.createSongPanelRender({
-      dom: /** @type {any} */ (DomBag.pickDom(DOM,
+    const _songPanelRender = SongPanelRender.createSongPanelRender(/** @type {any} */ ({
+      dom: DomBag.pickDom(DOM,
         'songTitle', 'songComposer', 'streakCount', 'streakCal', 'songBpmHint',
         'tempoRow', 'sectionList', 'ghostToggle', 'metronomeToggle', 'ghostRow',
         'metronomeRow', 'fullSongRow', 'fullSongToggle', 'songStart',
-      )),
-      practice: /** @type {any} */ (practice),
-      getCurrentSong: () => /** @type {any} */ (currentSong),
-      songProg: () => /** @type {any} */ (songProg()),
-      t,
-      dateKey,
-    });
+      ),
+      practice, getCurrentSong: () => currentSong, songProg: () => songProg(),
+      t, dateKey,
+    }));
     const renderSongPanel = _songPanelRender.render;
 
     // intro-hint-ui forwarders (batch 35).
