@@ -1134,100 +1134,30 @@
       });
     });
 
-    // ── Add-song modal + Section editor — Phase 0d batches 2, 6 wire-up ──
-    // `byId` does NO null-check; missing-id surfaces as a runtime
-    // TypeError downstream, which is what we want for shell wiring.
-    const byId = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
-    /** @type {Record<string, HTMLElement> & {tabs: NodeListOf<Element>, bodies: NodeListOf<Element>}} */
-    const DOM_ADDSONG = /** @type {any} */ ({
-      modal: byId('addSongModal'), btn: byId('addSongBtn'), closeBtn: byId('addSongCloseBtn'),
-      tabs: document.querySelectorAll('.add-song-tab'),
-      bodies: document.querySelectorAll('.add-song-tab-body'),
-      libraryList: byId('addSongLibraryList'), libraryStatus: byId('addSongLibraryStatus'),
-      librarySearch: byId('addSongLibrarySearch'), fileInput: byId('addSongFileInput'),
-      pdCheckbox: byId('addSongPdCheckbox'), urlInput: byId('addSongUrlInput'),
-      fetchBtn: byId('addSongFetchBtn'), status: byId('addSongStatus'),
-      myList: byId('addSongMyList'), userSongList: byId('userSongList'),
-      exportBtn: byId('addSongExportBtn'), importBtn: byId('addSongImportBtn'),
-      importInput: byId('addSongImportInput'),
-    });
-
-    /** Section-editor DOM bag — kept in the shell for the same reason.
-     *  @type {Record<string, HTMLElement>} */
-    const DOM_SECEDIT = /** @type {any} */ ({
-      modal: byId('sectionEditModal'), help: byId('sectionEditHelp'),
-      rows: byId('sectionEditRows'), error: byId('sectionEditError'),
-      cancelBtn: byId('sectionEditCancelBtn'), saveBtn: byId('sectionEditSaveBtn'),
-      closeBtn: byId('sectionEditCloseBtn'),
-    });
-
-    // ─── section-editor wire-up ─────────────────────────────────────
-    {
-      const _sectionEditor = SectionEditor.createSectionEditor(/** @type {any} */ ({
-        dom: DomBag.pickDom(DOM_SECEDIT, 'modal', 'help', 'rows', 'error', 'cancelBtn', 'saveBtn', 'closeBtn'),
-        openUserDb, userDbStoreName: USER_DB_STORE,
-        unzipMxlToXmlText, userDbPut, t, modalFocus,
-        // Update in-memory SONGS so a selectSong() right after save picks
-        // up the new boundaries without a page reload.
-        onSaved: (/** @type {any} */ rec) => {
-          const song = SONGS[rec.id];
-          if (song) { song.sectionDefs = rec.sectionDefs; song._loaded = false; song.sections = []; }
-        },
-      }));
-      openSectionEditor = _sectionEditor.open;
-      closeSectionEditor = _sectionEditor.close;
-    }
-
-    // ─── user-songs wire-up ─────────────────────────────────────────
-    {
-      const _userSongs = UserSongsUi.createUserSongsUi(/** @type {any} */ ({
-        dom: DomBag.pickDom(DOM_ADDSONG,
-          'modal', 'btn', 'closeBtn', 'tabs', 'bodies',
-          'libraryList', 'libraryStatus', 'librarySearch',
-          'fileInput', 'pdCheckbox', 'urlInput', 'fetchBtn', 'status',
-          'myList', 'userSongList', 'exportBtn', 'importBtn', 'importInput',
-        ),
-        songs: SONGS,
-        getLang: () => prefs.lang,
-        getLibrary: () => ONLINE_LIBRARY,
-        setLibrary: (/** @type {any} */ entries) => { ONLINE_LIBRARY = entries; },
-        fetchLibrary,
-        addUserSongFromBlob: _userSongStore.addFromBlob,
-        addUserSongFromUrl: _userSongStore.addFromUrl,
-        renameUserSong: _userSongStore.rename,
-        removeUserSong: _userSongStore.remove,
-        registerUserSong: _userSongStore.register,
-        userDbAll, userDbPut, unzipMxlToXmlText,
-        autoSectionDefs: PianoCore.autoSectionDefs,
-        // Thunked so a future section-editor reorder can't capture a stale placeholder.
-        openSectionEditor: (/** @type {any} */ id) => openSectionEditor(id),
-        selectSong, getCurrentSong: () => currentSong,
-        refreshSongPanelHeader: () => {
-          if (!currentSong) return;
-          DOM.songTitle.textContent = t(currentSong.titleKey);
-          DOM.songComposer.textContent = t(currentSong.composerKey);
-        },
-        t, modalFocus,
-      }));
-      openAddSongModal = _userSongs.open;
-      closeAddSongModal = _userSongs.close;
-      renderUserSongButtons = _userSongs.renderUserSongButtons;
-    }
-
-    // Hydrate user-added songs at startup so they appear in the picker without
-    // requiring the kid to open the add-song modal first.
-    loadUserSongs().then((n) => {
-      if (n > 0) {
-        renderUserSongButtons();
-        console.log('[UserSongs] loaded ' + n + ' from IndexedDB');
-      }
-    });
-
-    // Request persistent storage so iOS Safari ITP / Chrome eviction
-    // policies don't drop user-imported songs.
-    if (navigator.storage && navigator.storage.persist) {
-      navigator.storage.persist().then(g => { if (g) console.log('[Storage] persistent storage granted'); }).catch(() => {});
-    }
+    // ── Add-song modal + Section editor — moved to packages/web/src/shell-add-song.ts (batch 102).
+    const _addSong = ShellAddSong.createShellAddSong(/** @type {any} */ ({
+      document, songs: SONGS,
+      getLang: () => prefs.lang,
+      getLibrary: () => ONLINE_LIBRARY,
+      setLibrary: (/** @type {any} */ entries) => { ONLINE_LIBRARY = entries; },
+      userSongStore: _userSongStore,
+      fetchLibrary,
+      openUserDb, userDbStoreName: USER_DB_STORE, unzipMxlToXmlText,
+      userDbAll, userDbPut,
+      autoSectionDefs: PianoCore.autoSectionDefs,
+      getCurrentSong: () => currentSong,
+      selectSong: (/** @type {any} */ id) => selectSong(id),
+      songPanelHeaderDom: { songTitle: DOM.songTitle, songComposer: DOM.songComposer },
+      t, modalFocus,
+    }));
+    const byId = _addSong.byId;
+    const DOM_ADDSONG = _addSong.domAddSong;
+    const DOM_SECEDIT = _addSong.domSecEdit;
+    openSectionEditor = _addSong.openSectionEditor;
+    closeSectionEditor = _addSong.closeSectionEditor;
+    openAddSongModal = _addSong.openAddSongModal;
+    closeAddSongModal = _addSong.closeAddSongModal;
+    renderUserSongButtons = _addSong.renderUserSongButtons;
 
     DevModeWireup.installDevMode({
       triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
