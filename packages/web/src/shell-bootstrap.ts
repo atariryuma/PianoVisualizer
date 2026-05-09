@@ -5,10 +5,8 @@
 // + ESC modal router, the 17 shell-* factory call sites in the
 // correct dependency order, and the post-create init (initial
 // practice progress + ▶ Start button).
-//
-// Tone + __APP_VERSION__ + __BUILD_DATE__ are runtime browser/build-time
-// globals; the typeof guards mirror the legacy code's defensive reads.
 
+import * as Tone from 'tone';
 import * as PianoCore from '@piano/core';
 import * as RemoteLog from './remote-log';
 import * as PianoConfig from './piano-config';
@@ -262,7 +260,7 @@ export function boot(): void {
     getDrawPracticeLane: () => drawPracticeLane,
     getShowNoteDisplay: () => showNoteDisplay,
     hideIntroHint: () => hideIntroHint(),
-    getTone: () => (typeof Tone !== 'undefined' ? Tone : null),
+    getTone: () => Tone,
   } as any);
   const loop = _rl.loop;
 
@@ -357,7 +355,7 @@ export function boot(): void {
     defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
     remoteLogEnabled: REMOTE_LOG_ENABLED,
     remoteLog,
-    Tone: typeof Tone !== 'undefined' ? Tone : undefined,
+    Tone,
     osmdAdapter: _osmd.osmdAdapter,
     getOsmd,
     syncLayout: _vp.syncLayout,

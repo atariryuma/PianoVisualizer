@@ -14,8 +14,6 @@
 // of the codebase; we tolerate the wide deps bag here in exchange
 // for the line-count win on legacy-app.js.
 
- 
-
 import type { DevModeDeps, SelfTest } from './dev-mode';
 import { createDevMode } from './dev-mode';
 
@@ -116,30 +114,14 @@ function buildSelfTests(deps: DevModeWireupDeps): SelfTest[] {
       },
     },
     {
-      name: 'Module wire-up — every extracted module is on globalThis',
+      name: 'Module wire-up — vendor + core globals reachable from console',
       run: async () => {
-        const expected = [
-          'PianoCore',
-          'AudioScheduler',
-          'NoteExtractor',
-          'PianoWakeLock',
-          'SectionEditor',
-          'SettingsPanel',
-          'AudioInit',
-          'UserSongsUi',
-          'ThemeControls',
-          'PracticeFlow',
-          'SongPanelControls',
-          'SongPanelRender',
-          'PracticeTick',
-          'ResultCard',
-          'SessionSummary',
-          'RenderFrame',
-          'DevMode',
-        ];
+        // Post-Phase-0e: per-shell module pinning is gone; only the vendor
+        // libs + @piano/core stay on globalThis as console-debug surface.
+        const expected = ['PianoCore', 'Tone', 'opensheetmusicdisplay', 'JSZip'];
         const missing: string[] = [];
         for (const k of expected) {
-          if (typeof (globalThis as any)[k] === 'undefined') missing.push(k);
+          if (typeof (globalThis as Record<string, unknown>)[k] === 'undefined') missing.push(k);
         }
         return {
           ok: missing.length === 0,
