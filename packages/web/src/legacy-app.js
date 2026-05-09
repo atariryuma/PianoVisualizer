@@ -154,19 +154,14 @@
     const effectGoldenBurst = _fx.effectGoldenBurst, triggerEffect = _fx.triggerEffect;
     const drawBgStars = _fx.drawBgStars, drawAurora = _fx.drawAurora, drawGroundFlowers = _fx.drawGroundFlowers;
 
-    const detectPitchYIN = PianoCore.detectPitchYIN;
-    const freqToNote = PianoCore.freqToNote;
-    const computeSpectralFlatness = PianoCore.computeSpectralFlatness;
-    const computeSpectralCrest = PianoCore.computeSpectralCrest;
-    const computeSpectralCentroid = PianoCore.computeSpectralCentroid;
-    const coefficientOfVariation = PianoCore.coefficientOfVariation;
-    const computeHarmonicity = PianoCore.computeHarmonicity;
-
     // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
     // Encouragement / quest reducer state + onset/pitch hysteresis frames
     // are owned by ShellGameUpdate (batch 116). The 4 option bags + the
     // audio-offset default are still pulled here because shell-midi-handlers
     // / shell-render-loop / shell-practice / settings-panel consume them.
+    // PianoCore feature primitives (detectPitchYIN / freqToNote / spectral-*
+    // / coefficientOfVariation / computeHarmonicity) are read inside the
+    // shells from globalThis.PianoCore directly (batch 120).
     const clamp01 = PianoCore.clamp01;
     const _coreOpts = CoreOpts.createCoreOpts({
       config: CONFIG,
@@ -184,7 +179,6 @@
       getMidiInput: () => midiInput,
       config: CONFIG,
       sessionRing, sessionRingCap: SESSION_RING_CAP,
-      features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation },
       audio: _audio,
       coreOpts: _coreOpts,
       dom: DOM, t,
@@ -212,7 +206,6 @@
       audio: _audio,
       particles, ripples, Particle, Ripple,
       drawBgStars, drawAurora, drawGroundFlowers,
-      detectPitchYIN, freqToNote,
       updateAGC, updateGameState, updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
       getDrawMidiBeams: () => drawMidiBeams,
       getDrawMidiChordDisplay: () => drawMidiChordDisplay,

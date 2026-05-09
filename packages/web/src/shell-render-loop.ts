@@ -18,7 +18,6 @@ import * as RenderMid from './render-mid';
 import * as RenderLate from './render-late';
 import * as DomBag from './dom-bag';
 
- 
 export interface ShellRenderLoopDeps {
   ctx: CanvasRenderingContext2D;
   state: any;
@@ -43,8 +42,6 @@ export interface ShellRenderLoopDeps {
   drawAurora: (timeMs: number) => void;
   drawGroundFlowers: (timeMs: number) => void;
   /** Per-frame reducers. */
-  detectPitchYIN: any;
-  freqToNote: any;
   updateAGC: any;
   updateGameState: any;
   updateQuestState: any;
@@ -110,12 +107,12 @@ export function createShellRenderLoop(deps: ShellRenderLoopDeps): ShellRenderLoo
     drawBgStars: deps.drawBgStars,
     drawAurora: deps.drawAurora,
     drawGroundFlowers: deps.drawGroundFlowers,
-    detectPitchYIN: deps.detectPitchYIN,
+    detectPitchYIN: deps.pianoCore.detectPitchYIN,
     updateAGC: deps.updateAGC,
     updateGameState: deps.updateGameState,
     hideIntroHint: deps.hideIntroHint,
     getUpdatePractice: deps.getUpdatePractice,
-    freqToNote: deps.freqToNote,
+    freqToNote: deps.pianoCore.freqToNote,
     getNoteColor: deps.getNoteColor,
     spawnBurst: deps.spawnBurst,
     spawnStream: deps.spawnStream,

@@ -36,14 +36,6 @@ export interface ShellGameUpdateDeps {
   /** session-confidence ring buffer + cap. */
   sessionRing: Array<{ timeMs: number; isPiano: boolean }>;
   sessionRingCap: number;
-  /** Spectral-feature primitives — re-exposed by the shell from PianoCore. */
-  features: {
-    computeSpectralFlatness: any;
-    computeSpectralCrest: any;
-    computeSpectralCentroid: any;
-    computeHarmonicity: any;
-    coefficientOfVariation: any;
-  };
   /** Audio shell — the reducers reach for analyser / dataArray etc.
    *  via the shared get*-thunk surface. */
   audio: {
@@ -124,7 +116,13 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
     getPractice: deps.getPractice,
     config: deps.config,
     getOnsetHysteresisFrames: () => CoreOpts.ONSET_HYSTERESIS_FRAMES,
-    features: deps.features,
+    features: {
+      computeSpectralFlatness: PianoCore.computeSpectralFlatness,
+      computeSpectralCrest: PianoCore.computeSpectralCrest,
+      computeSpectralCentroid: PianoCore.computeSpectralCentroid,
+      computeHarmonicity: PianoCore.computeHarmonicity,
+      coefficientOfVariation: PianoCore.coefficientOfVariation,
+    },
     getOnsetAnalyser: deps.audio.getOnsetAnalyser,
     getOnsetDataArray: deps.audio.getOnsetDataArray,
     getAudioCtx: deps.audio.getAudioCtx,
