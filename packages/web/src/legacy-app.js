@@ -240,15 +240,12 @@
     // Page loads on the title screen — body class drives the home-button hide
     // (no point in 🏠 when home is right here) and any future title-only styling.
     document.body.classList.add('title-screen');
+    // langchange handler — refresh hot-path caches + re-render screens
+    // with imperative (set-from-JS) localized text. applyI18n only walks
+    // [data-i18n*] attrs; these labels need explicit redraw.
     window.addEventListener('langchange', () => {
-      // Refresh hot-path caches + re-render screens with imperative
-      // (non-data-i18n) localized text — applyI18n only walks
-      // [data-i18n*], so these set-from-JS labels need explicit redraw.
-      if (typeof activeNoteNames !== 'undefined') {
-        activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
-      }
-      laneLabelL = t('laneLeft');
-      laneLabelR = t('laneRight');
+      activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+      laneLabelL = t('laneLeft'); laneLabelR = t('laneRight');
       if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
       if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
         const sec = currentSong.sections?.[practice.sectionIdx];
@@ -510,26 +507,21 @@
     });
     /** @param {any} timeMs */ function loop(timeMs) { _renderLoop.tick(timeMs); }
 
-    // True only when the canvas / HUD is the front-most surface (i.e. the
-    // user is actually free-playing, not picking a song or reviewing a result).
+    // True only when the canvas / HUD is the front-most surface (the user is
+    // actually free-playing, not picking a song or reviewing a result).
     function isFreeplayActive() {
-      return state.running
-        && !practice.enabled
+      return state.running && !practice.enabled
         && DOM.startScreen.style.display === 'none'
         && !DOM.songPanel.classList.contains('visible')
         && !DOM.sessionSummary.classList.contains('visible')
         && !DOM.sectionResult.classList.contains('visible');
     }
 
-    // ========================================
     const formatTime = PianoCore.formatTime;
     /** @param {number} timeMs */
     function updatePlayTime(timeMs) {
-      if (DOM.playTime) {
-        DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
-      }
+      if (DOM.playTime) DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
     }
-    // setupHiDPICanvas moved to packages/web/src/shell-helpers.ts (batch 38).
     /** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h */
     function setupHiDPICanvas(canvas, w, h) {
       return /** @type {CanvasRenderingContext2D} */ (ShellHelpers.setupHiDPICanvas(canvas, w, h));
@@ -537,15 +529,14 @@
 
     // ── Session summary modal — Phase 0d batch 11 wire-up ──
     {
-      const _sessionSummary = SessionSummary.createSessionSummary({
-        dom: /** @type {any} */ (DomBag.pickDom(DOM,
+      const _sessionSummary = SessionSummary.createSessionSummary(/** @type {any} */ ({
+        dom: DomBag.pickDom(DOM,
           'sessionSummary', 'sumCombo', 'sumStage', 'sumTime',
           'sumQuestList', 'sumBest', 'radarChart',
-        )),
-        state: /** @type {any} */ (state),
-        config: /** @type {any} */ (CONFIG),
+        ),
+        state, config: CONFIG,
         loadJSON, saveJSON, stageLabel, formatTime, t, setupHiDPICanvas,
-      });
+      }));
       saveBestScores = _sessionSummary.saveBestScores;
       renderSessionSummaryText = _sessionSummary.renderSessionSummaryText;
       showSessionSummary = _sessionSummary.showSessionSummary;
@@ -1032,26 +1023,21 @@
       _settings.applyDebug(prefs.debug);
     }
 
-    // ========================================
+    // ── MIDI state + per-note color/screen helpers ──
     const midiState = /** @type {any} */ ({
       activeNotes: new Map(),     // midiNum -> { velocity, onTimeMs, synColor }
       sustainOn: false,
       sustainedNotes: new Set(),  // released keys held by pedal
       recentOnsets: [],           // {midi, timeMs} within 80ms — chord candidate
-      lastChordName: '',
-      lastChordTimeMs: 0,
+      lastChordName: '', lastChordTimeMs: 0,
     });
 
     const detectChord = PianoCore.detectChord;
 
     /** @param {number} midiNum */
-    function midiToScreenX(midiNum) {
-      return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W;
-    }
-
+    function midiToScreenX(midiNum) { return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W; }
     /** @param {number} midiNum */
-    const noteThemeColor = (midiNum) =>
-      PianoCore.noteThemeColor(midiNum, CONFIG.THEMES[state.currentTheme]);
+    const noteThemeColor = (midiNum) => PianoCore.noteThemeColor(midiNum, CONFIG.THEMES[state.currentTheme]);
     /** @param {number} midiNum */
     const synColorFor = (midiNum) =>
       PianoCore.synColorFor(midiNum, {
@@ -1114,18 +1100,17 @@
       _midiRender.setLabels({ sustainLabel: t('sustainLabel') })
     );
 
-    const _practiceScoring = PracticeScoring.createPracticeScoring({
-      state: /** @type {any} */ (state),
-      practice: /** @type {any} */ (practice),
+    const _practiceScoring = PracticeScoring.createPracticeScoring(/** @type {any} */ ({
+      state, practice,
       tuning: {
         hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
         chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
         durationMinTolMs: DURATION_MIN_TOL_MS, durationTolFraction: DURATION_TOL_FRACTION,
         countInMs: COUNT_IN_MS,
       },
-      Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
+      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
       showHitChip, spawnBurst, getScreen: () => ({ W, H }), t, midiToName, remoteLog,
-    });
+    }));
     function medianRecentPitch() { return _practiceScoring.medianRecentPitch(); }
     /** @param {number} detectedMidi @param {boolean} isExact */
     function matchNoteOnset(detectedMidi, isExact) { return _practiceScoring.matchNoteOnset(detectedMidi, isExact); }
@@ -1135,16 +1120,16 @@
     function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
 
     const dateKey = PianoCore.formatDateKey;
-    const _practiceProgress = PracticeProgress.createPracticeProgress({
+    const _practiceProgress = PracticeProgress.createPracticeProgress(/** @type {any} */ ({
       storage: _prefsStore,
-      core: /** @type {any} */ ({
+      core: {
         migrateAndDefaultProgress: PianoCore.migrateAndDefaultProgress,
         getSongProgress: PianoCore.getSongProgress,
         recordPracticeDay: PianoCore.recordPracticeDay,
         formatDateKey: PianoCore.formatDateKey,
-      }),
-      practice: /** @type {any} */ (practice),
-    });
+      },
+      practice,
+    }));
     /** @returns {import('@piano/core').PracticeProgress} */
     function loadPracticeProgress() { return /** @type {any} */ (_practiceProgress.load()); }
     function savePracticeProgress() { _practiceProgress.save(); }
@@ -1152,17 +1137,14 @@
     function recordPracticeDay() { _practiceProgress.recordPracticeDay(); }
 
     // ── Tone.js helpers ──
-    const _practiceToneAudio = PracticeToneAudio.createPracticeToneAudio({
-      Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
-      audioScheduler: /** @type {any} */ (AudioScheduler),
-      cursor: osmdAdapter,
+    const _practiceToneAudio = PracticeToneAudio.createPracticeToneAudio(/** @type {any} */ ({
+      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
+      audioScheduler: AudioScheduler, cursor: osmdAdapter,
       getCountInMs: () => COUNT_IN_MS,
-    });
+    }));
     function ensureToneInstruments() { _practiceToneAudio.ensureInstruments(); }
     /** @param {number} startAudioTime */
-    function scheduleCountInBeeps(startAudioTime) {
-      _practiceToneAudio.scheduleCountIn(startAudioTime);
-    }
+    function scheduleCountInBeeps(startAudioTime) { _practiceToneAudio.scheduleCountIn(startAudioTime); }
 
     /** @param {any} n */ function n_state(n) { return ShellHelpers.noteStateLabel(n); }
     const NOTE_NAMES_JP = CoreOpts.NOTE_NAMES_JP;
@@ -1173,73 +1155,61 @@
     /** @param {number} midi */ function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
 
     // ── Section build + start ──
+    const _sectionNotesArgs = () => /** @type {any} */ ({ song: currentSong, practice, countInMs: COUNT_IN_MS });
     /** @param {number} sectionIdx */
-    function buildSectionNotes(sectionIdx) {
-      return SectionNotes.buildSectionNotes(sectionIdx, { song: /** @type {any} */ (currentSong), practice: /** @type {any} */ (practice), countInMs: COUNT_IN_MS });
-    }
-    function buildFullSongNotes() {
-      return SectionNotes.buildFullSongNotes({ song: /** @type {any} */ (currentSong), practice: /** @type {any} */ (practice), countInMs: COUNT_IN_MS });
-    }
+    function buildSectionNotes(sectionIdx) { return SectionNotes.buildSectionNotes(sectionIdx, _sectionNotesArgs()); }
+    function buildFullSongNotes() { return SectionNotes.buildFullSongNotes(_sectionNotesArgs()); }
     /** @param {any[]} sectionNotes */
     function computeHandRanges(sectionNotes) { return SectionNotes.computeHandRanges(sectionNotes); }
 
-    const _startPracticeSection = StartPracticeSection.createStartPracticeSection({
-      state: /** @type {any} */ (state),
-      practice: /** @type {any} */ (practice),
-      prefs: /** @type {any} */ (prefs),
-      getCurrentSong: () => /** @type {any} */ (currentSong),
+    const _startPracticeSection = StartPracticeSection.createStartPracticeSection(/** @type {any} */ ({
+      state, practice, prefs,
+      getCurrentSong: () => currentSong,
       countInMs: () => COUNT_IN_MS,
       defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
-      alert: (msg) => alert(msg),
+      alert: (/** @type {any} */ msg) => alert(msg),
       remoteLog, t, hideIntroHint, syncLayout, setInputIndicator, requestWakeLock, showSectionBanner,
-      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'ptbSection', 'ptbTempo', 'ptbProgress', 'practiceHud', 'osmdContainer')),
+      dom: DomBag.pickDom(DOM, 'ptbSection', 'ptbTempo', 'ptbProgress', 'practiceHud', 'osmdContainer'),
       loadCurrentScore: () => loadCurrentScore(),
-      recomputePracticeTimings, buildSectionNotes, buildFullSongNotes,
-      computeHandRanges: /** @type {any} */ (computeHandRanges),
-      osmdAdapter: /** @type {any} */ (osmdAdapter),
+      recomputePracticeTimings, buildSectionNotes, buildFullSongNotes, computeHandRanges,
+      osmdAdapter,
       resetScrollThrottle: () => _osmdCursor.resetScrollThrottle(),
       osmdScrollToCursor,
-      Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
+      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
       ensureToneInstruments, scheduleCountInBeeps,
-      audioScheduler: /** @type {any} */ (AudioScheduler),
+      audioScheduler: AudioScheduler,
       getInstruments: () => _practiceToneAudio.getInstruments(),
       practiceBeatMs, pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
-    });
+    }));
     /** @param {number} sectionIdx */
     async function startPracticeSection(sectionIdx) { await _startPracticeSection(sectionIdx); }
-
     function stopPracticeAudio() { _practiceToneAudio.stopPracticeAudio(); }
 
     // ── Per-frame practice tick — Phase 0d batch 8 wire-up ──
-    const updatePractice = PracticeTick.createPracticeTick({
+    const updatePractice = PracticeTick.createPracticeTick(/** @type {any} */ ({
       dom: { ptbProgress: DOM.ptbProgress },
-      practice: /** @type {any} */ (practice),
-      midiInput: /** @type {any} */ (midiInput),
-      getOsmd: () => /** @type {any} */ (osmd),
+      practice, midiInput,
+      getOsmd: () => osmd,
       practiceElapsedMs, hitWindowMs: HIT_WINDOW_MS,
       medianRecentPitch, matchNoteOnset, showHitChip, t,
-      // Thunk so the live binding (reassigned after createResultCard
-      // runs further down) is read at section-complete time, not at
-      // wire-up time (which would hit TDZ on the placeholder above).
+      // Thunk so the live binding (reassigned after createResultCard) is read
+      // at section-complete time, not at wire-up time (placeholder TDZ).
       completePracticeSection: () => completePracticeSection(),
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
       noteStateLabel: n_state,
-    });
+    }));
 
-    // ========================================
-    const _practiceLane = PracticeLane.createPracticeLane({
-      ctx,
-      practice: /** @type {any} */ (practice),
-      state: /** @type {any} */ (state),
-      midiInput,
+    // ── Practice lane ──
+    const _practiceLane = PracticeLane.createPracticeLane(/** @type {any} */ ({
+      ctx, practice, state, midiInput,
       getLayout: () => ({
         W, H, kbHeight, kbSafeBottom, safeRight,
         currentLayoutMode: _viewportLayout.getCurrentLayoutMode(),
-        cachedOsmdRect: /** @type {any} */ (cachedOsmdRect),
+        cachedOsmdRect,
         osmdContainerVisible: !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
       }),
-      getCurrentSong: () => /** @type {any} */ (currentSong),
+      getCurrentSong: () => currentSong,
       osmdAdapter, osmdScrollToCursor,
       practiceElapsedMs, practiceRealElapsedMs,
       noteThemeColor, midiToPitchName,
@@ -1248,20 +1218,12 @@
       hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
       drawPracticeLane: PianoCore.drawPracticeLane,
       laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo'),
-    });
+    }));
     /** @param {number} timeMs */ function drawPracticeLane(timeMs) { _practiceLane.draw(timeMs); }
     function refreshLaneOptsI18n() {
       _practiceLane.setLabels({ laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo') });
     }
     window.addEventListener('langchange', refreshLaneOptsI18n);
-
-    /** @param {CanvasRenderingContext2D} c @param {number} x @param {number} y @param {number} w @param {number} h @param {number} r */
-    function roundRect(c, x, y, w, h, r) {
-      c.beginPath(); c.moveTo(x + r, y);
-      c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
-      c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r);
-      c.closePath();
-    }
 
     // ── Intro-hint UI + hit feedback chip ──
     const _introHintUi = IntroHintUi.createIntroHintUi(/** @type {any} */ ({
@@ -1331,13 +1293,12 @@
     });
 
     // packages/web/src/boot-session.ts as installSongStartButton.
-    BootSession.installSongStartButton(DOM.songStart, {
-      state: /** @type {any} */ (state),
-      practice: /** @type {any} */ (practice),
+    BootSession.installSongStartButton(DOM.songStart, /** @type {any} */ ({
+      state, practice,
       initAudio, showRunningUI, initBgStars, loop, alertAudioInitError,
-      startPracticeSection: (idx) => startPracticeSection(idx),
+      startPracticeSection: (/** @type {any} */ idx) => startPracticeSection(idx),
       songPanel: DOM.songPanel,
-    });
+    }));
 
     const _selectSong = SelectSong.createSelectSong(/** @type {any} */ ({
       songs: SONGS, state, practice,
@@ -1493,11 +1454,8 @@
       renderFrame: RenderFrame, audioInit: AudioInit,
     });
 
-    // The legacy floating BLE button is gone — Bluetooth pairing now lives
-    // exclusively in the ⚙ settings panel (settingsBleBtn).
-
-    const _practiceFlow = PracticeFlow.createPracticeFlow({
-      dom: /** @type {any} */ ({
+    const _practiceFlow = PracticeFlow.createPracticeFlow(/** @type {any} */ ({
+      dom: {
         ...DomBag.pickDom(DOM,
           'ptbQuit', 'ptbToggleOsmd', 'resQuit', 'resRetry', 'resNext',
           'sumClose', 'homeBtn', 'sumHome', 'resHome', 'practiceHud',
@@ -1505,34 +1463,25 @@
           'hud', 'questDisplay', 'micMeter', 'startScreen',
         ),
         resTryPlay: byId('resTryPlay'),
-      }),
-      practice: /** @type {any} */ (practice),
-      state: /** @type {any} */ (state),
-      midiState: /** @type {any} */ (midiState),
-      getCurrentSong: () => /** @type {any} */ (currentSong),
-      songProg: () => /** @type {any} */ (songProg()),
+      },
+      practice, state, midiState,
+      getCurrentSong: () => currentSong,
+      songProg: () => songProg(),
       startPracticeSection, renderSongPanel, stopPracticeAudio, releaseWakeLock,
       hideIntroHint, stopMidiAutoRescan, resetSession,
-    });
+    }));
     returnToTitle = _practiceFlow.returnToTitle;
 
     // Initialize progress on load (so panel works without audio start)
     practice.progress = loadPracticeProgress();
 
-    // ── Start ──
-    // moved to packages/web/src/boot-session.ts.
-    BootSession.installStartButton(DOM.startBtn, {
-      state: /** @type {any} */ (state),
-      practice: /** @type {any} */ (practice),
+    // ── Start ── (boot-session.installStartButton)
+    BootSession.installStartButton(DOM.startBtn, /** @type {any} */ ({
+      state, practice,
       initAudio, showRunningUI, initBgStars, loop, alertAudioInitError,
-    });
+    }));
 
-    // sumClose / homeBtn / sumHome / resHome listeners + the
-    // returnToTitle implementation moved to practice-flow.ts (Phase 0d
-    // batch 7b). The createPracticeFlow() call above wires them.
-
-// Phase 0c kickoff (2026-05-06): make this file a real ES module so
-// main.ts can import it without a `.d.ts` shim. Enables `allowJs: true`
-// in packages/web/tsconfig.json to bring it into the typecheck graph
-// (checkJs stays off — that's the next ratchet, file by file).
+// Phase 0c kickoff (2026-05-06): real ES module so main.ts can import it
+// without a `.d.ts` shim. Enables `allowJs: true` in packages/web/tsconfig.json
+// to bring this into the typecheck graph (checkJs stays off — next ratchet).
 export {};
