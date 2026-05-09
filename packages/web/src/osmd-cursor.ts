@@ -43,6 +43,11 @@
 export interface OsmdInstanceRef {
   cursor?: OsmdCursorRef | null;
   Sheet?: { SourceMeasures?: Array<{ AbsoluteTimestamp?: { realValue?: number } }> } | null;
+  /** GraphicalMusicSheet — entry point for measure→graphical lookups.
+   *  Typed as `any` because the OSMD types are deep + version-volatile;
+   *  we only access `findGraphicalStaffEntryFromMeasureList` and use a
+   *  try/catch fallback to GNotesUnderCursor() if it's missing. */
+  GraphicSheet?: unknown;
 }
 
 /** OSMD cursor surface — only the bits we read/call. */
@@ -53,6 +58,13 @@ export interface OsmdCursorRef {
   next?(): void;
   show?(): void;
   hide?(): void;
+  /** Re-run the visual position math against the current iterator
+   *  state. We need to invoke this manually after a walk because
+   *  `cursor.next()` (= moveToNextVisibleVoiceEntry + update) can
+   *  throw inside `update()` for certain entries (grace notes,
+   *  hidden voices, ...) — the iterator advances anyway, so without
+   *  a recovery `update()` the visual lags behind permanently. */
+  update?(): void;
   GNotesUnderCursor?(): OsmdGraphicalNote[];
   NotesUnderCursor?(): OsmdGraphicalNote[];
 }
@@ -61,6 +73,10 @@ export interface OsmdIteratorRef {
   endReached: boolean;
   CurrentMeasureIndex: number;
   currentTimeStamp: { realValue: number };
+  /** Advance to the next visible voice entry without running the
+   *  cursor's `update()` — used by the walk loop to dodge the OSMD
+   *  `update()` throw without losing iterator progress. */
+  moveToNextVisibleVoiceEntry?(notIncludingGraceNote: boolean): void;
 }
 
 /** Minimal graphical-note shape we touch — `getSVGGElement` returns
@@ -164,19 +180,27 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     const osmd = deps.getOsmd();
     if (!osmd?.cursor) return;
 
-    // GNotesUnderCursor (graphical notes, has getSVGGElement) was
-    // added mid-1.x. Fall back to NotesUnderCursor + a property
-    // probe so older OSMD builds still work.
-    let list: OsmdGraphicalNote[] = [];
-    try {
-      if (typeof osmd.cursor.GNotesUnderCursor === 'function') {
-        list = osmd.cursor.GNotesUnderCursor() || [];
-      } else if (typeof osmd.cursor.NotesUnderCursor === 'function') {
-        list = osmd.cursor.NotesUnderCursor() || [];
-      }
-    } catch {
-      return;
-    }
+    // Resolve graphical notes for the cursor's current iterator stop.
+    // The natural choice — `cursor.GNotesUnderCursor()` — is broken
+    // for tied bass / pedaled notes: it routes the source-note → graphical-
+    // note lookup through `rules.GNote(note)`, which can return a
+    // GraphicalNote anchored to the TIE's start (an earlier system).
+    // OSMD's own playback API works around this with two filters that
+    // GNotesUnderCursor doesn't apply:
+    //   1. skip tie continuations  (note.NoteTie.StartNote !== note)
+    //   2. resolve via findGraphicalStaffEntryFromMeasureList(staffIdx,
+    //      measureIdx, sourceStaffEntry) — anchored to the iterator's
+    //      CURRENT measure, not the tie start.
+    // We replicate both here so the cursor visual + the painted notes
+    // are guaranteed to live on the same MusicSystem. Falls back to
+    // GNotesUnderCursor when the internal API isn't reachable (older
+    // OSMD or test fixtures), so the legacy path stays as a safety net.
+    const list = collectStartedAtCursor(osmd) ?? legacyGNotesFallback(osmd);
+    // [DIAG-CURSORSYNC 2026-05-09] Capture the bounding rect of the
+    // FIRST highlighted note so we can compare it to the visual cursor
+    // position. REMOVE after diagnosis.
+    let _diagFirstNoteTop: number | null = null;
+    let _diagFirstNoteId = '';
     for (const n of list) {
       if (!n || typeof n.getSVGGElement !== 'function') continue;
       let g: SVGGElement | null;
@@ -186,6 +210,16 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
         continue;
       }
       if (!g) continue;
+      // [DIAG-CURSORSYNC] capture once
+      if (_diagFirstNoteTop === null) {
+        try {
+          const r = g.getBoundingClientRect();
+          _diagFirstNoteTop = r.top;
+          _diagFirstNoteId = g.id || g.tagName;
+        } catch {
+          /* detached during song swap */
+        }
+      }
       const paths = g.querySelectorAll<SVGPathElement>('path');
       for (const p of paths) {
         if (p.dataset && !('_origFill' in p.dataset)) {
@@ -195,7 +229,135 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
         highlightedPaths.push(p);
       }
     }
+    // [DIAG-CURSORSYNC] Compare highlighted-note rect.top to the
+    // visual cursor's rect.top. They should match within a few px on
+    // every call. Logged at most every 8 calls to keep server.log
+    // readable.
+    _diagSyncProbe(osmd, list.length, _diagFirstNoteTop, _diagFirstNoteId);
   }
+
+  /** Mirrors OSMD's `getAudibleEntries` tie filter + the cursor's own
+   *  `getStaffEntryFromVoiceEntry` graphical-resolution path. Returns
+   *  `null` when the internal OSMD shape isn't reachable so the caller
+   *  can fall back to GNotesUnderCursor. */
+  function collectStartedAtCursor(osmd: OsmdInstanceRef): OsmdGraphicalNote[] | null {
+    // Reach into OSMD internals via `any` — the structure is deeply
+    // nested and version-volatile, and the public types don't surface
+    // it. Every nested access is wrapped in a try/catch so a single
+    // shape change can't break the highlight altogether (we just
+    // fall back to the legacy path).
+     
+    const cursor = osmd.cursor as any;
+    const graphicSheet = osmd.GraphicSheet as any;
+    if (!cursor?.iterator || !graphicSheet?.findGraphicalStaffEntryFromMeasureList) {
+      return null;
+    }
+    const out: OsmdGraphicalNote[] = [];
+    let voiceEntries: any[];
+    try {
+      voiceEntries = cursor.iterator.CurrentVisibleVoiceEntries?.() || [];
+    } catch {
+      return null;
+    }
+    for (const ve of voiceEntries) {
+      if (!ve?.Notes) continue;
+      const sourceStaffEntry = ve.ParentSourceStaffEntry;
+      if (!sourceStaffEntry?.VerticalContainerParent?.ParentMeasure) continue;
+      const measureIdx = sourceStaffEntry.VerticalContainerParent.ParentMeasure.measureListIndex;
+      const staffIdx = sourceStaffEntry.ParentStaff?.idInMusicSheet;
+      if (typeof measureIdx !== 'number' || typeof staffIdx !== 'number') continue;
+      let gse: any;
+      try {
+        gse = graphicSheet.findGraphicalStaffEntryFromMeasureList(
+          staffIdx,
+          measureIdx,
+          sourceStaffEntry
+        );
+      } catch {
+        continue;
+      }
+      if (!gse?.graphicalVoiceEntries) continue;
+      for (const note of ve.Notes) {
+        // Skip tie continuations — same predicate OSMD's playback
+        // uses in `getAudibleEntries`. The tie object stores the
+        // first note as StartNote; subsequent notes in the same tie
+        // chain reuse the same StartNote, so identity comparison
+        // distinguishes start-of-tie from continuation cleanly.
+        if (note?.NoteTie && note.NoteTie.StartNote !== note) continue;
+        for (const gve of gse.graphicalVoiceEntries) {
+          for (const gn of gve.notes ?? []) {
+            if (gn?.sourceNote === note) out.push(gn as OsmdGraphicalNote);
+          }
+        }
+      }
+    }
+    return out;
+     
+  }
+
+  /** Pre-fix path. Kept so older OSMD builds + test fixtures (which
+   *  don't surface `osmd.GraphicSheet`) still get notehead highlights,
+   *  at the cost of the tied-note desync we documented above. */
+  function legacyGNotesFallback(osmd: OsmdInstanceRef): OsmdGraphicalNote[] {
+    if (!osmd.cursor) return [];
+    try {
+      if (typeof osmd.cursor.GNotesUnderCursor === 'function') {
+        return osmd.cursor.GNotesUnderCursor() || [];
+      }
+      if (typeof osmd.cursor.NotesUnderCursor === 'function') {
+        return osmd.cursor.NotesUnderCursor() || [];
+      }
+    } catch {
+      /* swallow */
+    }
+    return [];
+  }
+
+  // [DIAG-CURSORSYNC 2026-05-09] Begin diagnostic block — REMOVE after
+  // root cause is confirmed. grep for [DIAG-CURSORSYNC] to find every
+  // touch point.
+  let _diagSyncCalls = 0;
+  function _diagSyncProbe(
+    osmd: OsmdInstanceRef,
+    listLen: number,
+    noteTop: number | null,
+    noteId: string
+  ): void {
+    _diagSyncCalls++;
+    if (_diagSyncCalls % 8 !== 1) return;
+    const ce = (osmd.cursor?.cursorElement as unknown as HTMLElement | null) ?? null;
+    let cursorTop: number | null = null;
+    try {
+      if (ce && typeof (ce as Element).getBoundingClientRect === 'function') {
+        cursorTop = ce.getBoundingClientRect().top;
+      }
+    } catch {
+      /* hidden / detached */
+    }
+    const it = osmd.cursor?.iterator;
+    const delta = noteTop !== null && cursorTop !== null ? Math.round(noteTop - cursorTop) : null;
+    try {
+      console.log(
+        '[DIAG-CURSORSYNC] ' +
+          JSON.stringify({
+            calls: _diagSyncCalls,
+            listLen,
+            cursorTop: cursorTop !== null ? Math.round(cursorTop) : null,
+            noteTop: noteTop !== null ? Math.round(noteTop) : null,
+            delta,
+            noteId,
+            m: it?.CurrentMeasureIndex,
+            ts:
+              typeof it?.currentTimeStamp?.realValue === 'number'
+                ? +it.currentTimeStamp.realValue.toFixed(3)
+                : null,
+          })
+      );
+    } catch {
+      /* swallow — diag must never throw */
+    }
+  }
+  // [DIAG-CURSORSYNC] End block
 
   function resetToStart(): void {
     const osmd = deps.getOsmd();
@@ -239,18 +401,44 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     }
 
     // Walk forward until iterator's (measureIdx, inBarQuarters)
-    // reaches the target. Bounded loop in case cursor.next() throws
-    // repeatedly without advancing — without the cap we'd hang.
+    // reaches the target. Use the iterator's own moveToNextVisibleVoiceEntry
+    // when available — `cursor.next()` is "iterator advance + visual
+    // update", and the visual update throws on grace notes / hidden
+    // voices. Catching the throw inside the loop keeps the iterator
+    // advancing but leaves the visual cursor stranded at the last
+    // successful update — over a long song the visual desyncs from
+    // the iterator (and from the highlighted notes downstream of
+    // GNotesUnderCursor) by a full system or more (server.log
+    // [DIAG-CURSORSYNC] 2026-05-09: delta drifts to −300 px+ in the
+    // latter half of dense scores). Driving the iterator directly
+    // dodges the throw entirely; we then call `cursor.update()` once
+    // outside the loop to re-sync the visual to the iterator's final
+    // position. The legacy `cursor.next()` path is kept as a fallback
+    // for OSMD builds that haven't surfaced moveToNextVisibleVoiceEntry.
     let safety = safetyCap;
+    const advance =
+      typeof it.moveToNextVisibleVoiceEntry === 'function'
+        ? () => it.moveToNextVisibleVoiceEntry!(false)
+        : () => osmd.cursor!.next?.();
     while (!it.endReached && safety-- > 0) {
       const m = it.CurrentMeasureIndex;
       if (m > targetM) break;
       if (m === targetM && inBarQ() >= targetQ - eps) break;
       try {
-        osmd.cursor.next?.();
+        advance();
       } catch {
-        /* grace-note throws — iterator still advances */
+        /* hidden voice / grace note — iterator still advances */
       }
+    }
+    // Resync the visual cursor to the iterator's final position. If
+    // we walked via moveToNextVisibleVoiceEntry, this is the only call
+    // that paints the cursor at the new spot. If we walked via
+    // cursor.next() and an intermediate update() threw, this is the
+    // recovery call that catches the visual back up.
+    try {
+      osmd.cursor.update?.();
+    } catch {
+      /* same throw conditions as cursor.next()'s update — best effort */
     }
     // Light up the freshly-current notehead(s).
     highlightCurrentNotes();

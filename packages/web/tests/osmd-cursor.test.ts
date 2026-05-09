@@ -411,6 +411,178 @@ describe('highlightCurrentNotes', () => {
     expect(p1.style.fill).toBe('');
     expect(p2.style.fill).toBe('#ff3b6b');
   });
+
+  // Tie-aware highlighting (server.log analysis 2026-05-09): GNotesUnderCursor
+  // returns graphical notes anchored to the tie's START system, causing the
+  // pink highlight to drift away from the cursor as the song progresses.
+  // The fix replicates OSMD's playback-side "audible entries" filter:
+  //   1. skip tie continuations (note.NoteTie.StartNote !== note),
+  //   2. resolve graphical notes via findGraphicalStaffEntryFromMeasureList
+  //      so they land on the iterator's CURRENT measure, not the tie start.
+  describe('tie-aware highlighting (path A: osmd.GraphicSheet present)', () => {
+    interface TieFixture {
+      sourceNote: object;
+      tie: { StartNote: object } | null;
+      gn: { getSVGGElement: () => SVGGElement; sourceNote: object };
+    }
+
+    function makeTieFixture(): { tieStart: TieFixture; tieContinuation: TieFixture } {
+      const startG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+      const startP = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'path'
+      ) as SVGPathElement;
+      startG.appendChild(startP);
+      const contG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+      const contP = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'path'
+      ) as SVGPathElement;
+      contG.appendChild(contP);
+      document.body.append(startG, contG);
+
+      const startNote = {} as object;
+      const contNote = {} as object;
+      const tie = { StartNote: startNote };
+      return {
+        tieStart: {
+          sourceNote: startNote,
+          tie: null,
+          gn: { getSVGGElement: () => startG, sourceNote: startNote },
+        },
+        tieContinuation: {
+          sourceNote: contNote,
+          tie,
+          gn: { getSVGGElement: () => contG, sourceNote: contNote },
+        },
+      };
+    }
+
+    /** Build an OsmdInstanceRef whose iterator + GraphicSheet expose the
+     *  internal shape collectStartedAtCursor walks. The voice entries
+     *  reference both fixtures so the test can assert which was painted. */
+    function osmdWithFixtures(
+      fixtures: TieFixture[],
+      cursorElement = { offsetTop: 0 }
+    ): OsmdInstanceRef {
+      const sourceStaffEntry = {
+        VerticalContainerParent: { ParentMeasure: { measureListIndex: 5 } },
+        ParentStaff: { idInMusicSheet: 0 },
+      };
+      const voiceEntry = {
+        ParentSourceStaffEntry: sourceStaffEntry,
+        Notes: fixtures.map((f) => ({
+          NoteTie: f.tie,
+          // sourceNote isn't a real OSMD field on Note — collectStartedAtCursor
+          // identifies a Note via the `note === note` reference, which is
+          // already what OSMD's getAudibleEntries uses.
+        })),
+      };
+      // Pair the synthetic Notes back to the fixtures' sourceNote refs so
+      // the gn.sourceNote === note check inside collectStartedAtCursor
+      // matches: do this by re-pointing the Notes array to the fixtures'
+      // sourceNote objects directly.
+      voiceEntry.Notes = fixtures.map((f) => ({
+        NoteTie: f.tie,
+        // tie continuation predicate is `tie && tie.StartNote !== note`; we
+        // need `note === sourceNote` so the predicate works on the source
+        // identity, and so the gn.sourceNote === note check matches too.
+        ...(f.sourceNote as object),
+      }));
+      // Replace each Note with a stable reference identical to fixture.sourceNote
+      // so identity comparison flows end-to-end.
+      voiceEntry.Notes = fixtures.map((f) => f.sourceNote as { NoteTie?: typeof f.tie });
+      // Set NoteTie on the source-note-shaped Note so the predicate sees it.
+      for (let i = 0; i < fixtures.length; i++) {
+        (voiceEntry.Notes[i] as { NoteTie: TieFixture['tie'] }).NoteTie = fixtures[i].tie;
+      }
+
+      const iterator = {
+        endReached: false,
+        CurrentMeasureIndex: 5,
+        currentTimeStamp: { realValue: 5 },
+        CurrentVisibleVoiceEntries: () => [voiceEntry],
+      };
+      const cursor = {
+        cursorElement,
+        iterator,
+        reset: vi.fn(),
+        next: vi.fn(),
+        show: vi.fn(),
+        hide: vi.fn(),
+      };
+      const graphicalStaffEntry = {
+        graphicalVoiceEntries: [
+          {
+            notes: fixtures.map((f) => f.gn),
+          },
+        ],
+      };
+      const GraphicSheet = {
+        findGraphicalStaffEntryFromMeasureList: (_staff: number, _m: number, _sse: object) =>
+          graphicalStaffEntry,
+      };
+      return { cursor, GraphicSheet } as unknown as OsmdInstanceRef;
+    }
+
+    it('paints tie-START notes', () => {
+      const { tieStart } = makeTieFixture();
+      const cursor = createOsmdCursor({
+        getOsmd: () => osmdWithFixtures([tieStart]),
+        getContainer: () => makeContainer(),
+      });
+      cursor.highlightCurrentNotes();
+      const startPath = tieStart.gn.getSVGGElement().querySelector('path') as SVGPathElement;
+      expect(startPath.style.fill).toBe('#ff3b6b');
+    });
+
+    it('skips tie CONTINUATION notes (the desync source)', () => {
+      const { tieContinuation } = makeTieFixture();
+      const cursor = createOsmdCursor({
+        getOsmd: () => osmdWithFixtures([tieContinuation]),
+        getContainer: () => makeContainer(),
+      });
+      cursor.highlightCurrentNotes();
+      const contPath = tieContinuation.gn.getSVGGElement().querySelector('path') as SVGPathElement;
+      // Tie continuation should NOT be painted — that's the whole fix.
+      expect(contPath.style.fill).toBe('');
+    });
+
+    it('paints starts AND skips continuations when both are at the cursor', () => {
+      const { tieStart, tieContinuation } = makeTieFixture();
+      const cursor = createOsmdCursor({
+        getOsmd: () => osmdWithFixtures([tieStart, tieContinuation]),
+        getContainer: () => makeContainer(),
+      });
+      cursor.highlightCurrentNotes();
+      const startPath = tieStart.gn.getSVGGElement().querySelector('path') as SVGPathElement;
+      const contPath = tieContinuation.gn.getSVGGElement().querySelector('path') as SVGPathElement;
+      expect(startPath.style.fill).toBe('#ff3b6b');
+      expect(contPath.style.fill).toBe('');
+    });
+  });
+
+  it('falls back to GNotesUnderCursor when osmd.GraphicSheet is missing', () => {
+    // Older OSMD builds + the rest of our existing tests don't surface
+    // `osmd.GraphicSheet`. The fallback path (legacyGNotesFallback) keeps
+    // those scenarios working — this is regression coverage for the
+    // fallback itself, since the tie-aware path is preferred when available.
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path') as SVGPathElement;
+    g.appendChild(p);
+    document.body.appendChild(g);
+    const cursor = createOsmdCursor({
+      getOsmd: () =>
+        makeOsmd({
+          useGNotes: true,
+          notesUnderCursor: [{ getSVGGElement: () => g }],
+          cursorElement: { offsetTop: 0 },
+        }),
+      getContainer: () => makeContainer(),
+    });
+    cursor.highlightCurrentNotes();
+    expect(p.style.fill).toBe('#ff3b6b');
+  });
 });
 
 // ─── setCursorToNote ───────────────────────────────────────────────
@@ -499,5 +671,64 @@ describe('setCursorToNote', () => {
       getContainer: () => makeContainer(),
     });
     expect(() => cursor.setCursorToNote({ measureIdx: 1, inBarQuarters: 0 })).not.toThrow();
+  });
+
+  // Visual-vs-iterator desync recovery — server.log [DIAG-CURSORSYNC]
+  // 2026-05-09 showed cursor.next()'s internal update() throws on
+  // grace notes / hidden voices, leaving the visual stranded while
+  // the iterator advances. setCursorToNote now drives the iterator
+  // directly via moveToNextVisibleVoiceEntry and resyncs the visual
+  // via cursor.update() once at the end.
+  it('prefers iterator.moveToNextVisibleVoiceEntry over cursor.next() during the walk', () => {
+    const it = makeIterator({ measureIdx: 0, inBar: 0 });
+    // Wire the iterator-level advance directly. cursor.next() should
+    // NOT be called when this is available.
+    (
+      it as unknown as { moveToNextVisibleVoiceEntry: (g: boolean) => void }
+    ).moveToNextVisibleVoiceEntry = vi.fn(() => {
+      it.currentTimeStamp.realValue += 0.25;
+      const m = Math.floor(it.currentTimeStamp.realValue);
+      if (m !== it.CurrentMeasureIndex) it.CurrentMeasureIndex = m;
+    });
+    const next = vi.fn();
+    const update = vi.fn();
+    const osmd = makeOsmd({ iterator: it, next, cursorElement: { offsetTop: 0 } });
+    osmd.cursor!.update = update;
+    const cursor = createOsmdCursor({
+      getOsmd: () => osmd,
+      getContainer: () => makeContainer(),
+    });
+    cursor.setCursorToNote({ measureIdx: 1, inBarQuarters: 0 });
+    expect(next).not.toHaveBeenCalled();
+    expect(
+      (it as unknown as { moveToNextVisibleVoiceEntry: ReturnType<typeof vi.fn> })
+        .moveToNextVisibleVoiceEntry
+    ).toHaveBeenCalled();
+    // cursor.update() must run once after the walk to resync the visual.
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it('still resyncs the visual via cursor.update() even when cursor.next() throws on every step', () => {
+    // Reproduces the [DIAG-CURSORSYNC] failure mode: each cursor.next()
+    // throws inside OSMD's update(), but iterator advances. Without the
+    // recovery update() call, the visual would be stranded; with it,
+    // the visual is forced back to the final iterator position.
+    const it = makeIterator({ measureIdx: 0, inBar: 0 });
+    const next = vi.fn(() => {
+      it.currentTimeStamp.realValue += 0.25;
+      const m = Math.floor(it.currentTimeStamp.realValue);
+      if (m !== it.CurrentMeasureIndex) it.CurrentMeasureIndex = m;
+      throw new Error('grace-note throw inside update()');
+    });
+    const update = vi.fn();
+    const osmd = makeOsmd({ iterator: it, next, cursorElement: { offsetTop: 0 } });
+    osmd.cursor!.update = update;
+    const cursor = createOsmdCursor({
+      getOsmd: () => osmd,
+      getContainer: () => makeContainer(),
+    });
+    cursor.setCursorToNote({ measureIdx: 2, inBarQuarters: 0 });
+    expect(it.CurrentMeasureIndex).toBe(2);
+    expect(update).toHaveBeenCalledOnce();
   });
 });
