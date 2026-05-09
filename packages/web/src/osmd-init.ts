@@ -21,10 +21,12 @@
 //     chord with sustain hit calculatePedals' UnformattedNote path.
 //     We don't visually need pedals for the practice flow.
 //
-//   - CursorIgnoreRepetitions = true — OSMD 1.9.6+ made cursor.next()
-//     follow repetitions; our own playback-order / expand-by-order
-//     pipeline already unfolds repeats by re-parsing the raw XML, so
-//     we ask OSMD to keep the legacy 1.8.x linear-walk behavior.
+//   - CursorIgnoreRepetitions = false — required so OSMD's
+//     `MusicPartManagerIterator` constructor takes back-jumps at
+//     repeat ends while walking to a sheet timestamp. The cursor is
+//     driven from `(measureIdx, inBarQuarters)` via that constructor
+//     (osmd-cursor.ts/setCursorToNote), so the iterator naturally
+//     lands at the correct repeat iteration without us tracking it.
 //
 //   - Repetition activation — OSMD attaches Repetition objects to
 //     measures' First/LastRepetitionInstructions, not necessarily to
@@ -121,7 +123,13 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
           drawHiddenNotes: false,
           autoResize: false,
           backend: 'svg',
-          cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: false }],
+          // CursorType 1 = ThinLeft (thin gold vertical line marking
+          // the current beat) + `follow: true` (OSMD calls
+          // `scrollIntoView({ block: "center" })` on every
+          // cursor.update, auto-centering the score in
+          // #osmdContainer's overflow-y:auto). Same pattern as
+          // musicxml-player and osmd-audio-player.
+          cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: true }],
         });
 
         // RenderPedals quirk — see header note.
@@ -130,9 +138,14 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
         } catch (e) {
           console.warn('[OSMD] could not disable pedal render: ' + (e as Error).message);
         }
-        // CursorIgnoreRepetitions — see header note.
+        // CursorIgnoreRepetitions = false — let OSMD's iterator handle
+        // back-jumps at repeat ends. The cursor is driven by sheet
+        // timestamps via `new MusicPartManagerIterator(sheet, ts)`
+        // (see osmd-cursor.ts/setCursorToNote), and the constructor's
+        // walk only resolves to the correct repeat iteration when this
+        // flag is false — the back-jump branch is gated on it.
         try {
-          (inst as any).EngravingRules.CursorIgnoreRepetitions = true;
+          (inst as any).EngravingRules.CursorIgnoreRepetitions = false;
         } catch {
           /* older OSMD: option doesn't exist, behavior is the same */
         }

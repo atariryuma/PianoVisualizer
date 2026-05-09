@@ -301,7 +301,6 @@
     const initOsmd = _osmd.initOsmd;
     const extractNotesFromOsmd = _osmd.extractNotesFromOsmd;
     const loadCurrentScore = _osmd.loadCurrentScore;
-    const osmdScrollToCursor = _osmd.osmdScrollToCursor;
     /** Backward-compat alias — the few remaining shell readers expect a getter. */
     function getOsmd() { return _osmd.getOsmd(); }
 
@@ -326,8 +325,6 @@
       Tone: typeof Tone !== 'undefined' ? Tone : undefined,
       loadCurrentScore: () => _osmd.loadCurrentScore(),
       osmdAdapter: _osmd.osmdAdapter,
-      resetScrollThrottle: () => _osmd.resetScrollThrottle(),
-      osmdScrollToCursor: () => _osmd.osmdScrollToCursor(),
       getOsmd, getMidiInput: () => midiInput,
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ text) => showHitChip(kind, text),
       spawnBurst,
@@ -430,7 +427,7 @@
       getCurrentLayoutMode: () => _viewportLayout.getCurrentLayoutMode(),
       cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
       getCurrentSong: () => currentSong,
-      osmdAdapter, osmdScrollToCursor: () => _osmd.osmdScrollToCursor(),
+      osmdAdapter,
       practiceElapsedMs, practiceRealElapsedMs,
       noteThemeColor, midiToPitchName,
       laneLookaheadMs: _practice.getLaneLookaheadMs(), countInMs: _practice.getCountInMs(),

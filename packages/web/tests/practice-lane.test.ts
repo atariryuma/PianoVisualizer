@@ -62,7 +62,6 @@ function makeDeps(over: Partial<PracticeLaneDeps> = {}): PracticeLaneDeps {
     }),
     getCurrentSong: () => ({ sections: [{ isBoss: false }, { isBoss: true }] }),
     osmdAdapter: { cursorTo: vi.fn() },
-    osmdScrollToCursor: vi.fn(),
     practiceElapsedMs: () => 0,
     practiceRealElapsedMs: () => 0,
     noteThemeColor: () => '#fff',
@@ -134,7 +133,6 @@ describe('createPracticeLane — OSMD cursor sync', () => {
     deps.practice.currentNoteIdx = 1;
     createPracticeLane(deps).draw(100);
     expect(deps.osmdAdapter.cursorTo).toHaveBeenCalledWith(0, 1.0);
-    expect(deps.osmdScrollToCursor).toHaveBeenCalled();
   });
 
   it('advances cursor in listen mode based on real elapsed time', () => {

@@ -45,8 +45,6 @@ export interface ShellPracticeDeps {
   Tone: any;
   loadCurrentScore: () => Promise<void>;
   osmdAdapter: any;
-  resetScrollThrottle: () => void;
-  osmdScrollToCursor: () => void;
   /** Render-tick deps — practiceTick uses getOsmd + the live midiInput.
    *  Getter so the practice cluster can be built before ShellMidi (which
    *  has back-references the other way). */
@@ -223,8 +221,6 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     buildFullSongNotes,
     computeHandRanges: computeHandRanges as any,
     osmdAdapter: deps.osmdAdapter,
-    resetScrollThrottle: deps.resetScrollThrottle,
-    osmdScrollToCursor: deps.osmdScrollToCursor,
     Tone: deps.Tone,
     ensureToneInstruments: () => _practiceToneAudio.ensureInstruments(),
     scheduleCountInBeeps: (t: number) => _practiceToneAudio.scheduleCountIn(t),

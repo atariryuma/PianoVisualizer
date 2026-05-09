@@ -29,7 +29,6 @@ export interface ShellPracticeLaneDeps {
   /** Song + osmd. */
   getCurrentSong: () => any;
   osmdAdapter: any;
-  osmdScrollToCursor: () => void;
   /** Practice timing thunks. */
   practiceElapsedMs: () => number;
   practiceRealElapsedMs: () => number;
@@ -77,7 +76,6 @@ export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPract
     },
     getCurrentSong: deps.getCurrentSong,
     osmdAdapter: deps.osmdAdapter,
-    osmdScrollToCursor: deps.osmdScrollToCursor,
     practiceElapsedMs: deps.practiceElapsedMs,
     practiceRealElapsedMs: deps.practiceRealElapsedMs,
     noteThemeColor: deps.noteThemeColor,

@@ -194,10 +194,9 @@ export interface StartPracticeSectionDeps {
   buildFullSongNotes: () => OsmdLikeNote[];
   computeHandRanges: (notes: OsmdLikeNote[]) => HandRanges;
 
-  // OSMD
+  // OSMD — `osmdAdapter.cursorTo()` advances the cursor; OSMD's own
+  // `cursor.update()` (cursorOptions.follow: true) handles scroll.
   osmdAdapter: StartSectionOsmdAdapter;
-  resetScrollThrottle: () => void;
-  osmdScrollToCursor: () => void;
 
   // Audio
   Tone: StartSectionToneRef | undefined;
@@ -340,15 +339,11 @@ export function createStartPracticeSection(
       deps.showSectionBanner(sec);
     }
 
-    // ── OSMD cursor + scroll ─────────────────────────────────────
+    // ── OSMD cursor (auto-scrolls via cursorOptions.follow:true) ──
     const firstNote = deps.practice.sectionNotes[0];
     if (firstNote) {
       deps.osmdAdapter.cursorTo(firstNote.measureIdx ?? 0, firstNote.inBarQuarters ?? 0);
     }
-    // Bypass the scroll-throttle so the new section's first scroll
-    // isn't swallowed by the previous section's last-frame scroll.
-    deps.resetScrollThrottle();
-    deps.osmdScrollToCursor();
     deps.osmdAdapter.showCursor();
     // Reset per-frame scan cursor for the lane drawer.
     deps.practice._cursorScanIdx = 0;

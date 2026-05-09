@@ -259,7 +259,7 @@ describe('createOsmdInit — URL resolution', () => {
 // ─── EngravingRules quirks ─────────────────────────────────────────
 
 describe('createOsmdInit — EngravingRules quirks', () => {
-  it('disables RenderPedals + CursorIgnoreRepetitions on success', async () => {
+  it('disables RenderPedals and sets CursorIgnoreRepetitions=false on success', async () => {
     const fake = makeFakeOsmdLib();
     const init = createOsmdInit({
       opensheetmusicdisplay: fake.lib,
@@ -267,7 +267,11 @@ describe('createOsmdInit — EngravingRules quirks', () => {
     });
     await init.initOsmd();
     expect(fake.getPedalsValue()).toBe(false);
-    expect(fake.getCursorIgnoreReptValue()).toBe(true);
+    // CursorIgnoreRepetitions=false lets MusicPartManagerIterator's
+    // constructor walk take back-jumps at repeat ends, so the
+    // timestamp-driven cursor seeding in setCursorToNote lands at the
+    // correct repeat iteration. See osmd-cursor.ts.
+    expect(fake.getCursorIgnoreReptValue()).toBe(false);
   });
 
   it('continues when RenderPedals setter throws (logs warn)', async () => {

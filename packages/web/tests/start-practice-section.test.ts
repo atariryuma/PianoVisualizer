@@ -89,8 +89,6 @@ interface Fixture {
     showSectionBanner: ReturnType<typeof vi.fn>;
     cursorTo: ReturnType<typeof vi.fn>;
     showCursor: ReturnType<typeof vi.fn>;
-    osmdScrollToCursor: ReturnType<typeof vi.fn>;
-    resetScrollThrottle: ReturnType<typeof vi.fn>;
     ensureToneInstruments: ReturnType<typeof vi.fn>;
     scheduleCountInBeeps: ReturnType<typeof vi.fn>;
     scheduleSectionPlayback: ReturnType<typeof vi.fn>;
@@ -174,8 +172,6 @@ function makeFixture(
     showSectionBanner: vi.fn(),
     cursorTo: vi.fn(),
     showCursor: vi.fn(),
-    osmdScrollToCursor: vi.fn(),
-    resetScrollThrottle: vi.fn(),
     ensureToneInstruments: vi.fn(),
     scheduleCountInBeeps: vi.fn(),
     scheduleSectionPlayback: vi.fn(),
@@ -211,8 +207,6 @@ function makeFixture(
     buildFullSongNotes: spies.buildFullSongNotes,
     computeHandRanges: () => ({ lhMin: 36, lhMax: 60, rhMin: 60, rhMax: 84 }),
     osmdAdapter: { cursorTo: spies.cursorTo, showCursor: spies.showCursor },
-    resetScrollThrottle: spies.resetScrollThrottle,
-    osmdScrollToCursor: spies.osmdScrollToCursor,
     Tone: tone,
     ensureToneInstruments: spies.ensureToneInstruments,
     scheduleCountInBeeps: spies.scheduleCountInBeeps,
@@ -410,11 +404,12 @@ describe('startPracticeSection — cursor + scroll', () => {
     expect(fx.spies.cursorTo).toHaveBeenCalledWith(5, 1.5);
   });
 
-  it('resets scroll throttle before scrolling', async () => {
+  it('shows the cursor (which auto-scrolls via cursorOptions.follow:true)', async () => {
     const fx = makeFixture();
     await fx.start(0);
-    expect(fx.spies.resetScrollThrottle).toHaveBeenCalledOnce();
-    expect(fx.spies.osmdScrollToCursor).toHaveBeenCalledOnce();
+    // showCursor is called twice — once in the main flow, once inside
+    // the audio-setup branch (guided/rhythm/listen all path through it).
+    expect(fx.spies.showCursor.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 });
 

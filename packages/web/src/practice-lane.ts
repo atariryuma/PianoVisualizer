@@ -111,9 +111,9 @@ export interface PracticeLaneDeps {
   getLayout(): PracticeLayoutAndDom;
   /** Live current song accessor. */
   getCurrentSong(): PracticeLaneSong | null;
-  /** OSMD adapter + scroller (called on cursor advance). */
+  /** OSMD adapter — `cursorTo()` advances the cursor; OSMD's own
+   *  `cursor.update()` (cursorOptions.follow: true) handles scroll. */
   osmdAdapter: PracticeLaneOsmdAdapter;
-  osmdScrollToCursor(): void;
   /** Practice clocks. */
   practiceElapsedMs(): number;
   practiceRealElapsedMs(): number;
@@ -234,8 +234,10 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
       if (targetIdx !== deps.practice._lastCursorNoteIdx) {
         const note = notes[targetIdx];
         if (note && note.measureIdx !== undefined && note.inBarQuarters !== undefined) {
+          // cursorTo seeds the iterator from sheet timestamp + calls
+          // cursor.update(); update() runs scrollIntoView internally
+          // (cursorOptions.follow: true), so no separate scroll call.
           deps.osmdAdapter.cursorTo(note.measureIdx, note.inBarQuarters);
-          deps.osmdScrollToCursor();
         }
         deps.practice._lastCursorNoteIdx = targetIdx;
       }

@@ -13,7 +13,6 @@ import * as ScoreLoader from './score-loader';
 import * as OsmdCursor from './osmd-cursor';
 import * as OsmdAdapterMod from './osmd-adapter';
 
- 
 export interface ShellOsmdDeps {
   /** Live song ref — `mxlUrl` mutated by `osmdAdapter.load(url)`. */
   getCurrentSong: () => any;
@@ -37,11 +36,9 @@ export interface ShellOsmd {
   initOsmd: () => Promise<any>;
   /** Score loader entry. Throws on partial-fail (empty Sheet etc.). */
   loadCurrentScore: () => Promise<void>;
-  /** osmdScrollToCursor — called from start-practice-section + practice-tick. */
-  osmdScrollToCursor: () => void;
-  /** Reset throttle on section start so the cursor scrolls immediately. */
-  resetScrollThrottle: () => void;
-  /** OSMD cursor object — passed to start-practice-section deps. */
+  /** OSMD cursor object — passed to start-practice-section deps.
+   *  Auto-scrolls via OSMD's `cursor.update()` (cursorOptions.follow:
+   *  true set in osmd-init.ts). */
   cursor: ReturnType<typeof OsmdCursor.createOsmdCursor>;
   /** OsmdAdapter typed-boundary — also pinned to globalThis.osmdAdapter. */
   osmdAdapter: import('@piano/core').OsmdAdapter;
@@ -110,9 +107,17 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     remoteLogEnabled: deps.remoteLogEnabled,
   });
 
+  // The OSMD library namespace is seeded onto globalThis by main.ts.
+  // setCursorToNote pulls `MusicPartManagerIterator` + `Fraction` off
+  // it to drive the cursor by sheet timestamp (the musicxml-player
+  // pattern); cursor.update() then auto-scrolls via OSMD's
+  // scrollIntoView (cursorOptions.follow: true in osmd-init.ts).
+  const getOsmdLib = (): OsmdCursor.OsmdLibRef | undefined =>
+    (globalThis as { opensheetmusicdisplay?: OsmdCursor.OsmdLibRef }).opensheetmusicdisplay;
+
   const _osmdCursor = OsmdCursor.createOsmdCursor({
     getOsmd: () => osmd,
-    getContainer: () => deps.osmdContainer,
+    getLib: getOsmdLib,
   });
 
   const osmdAdapter = OsmdAdapterMod.createOsmdAdapter({
@@ -133,8 +138,6 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     },
     initOsmd,
     loadCurrentScore: () => _scoreLoader.loadCurrentScore(),
-    osmdScrollToCursor: () => _osmdCursor.scrollToCursor(),
-    resetScrollThrottle: () => _osmdCursor.resetScrollThrottle(),
     cursor: _osmdCursor,
     osmdAdapter,
     extractNotesFromOsmd,
