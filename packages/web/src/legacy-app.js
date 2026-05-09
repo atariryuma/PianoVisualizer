@@ -174,15 +174,10 @@
       getScreen: _vp.getScreen,
       stageLabel, remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
     }));
-    const updateMultiFeatureOnset = _gameUpdate.updateMultiFeatureOnset;
-    const updateSessionConfidence = _gameUpdate.updateSessionConfidence;
-    const updateQuestState = _gameUpdate.updateQuestState;
-    const updateQualityScores = _gameUpdate.updateQualityScores;
-    const updateAGC = _gameUpdate.updateAGC;
-    const updateGameState = _gameUpdate.updateGameState;
-    const updateHUD = _gameUpdate.updateHUD;
-    const updateDebugOverlay = _gameUpdate.updateDebugOverlay;
-    const getEnergy = _gameUpdate.getEnergy;
+    // updateMultiFeatureOnset / updateSessionConfidence / updateQualityScores
+    // / updateHUD are consumed only inside ShellGameUpdate now — dropped.
+    const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
+      _gameUpdate;
 
     // ── Main loop — moved to packages/web/src/shell-render-loop.ts (batch 112).
     const _rl = ShellRenderLoop.createShellRenderLoop(/** @type {any} */ ({
@@ -259,16 +254,11 @@
       getPractice: () => practice,
       savePracticeProgress: () => savePracticeProgress(),
     }));
-    const USER_DB_STORE = _lib.USER_DB_STORE;
-    const openUserDb = _lib.openUserDb;
-    const userDbAll = _lib.userDbAll;
-    const userDbPut = _lib.userDbPut;
-    const unzipMxlToXmlText = _lib.unzipMxlToXmlText;
-    const _userSongStore = _lib.userSongStore;
-    const loadUserSongs = _lib.loadUserSongs;
-    const removeUserSong = _lib.removeUserSong;
-    const fetchLibrary = _lib.fetchLibrary;
-    const buildSectionsFromDefs = _lib.buildSectionsFromDefs;
+    // loadUserSongs dropped — consumed only inside ShellUserLibrary now.
+    const {
+      USER_DB_STORE, openUserDb, userDbAll, userDbPut, unzipMxlToXmlText,
+      userSongStore: _userSongStore, removeUserSong, fetchLibrary, buildSectionsFromDefs,
+    } = _lib;
 
     // ── OSMD shell — moved to packages/web/src/shell-osmd.ts (batch 103).
     const _osmd = ShellOsmd.createShellOsmd(/** @type {any} */ ({
@@ -278,10 +268,9 @@
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
       buildSectionsFromDefs,
     }));
-    const osmdAdapter = _osmd.osmdAdapter;
-    const initOsmd = _osmd.initOsmd;
-    const extractNotesFromOsmd = _osmd.extractNotesFromOsmd;
-    const loadCurrentScore = _osmd.loadCurrentScore;
+    // initOsmd / extractNotesFromOsmd / loadCurrentScore: consumed only
+    // inside ShellOsmd / ShellPractice / ShellUi (via _osmd.* directly) now.
+    const { osmdAdapter } = _osmd;
     /** Backward-compat alias — the few remaining shell readers expect a getter. */
     function getOsmd() { return _osmd.getOsmd(); }
 
@@ -341,8 +330,7 @@
       isRunning: () => !!state.running,
       requestWakeLock: () => requestWakeLock(),
     }));
-    const midiInput = _midi.midiInput;
-    const bleMidi = _midi.bleMidi;
+    const { midiInput } = _midi;
     function isAppleMobile() { return _midi.isAppleMobile(); }
     function setInputIndicator() { _midi.setInputIndicator(); }
     async function initWebMIDI() { return _midi.initWebMIDI(); }
