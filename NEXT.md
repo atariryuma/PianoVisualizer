@@ -6,12 +6,20 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-99 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,405 lines** (was
-5,100 at the prior NEXT refresh, **−3,695 across 49 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-107 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **836 lines** (was
+5,100 at the prior NEXT refresh, **−4,264 across 57 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
+
+**Phase 0d → 0e in flight**: extracted 7 shell-bootstrap modules (shell-midi,
+shell-add-song, shell-osmd, shell-audio, shell-game-update, shell-midi-handlers,
+shell-practice) covering the major factory clusters. Each is a single
+`createShellXxx(deps)` factory that bundles 5-10 internal `Xxx.createXxx()`
+calls + their forwarders into one shell call site. Pattern: pass live state by
+getter thunks for forward-declared shell-locals; setters where the shell needs
+to mutate (e.g. `setOsmd`).
 
 The mid-session **Issue 1 + Issue 2 bug-fix detour** (5 commits between batches
 56 and 57, 2026-05-08/09) is documented in the bullet list below; **Phase 0d
@@ -411,14 +419,26 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 119 | `web/boot-session.ts`           | —     | `packages/web/src/boot-session.ts`              |
 | 120 | `web/built-in-songs.ts`         | —     | `packages/web/src/built-in-songs.ts`            |
 | 121 | `web/osmd-adapter.ts`           | —     | `packages/web/src/osmd-adapter.ts`              |
+| 122 | `web/shell-midi.ts`             | —     | `packages/web/src/shell-midi.ts`                |
+| 123 | `web/shell-add-song.ts`         | —     | `packages/web/src/shell-add-song.ts`            |
+| 124 | `web/shell-osmd.ts`             | —     | `packages/web/src/shell-osmd.ts`                |
+| 125 | `web/shell-audio.ts`            | —     | `packages/web/src/shell-audio.ts`               |
+| 126 | `web/shell-game-update.ts`      | —     | `packages/web/src/shell-game-update.ts`         |
+| 127 | `web/shell-midi-handlers.ts`    | —     | `packages/web/src/shell-midi-handlers.ts`       |
+| 128 | `web/shell-practice.ts`         | —     | `packages/web/src/shell-practice.ts`            |
+| 129 | `web/shell-ui.ts`               | —     | `packages/web/src/shell-ui.ts`                  |
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **1,405 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,672
-net** across 29 batches in `685d5df` + 91 / 92 / 93 / 94 / 95 / 96 / 97 / 98 /
-99, plus the parallel `f3f226c` tie-aware OSMD cursor fix; **−7,595 net** since
-Phase 0a baseline).
+Start click) reports zero console errors. `legacy-app.js`: **759 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−3,318
+net** across 38 batches in `685d5df` + 91 / 92 / 93 / 94 / 95 / 96 / 97 / 98 /
+99 / 100 / 101 / 102 / 103 / 104 / 105 / 106 / 107 / 108, plus the parallel
+`f3f226c` tie-aware OSMD cursor fix; **−8,241 net** since Phase 0a baseline).
+Phase 0e DoD (≤200 lines): ~559 lines remaining — primarily the residual
+forward-decl placeholders + ESC router + langchange listener + render-loop
+wireup + DevModeWireup + the small-helper cluster (formatTime, isFreeplayActive,
+setupHiDPICanvas, etc.).
 
 ---
 
@@ -426,12 +446,13 @@ Phase 0a baseline).
 
 ## 1. Phase 0d → 0e transition — main.ts wire-up rewrite
 
-The shell is currently **2,095 lines**. Goal: ≤200 lines via Phase 0e (retire
-`legacy-app.js` entirely). The fold-into-existing approach has hit diminishing
-returns at this size — the remaining ~1,900 lines are ~95% factory wire-ups +
-closure thunks + inline event handlers, all of which need to move to `main.ts`
-or a dedicated `shell-bootstrap.ts` under a new architecture rather than be
-folded into existing modules.
+The shell is currently **759 lines** (was 2,095 at start of batch 91). Goal:
+≤200 lines via Phase 0e (retire `legacy-app.js` entirely). The
+fold-into-existing approach has hit diminishing returns at this size — the
+remaining ~1,900 lines are ~95% factory wire-ups + closure thunks + inline event
+handlers, all of which need to move to `main.ts` or a dedicated
+`shell-bootstrap.ts` under a new architecture rather than be folded into
+existing modules.
 
 Recommended Phase 0e workflow (next agent):
 
