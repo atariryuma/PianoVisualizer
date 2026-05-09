@@ -132,7 +132,14 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     const cH = osmd.cursor.cursorElement.offsetHeight || 30;
     const viewH = container.clientHeight;
     if (cTop < container.scrollTop || cTop + cH > container.scrollTop + viewH) {
-      container.scrollTop = Math.max(0, cTop - viewH / 3);
+      // Grand-staff cursors (~350–460 px) can exceed phone-portrait
+      // viewports (~240–364 px); the legacy `cTop - viewH/3` anchor
+      // then drops the bass clef off-screen. Center instead when 1/3
+      // padding doesn't fit — for cH > viewH that's also the least-bad
+      // option (symmetric overflow rather than a one-sided cut).
+      const fitsWithThird = cH + viewH / 3 <= viewH;
+      const target = fitsWithThird ? cTop - viewH / 3 : cTop - (viewH - cH) / 2;
+      container.scrollTop = Math.max(0, target);
     }
   }
 

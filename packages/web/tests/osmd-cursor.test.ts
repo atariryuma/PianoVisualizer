@@ -186,6 +186,52 @@ describe('scrollToCursor', () => {
     cursor.scrollToCursor();
     expect(container.scrollTop).toBeGreaterThan(0); // bypassed
   });
+
+  // Adaptive placement: 1/3-from-top when the cursor fits, centered
+  // otherwise. Pinned because grand-staff cursors used to overflow the
+  // bottom of small viewports (the bass clef would fall off-screen).
+  it('keeps legacy 1/3-from-top placement when cursor + 1/3 padding fits', () => {
+    const container: ReturnType<typeof makeContainer> = { scrollTop: 0, clientHeight: 400 };
+    // cH=200, viewH=400 → cH + viewH/3 = 333 ≤ 400, fits with 1/3 padding.
+    const cursor = createOsmdCursor({
+      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 600, offsetHeight: 200 } }),
+      getContainer: () => container,
+      now: () => 1000,
+    });
+    cursor.scrollToCursor();
+    expect(container.scrollTop).toBeCloseTo(600 - 400 / 3, 0);
+  });
+
+  it('centers a tall cursor that would overflow the bottom under 1/3 placement', () => {
+    // viewH=364, cH=345 — actual phone-portrait grand-staff case.
+    const container: ReturnType<typeof makeContainer> = { scrollTop: 0, clientHeight: 364 };
+    const cursor = createOsmdCursor({
+      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 15284, offsetHeight: 345 } }),
+      getContainer: () => container,
+      now: () => 1000,
+    });
+    cursor.scrollToCursor();
+    expect(container.scrollTop).toBeCloseTo(15284 - (364 - 345) / 2, 0);
+    // cursor fully in view: cTop ≥ scrollTop AND cTop+cH ≤ scrollTop+viewH
+    expect(15284 >= container.scrollTop).toBe(true);
+    expect(15284 + 345 <= container.scrollTop + container.clientHeight).toBe(true);
+  });
+
+  it('centers an oversized cursor (cH > viewH) so overflow is symmetric', () => {
+    // viewH=364, cH=460 — cursor 26 % taller than viewport; no scroll
+    // target fits the whole element, so symmetric overflow is the goal.
+    const container: ReturnType<typeof makeContainer> = { scrollTop: 0, clientHeight: 364 };
+    const cursor = createOsmdCursor({
+      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 20000, offsetHeight: 460 } }),
+      getContainer: () => container,
+      now: () => 1000,
+    });
+    cursor.scrollToCursor();
+    expect(container.scrollTop).toBeCloseTo(20000 + (460 - 364) / 2, 0);
+    const overflowTop = container.scrollTop - 20000;
+    const overflowBot = 20000 + 460 - (container.scrollTop + 364);
+    expect(overflowTop).toBe(overflowBot);
+  });
 });
 
 // ─── resetToStart ──────────────────────────────────────────────────
