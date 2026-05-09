@@ -187,7 +187,6 @@
     // [data-i18n*] attrs; these labels need explicit redraw.
     window.addEventListener('langchange', () => {
       _practice.refreshLangCaches();
-      laneLabelL = t('laneLeft'); laneLabelR = t('laneRight');
       if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
       if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
         const sec = currentSong.sections?.[practice.sectionIdx];
@@ -200,9 +199,6 @@
       }
       if (state.lastIntroDiag) state.lastIntroDiag();
     });
-    // Lane labels — recomputed on lang change, used in the per-frame draw.
-    let laneLabelL = t('laneLeft');
-    let laneLabelR = t('laneRight');
 
     // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
     const _fx = ShellEffects.createShellEffects(/** @type {any} */ ({
@@ -422,10 +418,9 @@
       getCompletePracticeSection: () => completePracticeSection,
     }));
     const practice = _practice.practice;
-    function practiceBeatMs() { return _practice.practiceBeatMs(); }
-    function recomputePracticeTimings() { _practice.recomputePracticeTimings(); }
-    function showSectionBanner(/** @type {any} */ sec) { _practice.showSectionBanner(sec); }
-    function matchNoteOnset(/** @type {any} */ m, /** @type {any} */ x) { return _practice.matchNoteOnset(m, x); }
+    // Dead forwarders (practiceBeatMs / recomputePracticeTimings /
+    // showSectionBanner / matchNoteOnset / midiToScreenX / synColorFor /
+    // midiToName / midiToPitchName) removed — only used inside shells now.
     function finalizeNoteHold(/** @type {any} */ m) { _practice.finalizeNoteHold(m); }
     function practiceElapsedMs() { return _practice.practiceElapsedMs(); }
     function practiceRealElapsedMs() { return _practice.practiceRealElapsedMs(); }
@@ -437,7 +432,6 @@
     function stopPracticeAudio() { _practice.stopPracticeAudio(); }
     const updatePractice = _practice.updatePractice;
     function midiToPitchName(/** @type {any} */ m) { return _practice.midiToPitchName(m); }
-    function midiToName(/** @type {any} */ m) { return _practice.midiToName(m); }
 
     // ── MIDI shell — the entire MIDI cluster (state + dispatch + indicator
     //   + ports + rescan + init + intro-diag + BLE-MIDI + audio-lifecycle
@@ -453,7 +447,7 @@
       getOnMidiNoteOn: () => onMidiNoteOn,
       getOnMidiNoteOff: () => onMidiNoteOff,
       getOnMidiCC: () => onMidiCC,
-      getMatchNoteOnset: () => matchNoteOnset,
+      getMatchNoteOnset: () => _practice.matchNoteOnset,
       recover: _audio.recover,
       isRunning: () => !!state.running,
       requestWakeLock: () => requestWakeLock(),
@@ -462,7 +456,6 @@
     const bleMidi = _midi.bleMidi;
     function isAppleMobile() { return _midi.isAppleMobile(); }
     function setInputIndicator() { _midi.setInputIndicator(); }
-    function attachMidiPort(/** @type {any} */ port) { return _midi.attachMidiPort(port); }
     async function initWebMIDI() { return _midi.initWebMIDI(); }
     /** @param {any} [silent] */ function rescanMidi(silent) { return _midi.rescanMidi(silent); }
     function startMidiAutoRescan() { _midi.startMidiAutoRescan(); }
@@ -515,9 +508,7 @@
     // Forwarders (function declarations — hoisted, so render-loop-wireup
     // earlier in the file captures the live binding).
     const midiState = _midiH.midiState;
-    function midiToScreenX(/** @type {any} */ m) { return _midiH.midiToScreenX(m); }
     function noteThemeColor(/** @type {any} */ m) { return _midiH.noteThemeColor(m); }
-    function synColorFor(/** @type {any} */ m) { return _midiH.synColorFor(m); }
     function showNoteDisplay(/** @type {any} */ a, /** @type {any} */ b, /** @type {any} */ c, /** @type {any} */ d) { _midiH.showNoteDisplay(a, b, c, d); }
     function onMidiNoteOn(/** @type {any} */ m, /** @type {any} */ v) { _midiH.onMidiNoteOn(m, v); }
     function onMidiNoteOff(/** @type {any} */ m) { _midiH.onMidiNoteOff(m); }
