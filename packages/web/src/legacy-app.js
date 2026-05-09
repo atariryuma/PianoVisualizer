@@ -72,21 +72,12 @@
     // Forward-decl placeholders — reassigned by createXxx wire-ups
     // further down. Avoids TDZ in ESC handler / langchange listener /
     // settings-panel deps that close over the short names.
-    /** @type {() => void} */ let openSettings = () => {};
-    /** @type {() => void} */ let closeSettings = () => {};
-    /** @type {() => void} */ let refreshSettingsPanel = () => {};
-    /** @type {(songId: string) => Promise<void>} */ let openSectionEditor = async () => {};
-    /** @type {() => void} */ let closeSectionEditor = () => {};
-    /** @type {() => void} */ let openAddSongModal = () => {};
-    /** @type {() => void} */ let closeAddSongModal = () => {};
-    /** @type {() => void} */ let renderUserSongButtons = () => {};
-    /** @type {() => void} */ let returnToTitle = () => {};
-    /** @type {() => void} */ let completePracticeSection = () => {};
-    /** @type {() => void} */ let renderResultCard = () => {};
-    /** @type {() => void} */ let showSessionSummary = () => {};
-    /** @type {(animate: boolean) => void} */ let renderSessionSummaryText = (_animate) => {};
-    /** @type {(combo: number, flow: number) => import('./session-summary').BestScores} */
-    let saveBestScores = (_c, _f) => /** @type {any} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
+    const _stub = /** @type {any} */ (() => {});
+    let openSettings = _stub, closeSettings = _stub, refreshSettingsPanel = _stub,
+      openSectionEditor = _stub, closeSectionEditor = _stub,
+      openAddSongModal = _stub, closeAddSongModal = _stub,
+      completePracticeSection = _stub, renderResultCard = _stub,
+      showSessionSummary = _stub, renderSessionSummaryText = _stub;
     // ESC modal router. Higher priority = topmost-z modal (section-edit can
     // spawn from add-song, so it sits above settings). The `isOpen` thunks
     // only fire on user keydown (post-init), so DOM_SECEDIT / DOM_ADDSONG
@@ -226,7 +217,7 @@
       resetMidiDispatch: () => _midi.resetMidiDispatch(),
       remoteLog,
     }));
-    ({ saveBestScores, renderSessionSummaryText, showSessionSummary } = _sess);
+    ({ renderSessionSummaryText, showSessionSummary } = _sess);
     function resetSession() { _sess.resetSession(); }
 
     // ── v12: Practice Mode — built-in songs (catalog moved to built-in-songs.ts).
@@ -397,7 +388,7 @@
       t, modalFocus,
     }));
     const { byId, domAddSong: DOM_ADDSONG, domSecEdit: DOM_SECEDIT } = _addSong;
-    ({ openSectionEditor, closeSectionEditor, openAddSongModal, closeAddSongModal, renderUserSongButtons } = _addSong);
+    ({ openSectionEditor, closeSectionEditor, openAddSongModal, closeAddSongModal } = _addSong);
 
     // ── UI cluster — moved to packages/web/src/shell-ui.ts (batch 108).
     const _ui = ShellUi.createShellUi(/** @type {any} */ ({
@@ -430,7 +421,6 @@
     const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
     renderResultCard = _ui.renderResultCard;
     completePracticeSection = _ui.completePracticeSection;
-    returnToTitle = _ui.returnToTitle;
     _ui.installPracticeSongButtons();
 
     DevModeWireup.installDevMode({
