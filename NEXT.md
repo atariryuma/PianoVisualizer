@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-95 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,565 lines** (was
-5,100 at the prior NEXT refresh, **−3,535 across 45 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-97 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,487 lines** (was
+5,100 at the prior NEXT refresh, **−3,613 across 47 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
@@ -244,6 +244,19 @@ every commit.**
   outer `/** @type {any} */` cast + shorthand-property field-grouping; comment
   trimming (4 separator-comment-only lines + dangling fragment cleanups). (-64,
   −3.9% — 1,629 → 1,565).
+- **batch 96 (commit `ae775b5`)** — first proper module extraction since the
+  bulk batches 71-90 commit: new `web/built-in-songs.ts` (78 lines) exporting
+  `makeSong()` + `createBuiltInSongs()` for the static catalog of PD scores (Für
+  Elise + Rondo alla Turca). Shell loses the 30-line literal, gains a 2-line
+  factory call. (-27, −1.7% — 1,565 → 1,538).
+- **batch 97 (commit `568e8b9`)** — second wireup deps-block field-grouping
+  pass: 10 more factories (`_sessionSummary`, `_practiceScoring`,
+  `_practiceProgress`, `_practiceToneAudio`, `_startPracticeSection`,
+  `updatePractice`, `_practiceLane`, both `BootSession.installXxx`,
+  `_practiceFlow`); shared `_sectionNotesArgs()` thunk dedups
+  buildSectionNotes/buildFullSongNotes args literal; dead `roundRect` helper
+  removed; dead langchange `typeof activeNoteNames` guard removed (TDZ guards on
+  let-decls are dead code). (-51, −3.3% — 1,538 → 1,487).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -379,13 +392,15 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 117 | `web/dev-mode-wireup.ts`        | —     | `packages/web/src/dev-mode-wireup.ts`           |
 | 118 | `web/render-loop-wireup.ts`     | —     | `packages/web/src/render-loop-wireup.ts`        |
 | 119 | `web/boot-session.ts`           | —     | `packages/web/src/boot-session.ts`              |
+| 120 | `web/built-in-songs.ts`         | —     | `packages/web/src/built-in-songs.ts`            |
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **1,565 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,512
-net** across 25 batches in `685d5df` + 91 / 92 / 93 / 94 / 95, plus the parallel
-`f3f226c` tie-aware OSMD cursor fix; **−7,435 net** since Phase 0a baseline).
+Start click) reports zero console errors. `legacy-app.js`: **1,487 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,590
+net** across 27 batches in `685d5df` + 91 / 92 / 93 / 94 / 95 / 96 / 97, plus
+the parallel `f3f226c` tie-aware OSMD cursor fix; **−7,513 net** since Phase 0a
+baseline).
 
 ---
 
