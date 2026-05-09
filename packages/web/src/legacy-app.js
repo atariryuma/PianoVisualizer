@@ -414,65 +414,22 @@
     const SONGS = BuiltInSongs.createBuiltInSongs();
     let currentSong = SONGS.fur_elise;
 
-    // ── User-added songs (IndexedDB-backed; merged into SONGS at boot) ──
-    // DB `pianoViz_v1`, store `userSongs`. PianoCore stateless ops live below;
-    // parseMusicXmlMetadata + auto-section heuristic delegate to @piano/core.
-    const USER_DB_STORE = PianoCore.USER_DB_STORE;
-    const _userDb = UserSongsMxl.createUserDb({
-      openUserDb: () => PianoCore.openUserDb(),
-      userDbAll: PianoCore.userDbAll,
-      userDbPut: PianoCore.userDbPut,
-      userDbDelete: PianoCore.userDbDelete,
-    });
-    function openUserDb() { return _userDb.open(); }
-    async function userDbAll() { return _userDb.all(); }
-    /** @param {import('@piano/core').UserSongRecord} record */
-    async function userDbPut(record) { return _userDb.put(/** @type {any} */ (record)); }
-    const parseMusicXmlMetadata = PianoCore.parseMusicXmlMetadata;
-    const autoSectionDefs = PianoCore.autoSectionDefs;
-
-    /** @param {Blob} blob */
-    async function unzipMxlToXmlText(blob) {
-      const JSZipLib = window.JSZip || (typeof JSZip !== 'undefined' ? JSZip : null);
-      if (!JSZipLib) throw new Error('JSZip not available — cannot read .mxl');
-      return UserSongsMxl.unzipMxlToXmlText(blob, { jszip: /** @type {any} */ (JSZipLib) });
-    }
-
-    // Promote stored-or-just-fetched records into the SONGS registry.
-    // (Renamed _userSongs → _userSongStore to free the short name for the
-    // UserSongsUi result later — UserSongsUi consumers reference these
-    // methods via direct property access so no forwarder layer is needed.)
-    const USER_SONG_URL_TIMEOUT_MS = 30000;
-    const USER_SONG_MAX_BYTES = 20 * 1024 * 1024; // 20 MB
-    const _userSongStore = UserSongsStore.createUserSongsStore(
-      /** @type {import('./user-songs-store').UserSongsStoreDeps} */ ({
-        userDb: /** @type {any} */ (_userDb), userDbStoreName: USER_DB_STORE,
-        unzipMxlToXmlText: /** @type {any} */ (unzipMxlToXmlText),
-        fns: { parseMusicXmlMetadata: /** @type {any} */ (parseMusicXmlMetadata), autoSectionDefs: /** @type {any} */ (autoSectionDefs) },
-        songs: /** @type {any} */ (SONGS), getPractice: () => /** @type {any} */ (practice),
-        savePracticeProgress: () => savePracticeProgress(),
-        urlTimeoutMs: USER_SONG_URL_TIMEOUT_MS, maxBytes: USER_SONG_MAX_BYTES,
-        fetch: (...args) => fetch(...args),
-        AbortController,
-        setTimeout: (fn, ms) => setTimeout(fn, ms),
-        clearTimeout: (id) => clearTimeout(/** @type {any} */ (id)),
-        url: URL, now: () => Date.now(), random: () => Math.random(),
-      })
-    );
-    async function loadUserSongs() { return _userSongStore.loadAll(); }
-    /** @param {string} id */
-    async function removeUserSong(id) { return _userSongStore.remove(id); }
-
-    // ========================================
-    const _onlineLibrary = OnlineLibrary.createOnlineLibrary({
-      libraryEntryFromGhFile: /** @type {any} */ (PianoCore.libraryEntryFromGhFile),
-      fetch: (...args) => fetch(...args), localStorage, now: () => Date.now(),
-    });
-    /** @param {boolean} [force] */
-    async function fetchLibrary(force) { return _onlineLibrary.fetchEntries(force); }
-    /** @type {Array<Partial<import('@piano/core').LibraryEntry> & {url:string, label:string, icon:string}>} */
-    let ONLINE_LIBRARY = OnlineLibrary.LIBRARY_SEED.slice();
-    const buildSectionsFromDefs = PianoCore.buildSectionsFromDefs;
+    // ── User library — moved to packages/web/src/shell-user-library.ts (batch 109).
+    const _lib = ShellUserLibrary.createShellUserLibrary(/** @type {any} */ ({
+      songs: SONGS,
+      getPractice: () => practice,
+      savePracticeProgress: () => savePracticeProgress(),
+    }));
+    const USER_DB_STORE = _lib.USER_DB_STORE;
+    const openUserDb = _lib.openUserDb;
+    const userDbAll = _lib.userDbAll;
+    const userDbPut = _lib.userDbPut;
+    const unzipMxlToXmlText = _lib.unzipMxlToXmlText;
+    const _userSongStore = _lib.userSongStore;
+    const loadUserSongs = _lib.loadUserSongs;
+    const removeUserSong = _lib.removeUserSong;
+    const fetchLibrary = _lib.fetchLibrary;
+    const buildSectionsFromDefs = _lib.buildSectionsFromDefs;
 
     // ── OSMD shell — moved to packages/web/src/shell-osmd.ts (batch 103).
     const _osmd = ShellOsmd.createShellOsmd(/** @type {any} */ ({
@@ -664,8 +621,8 @@
     const _addSong = ShellAddSong.createShellAddSong(/** @type {any} */ ({
       document, songs: SONGS,
       getLang: () => prefs.lang,
-      getLibrary: () => ONLINE_LIBRARY,
-      setLibrary: (/** @type {any} */ entries) => { ONLINE_LIBRARY = entries; },
+      getLibrary: () => _lib.getOnlineLibrary(),
+      setLibrary: (/** @type {any} */ entries) => _lib.setOnlineLibrary(entries),
       userSongStore: _userSongStore,
       fetchLibrary,
       openUserDb, userDbStoreName: USER_DB_STORE, unzipMxlToXmlText,
