@@ -26,21 +26,16 @@
     // ── Audio shell — moved to packages/web/src/shell-audio.ts (batch 104).
     const _audio = ShellAudio.createShellAudio(/** @type {any} */ ({
       state, config: CONFIG, micMeterEl: DOM.micMeter, remoteLogEnabled: REMOTE_LOG_ENABLED,
-      getPractice: () => practice,
-      getMidiInputEnabled: () => midiInput?.enabled ?? false,
-      initWebMIDI: () => initWebMIDI(),
-      isAppleMobile: () => isAppleMobile(),
-      refreshIntroHint: () => refreshIntroHint(),
-      stopPracticeAudio: () => stopPracticeAudio(),
+      getPractice: () => practice, getMidiInputEnabled: () => midiInput?.enabled ?? false,
+      initWebMIDI: () => initWebMIDI(), isAppleMobile: () => isAppleMobile(),
+      refreshIntroHint: () => refreshIntroHint(), stopPracticeAudio: () => stopPracticeAudio(),
     }));
 
     // ── Viewport — moved to packages/web/src/shell-viewport.ts (batch 114).
     const _vp = ShellViewport.createShellViewport(/** @type {any} */ ({
-      canvas: DOM.canvas, ctx, state,
-      practiceTopBarEl: DOM.practiceTopBar,
-      osmdContainerEl: DOM.osmdContainer,
+      canvas: DOM.canvas, ctx, state, pianoCore: PianoCore,
+      practiceTopBarEl: DOM.practiceTopBar, osmdContainerEl: DOM.osmdContainer,
       dom: DomBag.pickDom(DOM, 'practiceTopBar', 'themeBar', 'osmdContainer'),
-      pianoCore: PianoCore,
     }));
 
     // ── Theme switching + persisted user preferences ──
@@ -80,9 +75,8 @@
       getSongs: () => SONGS, getCurrentSong: () => currentSong, getPractice: () => practice,
       refreshSettingsPanel: () => refreshSettingsPanel(),
       refreshLangCaches: () => _practice.refreshLangCaches(),
-      renderSongPanel: () => renderSongPanel(),
-      renderResultCard: () => renderResultCard(),
-      renderSessionSummaryText: (/** @type {any} */ animate) => renderSessionSummaryText(animate),
+      renderSongPanel: () => renderSongPanel(), renderResultCard: () => renderResultCard(),
+      renderSessionSummaryText: (/** @type {any} */ a) => renderSessionSummaryText(a),
     }));
     const { t, stageLabel, applyTheme, setLang } = _i18n;
 
