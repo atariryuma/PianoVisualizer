@@ -59,7 +59,7 @@ export interface ShellUiDeps {
   stopMidiAutoRescan: () => void;
   rescanMidi: (silent?: any) => any;
   /** Misc shell forwarders. */
-  releaseWakeLock: () => Promise<unknown>;
+  releaseWakeLock: () => void;
   requestWakeLock: () => Promise<unknown>;
   hideIntroHint: () => void;
   resetSession: () => void;
@@ -68,7 +68,11 @@ export interface ShellUiDeps {
   effectStarShower: any;
   effectFlowerBurst: any;
   /** Score helpers. */
-  setupHiDPICanvas: (canvas: HTMLCanvasElement, w: number, h: number) => CanvasRenderingContext2D;
+  setupHiDPICanvas: (
+    canvas: HTMLCanvasElement,
+    w: number,
+    h: number
+  ) => CanvasRenderingContext2D | null;
   clamp01: (n: number) => number;
   remoteLogEnabled: boolean;
   getHeight: () => number;

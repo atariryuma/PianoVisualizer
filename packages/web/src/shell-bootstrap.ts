@@ -75,7 +75,7 @@ export function boot(): void {
     isAppleMobile: () => isAppleMobile(),
     refreshIntroHint: () => refreshIntroHint(),
     stopPracticeAudio: () => stopPracticeAudio(),
-  } as any);
+  });
 
   // ── Viewport — moved to packages/web/src/shell-viewport.ts (batch 114).
   const _vp = ShellViewport.createShellViewport({
@@ -86,7 +86,7 @@ export function boot(): void {
     practiceTopBarEl: DOM.practiceTopBar,
     osmdContainerEl: DOM.osmdContainer,
     dom: DomBag.pickDom(DOM, 'practiceTopBar', 'themeBar', 'osmdContainer'),
-  } as any);
+  });
 
   // ── Theme switching + persisted user preferences ──
   const prefs = PracticeStateInit.createInitialPrefs() as any;
@@ -154,7 +154,7 @@ export function boot(): void {
     renderSongPanel: () => renderSongPanel(),
     renderResultCard: () => renderResultCard(),
     renderSessionSummaryText: (a: any) => renderSessionSummaryText(a),
-  } as any);
+  });
   const { t, stageLabel, applyTheme, setLang } = _i18n;
 
   // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
@@ -167,7 +167,7 @@ export function boot(): void {
     getScreen: _vp.getScreen,
     getBgStars: _vp.getBgStars,
     getPractice: () => practice,
-  } as any);
+  });
   const {
     particles,
     ripples,
@@ -219,7 +219,7 @@ export function boot(): void {
     getScreen: _vp.getScreen,
     getPractice: () => practice,
     getMidiInput: () => midiInput,
-  } as any);
+  });
   const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
     _gameUpdate;
 
@@ -261,7 +261,7 @@ export function boot(): void {
     getShowNoteDisplay: () => showNoteDisplay,
     hideIntroHint: () => hideIntroHint(),
     getTone: () => Tone,
-  } as any);
+  });
   const loop = _rl.loop;
 
   // True only when the canvas / HUD is the front-most surface.
@@ -301,7 +301,7 @@ export function boot(): void {
     getMidiState: () => midiState,
     invalidateFlowCache: () => _gameUpdate.invalidateFlowCache(),
     resetMidiDispatch: () => _midi.resetMidiDispatch(),
-  } as any);
+  });
   ({ renderSessionSummaryText, showSessionSummary } = _sess);
   const resetSession = (): void => _sess.resetSession();
 
@@ -314,7 +314,7 @@ export function boot(): void {
     songs: SONGS,
     getPractice: () => practice,
     savePracticeProgress: () => savePracticeProgress(),
-  } as any);
+  });
   const {
     USER_DB_STORE,
     openUserDb,
@@ -334,7 +334,7 @@ export function boot(): void {
     remoteLog,
     buildSectionsFromDefs,
     getCurrentSong: () => currentSong,
-  } as any);
+  });
   const { osmdAdapter, getOsmd } = _osmd;
 
   const requestWakeLock = PianoWakeLock.requestWakeLock;
@@ -367,7 +367,7 @@ export function boot(): void {
     loadCurrentScore: () => _osmd.loadCurrentScore(),
     showHitChip: (kind: any, text: any) => showHitChip(kind, text),
     getCompletePracticeSection: () => completePracticeSection,
-  } as any);
+  });
   const {
     practice,
     finalizeNoteHold,
@@ -402,7 +402,7 @@ export function boot(): void {
     getMatchNoteOnset: () => _practice.matchNoteOnset,
     isRunning: () => !!state.running,
     requestWakeLock,
-  } as any);
+  });
   const {
     midiInput,
     isAppleMobile,
@@ -428,7 +428,7 @@ export function boot(): void {
     },
     connectBleMidi: () => _midi.connectBleMidi(),
     showSessionSummary: () => showSessionSummary(),
-  } as any);
+  });
   ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 
   // ── MIDI handlers + render — moved to packages/web/src/shell-midi-handlers.ts (batch 106).
@@ -454,7 +454,7 @@ export function boot(): void {
     getScreen: _vp.getScreen,
     getKbHeight: _vp.getKbHeight,
     getKbSafeBottom: _vp.getKbSafeBottom,
-  } as any);
+  });
   const {
     midiState,
     noteThemeColor,
@@ -492,7 +492,7 @@ export function boot(): void {
     getCurrentSong: () => currentSong,
     laneLookaheadMs: _practice.getLaneLookaheadMs(),
     countInMs: _practice.getCountInMs(),
-  } as any);
+  });
   _practice.setPracticeLane(_practiceLane.instance);
   function drawPracticeLane(timeMs: number): void {
     _practiceLane.draw(timeMs);
@@ -518,7 +518,7 @@ export function boot(): void {
     getCurrentSong: () => currentSong,
     selectSong: (id: any) => _ui.selectSong(id),
     songPanelHeaderDom: DomBag.pickDom(DOM, 'songTitle', 'songComposer'),
-  } as any);
+  });
   const { byId, domAddSong: DOM_ADDSONG, domSecEdit: DOM_SECEDIT } = _addSong;
   ({ closeSectionEditor, openAddSongModal, closeAddSongModal } = _addSong);
 
@@ -569,7 +569,7 @@ export function boot(): void {
     remoteLogEnabled: REMOTE_LOG_ENABLED,
     getHeight: () => _vp.getScreen().H,
     byId,
-  } as any);
+  });
   const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
   ({ renderResultCard, completePracticeSection } = _ui);
   _ui.installPracticeSongButtons();
@@ -617,7 +617,7 @@ export function boot(): void {
     drawCenterGlow: PianoCore.drawCenterGlow,
     renderFrame: RenderFrame,
     audioInit: AudioInit,
-  } as any);
+  });
 
   // Initialize progress on load (so the panel works without audio start) +
   // install ▶ Start button.
