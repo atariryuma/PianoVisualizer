@@ -6,12 +6,18 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-56 + Issue 1/2 fix
-detour)**. `legacy-app.js` is now **4,898 lines** (was 5,100 at the previous
-NEXT refresh, **−202 across 6 batches** while a 5-commit bug-fix detour also
-landed in-between). **1,995 tests** total (786 core, 1,209 web; **+117 this
-cycle: 109 from batches 51-56 + 6 from bug-fix tests + 2 from the Issue 2 polish
-gate**). `pnpm verify` clean.
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-90 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **2,095 lines** (was
+5,100 at the prior NEXT refresh, **−3,005 across 40 batches**, the heaviest
+cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
+cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
+Start click) reports zero console errors.
+
+The mid-session **Issue 1 + Issue 2 bug-fix detour** (5 commits between batches
+56 and 57, 2026-05-08/09) is documented in the bullet list below; **Phase 0d
+batches 71-90 (commit `685d5df`)** is a single bulk commit covering 6 new
+modules + 2 in-place builders + ~10 compaction passes; **tie-aware OSMD cursor
+highlighting (commit `f3f226c`)** is a parallel surgery that landed alongside.
 
 **Bug-fix detour landed 2026-05-08/09** — mid-session user reported Issue 1
 ("after fullSong listen, switching song fails to load") + Issue 2 ("frame
@@ -158,6 +164,38 @@ every commit.**
 - batch 56 — `mic-lifecycle.ts`: acquire / suspend / resume with concurrency
   lock; getter/setter thunks for the 4 audio-node mutable refs (audioCtx /
   gainNode / micStream / micSourceNode) (-45 lines, +19 tests).
+- batches 57-70 (cycle 2 cont., commit `f1efbe5` + earlier) — midi-init,
+  showRunningUI fold, canvas resize fold, audio-lifecycle fold, ESC router fold,
+  applyI18n fold, audio-graph dedup, input-mode decision fold, remote-log +
+  dom-bag + game-state-init + piano-config (4 new data modules), JSDoc typedef
+  cleanup, applyDebug fold (-684 lines net + 67 new tests).
+- **batches 71-90 (this cycle, commit `685d5df`)** landed as a single bulk
+  commit — 6 new modules + 2 in-place builders + ~10 compaction passes:
+  - batch 71 — `particle-effects.ts`: Particle/Ripple proto monkey-patches,
+    PERF_TIER override, spawn/effect adapters (-150 lines, the largest
+    structural fold of the cycle).
+  - batch 72 — `practice-state-init.ts`: practice + prefs literals (-42).
+  - batch 73 — `core-opts.ts`: 4 option bags, DEFAULT_AUDIO_OFFSET_MS,
+    ONSET_HYSTERESIS_FRAMES, PITCH_MEDIAN_FRAMES, NOTE_NAMES_JP.
+  - batch 74 — `dev-mode-wireup.ts`: 489-line DevMode test/benchmark/diag
+    cluster.
+  - batch 75 — `render-loop-wireup.ts`: 178-line RenderLoop deps-builders,
+    frame-drop watchdog.
+  - batch 76 — game-state-update.ts gains `buildGameStateUpdateDeps()`.
+  - batch 77 — `boot-session.ts`: startBtn + songStart click handlers,
+    setStartButtonLoading.
+  - batch 78 — `_midiHandlerDeps` fn → const (one-time alloc, perf win).
+  - batch 79 — double-cast type annotations (40 sites collapsed).
+  - batch 80-81 — forward-decl + Phase 0d batch comment compaction.
+  - batch 82 — onset-detect.ts gains `buildOnsetDetectDeps()`.
+  - batch 83-85 — JSDoc typedef cleanup (PracticeStateShape, MidiInputShape,
+    BestScoresShape, LastSummaryShape, PrefsShape, SectionDef, SongRec,
+    OsmdLikeNote — all 8 shapes deleted; cast sites use `/** @type {any} */`).
+  - batch 86 — section banner `// ====` triples → 1-line `// ── X ──` (56
+    sites) + general 4+ line comment-run compaction.
+  - batch 87 — initAudio block + file-header + WMB banner trim.
+  - batch 88-89 — multi-line `dom: {...}` literals → single-line (19 sites).
+  - batch 90 — `pickDom()` helper in dom-bag.ts (4 large DOM bags consolidated).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -282,24 +320,59 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 106 | `web/select-song.ts`            | 18    | `packages/web/src/select-song.ts`               |
 | 107 | `web/practice-timings.ts`       | 17    | `packages/web/src/practice-timings.ts`          |
 | 108 | `web/mic-lifecycle.ts`          | 19    | `packages/web/src/mic-lifecycle.ts`             |
+| 109 | `web/midi-init.ts`              | 14    | `packages/web/src/midi-init.ts`                 |
+| 110 | `web/remote-log.ts`             | 25    | `packages/web/src/remote-log.ts`                |
+| 111 | `web/dom-bag.ts`                | 7     | `packages/web/src/dom-bag.ts`                   |
+| 112 | `web/game-state-init.ts`        | 14    | `packages/web/src/game-state-init.ts`           |
+| 113 | `web/piano-config.ts`           | 21    | `packages/web/src/piano-config.ts`              |
+| 114 | `web/particle-effects.ts`       | —     | `packages/web/src/particle-effects.ts`          |
+| 115 | `web/practice-state-init.ts`    | —     | `packages/web/src/practice-state-init.ts`       |
+| 116 | `web/core-opts.ts`              | —     | `packages/web/src/core-opts.ts`                 |
+| 117 | `web/dev-mode-wireup.ts`        | —     | `packages/web/src/dev-mode-wireup.ts`           |
+| 118 | `web/render-loop-wireup.ts`     | —     | `packages/web/src/render-loop-wireup.ts`        |
+| 119 | `web/boot-session.ts`           | —     | `packages/web/src/boot-session.ts`              |
 
-**Status: 1,995/1,995 tests green (786 core + 1,209 web), 0 lint errors, 0 type
-errors. `pnpm verify` clean.** Bench: 11/11 passed across every commit, frame
-avg 5.2–7.2 ms. `legacy-app.js`: **4,898 lines** (was 9,000+ at Phase 0a; 6,861
-at this cycle's start, **−1,963 net** across 39 shell-shrinking batches + 1
-architectural batch + 5 bug-fix commits).
+**Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
+errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
+Start click) reports zero console errors. `legacy-app.js`: **2,095 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−1,982
+net** across 20 batches in the bulk commit `685d5df` + the parallel `f3f226c`
+tie-aware OSMD cursor fix; **−6,905 net** since Phase 0a baseline).
 
 ---
 
 ## ⏳ In queue
 
-## 1. Phase 0d — Carve `legacy-app.js` into typed shell modules
+## 1. Phase 0d → 0e transition — main.ts wire-up rewrite
 
-The shell is currently **4,898 lines**. Goal: ≤200 lines, with each carved-out
-module a focused, narrow-purpose `.ts` file under `packages/web/src/`. Each
-extraction lands as a separate commit; iPad verification now runs via the in-app
-**🧪 Self-test** at `?dev=1` (no manual A/B checklist needed for the mechanical
-wire-up checks).
+The shell is currently **2,095 lines**. Goal: ≤200 lines via Phase 0e (retire
+`legacy-app.js` entirely). The fold-into-existing approach has hit diminishing
+returns at this size — the remaining ~1,900 lines are ~95% factory wire-ups +
+closure thunks + inline event handlers, all of which need to move to `main.ts`
+or a dedicated `shell-bootstrap.ts` under a new architecture rather than be
+folded into existing modules.
+
+Recommended Phase 0e workflow (next agent):
+
+1. **Audit `main.ts`** — currently 471 lines with 64 imports + 64 globalThis
+   pins. Phase 0e plan: rewrite it to do the entire IIFE boot sequence directly
+   (CONFIG → DOM → state → factory wireups → event listeners → seed call),
+   removing the legacy-app.js re-import altogether.
+2. **Stage the migration in 3 sub-batches**: (a) move all
+   `const _xxx = Xxx.create...` factory wireups into a `shell-bootstrap.ts`,
+   keeping the same closures over shell-private state. (b) move the remaining
+   inline event handlers (langchange listener, ESC routes not yet covered,
+   song-button click handlers, ResizeObservers). (c) delete `legacy-app.js` +
+   add a tag (`phase-0e-done`).
+3. **iPad A/B is mandatory before tagging** — the shell IIFE has subtle
+   eval-order dependencies (e.g., particle-effects' practice getter proxy works
+   because `practice` is declared LATER but accessed via getter). Migration must
+   preserve that ordering. The `?dev=1` Self-test bench will catch most
+   regressions; the `?dev=1&autorun=bench&webhook=...` puppeteer harness can
+   verify end-to-end.
+
+iPad verification still works via the in-app **🧪 Self-test** at `?dev=1` (no
+manual A/B checklist needed for the mechanical wire-up checks).
 
 Batches 1-12 all landed cleanly. Remaining work:
 
