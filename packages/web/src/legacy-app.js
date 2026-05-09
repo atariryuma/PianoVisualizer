@@ -46,9 +46,6 @@
       refreshIntroHint: () => refreshIntroHint(),
       stopPracticeAudio: () => stopPracticeAudio(),
     }));
-    const initAudio = _audio.initAudio;
-    const suspendMic = _audio.suspendMic;
-    const resumeMic = _audio.resumeMic;
 
     // ── Viewport — moved to packages/web/src/shell-viewport.ts (batch 114).
     const _vp = ShellViewport.createShellViewport(/** @type {any} */ ({
@@ -349,7 +346,7 @@
       getAudioCtx: _audio.getAudioCtx,
       dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput, introHint: DOM.introHint, micMeter: DOM.micMeter },
       t, navigator,
-      suspendMic, resumeMic,
+      suspendMic: _audio.suspendMic, resumeMic: _audio.resumeMic,
       refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
       getOnMidiNoteOn: () => onMidiNoteOn,
@@ -467,7 +464,7 @@
       songProg: () => songProg(),
       loadPracticeProgress, savePracticeProgress, recordPracticeDay,
       startPracticeSection, stopPracticeAudio,
-      initAudio, initBgStars, loop, alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
+      initAudio: _audio.initAudio, initBgStars, loop, alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
       initWebMIDI, startMidiAutoRescan, stopMidiAutoRescan, rescanMidi,
       releaseWakeLock, requestWakeLock,
       hideIntroHint: () => _ui.hideIntroHint(),
