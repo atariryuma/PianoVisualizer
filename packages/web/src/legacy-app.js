@@ -406,32 +406,26 @@
     completePracticeSection = _ui.completePracticeSection;
     _ui.installPracticeSongButtons();
 
-    DevModeWireup.installDevMode({
-      triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
+    DevModeWireup.installDevMode(/** @type {any} */ ({
+      triggerEl: document.querySelector('.tagline'),
       versionLabel:
         (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') + ' ' +
         (typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''),
       dom: DomBag.pickDom(DOM, 'settingsPanel', 'sectionResult'),
       domAddSong: { modal: DOM_ADDSONG.modal },
       state, practice, prefs, midiInput, midiState, ctx, particles, ripples,
-      getScreen: _vp.getScreen,
-      getAudioCtx: _audio.getAudioCtx, getCurrentSong: () => currentSong,
-      openUserDb: () => openUserDb(), userDbAll: () => userDbAll(),
-      userDbPut: (rec) => userDbPut(/** @type {any} */ (rec)),
-      removeUserSong: (id) => removeUserSong(id),
-      isAppleMobile: () => isAppleMobile(),
+      getScreen: _vp.getScreen, getAudioCtx: _audio.getAudioCtx,
+      getCurrentSong: () => currentSong,
+      openUserDb, userDbAll, userDbPut, removeUserSong, isAppleMobile,
       t, setLang, applyTheme,
-      openSettings: () => openSettings(), closeSettings: () => closeSettings(),
-      openAddSongModal: () => openAddSongModal(), closeAddSongModal: () => closeAddSongModal(),
+      openSettings, closeSettings, openAddSongModal, closeAddSongModal,
       completePracticeSection: () => completePracticeSection(),
-      onMidiNoteOn, onMidiNoteOff,
-      themes: CONFIG.THEMES,
+      onMidiNoteOn, onMidiNoteOff, themes: CONFIG.THEMES,
       drawBgStars, drawAurora, drawGroundFlowers,
-      decayWakeUpFlash: PianoCore.decayWakeUpFlash,
-      drawCenterGlow: PianoCore.drawCenterGlow,
+      decayWakeUpFlash: PianoCore.decayWakeUpFlash, drawCenterGlow: PianoCore.drawCenterGlow,
       wufOpts: WUF_OPTS, getEnergy,
       renderFrame: RenderFrame, audioInit: AudioInit,
-    });
+    }));
 
     // Initialize progress on load (so panel works without audio start).
     practice.progress = loadPracticeProgress();
