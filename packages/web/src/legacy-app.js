@@ -158,15 +158,14 @@
     }
     // ── Session summary + reset — moved to packages/web/src/shell-session-state.ts (batch 111).
     const _sess = ShellSessionState.createShellSessionState(/** @type {any} */ ({
-      state, config: CONFIG, dom: DOM, t,
-      loadJSON, saveJSON, stageLabel, formatTime, setupHiDPICanvas: ShellHelpers.setupHiDPICanvas,
+      state, config: CONFIG, dom: DOM, t, remoteLog, particles, ripples,
+      loadJSON, saveJSON, stageLabel, formatTime,
+      setupHiDPICanvas: ShellHelpers.setupHiDPICanvas,
       sessionRing, sessionRingCap: SESSION_RING_CAP,
       questState: _gameUpdate.questState, encState: _gameUpdate.encState,
       getMidiState: () => midiState,
-      particles, ripples,
       invalidateFlowCache: () => _gameUpdate.invalidateFlowCache(),
       resetMidiDispatch: () => _midi.resetMidiDispatch(),
-      remoteLog,
     }));
     ({ renderSessionSummaryText, showSessionSummary } = _sess);
     function resetSession() { _sess.resetSession(); }
@@ -189,14 +188,10 @@
 
     // ── OSMD shell — moved to packages/web/src/shell-osmd.ts (batch 103).
     const _osmd = ShellOsmd.createShellOsmd(/** @type {any} */ ({
-      getCurrentSong: () => currentSong,
-      osmdContainer: DOM.osmdContainer,
+      osmdContainer: DOM.osmdContainer, remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
+      buildSectionsFromDefs, getCurrentSong: () => currentSong,
       opensheetmusicdisplay: typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
-      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
-      buildSectionsFromDefs,
     }));
-    // initOsmd / extractNotesFromOsmd / loadCurrentScore: consumed only
-    // inside ShellOsmd / ShellPractice / ShellUi (via _osmd.* directly) now.
     const { osmdAdapter, getOsmd } = _osmd;
 
     const requestWakeLock = PianoWakeLock.requestWakeLock;
