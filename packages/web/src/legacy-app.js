@@ -220,11 +220,9 @@
       prefsStore: _prefsStore,
       getCompletePracticeSection: () => completePracticeSection,
     }));
-    const {
-      practice, finalizeNoteHold, practiceElapsedMs, practiceRealElapsedMs,
+    const { practice, finalizeNoteHold, practiceElapsedMs, practiceRealElapsedMs,
       loadPracticeProgress, savePracticeProgress, songProg, recordPracticeDay,
-      startPracticeSection, stopPracticeAudio, updatePractice, midiToPitchName,
-    } = _practice;
+      startPracticeSection, stopPracticeAudio, updatePractice, midiToPitchName } = _practice;
 
     // ── MIDI shell — moved to packages/web/src/shell-midi.ts (batch 101).
     const _midi = ShellMidi.createShellMidi(/** @type {any} */ ({
@@ -239,12 +237,7 @@
       getMatchNoteOnset: () => _practice.matchNoteOnset,
       isRunning: () => !!state.running, requestWakeLock,
     }));
-    // setInputIndicator: only consumer is ShellPractice (created above
-    // _midi), so the deps thunk reads _midi.setInputIndicator() lazily.
-    const {
-      midiInput, isAppleMobile, initWebMIDI,
-      rescanMidi, startMidiAutoRescan, stopMidiAutoRescan,
-    } = _midi;
+    const { midiInput, isAppleMobile, initWebMIDI, rescanMidi, startMidiAutoRescan, stopMidiAutoRescan } = _midi;
 
     // ── Settings panel — moved to packages/web/src/shell-settings.ts (batch 118).
     const _settings = ShellSettings.createShellSettings(/** @type {any} */ ({
