@@ -336,21 +336,20 @@
     completePracticeSection = _ui.completePracticeSection;
     _ui.installPracticeSongButtons();
 
-    DevModeWireup.installDevMode(/** @type {any} */ ({
-      triggerEl: document.querySelector('.tagline'),
-      versionLabel:
-        (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') + ' ' +
-        (typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''),
-      dom: DomBag.pickDom(DOM, 'settingsPanel', 'sectionResult'),
+    // ── Dev-mode shell — moved to packages/web/src/shell-dev-mode.ts (batch 154).
+    ShellDevMode.createShellDevMode(/** @type {any} */ ({
+      document, dom: DOM, ctx, state, practice, prefs, midiInput, midiState,
+      particles, ripples, themes: CONFIG.THEMES,
+      appVersion: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : undefined,
+      buildDate: typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : undefined,
       domAddSong: { modal: DOM_ADDSONG.modal },
-      state, practice, prefs, midiInput, midiState, ctx, particles, ripples,
       getScreen: _vp.getScreen, getAudioCtx: _audio.getAudioCtx,
       getCurrentSong: () => currentSong,
       openUserDb, userDbAll, userDbPut, removeUserSong, isAppleMobile,
       t, setLang, applyTheme,
       openSettings, closeSettings, openAddSongModal, closeAddSongModal,
       completePracticeSection: () => completePracticeSection(),
-      onMidiNoteOn, onMidiNoteOff, themes: CONFIG.THEMES,
+      onMidiNoteOn, onMidiNoteOff,
       drawBgStars, drawAurora, drawGroundFlowers,
       decayWakeUpFlash: PianoCore.decayWakeUpFlash, drawCenterGlow: PianoCore.drawCenterGlow,
       wufOpts: WUF_OPTS, getEnergy,
