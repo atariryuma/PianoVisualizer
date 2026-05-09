@@ -576,38 +576,11 @@
     }));
     function resetSession() { _sessionReset.reset(); }
 
-    // ── v12: Practice Mode — songs lazily-loaded MusicXML, sectionDefs
-    //   = per-song quest layout (startMeasure → next def's startMeasure). ──
-    /** @param {string} id @param {string} titleKey @param {string} composerKey @param {string} icon @param {any[]} sectionDefs @returns {any} */
-    function makeSong(id, titleKey, composerKey, icon, sectionDefs) {
-      return /** @type {any} */ ({
-        id, titleKey, composerKey, icon,
-        mxlUrl: 'assets/' + id + '.mxl',
-        xmlUrl: 'assets/' + id + '.xml',
-        sectionDefs,
-        // Populated on first load:
-        notes: null, totalSec: 0, sections: [], playbackOrder: [],
-        _loaded: false, _loadingPromise: null,
-      });
-    }
+    // ── v12: Practice Mode — built-in songs (catalog moved to built-in-songs.ts).
+    //   `sectionDefs` = per-song quest layout (startMeasure → next def's
+    //   startMeasure). User-imported scores merge into SONGS by id.
     /** @type {any} */
-    const SONGS = {
-      // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
-      // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
-      fur_elise: makeSong('fur_elise', 'furElise', 'composerBeethoven', '🌸', [
-        { id: 'A1', nameKey: 'feA1', descKey: 'feA1desc', startMeasure: 0,  isBoss: false },
-        { id: 'B',  nameKey: 'feB',  descKey: 'feBdesc',  startMeasure: 23, isBoss: false },
-        { id: 'A2', nameKey: 'feA2', descKey: 'feA2desc', startMeasure: 55, isBoss: true  }
-      ]),
-      // Mozart Sonata K.331/3 "Rondo alla Turca" — 137-measure musetrainer edition.
-      // Form: A(0-8) | B(9-25) | A'(26-34) | C(35-43) | A''(44-60)
-      //        | D(61-69) | E(70-78) | F(79-95) | G(96-104) | Coda(105-136)
-      alla_turca: makeSong('alla_turca', 'turkishMarch', 'composerMozart', '🥁', [
-        { id: 'A1', nameKey: 'taA1', descKey: 'taA1desc', startMeasure: 0,  isBoss: false },
-        { id: 'B',  nameKey: 'taB',  descKey: 'taBdesc',  startMeasure: 26, isBoss: false },
-        { id: 'A2', nameKey: 'taA2', descKey: 'taA2desc', startMeasure: 70, isBoss: true  }
-      ])
-    };
+    const SONGS = BuiltInSongs.createBuiltInSongs();
     let currentSong = SONGS.fur_elise;
 
     // ── User-added songs (IndexedDB-backed; merged into SONGS at boot) ──

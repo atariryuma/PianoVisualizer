@@ -96,6 +96,7 @@ import * as PlaybackOrder from './playback-order';
 import * as SelectSong from './select-song';
 import * as PracticeTimings from './practice-timings';
 import * as MicLifecycle from './mic-lifecycle';
+import * as BuiltInSongs from './built-in-songs';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -179,6 +180,7 @@ declare global {
     SelectSong: typeof SelectSong;
     PracticeTimings: typeof PracticeTimings;
     MicLifecycle: typeof MicLifecycle;
+    BuiltInSongs: typeof BuiltInSongs;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -369,6 +371,8 @@ declare global {
   var PracticeTimings: typeof import('./practice-timings');
 
   var MicLifecycle: typeof import('./mic-lifecycle');
+
+  var BuiltInSongs: typeof import('./built-in-songs');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -450,6 +454,7 @@ declare global {
 (globalThis as unknown as Window).SelectSong = SelectSong;
 (globalThis as unknown as Window).PracticeTimings = PracticeTimings;
 (globalThis as unknown as Window).MicLifecycle = MicLifecycle;
+(globalThis as unknown as Window).BuiltInSongs = BuiltInSongs;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`
