@@ -330,7 +330,16 @@
       detectPitchYIN, updateAGC, updateGameState, hideIntroHint,
       getUpdatePractice: () => updatePractice,
       freqToNote: /** @type {any} */ (freqToNote),
-      getNoteColor, spawnBurst, spawnStream, showNoteDisplay, isFreeplayActive,
+      getNoteColor, spawnBurst, spawnStream,
+      // [TDZ workaround 2026-05-09] Vite/esbuild minification converts
+      // the bundled `function showNoteDisplay` declaration (~line 619)
+      // to a `let`-style binding, so the shorthand reference here lands
+      // inside its temporal dead zone (browser console:
+      // "Cannot access 'bo' before initialization" — `bo` is the
+      // minified name). Forwarding through a lambda defers the lookup
+      // to call time when the binding is set.
+      showNoteDisplay: (/** @type {any} */ a, /** @type {any} */ b, /** @type {any} */ c, /** @type {any} */ d) => showNoteDisplay(a, b, c, d),
+      isFreeplayActive,
       drawMidiBeams, drawMidiChordDisplay, drawMidiKeyboard, drawPracticeLane,
       updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
       wufOpts: WUF_OPTS, remoteLogEnabled: REMOTE_LOG_ENABLED,
@@ -651,106 +660,6 @@
       _practiceLane.setLabels({ laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo') }),
     );
 
-    // ── Intro-hint UI + hit feedback chip ──
-    const _introHintUi = IntroHintUi.createIntroHintUi(/** @type {any} */ ({
-      dom: DomBag.pickDom(DOM, 'introHint', 'startScreen', 'hud', 'micMeter'),
-      state, midiInput, practice, t,
-      getHeight: () => H,
-      requestWakeLock: () => requestWakeLock(),
-      startMidiAutoRescan: () => startMidiAutoRescan(),
-      rescanMidi: (/** @type {any} */ silent) => rescanMidi(silent),
-    }));
-    /** @param {any} kind @param {any} text */ function showHitChip(kind, text) { _introHintUi.showHitChip(kind, text); }
-
-    // ── Section complete → result screen ──
-    const SECTION_IDS = ['A1', 'B', 'A2'];
-
-    // Result-screen tier + unlock gating delegated to @piano/core
-    const computeStars = PianoCore.computeStars;
-    const resolveResultTier = PianoCore.resolveResultTier;
-    const computeUnlocks = PianoCore.computeUnlocks;
-
-    // ─── result-card wire-up (Phase 0d batch 10) ───────────────────
-    const _resultCard = ResultCard.createResultCard({
-      dom: /** @type {any} */ (DomBag.pickDom(DOM,
-        'sectionResult', 'resTitle', 'resSectionName', 'resStars', 'resAcc',
-        'resTiming', 'resDuration', 'resDurationRow', 'resCombo', 'resMsg',
-        'resUnlock', 'resHistoryWrap', 'resHistoryChart', 'resNext', 'resTryPlay',
-      )),
-      practice: /** @type {any} */ (practice),
-      getCurrentSong: () => /** @type {any} */ (currentSong),
-      songProg: () => /** @type {any} */ (songProg()),
-      sectionIds: SECTION_IDS,
-      stopPracticeAudio, releaseWakeLock, recordPracticeDay, savePracticeProgress,
-      computeStars, resolveResultTier, computeUnlocks,
-      effectGoldenBurst, effectStarShower, effectFlowerBurst,
-      setupHiDPICanvas, clamp01, t,
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
-    });
-    renderResultCard = _resultCard.renderResultCard;
-    completePracticeSection = _resultCard.completePracticeSection;
-
-    // ── Song panel UI building — Phase 0d batch 7d wire-up ──
-    const _songPanelRender = SongPanelRender.createSongPanelRender(/** @type {any} */ ({
-      dom: DomBag.pickDom(DOM,
-        'songTitle', 'songComposer', 'streakCount', 'streakCal', 'songBpmHint',
-        'tempoRow', 'sectionList', 'ghostToggle', 'metronomeToggle', 'ghostRow',
-        'metronomeRow', 'fullSongRow', 'fullSongToggle', 'songStart',
-      ),
-      practice, getCurrentSong: () => currentSong, songProg: () => songProg(),
-      t, dateKey,
-    }));
-    const renderSongPanel = _songPanelRender.render;
-
-    // intro-hint-ui forwarders (batch 35).
-    function refreshIntroHint() { _introHintUi.refreshIntroHint(); }
-    function showRunningUI() { _introHintUi.showRunningUI(); }
-    function hideIntroHint() { _introHintUi.hideIntroHint(); }
-    /** @param {any} e */ function alertAudioInitError(e) { _introHintUi.alertAudioInitError(e); }
-
-    // ─── song-panel wire-up ─────────────────────────────────────────
-    SongPanelControls.createSongPanelControls({
-      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'ghostToggle', 'metronomeToggle', 'fullSongToggle', 'songBack')),
-      practice: /** @type {any} */ (practice),
-      renderSongPanel,
-      // Thunk so the placeholder-then-reassigned `returnToTitle` reads
-      // its live binding at click time (after createPracticeFlow runs).
-      returnToTitle: () => returnToTitle(),
-    });
-
-    // packages/web/src/boot-session.ts as installSongStartButton.
-    BootSession.installSongStartButton(DOM.songStart, /** @type {any} */ ({
-      state, practice,
-      initAudio, showRunningUI, initBgStars, loop, alertAudioInitError,
-      startPracticeSection: (/** @type {any} */ idx) => startPracticeSection(idx),
-      songPanel: DOM.songPanel,
-    }));
-
-    const _selectSong = SelectSong.createSelectSong(/** @type {any} */ ({
-      songs: SONGS, state, practice,
-      dom: DomBag.pickDom(DOM, 'osmdContainer', 'songTitle', 'songComposer', 'startScreen', 'songPanel', 'questDisplay'),
-      getCurrentSong: () => currentSong,
-      setCurrentSong: (/** @type {any} */ s) => { currentSong = s; },
-      getOsmd,
-      setOsmd: (/** @type {any} */ o) => _osmd.setOsmd(o),
-      clearHighlights: () => _osmd.cursor.clearHighlights(),
-      t,
-      loadPracticeProgress: () => loadPracticeProgress(),
-      showRunningUI: () => showRunningUI(),
-      renderSongPanel: () => renderSongPanel(),
-      initWebMIDI: () => { void initWebMIDI(); },
-      loadCurrentScore: () => loadCurrentScore(),
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
-    }));
-    /** @param {any} songId */ function selectSong(songId) { _selectSong.selectSong(songId); }
-
-    document.querySelectorAll('.practice-song-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-song');
-        if (id) selectSong(id);
-      });
-    });
-
     // ── Add-song modal + Section editor — moved to packages/web/src/shell-add-song.ts (batch 102).
     const _addSong = ShellAddSong.createShellAddSong(/** @type {any} */ ({
       document, songs: SONGS,
@@ -763,7 +672,7 @@
       userDbAll, userDbPut,
       autoSectionDefs: PianoCore.autoSectionDefs,
       getCurrentSong: () => currentSong,
-      selectSong: (/** @type {any} */ id) => selectSong(id),
+      selectSong: (/** @type {any} */ id) => _ui.selectSong(id),
       songPanelHeaderDom: { songTitle: DOM.songTitle, songComposer: DOM.songComposer },
       t, modalFocus,
     }));
@@ -775,6 +684,42 @@
     openAddSongModal = _addSong.openAddSongModal;
     closeAddSongModal = _addSong.closeAddSongModal;
     renderUserSongButtons = _addSong.renderUserSongButtons;
+
+    // ── UI cluster — moved to packages/web/src/shell-ui.ts (batch 108).
+    const _ui = ShellUi.createShellUi(/** @type {any} */ ({
+      document, songs: SONGS,
+      state, practice, midiInput, midiState, prefs, config: CONFIG,
+      getCurrentSong: () => currentSong,
+      setCurrentSong: (/** @type {any} */ s) => { currentSong = s; },
+      dom: DOM, t, dateKey,
+      getOsmd, setOsmd: (/** @type {any} */ o) => _osmd.setOsmd(o),
+      clearHighlights: () => _osmd.cursor.clearHighlights(),
+      loadCurrentScore: () => _osmd.loadCurrentScore(),
+      songProg: () => songProg(),
+      loadPracticeProgress, savePracticeProgress, recordPracticeDay,
+      startPracticeSection, stopPracticeAudio,
+      initAudio, initBgStars, loop, alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
+      initWebMIDI, startMidiAutoRescan, stopMidiAutoRescan, rescanMidi,
+      releaseWakeLock, requestWakeLock,
+      hideIntroHint: () => _ui.hideIntroHint(),
+      resetSession,
+      effectGoldenBurst, effectStarShower, effectFlowerBurst,
+      setupHiDPICanvas, clamp01,
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      getHeight: () => H,
+      byId,
+    }));
+    function showHitChip(/** @type {any} */ kind, /** @type {any} */ text) { _ui.showHitChip(kind, text); }
+    function refreshIntroHint() { _ui.refreshIntroHint(); }
+    function showRunningUI() { _ui.showRunningUI(); }
+    function hideIntroHint() { _ui.hideIntroHint(); }
+    /** @param {any} e */ function alertAudioInitError(e) { _ui.alertAudioInitError(e); }
+    renderResultCard = _ui.renderResultCard;
+    completePracticeSection = _ui.completePracticeSection;
+    const renderSongPanel = _ui.renderSongPanel;
+    function selectSong(/** @type {any} */ id) { _ui.selectSong(id); }
+    returnToTitle = _ui.returnToTitle;
+    _ui.installPracticeSongButtons();
 
     DevModeWireup.installDevMode({
       triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
@@ -803,32 +748,10 @@
       renderFrame: RenderFrame, audioInit: AudioInit,
     });
 
-    const _practiceFlow = PracticeFlow.createPracticeFlow(/** @type {any} */ ({
-      dom: {
-        ...DomBag.pickDom(DOM,
-          'ptbQuit', 'ptbToggleOsmd', 'resQuit', 'resRetry', 'resNext',
-          'sumClose', 'homeBtn', 'sumHome', 'resHome', 'practiceHud',
-          'osmdContainer', 'songPanel', 'sectionResult', 'sessionSummary',
-          'hud', 'questDisplay', 'micMeter', 'startScreen',
-        ),
-        resTryPlay: byId('resTryPlay'),
-      },
-      practice, state, midiState,
-      getCurrentSong: () => currentSong,
-      songProg: () => songProg(),
-      startPracticeSection, renderSongPanel, stopPracticeAudio, releaseWakeLock,
-      hideIntroHint, stopMidiAutoRescan, resetSession,
-    }));
-    returnToTitle = _practiceFlow.returnToTitle;
-
-    // Initialize progress on load (so panel works without audio start)
+    // Initialize progress on load (so panel works without audio start).
     practice.progress = loadPracticeProgress();
-
-    // ── Start ── (boot-session.installStartButton)
-    BootSession.installStartButton(DOM.startBtn, /** @type {any} */ ({
-      state, practice,
-      initAudio, showRunningUI, initBgStars, loop, alertAudioInitError,
-    }));
+    // Install ▶ Start button — moved into shell-ui.ts (batch 108).
+    _ui.installStartButtons();
 
 // Phase 0c kickoff (2026-05-06): real ES module so main.ts can import it
 // without a `.d.ts` shim. Enables `allowJs: true` in packages/web/tsconfig.json
