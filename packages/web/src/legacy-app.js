@@ -12,29 +12,21 @@
 
     console.log("App Started: Piano Visualizer");
 
-    const CONFIG = /** @type {any} */ (PianoConfig.createPianoConfig()
-    );
-
+    const CONFIG = /** @type {any} */ (PianoConfig.createPianoConfig());
     /** @type {Record<string, HTMLElement>} */
     const DOM = /** @type {any} */ (DomBag.createDomBag(document).bag);
     const ctx = /** @type {CanvasRenderingContext2D} */ (
-      /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d')
-    );
+      /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d'));
+    const state = /** @type {any} */ (GameStateInit.createInitialGameState());
 
-    const state = /** @type {any} */ (GameStateInit.createInitialGameState()
-    );
-
-    // ── Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime) ──
+    // Session-confidence ring buffer — pre-allocated, zero-alloc at runtime.
     const SESSION_RING_CAP = 100;
-    const sessionRing = new Array(SESSION_RING_CAP);
-    for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i] = { timeMs: 0, isPiano: false };
+    const sessionRing = Array.from({ length: SESSION_RING_CAP }, () => ({ timeMs: 0, isPiano: false }));
 
     // ── Audio shell — moved to packages/web/src/shell-audio.ts (batch 104).
     const _audio = ShellAudio.createShellAudio(/** @type {any} */ ({
-      state, getPractice: () => practice,
-      config: { FFT_SIZE: CONFIG.FFT_SIZE, SMOOTHING: CONFIG.SMOOTHING, ONSET_FFT_SIZE: CONFIG.ONSET_FFT_SIZE, ONSET_SMOOTHING: CONFIG.ONSET_SMOOTHING },
-      micMeterEl: DOM.micMeter,
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      state, config: CONFIG, micMeterEl: DOM.micMeter, remoteLogEnabled: REMOTE_LOG_ENABLED,
+      getPractice: () => practice,
       getMidiInputEnabled: () => midiInput?.enabled ?? false,
       initWebMIDI: () => initWebMIDI(),
       isAppleMobile: () => isAppleMobile(),
