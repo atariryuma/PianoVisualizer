@@ -55,12 +55,6 @@
       dom: DomBag.pickDom(DOM, 'practiceTopBar', 'themeBar', 'osmdContainer'),
       pianoCore: PianoCore,
     }));
-    const PERF_TIER_RESOLVED = _vp.perfTier;
-    const PERF_PROFILE = _vp.perfProfile;
-    const cachedOsmdRect = _vp.cachedOsmdRect;
-    const _viewportLayout = _vp.layout;
-    const initBgStars = _vp.initBgStars;
-    const syncLayout = _vp.syncLayout;
 
     // ── Theme switching + persisted user preferences ──
     const prefs = /** @type {any} */ (PracticeStateInit.createInitialPrefs());
@@ -138,7 +132,7 @@
     const _fx = ShellEffects.createShellEffects(/** @type {any} */ ({
       pianoCore: PianoCore, ctx, state, config: CONFIG,
       getPractice: () => practice,
-      perfTier: PERF_TIER_RESOLVED,
+      perfTier: _vp.perfTier,
       getScreen: _vp.getScreen,
       getBgStars: _vp.getBgStars,
     }));
@@ -310,7 +304,7 @@
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
       t,
       hideIntroHint: () => hideIntroHint(),
-      syncLayout, setInputIndicator, requestWakeLock,
+      syncLayout: _vp.syncLayout, setInputIndicator, requestWakeLock,
       audioScheduler: AudioScheduler,
       Tone: typeof Tone !== 'undefined' ? Tone : undefined,
       loadCurrentScore: () => _osmd.loadCurrentScore(),
@@ -414,8 +408,8 @@
       ctx, practice, state, midiInput, config: CONFIG,
       getScreen: _vp.getScreen,
       getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom, getSafeRight: _vp.getSafeRight,
-      getCurrentLayoutMode: () => _viewportLayout.getCurrentLayoutMode(),
-      cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
+      getCurrentLayoutMode: () => _vp.layout.getCurrentLayoutMode(),
+      cachedOsmdRect: _vp.cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
       getCurrentSong: () => currentSong,
       osmdAdapter,
       practiceElapsedMs, practiceRealElapsedMs,
@@ -464,7 +458,7 @@
       songProg: () => songProg(),
       loadPracticeProgress, savePracticeProgress, recordPracticeDay,
       startPracticeSection, stopPracticeAudio,
-      initAudio: _audio.initAudio, initBgStars, loop, alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
+      initAudio: _audio.initAudio, initBgStars: _vp.initBgStars, loop, alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
       initWebMIDI, startMidiAutoRescan, stopMidiAutoRescan, rescanMidi,
       releaseWakeLock, requestWakeLock,
       hideIntroHint: () => _ui.hideIntroHint(),
