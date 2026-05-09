@@ -247,9 +247,7 @@
     }));
     // initOsmd / extractNotesFromOsmd / loadCurrentScore: consumed only
     // inside ShellOsmd / ShellPractice / ShellUi (via _osmd.* directly) now.
-    const { osmdAdapter } = _osmd;
-    /** Backward-compat alias — the few remaining shell readers expect a getter. */
-    function getOsmd() { return _osmd.getOsmd(); }
+    const { osmdAdapter, getOsmd } = _osmd;
 
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
