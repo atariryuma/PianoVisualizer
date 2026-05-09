@@ -233,10 +233,25 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
       }
       if (targetIdx !== deps.practice._lastCursorNoteIdx) {
         const note = notes[targetIdx];
+        // [v5 — 2026-05-10] CATCHUP diagnostic. When the rAF render
+        // loop pauses (tab backgrounded, GC stall, long task on main
+        // thread) Tone's Transport keeps playing on the audio thread.
+        // On rAF resume `practiceRealElapsedMs()` jumps forward and the
+        // scanner walks targetIdx by multiple notes in a single tick.
+        // Logging jumps > 5 lets us correlate user-reported drift with
+        // actual rAF pauses in production (search console for the
+        // [CURSOR-CATCHUP] prefix).
+        const prevIdx = deps.practice._lastCursorNoteIdx ?? -1;
+        const jump = targetIdx - prevIdx;
+        if (prevIdx >= 0 && jump > 5) {
+          console.log(
+            `[CURSOR-CATCHUP] jumped ${prevIdx}→${targetIdx} (${jump} notes) — likely rAF pause + Transport caught up`
+          );
+        }
         if (note && note.measureIdx !== undefined && note.inBarQuarters !== undefined) {
           // cursorTo seeds the iterator from sheet timestamp + calls
-          // cursor.update(); update() runs scrollIntoView internally
-          // (cursorOptions.follow: true), so no separate scroll call.
+          // cursor.update(); the visual scroll is handled by
+          // osmd-cursor.ts/ensureCursorVisible (system-boundary fire).
           deps.osmdAdapter.cursorTo(note.measureIdx, note.inBarQuarters);
         }
         deps.practice._lastCursorNoteIdx = targetIdx;

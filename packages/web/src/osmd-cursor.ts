@@ -135,6 +135,34 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    *  (user-reported: "カーソルがだんだんずれていく"). */
   let _lastSysIdx: number | null = null;
 
+  // [v5 — 2026-05-10] Tab visibility recovery.
+  //
+  // When the tab is backgrounded the rAF render-loop pauses but Tone's
+  // Web Audio Transport keeps playing (audio thread isn't throttled).
+  // When the tab returns to 'visible', practiceRealElapsedMs() jumps
+  // forward by however long the tab was hidden, the lane scanner walks
+  // _cursorScanIdx forward multiple notes in one tick, and cursorTo()
+  // is called for the new (much-later) note. _lastSysIdx still holds
+  // the system the cursor was on when the tab was last visible — so if
+  // the catch-up landed within the same system that scroll-skip would
+  // hide the cursor entirely (it's now scrolled out of the container's
+  // visible scroll area). Resetting _lastSysIdx to null on visibility
+  // resume forces the next ensureCursorVisible call to re-scroll the
+  // cursor into view (treats it as `isFirstScroll`). Diagnostic markers
+  // [CURSOR-VISIBILITY] hidden|visible let us confirm the rAF-pause
+  // hypothesis from production logs.
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => {
+      const state = document.visibilityState;
+      console.log(`[CURSOR-VISIBILITY] ${state}`);
+      if (state === 'visible') {
+        // Force the next scroll to fire so the cursor catches up to its
+        // (now-correct) iterator position after the rAF pause.
+        _lastSysIdx = null;
+      }
+    });
+  }
+
   function clearHighlights(): void {
     for (const p of highlightedPaths) {
       try {

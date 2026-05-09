@@ -181,6 +181,43 @@ describe('createPracticeLane — OSMD cursor sync', () => {
     lane.draw(132);
     expect(deps.osmdAdapter.cursorTo).toHaveBeenCalledTimes(1);
   });
+
+  it('logs [CURSOR-CATCHUP] when target idx jumps > 5 in one tick (rAF pause recovery)', () => {
+    // Simulate a rAF pause: first frame at elapsed=0 lands targetIdx=0,
+    // second frame at elapsed=10000 catches up across 12 notes. The
+    // jump > 5 should fire the [CURSOR-CATCHUP] diagnostic.
+    let elapsed = 0;
+    const notes = [];
+    for (let i = 0; i < 13; i++) {
+      notes.push(makeNote({ timeMs: i * 100, measureIdx: i >> 2, inBarQuarters: i % 4 }));
+    }
+    const deps = makeDeps({
+      practiceRealElapsedMs: () => elapsed,
+      getLayout: () => ({
+        W: 1024,
+        H: 768,
+        kbHeight: 80,
+        kbSafeBottom: 8,
+        safeRight: 0,
+        currentLayoutMode: 'wide',
+        cachedOsmdRect: { right: 100, bottom: 200, top: 50, height: 150 },
+        osmdContainerVisible: true,
+      }),
+    });
+    deps.practice.mode = 'listen';
+    deps.practice.sectionNotes = notes;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const lane = createPracticeLane(deps);
+    elapsed = 0;
+    lane.draw(0); // primes _lastCursorNoteIdx = 0
+    elapsed = 10000;
+    lane.draw(16); // catches up to idx 12 → jump = 12
+
+    const calls = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(calls.some((s) => s.startsWith('[CURSOR-CATCHUP]'))).toBe(true);
+  });
 });
 
 // ─── lane region ─────────────────────────────────────────────────────
