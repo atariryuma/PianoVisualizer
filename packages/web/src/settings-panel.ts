@@ -1,17 +1,19 @@
 // Settings panel — modal lifecycle + audio offset + secondary buttons.
-// Phase 0d batch 3 extraction from legacy-app.js.
+// Phase 0d batches 3 + 70 extracted from legacy-app.js.
 //
 // Out of scope for this module (deliberately): theme picker, synesthesia
-// toggle, debug toggle, lang switcher. Those are cross-cutting concerns
-// called from multiple places (resetSession, lang flow, app startup) and
-// would require deeper deps surgery to extract cleanly. They stay in
-// legacy-app.js until a future Phase 0d sub-batch.
+// toggle, lang switcher. Those are cross-cutting concerns called from
+// multiple places (resetSession, lang flow, app startup) and live in
+// theme-controls.ts.
 //
 // In scope:
 //   • Modal open/close + backdrop-click + modalFocus integration
 //   • Audio offset slider (debounced persist + reset-to-auto button)
 //   • Rescan / BLE-connect / Reset-session button wiring
 //   • refreshSettingsPanel — input source pill + BLE button visibility
+//   • Debug toggle + applyDebug (Phase 0d batch 70 fold) — keeps
+//     prefs.debug + state.debugMode + the toggle's `.on` class +
+//     the debug overlay's visibility in lockstep.
 //
 // Same dep-injection pattern as section-editor: every cross-module
 // reference comes through `createSettingsPanel(deps)` rather than reaching
@@ -20,6 +22,8 @@
 /** Persistent prefs slice the settings panel reads + writes. */
 export interface SettingsPrefs {
   audioOffsetMs: number | null;
+  /** Phase 0d batch 70 fold — whether the debug overlay starts on. */
+  debug: boolean;
 }
 
 /** Practice slice — the panel writes audioOffsetMs into both prefs and
@@ -29,10 +33,13 @@ export interface SettingsPracticeRef {
 }
 
 /** Game-state slice — the panel reads `running` (gates the Reset button)
- *  and `micSuspended` (drives the input-status pill). */
+ *  and `micSuspended` (drives the input-status pill); writes `debugMode`
+ *  in lockstep with prefs.debug. */
 export interface SettingsStateRef {
   running: boolean;
   micSuspended: boolean;
+  /** Phase 0d batch 70 fold — mirrored from prefs.debug. */
+  debugMode: boolean;
 }
 
 /** MIDI-input shape — the panel reads `enabled` + `port?.name` to label
@@ -56,6 +63,11 @@ export interface SettingsPanelDom {
   bleBtn: HTMLElement | null;
   resetBtn: HTMLElement | null;
   inputStatus: HTMLElement;
+  /** Phase 0d batch 70 fold — debug overlay toggle button (settings panel)
+   *  + the overlay element it toggles. Both optional so existing tests
+   *  that don't exercise the debug path can omit them. */
+  debugToggle?: HTMLElement | null;
+  debugOverlay?: HTMLElement | null;
 }
 
 export interface SettingsPanelDeps {
@@ -87,6 +99,12 @@ export interface SettingsPanel {
   /** Re-render the input-status pill + button availability. Called by
    *  the shell whenever MIDI / mic state changes mid-session. */
   refresh(): void;
+  /** Phase 0d batch 70 fold — apply (or revoke) debug-overlay mode.
+   *  Mirrors `prefs.debug` + `state.debugMode` and toggles both the
+   *  in-panel toggle's `.on` class and the overlay's `.visible` class.
+   *  Called once at boot from the shell with `prefs.debug` to seed
+   *  the UI; the in-panel click handler invokes it on flip. */
+  applyDebug(on: boolean): void;
 }
 
 /** Wire the settings panel. Returns `{open, close, refresh}` for the
@@ -191,5 +209,23 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     if (deps.state.running) deps.showSessionSummary?.();
   });
 
-  return { open, close, refresh };
+  // ─── debug toggle (Phase 0d batch 70 fold) ───────────────────────
+  // Keeps prefs.debug + state.debugMode + the toggle's `.on` class +
+  // the overlay's `.visible` (and inline display) in lockstep. The
+  // shell calls applyDebug(prefs.debug) once at boot to seed the UI.
+  function applyDebug(on: boolean): void {
+    deps.prefs.debug = on;
+    deps.state.debugMode = on;
+    if (deps.dom.debugToggle) deps.dom.debugToggle.classList.toggle('on', on);
+    if (deps.dom.debugOverlay) {
+      deps.dom.debugOverlay.classList.toggle('visible', on);
+      deps.dom.debugOverlay.style.display = on ? 'block' : 'none';
+    }
+  }
+  deps.dom.debugToggle?.addEventListener('click', () => {
+    applyDebug(!deps.prefs.debug);
+    deps.savePrefs();
+  });
+
+  return { open, close, refresh, applyDebug };
 }

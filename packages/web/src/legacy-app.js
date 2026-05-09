@@ -136,213 +136,7 @@
      * @property {BestScoresShape} bestStat
      */
 
-    /**
-     * @typedef GameStateShape
-     *   Module-scoped `state`. Optional (`?`) fields are added lazily
-     *   by hot-path code; making them optional means the cast site
-     *   doesn't need to seed them, but reads still see `T | undefined`.
-     * @property {boolean} running
-     * @property {boolean} starting
-     * @property {number} flow
-     * @property {number} combo
-     * @property {number} bestCombo
-     * @property {number} currentStage
-     * @property {number} lastGoodNoteTimeMs
-     * @property {number} lastSilenceStartMs
-     * @property {number} lastNoisePenaltyMs
-     * @property {number|null} lastPitchSemitones
-     * @property {boolean} useSynesthesiaMode
-     * @property {string[]} completedQuests
-     * @property {number} lastQuestCheckMs
-     * @property {string|null} activeQuestId
-     * @property {number} pitchStability
-     * @property {number} lastNoteTimeMs
-     * @property {number} smoothEnergy
-     * @property {string} lastDetectedNote
-     * @property {number} noteShowTimeMs
-     * @property {number} currentTheme
-     * @property {number} lastFrameTimeMs
-     * @property {Float32Array|null} prevSpectrum
-     * @property {number[]} spectralFluxHistory
-     * @property {number} lastOnsetTimeMs
-     * @property {boolean} micSuspended
-     * @property {number} agcGain
-     * @property {number} agcSmoothedRms
-     * @property {number} agcLastUpdateMs
-     * @property {number} agcVoiceRejectCount
-     * @property {number} agcVoiceSuppressUntilMs
-     * @property {'waiting'|'warmup'|'performing'} sessionState
-     * @property {number} sessionStartMs
-     * @property {number} sessionConfidence
-     * @property {number} sessionPerformingStartMs
-     * @property {number} lastSessionSampleMs
-     * @property {number} sessionRingHead
-     * @property {number} sessionRingTail
-     * @property {number} sessionRingSize
-     * @property {number} sessionPianoCount
-     * @property {number} goalWindowStartMs
-     * @property {number} goalCelebrateUntilMs
-     * @property {number} goalCompletedCount
-     * @property {number[]} noteOnsetTimes
-     * @property {number[]} ioiHistory
-     * @property {number[]} amplitudeHistory
-     * @property {number[]} centroidHistory
-     * @property {number} rhythmScore
-     * @property {number} dynamicsScore
-     * @property {number} stabilityScore
-     * @property {number} qualityScore
-     * @property {number} displayedQualityScore
-     * @property {number} growthScore
-     * @property {{timeMs:number, score:number}[]} qualityHistory
-     * @property {string} feedbackGood
-     * @property {string} feedbackNext
-     * @property {number} lastScoreUpdateMs
-     * @property {number} currentEncouragementTier
-     * @property {number} lastEncouragementTimeMs
-     * @property {number} encouragementHideTimeMs
-     * @property {number} glowPulseIntensity
-     * @property {number} shimmerPhase
-     * @property {number} shimmerStartMs
-     * @property {number} inputFlash
-     * @property {boolean} debugMode
-     * @property {number} debugLastFlux
-     * @property {number} debugLastSpread
-     * @property {number} debugLastThreshold
-     * @property {boolean} debugGateOpen
-     * @property {number} debugLastRms
-     * @property {number} debugLastConf
-     * @property {number} debugLastPitch
-     * @property {boolean} debugIsGoodNote
-     * @property {boolean} debugIsActivePlay
-     * @property {number} debugLastFlatness
-     * @property {number} debugLastCrest
-     * @property {string} debugOnsetReason
-     * @property {number} debugLastCentroid
-     * @property {number} debugCentroidCV
-     * @property {number} debugSessionConf
-     * @property {string} debugSessionState
-     * @property {number} debugAgcGain
-     * @property {number} debugHarmonicity
-     * @property {number} yinSkipCounter
-     * @property {{pitch:number, conf:number, rms:number}} cachedPitchResult
-     * @property {number} sessionStartTimeMs
-     * @property {number} peakFlow
-     * @property {number|null} adaptiveSilenceRms
-     * @property {number[]|null} recentPitches
-     * @property {number} consecutiveOnsetFrames
-     * @property {number} lastDebugLogMs
-     * @property {number} debugMaxRms
-     * @property {number} debugMaxConf
-     * @property {number} debugMaxHarm
-     * @property {number} debugOnsetCount
-     * @property {number|null} lastMidiNoteForStability
-     * @property {boolean} micPermissionFailed
-     * @property {boolean} micIntentionallySkipped
-     * @property {(()=>void)|null} lastIntroDiag
-     * @property {LastSummaryShape|null} _lastSummary
-     * @property {number} [comboDecayAccum]
-     * @property {boolean} [_midiWaitingShown] One-shot guard so the "Waiting for MIDI" hint doesn't re-show on every rescan tick.
-     */
 
-    /**
-     * @typedef ConfigShape
-     *   Tunable runtime constants. Read-only after init; `MAX_PARTICLES`,
-     *   `SHADOW_BLUR_ENABLED`, `AMBIENT_PARTICLE_CHANCE` and the bg-star
-     *   count are mutated post-init from `PERF_PROFILE`. Treat all other
-     *   fields as immutable.
-     * @property {number} FFT_SIZE
-     * @property {number} SMOOTHING
-     * @property {number} PIANO_FREQ_MIN
-     * @property {number} PIANO_FREQ_MAX
-     * @property {number} ONSET_FFT_SIZE
-     * @property {number} ONSET_SMOOTHING
-     * @property {number} AGC_TARGET_RMS
-     * @property {number} AGC_ATTACK_COEFF
-     * @property {number} AGC_RELEASE_COEFF
-     * @property {number} AGC_MIN_GAIN
-     * @property {number} AGC_MAX_GAIN
-     * @property {number} AGC_UPDATE_INTERVAL_MS
-     * @property {number} AGC_SILENCE_FLOOR
-     * @property {number} AGC_VOICE_REJECT_COUNT
-     * @property {number} AGC_VOICE_SUPPRESS_MAX
-     * @property {number} AGC_VOICE_SUPPRESS_MS
-     * @property {number} AGC_VOICE_RMS_MIN
-     * @property {Record<string,string>} NOTE_COLORS
-     * @property {number} YIN_THRESHOLD
-     * @property {number} YIN_PROBABILITY_THRESHOLD
-     * @property {number} RMS_SILENCE_THRESHOLD
-     * @property {number} PITCH_MIN_HZ
-     * @property {number} PITCH_MIN_HZ_PRACTICE
-     * @property {number} PITCH_MAX_HZ
-     * @property {number} GOOD_NOTE_RMS
-     * @property {number} CONFIDENCE_THRESHOLD
-     * @property {number} SPECTRAL_FLUX_THRESHOLD
-     * @property {number} SPECTRAL_FLUX_ADAPTIVE_K
-     * @property {number} SPECTRAL_FLUX_HISTORY_SIZE
-     * @property {number} ONSET_SPREAD_THRESHOLD
-     * @property {number} ONSET_SPREAD_MAX
-     * @property {number} ONSET_SPREAD_MIN_CHANGE
-     * @property {number} FLATNESS_PIANO_MIN
-     * @property {number} CREST_VOICE_MAX
-     * @property {number} ONSET_GATE_DURATION_MS
-     * @property {number} ONSET_COOLDOWN_MS
-     * @property {number} FLUX_FREQ_MIN_HZ
-     * @property {number} FLUX_FREQ_MAX_HZ
-     * @property {number} HARMONICITY_MIN
-     * @property {number} HARMONICITY_MIN_PRACTICE
-     * @property {number} SESSION_WINDOW_MS
-     * @property {number} SESSION_CONFIRM_THRESHOLD
-     * @property {number} SESSION_LOSE_THRESHOLD
-     * @property {number} SESSION_WARMUP_MS
-     * @property {number} SESSION_SAMPLE_INTERVAL_MS
-     * @property {number} CENTROID_HISTORY_SIZE
-     * @property {number} SCORE_RHYTHM_WEIGHT
-     * @property {number} SCORE_DYNAMICS_WEIGHT
-     * @property {number} SCORE_STABILITY_WEIGHT
-     * @property {number} IOI_HISTORY_SIZE
-     * @property {number} IOI_IDEAL_CV
-     * @property {number} IOI_MAX_CV
-     * @property {number} AMPLITUDE_HISTORY_SIZE
-     * @property {number} DYNAMICS_IDEAL_CV_MIN
-     * @property {number} DYNAMICS_IDEAL_CV_MAX
-     * @property {number} SCORE_UPDATE_INTERVAL_MS
-     * @property {number} SCORE_SMOOTHING
-     * @property {number} GROWTH_WINDOW_MS
-     * @property {number} MOTIVATION_GOAL_MS
-     * @property {number} COMBO_WINDOW_MS
-     * @property {number} SILENCE_DECAY_START_MS
-     * @property {number} SILENCE_HARD_DECAY_MS
-     * @property {number} NOISE_PENALTY_COOLDOWN_MS
-     * @property {number} NOTE_DISPLAY_DURATION_MS
-     * @property {number} MIN_NOTE_INTERVAL_MS
-     * @property {number} FLOW_GAIN_BASE
-     * @property {number} FLOW_GAIN_COMBO_MAX
-     * @property {number} FLOW_GAIN_STABILITY_MAX
-     * @property {number} FLOW_GAIN_QUALITY_MAX
-     * @property {number} FLOW_DECAY_SOFT
-     * @property {number} FLOW_DECAY_HARD
-     * @property {number} NOISE_RMS_THRESHOLD
-     * @property {number} FLOW_NOISE_PENALTY
-     * @property {number} COMBO_DECAY_RATE
-     * @property {number} COMBO_NOISE_PENALTY
-     * @property {number} STABILITY_SEMITONE_THRESHOLD
-     * @property {number} STABILITY_GROWTH
-     * @property {number} STABILITY_DECAY_GOOD
-     * @property {number} STABILITY_DECAY_IDLE
-     * @property {number} MAX_PARTICLES
-     * @property {boolean} SHADOW_BLUR_ENABLED
-     * @property {number} AMBIENT_PARTICLE_CHANCE
-     * @property {number} BAR_COUNT
-     * @property {{nameKey:string|null, prefix:string, minFlow:number}[]} STAGES
-     * @property {{minCombo:number, messageKey:string, effect:string}[]} ENCOURAGEMENT_TIERS
-     * @property {number} ENCOURAGEMENT_COOLDOWN_MS
-     * @property {number} ENCOURAGEMENT_DISPLAY_MS
-     * @property {readonly string[]} NOTE_NAMES
-     * @property {number} PIANO_KEY_MIN
-     * @property {number} PIANO_KEY_COUNT
-     * @property {ReadonlyArray<{bg:readonly [number,number,number], colors:readonly string[], glow:string}>} THEMES
-     * @property {{id:string, nameKey:string, descKey:string, condition:(s:GameStateShape)=>boolean, reward:string}[]} QUESTS
-     */
 
     /**
      * @typedef SectionDef
@@ -406,520 +200,48 @@
       });
     }
 
-    // ========================================
-    // Remote Logging (v10)
-    // Only active when served from the bundled PowerShell HTTPS server (LAN/dev).
-    // Production / static-host deploys (file://, github.io, etc.) get a no-op so we
-    // don't waste bandwidth POSTing to a non-existent /log endpoint, and so OSMD/Tone
-    // console output isn't unexpectedly forwarded off-device.
-    // Toggle at runtime: set localStorage.pianoViz_remoteLog = '1' / '0'.
-    // ========================================
-    const REMOTE_LOG_ENABLED = (() => {
-      try {
-        const override = localStorage.getItem('pianoViz_remoteLog');
-        if (override === '1') return true;
-        if (override === '0') return false;
-      } catch (e) {}
-      const h = location.hostname;
-      return location.protocol === 'https:' &&
-        (h === 'localhost' || h === '127.0.0.1' || /^192\.168\./.test(h) || /^10\./.test(h));
-    })();
-
-    // Sequential POST queue — without it, concurrent fetch()es arrive at the
-    // server in whatever order they happen to complete, scrambling diagnostic
-    // dumps that depend on insertion order (e.g. per-measure walks).
-    // Backpressure: drop messages once the in-flight queue passes ~50 so a
-    // sleeping/lossy LAN doesn't grow microtasks unboundedly during a single
-    // song's DIAG dump (200+ lines per load).
-    const remoteLog = (() => {
-      if (!REMOTE_LOG_ENABLED) return () => {};
-      /** @type {Promise<unknown>} */
-      let chain = Promise.resolve();
-      let pending = 0;
-      /** @param {string|object} msg */
-      return (msg) => {
-        if (pending > 50) return;
-        pending++;
-        const body = (typeof msg === 'string') ? msg : JSON.stringify(msg);
-        // Each fetch swallows its own rejection (`.catch(() => {})`) so the
-        // chain itself never enters a rejected state — `pending--` only ever
-        // runs from the single `.finally`, no double-decrement risk.
-        chain = chain.then(() => fetch('/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body,
-        }).catch(() => {}).finally(() => { pending--; }));
-      };
-    })();
-
-    if (REMOTE_LOG_ENABLED) {
-      const _log = console.log;
-      console.log = (...args) => { _log(...args); remoteLog(args.join(' ')); };
-      const _err = console.error;
-      console.error = (...args) => { _err(...args); remoteLog('[ERROR] ' + args.join(' ')); };
-      window.onerror = (msg, url, line) => { remoteLog(`[FATAL] ${msg} (${line})`); };
-    }
+    // Phase 0d batch 65: Remote logging cluster (HTTPS LAN dev-server
+    // forwarder + console overrides + window.onerror) moved to
+    // packages/web/src/remote-log.ts. Both the boolean enable flag
+    // and the queue function are kept under their legacy short names
+    // so the 29 callsites across this file (DIAG-FRAME, DIAG-FULLSONG,
+    // dumpLoadDiagnostics, etc.) keep working unchanged.
+    const _remoteLog = RemoteLog.createRemoteLog();
+    const REMOTE_LOG_ENABLED = _remoteLog.enabled;
+    /** @param {string|object} msg */
+    const remoteLog = (msg) => _remoteLog.send(msg);
+    RemoteLog.installConsoleForwarding(_remoteLog);
 
     console.log("App Started: Piano Visualizer");
 
-    const CONFIG = /** @type {ConfigShape} */ (/** @type {any} */ ({
-      // Audio — main analyser (for pitch + visualisation)
-      FFT_SIZE: 4096,
-      SMOOTHING: 0.82,
-      PIANO_FREQ_MIN: 27,
-      PIANO_FREQ_MAX: 4200,
+    // Phase 0d batch 68: 200-line CONFIG literal + 14-line QUESTS
+    // table moved verbatim to packages/web/src/piano-config.ts.
+    // The shell still mutates MAX_PARTICLES / SHADOW_BLUR_ENABLED /
+    // AMBIENT_PARTICLE_CHANCE at boot from the perf-tier override
+    // (preserved below — search "CONFIG.MAX_PARTICLES =").
+    const CONFIG = /** @type {import('./piano-config').PianoConfig} */ (
+      /** @type {any} */ (PianoConfig.createPianoConfig())
+    );
 
-      // Onset analyser — dedicated low-smoothing node for transient detection
-      ONSET_FFT_SIZE: 2048,
-      ONSET_SMOOTHING: 0.15,
 
-      // =============================================
-      // Software AGC via GainNode (v8)
-      // =============================================
-      AGC_TARGET_RMS: 0.06,
-      AGC_ATTACK_COEFF: 0.02,
-      AGC_RELEASE_COEFF: 0.08,
-      AGC_MIN_GAIN: 1.0,
-      AGC_MAX_GAIN: 40.0,
-      AGC_UPDATE_INTERVAL_MS: 100,
-      AGC_SILENCE_FLOOR: 0.0003,
-
-      // v9: AGC voice suppression
-      AGC_VOICE_REJECT_COUNT: 5,      // consecutive high-RMS rejections to trigger suppression
-      AGC_VOICE_SUPPRESS_MAX: 8.0,    // temporary max gain during voice suppression
-      AGC_VOICE_SUPPRESS_MS: 500,     // how long to suppress after voice detected
-      AGC_VOICE_RMS_MIN: 0.02,        // minimum RMS to count as "high-RMS rejection"
-
-      // v10: Synesthesia Colors (Educational Mode)
-      NOTE_COLORS: {
-        'C': '#ff0000', // Red
-        'C#': '#ff4000', // Red-Orange
-        'D': '#ff8000', // Orange
-        'D#': '#ffbf00', // Yellow-Orange
-        'E': '#ffff00', // Yellow
-        'F': '#80ff00', // Light Green
-        'F#': '#00ff00', // Green
-        'G': '#00ffff', // Cyan
-        'G#': '#0080ff', // Blue
-        'A': '#0000ff', // Dark Blue
-        'A#': '#8000ff', // Purple
-        'B': '#ff00ff'  // Magenta
-      },
-
-      // =============================================
-      // YIN Pitch Detection (v6+)
-      // =============================================
-      YIN_THRESHOLD: 0.20,
-      YIN_PROBABILITY_THRESHOLD: 0.10,
-      RMS_SILENCE_THRESHOLD: 0.008,   // v10: Slightly raised (0.005 -> 0.008) to reduce noise
-      PITCH_MIN_HZ: 25,
-      // Practice-mode floor — YIN frequently locks onto a sub-harmonic 1-2 octaves
-      // below the actual note. Für Elise's lowest written pitch is around A2 (~110Hz),
-      // so anything below E2 (~82Hz) is almost always an octave-down error.
-      PITCH_MIN_HZ_PRACTICE: 80,
-      PITCH_MAX_HZ: 5000,
-      GOOD_NOTE_RMS: 0.008,           // v10: Raised (0.005 -> 0.008) - reject key clatter
-      CONFIDENCE_THRESHOLD: 0.60,     // v10: Final (0.65 -> 0.60) - Sweet spot for sensitivity/noise
-
-      // =============================================
-      // Multi-Feature Onset Classification (v10 — tuned for sensitivity)
-      // =============================================
-      SPECTRAL_FLUX_THRESHOLD: 4.0,       // v10: Slight increase (3.0 -> 4.0)
-      SPECTRAL_FLUX_ADAPTIVE_K: 1.3,
-      SPECTRAL_FLUX_HISTORY_SIZE: 20,
-      ONSET_SPREAD_THRESHOLD: 0.05,       // v10: Low Min (0.15->0.05) to pass pure notes
-      ONSET_SPREAD_MAX: 0.70,             // v10: Relaxed Max (0.60 -> 0.70) for big chords
-      ONSET_SPREAD_MIN_CHANGE: 1.5,
-      // Spectral flatness lower bound. Piano single notes are very tonal (low flatness),
-      // so this threshold must be small or the gate rejects clean playing. The
-      // harmonicity gate above already filters non-pitched sounds, so we keep this
-      // low and use it only as a last-resort sanity check.
-      FLATNESS_PIANO_MIN: 0.03,
-      CREST_VOICE_MAX: 8.0,
-      ONSET_GATE_DURATION_MS: 1500,
-      ONSET_COOLDOWN_MS: 60,
-      FLUX_FREQ_MIN_HZ: 20,
-      FLUX_FREQ_MAX_HZ: 4200,
-
-      // =============================================
-      // Harmonicity Gate (v9 — new)
-      // =============================================
-      HARMONICITY_MIN: 0.0,               // free-play: lenient so chords don't get rejected
-      HARMONICITY_MIN_PRACTICE: 0.12,     // practice: light filter for voice/key clatter.
-      //   iPad mic on acoustic piano typically yields 0.10–0.30 harmonicity, so 0.12
-      //   keeps real notes through while still catching pure-noise events.
-      // Partial-count + bin tolerance live in @piano/core/audio/harmonicity.ts
-      // DEFAULTS — they were never read by the call site below, so removing
-      // them here removes a tuning landmine.
-
-      // =============================================
-      // Session Confidence Layer (v7+)
-      // =============================================
-      SESSION_WINDOW_MS: 4000,
-      SESSION_CONFIRM_THRESHOLD: 0.35,
-      SESSION_LOSE_THRESHOLD: 0.10,
-      SESSION_WARMUP_MS: 2000,
-      SESSION_SAMPLE_INTERVAL_MS: 50,
-
-      // =============================================
-      // Spectral Centroid Tracking (debug only)
-      // =============================================
-      CENTROID_HISTORY_SIZE: 20,
-
-      // =============================================
-      // Quality Scoring — simplified for kids (v8+)
-      // =============================================
-      SCORE_RHYTHM_WEIGHT: 0.4,
-      SCORE_DYNAMICS_WEIGHT: 0.35,
-      SCORE_STABILITY_WEIGHT: 0.25,
-      IOI_HISTORY_SIZE: 16,
-      IOI_IDEAL_CV: 0.30,
-      IOI_MAX_CV: 1.5,
-      AMPLITUDE_HISTORY_SIZE: 30,
-      DYNAMICS_IDEAL_CV_MIN: 0.03,
-      DYNAMICS_IDEAL_CV_MAX: 0.60,
-      SCORE_UPDATE_INTERVAL_MS: 500,
-      SCORE_SMOOTHING: 0.08,
-      GROWTH_WINDOW_MS: 30000,
-      MOTIVATION_GOAL_MS: 30000,
-
-      // Game timing
-      COMBO_WINDOW_MS: 3000,
-      SILENCE_DECAY_START_MS: 8000,       // v10: Increased to 8s (was 4s) for longer pauses
-      SILENCE_HARD_DECAY_MS: 12000,       // v10: Increased Hard Decay start
-      NOISE_PENALTY_COOLDOWN_MS: 300,
-      NOTE_DISPLAY_DURATION_MS: 1200,
-      MIN_NOTE_INTERVAL_MS: 70,
-
-      // Game balance
-      FLOW_GAIN_BASE: 8,                  // v10: Final Tune (10 -> 8) - Gentle climb
-      FLOW_GAIN_COMBO_MAX: 10,            // v10: Reduced (16 -> 10)
-      FLOW_GAIN_STABILITY_MAX: 20,
-      FLOW_GAIN_QUALITY_MAX: 25,
-      FLOW_DECAY_SOFT: 0.5,               // v10: Very gentle decay (was 2.0)
-      FLOW_DECAY_HARD: 2.0,               // v10: Slower hard decay (was 8.0)
-      NOISE_RMS_THRESHOLD: 0.05,
-      FLOW_NOISE_PENALTY: 3,
-      COMBO_DECAY_RATE: 0.5,
-      COMBO_NOISE_PENALTY: 1,
-
-      // Pitch stability
-      STABILITY_SEMITONE_THRESHOLD: 3,
-      STABILITY_GROWTH: 0.05,
-      STABILITY_DECAY_GOOD: 0.90,         // v10: Slower decay active
-      STABILITY_DECAY_IDLE: 0.995,        // v10: Much slower decay idle (was 0.98)
-
-      // Rendering
-      MAX_PARTICLES: 800,
-      SHADOW_BLUR_ENABLED: true,
-      AMBIENT_PARTICLE_CHANCE: 0.03,
-      BAR_COUNT: 64,
-
-      // Stages — `nameKey` is resolved via t() so labels follow prefs.lang.
-      STAGES: [
-        { nameKey: null,     prefix: '',             minFlow: 0 },
-        { nameKey: 'stage1', prefix: '\u2726 ',       minFlow: 15 },
-        { nameKey: 'stage2', prefix: '\u2726\u2726 ', minFlow: 35 },
-        { nameKey: 'stage3', prefix: '\u2726\u2726\u2726 ', minFlow: 55 },
-        { nameKey: 'stage4', prefix: '\u2726\u2726\u2726\u2726 ', minFlow: 75 },
-        { nameKey: 'stage5', prefix: '\u2726\u2726\u2726\u2726\u2726 ', minFlow: 90 },
-        { nameKey: 'stage6', prefix: '\u2726\u2726\u2726\u2726\u2726\u2726 ', minFlow: 98 }
-      ],
-
-      // =============================================
-      // Encouragement Tiers (v9 — replaces combo numbers)
-      // =============================================
-      ENCOURAGEMENT_TIERS: [
-        { minCombo: 3,   messageKey: 'enc1', effect: 'glowPulse' },
-        { minCombo: 8,   messageKey: 'enc2', effect: 'glowParticles' },
-        { minCombo: 15,  messageKey: 'enc3', effect: 'colorWave' },
-        { minCombo: 25,  messageKey: 'enc4', effect: 'starShower' },
-        { minCombo: 40,  messageKey: 'enc5', effect: 'flowerBurst' },
-        { minCombo: 60,  messageKey: 'enc6', effect: 'shimmer' },
-        { minCombo: 80,  messageKey: 'enc7', effect: 'radiance' },
-        { minCombo: 100, messageKey: 'enc8', effect: 'goldenBurst' }
-      ],
-      ENCOURAGEMENT_COOLDOWN_MS: 8000,   // don't repeat same tier within this window
-      ENCOURAGEMENT_DISPLAY_MS: 2500,    // how long message stays visible
-
-      // Note mapping
-      NOTE_NAMES: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
-      PIANO_KEY_MIN: 21,
-      PIANO_KEY_COUNT: 88,
-
-      // Themes
-      THEMES: [
-        { bg: [10, 10, 20], colors: ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#6366f1', '#818cf8'], glow: 'rgba(139,92,246,' },
-        { bg: [8, 18, 20], colors: ['#06b6d4', '#22d3ee', '#34d399', '#10b981', '#14b8a6', '#67e8f9'], glow: 'rgba(6,182,212,' },
-        { bg: [20, 12, 8], colors: ['#f97316', '#fb923c', '#ef4444', '#f43f5e', '#eab308', '#fbbf24'], glow: 'rgba(249,115,22,' },
-        { bg: [12, 12, 18], colors: ['#e0e7ff', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#f0f0ff', '#ffffff'], glow: 'rgba(200,200,255,' }
-      ],
-
-      // v10: Magic Quests — name/desc are i18n keys, resolved via t() at use.
-      // Predicates accept the live state. Using `Object.assign` to attach the
-      // typed array means each `s => ...` lambda gets contextual typing from
-      // QUESTS_DEFS rather than relying on the post-cast ConfigShape, which
-      // doesn't propagate back into the literal element types.
-      QUESTS: /** @type {ConfigShape['QUESTS']} */ ([])
-    }));
-
-    /** @type {ConfigShape['QUESTS']} */
-    const QUESTS_DEFS = [
-      { id: 'q1',  nameKey: 'qst1Name',  descKey: 'qst1Desc',  condition: s => s.noteOnsetTimes.length >= 3, reward: 'Nice Start!' },
-      { id: 'q2',  nameKey: 'qst2Name',  descKey: 'qst2Desc',  condition: s => s.flow >= 50, reward: 'Good Flow!' },
-      { id: 'q3',  nameKey: 'qst3Name',  descKey: 'qst3Desc',  condition: s => s.combo >= 30, reward: 'Combo Master!' },
-      { id: 'q4',  nameKey: 'qst4Name',  descKey: 'qst4Desc',  condition: s => s.stabilityScore >= 0.8, reward: 'Stable Tone!' },
-      { id: 'q5',  nameKey: 'qst5Name',  descKey: 'qst5Desc',  condition: s => s.sessionState === 'performing' && s.sessionConfidence > 0.8, reward: 'Virtuoso!' },
-      { id: 'q6',  nameKey: 'qst6Name',  descKey: 'qst6Desc',  condition: s => s.rhythmScore >= 0.85, reward: 'Rhythm Master!' },
-      { id: 'q7',  nameKey: 'qst7Name',  descKey: 'qst7Desc',  condition: s => s.flow >= 95, reward: 'Peak Flow!' },
-      { id: 'q8',  nameKey: 'qst8Name',  descKey: 'qst8Desc',  condition: s => s.combo >= 100, reward: 'Century Combo!' },
-      { id: 'q9',  nameKey: 'qst9Name',  descKey: 'qst9Desc',  condition: s => s.dynamicsScore >= 0.8, reward: 'Dynamic Range!' },
-      { id: 'q10', nameKey: 'qst10Name', descKey: 'qst10Desc', condition: s => s.qualityScore >= 0.85, reward: 'Full Focus!' },
-      { id: 'q11', nameKey: 'qst11Name', descKey: 'qst11Desc', condition: s => s.bestCombo >= 200 && s.flow >= 90, reward: 'LEGENDARY!' }
-    ];
-    CONFIG.QUESTS = QUESTS_DEFS;
-
-    // ========================================
-    // DOM references
-    // ========================================
-    // Type assertion: every ID below exists in index.html. The shell
-    // crashes immediately on first DOM access if any are missing, so
-    // typing as non-null HTMLElement is correct in practice.
+    // Phase 0d batch 66: 100-line DOM bag (every getElementById in
+    // the shell) moved to packages/web/src/dom-bag.ts. The bag is
+    // typed non-null because every entry is guaranteed to exist in
+    // index.html — the shell crashes on first DOM access otherwise.
     /** @type {Record<string, HTMLElement>} */
-    const DOM = /** @type {any} */ ({
-      canvas: document.getElementById('canvas'),
-      startScreen: document.getElementById('startScreen'),
-      startBtn: document.getElementById('startBtn'),
-      themeBar: document.getElementById('themeBar'),
-      hud: document.getElementById('hud'),
-      encouragement: document.getElementById('encouragement'),
-      flowFill: document.getElementById('flowFill'),
-      stageLabel: document.getElementById('stageLabel'),
-      noteDisplay: document.getElementById('noteDisplay'),
-      sessionStatus: document.getElementById('sessionStatus'),
-      qualityScore: document.getElementById('qualityScore'),
-      debugOverlay: document.getElementById('debugOverlay'),
-      // v10: Quest UI
-      questDisplay: document.getElementById('questDisplay'),
-      questDots: document.getElementById('questDots'),
-      questLabel: document.getElementById('questLabel'),
-      questToast: document.getElementById('questToast'),
-      toastTitle: document.getElementById('toastTitle'),
-      toastSub: document.getElementById('toastSub'),
-      homeBtn: document.getElementById('homeBtn'),
-      sessionSummary: document.getElementById('sessionSummary'),
-      sumCombo: document.getElementById('sumCombo'),
-      sumQuestList: document.getElementById('sumQuestList'),
-      sumStage: document.getElementById('sumStage'),
-      sumTime: document.getElementById('sumTime'),
-      radarChart: document.getElementById('radarChart'),
-      sumBest: document.getElementById('sumBest'),
-      sumClose: document.getElementById('sumClose'),
-      sumHome: document.getElementById('sumHome'),
-      playTime: document.getElementById('playTime'),
-      // v12: Practice Mode (Für Elise)
-      songTitle: document.getElementById('songTitle'),
-      songComposer: document.getElementById('songComposer'),
-      songPanel: document.getElementById('songPanel'),
-      streakCount: document.getElementById('streakCount'),
-      streakCal: document.getElementById('streakCal'),
-      tempoRow: document.getElementById('tempoRow'),
-      songBpmHint: document.getElementById('songBpmHint'),
-      sectionList: document.getElementById('sectionList'),
-      ghostToggle: document.getElementById('ghostToggle'),
-      ghostRow: document.getElementById('ghostRow'),
-      metronomeToggle: document.getElementById('metronomeToggle'),
-      metronomeRow: document.getElementById('metronomeRow'),
-      fullSongToggle: document.getElementById('fullSongToggle'),
-      fullSongRow: document.getElementById('fullSongRow'),
-      songBack: document.getElementById('songBack'),
-      songStart: document.getElementById('songStart'),
-      practiceHud: document.getElementById('practiceHud'),
-      practiceTopBar: document.getElementById('practiceTopBar'),
-      ptbSection: document.getElementById('ptbSection'),
-      ptbTempo: document.getElementById('ptbTempo'),
-      ptbProgress: document.getElementById('ptbProgress'),
-      ptbToggleOsmd: document.getElementById('ptbToggleOsmd'),
-      ptbQuit: document.getElementById('ptbQuit'),
-      ptbInput: document.getElementById('ptbInput'),
-      osmdContainer: document.getElementById('osmdContainer'),
-      sectionBanner: document.getElementById('sectionBanner'),
-      sectionResult: document.getElementById('sectionResult'),
-      resTitle: document.getElementById('resTitle'),
-      resSectionName: document.getElementById('resSectionName'),
-      resStars: document.getElementById('resStars'),
-      resAcc: document.getElementById('resAcc'),
-      resTiming: document.getElementById('resTiming'),
-      resDuration: document.getElementById('resDuration'),
-      resDurationRow: document.getElementById('resDurationRow'),
-      resCombo: document.getElementById('resCombo'),
-      resMsg: document.getElementById('resMsg'),
-      resUnlock: document.getElementById('resUnlock'),
-      resQuit: document.getElementById('resQuit'),
-      resRetry: document.getElementById('resRetry'),
-      resNext: document.getElementById('resNext'),
-      resTryPlay: document.getElementById('resTryPlay'),
-      resHome: document.getElementById('resHome'),
-      resHistoryWrap: document.getElementById('resHistoryWrap'),
-      resHistoryChart: document.getElementById('resHistoryChart'),
-      introHint: document.getElementById('introHint'),
-      micMeter: document.getElementById('micMeter'),
-      micMeterFill: document.getElementById('micMeterFill'),
-      midiBadge: document.getElementById('midiBadge'),
-      // Settings panel
-      settingsBtn: document.getElementById('settingsBtn'),
-      settingsPanel: document.getElementById('settingsPanel'),
-      settingsCloseBtn: document.getElementById('settingsCloseBtn'),
-      audioOffsetSlider: document.getElementById('audioOffsetSlider'),
-      audioOffsetVal: document.getElementById('audioOffsetVal'),
-      audioOffsetAuto: document.getElementById('audioOffsetAuto'),
-      audioOffsetReset: document.getElementById('audioOffsetReset'),
-      settingsRescanBtn: document.getElementById('settingsRescanBtn'),
-      settingsBleBtn: document.getElementById('settingsBleBtn'),
-      settingsResetBtn: document.getElementById('settingsResetBtn'),
-      settingsInputStatus: document.getElementById('settingsInputStatus'),
-      settingsDebugToggle: document.getElementById('settingsDebugToggle'),
-    });
+    const DOM = /** @type {any} */ (DomBag.createDomBag(document).bag);
     const ctx = /** @type {CanvasRenderingContext2D} */ (
       /** @type {HTMLCanvasElement} */ (DOM.canvas).getContext('2d')
     );
 
-    // ========================================
-    // Game State
-    // ========================================
-    const state = /** @type {GameStateShape} */ (/** @type {any} */ ({
-      running: false,
-      starting: false,
-      flow: 0,
-      combo: 0,
-      bestCombo: 0,
-      currentStage: 0,
-      lastGoodNoteTimeMs: 0,
-      lastSilenceStartMs: -1,
-      lastNoisePenaltyMs: 0,
-      // Continuous-MIDI semitones of the most recent onset (mic or MIDI).
-      // Replaces legacy lastPitch (Hz) + lastMidiNoteForStability (int).
-      lastPitchSemitones: null,
-
-      // v10: Synesthesia Mode
-      useSynesthesiaMode: false,
-
-      // v10: Magic Quests
-      completedQuests: [],
-      lastQuestCheckMs: 0,
-      activeQuestId: null,
-
-      pitchStability: 0,
-      lastNoteTimeMs: 0,
-      smoothEnergy: 0,
-      lastDetectedNote: '',
-      noteShowTimeMs: 0,
-      currentTheme: 0,
-      lastFrameTimeMs: 0,
-      prevSpectrum: null,
-      spectralFluxHistory: [],
-      lastOnsetTimeMs: -9999,
-
-      // v13: Mic source state. True when getUserMedia hasn't been called or
-      // the mic has been torn down because MIDI took over.
-      micSuspended: false,
-
-      // Software AGC (v8)
-      agcGain: 1.0,
-      agcSmoothedRms: 0,
-      agcLastUpdateMs: 0,
-
-      // v9: AGC voice suppression
-      agcVoiceRejectCount: 0,
-      agcVoiceSuppressUntilMs: 0,
-
-      // Session Confidence (ring buffer)
-      sessionState: 'waiting',
-      sessionStartMs: 0,
-      sessionConfidence: 0,
-      sessionPerformingStartMs: 0,
-      lastSessionSampleMs: 0,
-      sessionRingHead: 0,
-      sessionRingTail: 0,
-      sessionRingSize: 0,
-      sessionPianoCount: 0,
-      goalWindowStartMs: 0,
-      goalCelebrateUntilMs: 0,
-      goalCompletedCount: 0,
-
-      // Quality Scoring
-      noteOnsetTimes: [],
-      ioiHistory: [],
-      amplitudeHistory: [],
-      centroidHistory: [],
-      rhythmScore: 0,
-      dynamicsScore: 0,
-      stabilityScore: 0,
-      qualityScore: 0,
-      displayedQualityScore: 0,
-      growthScore: 0,
-      qualityHistory: [],
-      feedbackGood: '',
-      feedbackNext: '',
-      lastScoreUpdateMs: 0,
-
-      // v9: Encouragement system
-      currentEncouragementTier: -1,
-      lastEncouragementTimeMs: 0,
-      encouragementHideTimeMs: 0,
-
-      // v9: Special effects state
-      glowPulseIntensity: 0,
-      shimmerPhase: -1,
-      shimmerStartMs: 0,
-      inputFlash: 0,
-
-      // Debug
-      debugMode: false,
-      debugLastFlux: 0,
-      debugLastSpread: 0,
-      debugLastThreshold: 0,
-      debugGateOpen: false,
-      debugLastRms: 0,
-      debugLastConf: 0,
-      debugLastPitch: 0,
-      debugIsGoodNote: false,
-      debugIsActivePlay: false,
-      debugLastFlatness: 0,
-      debugLastCrest: 0,
-      debugOnsetReason: '',
-      debugLastCentroid: 0,
-      debugCentroidCV: 0,
-      debugSessionConf: 0,
-      debugSessionState: 'waiting',
-      debugAgcGain: 1.0,
-      debugHarmonicity: 0,
-
-      // YIN throttle
-      yinSkipCounter: 0,
-      cachedPitchResult: { pitch: -1, conf: 0, rms: 0 },
-
-      // v11: Session tracking
-      sessionStartTimeMs: 0,
-      peakFlow: 0,
-
-      // Pre-declared dynamic fields — initializing here keeps V8's hidden class
-      // stable across the per-frame hot path (used to be lazy `state.x ||= 0`
-      // initializers scattered through updateGameState / matchNoteOnset).
-      adaptiveSilenceRms: null,
-      recentPitches: null,
-      consecutiveOnsetFrames: 0,
-      lastDebugLogMs: 0,
-      debugMaxRms: 0,
-      debugMaxConf: 0,
-      debugMaxHarm: 0,
-      debugOnsetCount: 0,
-      lastMidiNoteForStability: null,
-      micPermissionFailed: false,
-      micIntentionallySkipped: false,
-      lastIntroDiag: null,
-      _lastSummary: null
-    }));
+    // Phase 0d batch 67: 130-line game-state initial values moved
+    // to packages/web/src/game-state-init.ts. Pre-declaring every
+    // dynamic field keeps V8's hidden class stable across the
+    // per-frame hot path; the factory returns a fresh object each
+    // call so a future full-reseed (post audio-recovery) can rebuild.
+    const state = /** @type {import('./game-state-init').InitialGameState} */ (
+      /** @type {any} */ (GameStateInit.createInitialGameState())
+    );
 
     // ========================================
     // Session Confidence Ring Buffer (pre-allocated, zero-alloc at runtime)
@@ -1195,7 +517,7 @@
     // as `_themeControls.setLang` after createThemeControls() runs below.
 
     // Stage label — Phase 0b.3: delegated to @piano/core.
-    /** @param {ConfigShape['STAGES'][number]} stage */
+    /** @param {import('./piano-config').PianoConfig['STAGES'][number]} stage */
     const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
 
     // Phase 0d batch 7a: theme bar + synesthesia toggle + lang toggle
@@ -1348,23 +670,10 @@
     // The forward-declared placeholders above are reassigned at the
     // bottom-anchored call site (search for the matching marker comment).
 
-    // updateDebugOverlay() reads state.debugMode each frame, so applyDebug
-    // must keep prefs.debug and state.debugMode in lockstep.
-    /** @param {boolean} on */
-    function applyDebug(on) {
-      prefs.debug = on;
-      state.debugMode = on;
-      DOM.settingsDebugToggle.classList.toggle('on', on);
-      if (DOM.debugOverlay) {
-        DOM.debugOverlay.classList.toggle('visible', on);
-        DOM.debugOverlay.style.display = on ? 'block' : 'none';
-      }
-    }
-    applyDebug(prefs.debug);
-    DOM.settingsDebugToggle.addEventListener('click', () => {
-      applyDebug(!prefs.debug);
-      savePrefs();
-    });
+    // Phase 0d batch 70: applyDebug + click wire-up moved to
+    // settings-panel.ts createSettingsPanel(). The shell's seed call
+    // (`_settings.applyDebug(prefs.debug)`) lives at the panel
+    // wire-up site below — search "settings-panel wire-up".
 
     // Language toggle wiring (en ↔ jp) lives in theme-controls.ts now.
     // The shell still seeds the document language from persisted prefs on
@@ -3284,6 +2593,9 @@
           bleBtn: DOM.settingsBleBtn,
           resetBtn: DOM.settingsResetBtn,
           inputStatus: DOM.settingsInputStatus,
+          // Phase 0d batch 70 fold — debug toggle + overlay.
+          debugToggle: DOM.settingsDebugToggle,
+          debugOverlay: DOM.debugOverlay,
         }),
         prefs,
         practice,
@@ -3300,6 +2612,10 @@
       openSettings = _settings.open;
       closeSettings = _settings.close;
       refreshSettingsPanel = _settings.refresh;
+      // Phase 0d batch 70 fold — seed the debug overlay UI from
+      // persisted prefs. The toggle's click handler is attached
+      // inside createSettingsPanel and self-persists via savePrefs.
+      _settings.applyDebug(prefs.debug);
     }
 
     // ========================================

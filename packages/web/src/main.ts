@@ -56,6 +56,10 @@ import * as LayoutDetect from './layout-detect';
 import * as MidiPorts from './midi-ports';
 import * as MidiRescan from './midi-rescan';
 import * as MidiInit from './midi-init';
+import * as RemoteLog from './remote-log';
+import * as DomBag from './dom-bag';
+import * as GameStateInit from './game-state-init';
+import * as PianoConfig from './piano-config';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as ViewportLayout from './viewport-layout';
 import * as OsmdInit from './osmd-init';
@@ -129,6 +133,10 @@ declare global {
     MidiPorts: typeof MidiPorts;
     MidiRescan: typeof MidiRescan;
     MidiInit: typeof MidiInit;
+    RemoteLog: typeof RemoteLog;
+    DomBag: typeof DomBag;
+    GameStateInit: typeof GameStateInit;
+    PianoConfig: typeof PianoConfig;
     BleMidiConnect: typeof BleMidiConnect;
     ViewportLayout: typeof ViewportLayout;
     OsmdInit: typeof OsmdInit;
@@ -270,6 +278,14 @@ declare global {
 
   var MidiInit: typeof import('./midi-init');
 
+  var RemoteLog: typeof import('./remote-log');
+
+  var DomBag: typeof import('./dom-bag');
+
+  var GameStateInit: typeof import('./game-state-init');
+
+  var PianoConfig: typeof import('./piano-config');
+
   var BleMidiConnect: typeof import('./ble-midi-connect');
 
   var ViewportLayout: typeof import('./viewport-layout');
@@ -370,6 +386,10 @@ declare global {
 (globalThis as unknown as Window).MidiPorts = MidiPorts;
 (globalThis as unknown as Window).MidiRescan = MidiRescan;
 (globalThis as unknown as Window).MidiInit = MidiInit;
+(globalThis as unknown as Window).RemoteLog = RemoteLog;
+(globalThis as unknown as Window).DomBag = DomBag;
+(globalThis as unknown as Window).GameStateInit = GameStateInit;
+(globalThis as unknown as Window).PianoConfig = PianoConfig;
 (globalThis as unknown as Window).BleMidiConnect = BleMidiConnect;
 (globalThis as unknown as Window).ViewportLayout = ViewportLayout;
 (globalThis as unknown as Window).OsmdInit = OsmdInit;
