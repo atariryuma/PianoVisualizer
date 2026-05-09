@@ -7,19 +7,20 @@ Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
 Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-107 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **836 lines** (was
-5,100 at the prior NEXT refresh, **−4,264 across 57 batches**, the heaviest
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **616 lines** (was
+5,100 at the prior NEXT refresh, **−4,484 across 63 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
 
-**Phase 0d → 0e in flight**: extracted 7 shell-bootstrap modules (shell-midi,
+**Phase 0d → 0e in flight**: extracted 14 shell-bootstrap modules (shell-midi,
 shell-add-song, shell-osmd, shell-audio, shell-game-update, shell-midi-handlers,
-shell-practice) covering the major factory clusters. Each is a single
-`createShellXxx(deps)` factory that bundles 5-10 internal `Xxx.createXxx()`
-calls + their forwarders into one shell call site. Pattern: pass live state by
-getter thunks for forward-declared shell-locals; setters where the shell needs
-to mutate (e.g. `setOsmd`).
+shell-practice, shell-ui, shell-user-library, shell-effects,
+shell-session-state, shell-render-loop, shell-viewport) covering the major
+factory clusters. Each is a single `createShellXxx(deps)` factory that bundles
+5-10 internal `Xxx.createXxx()` calls + their forwarders into one shell call
+site. Pattern: pass live state by getter thunks for forward-declared
+shell-locals; setters where the shell needs to mutate (e.g. `setOsmd`).
 
 The mid-session **Issue 1 + Issue 2 bug-fix detour** (5 commits between batches
 56 and 57, 2026-05-08/09) is documented in the bullet list below; **Phase 0d
@@ -427,18 +428,21 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 127 | `web/shell-midi-handlers.ts`    | —     | `packages/web/src/shell-midi-handlers.ts`       |
 | 128 | `web/shell-practice.ts`         | —     | `packages/web/src/shell-practice.ts`            |
 | 129 | `web/shell-ui.ts`               | —     | `packages/web/src/shell-ui.ts`                  |
+| 130 | `web/shell-user-library.ts`     | —     | `packages/web/src/shell-user-library.ts`        |
+| 131 | `web/shell-effects.ts`          | —     | `packages/web/src/shell-effects.ts`             |
+| 132 | `web/shell-session-state.ts`    | —     | `packages/web/src/shell-session-state.ts`       |
+| 133 | `web/shell-render-loop.ts`      | —     | `packages/web/src/shell-render-loop.ts`         |
+| 134 | `web/shell-viewport.ts`         | —     | `packages/web/src/shell-viewport.ts`            |
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **759 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−3,318
-net** across 38 batches in `685d5df` + 91 / 92 / 93 / 94 / 95 / 96 / 97 / 98 /
-99 / 100 / 101 / 102 / 103 / 104 / 105 / 106 / 107 / 108, plus the parallel
-`f3f226c` tie-aware OSMD cursor fix; **−8,241 net** since Phase 0a baseline).
-Phase 0e DoD (≤200 lines): ~559 lines remaining — primarily the residual
-forward-decl placeholders + ESC router + langchange listener + render-loop
-wireup + DevModeWireup + the small-helper cluster (formatTime, isFreeplayActive,
-setupHiDPICanvas, etc.).
+Start click) reports zero console errors. `legacy-app.js`: **616 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−3,461
+net** across 44 batches in `685d5df` + 91-114, plus the parallel `f3f226c`
+tie-aware OSMD cursor fix; **−8,384 net** since Phase 0a baseline). Phase 0e DoD
+(≤200 lines): ~416 lines remaining — primarily the residual forward-decl
+placeholders + ESC router + langchange listener + 13 shell-bootstrap factory
+call sites + DevModeWireup + the small-helper cluster.
 
 ---
 
