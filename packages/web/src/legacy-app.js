@@ -1,13 +1,8 @@
     // @ts-check
     'use strict';
 
-    // Phase 0c boundary JSDoc typedefs deleted — types now live in
-    // each per-module .ts file. Cast sites use /** @type {any} */.
-
-    // SW registration is handled by vite-plugin-pwa's auto-injected
-    // ./registerSW.js (see vite.config.ts). The legacy
-    // `navigator.serviceWorker.register('./sw.js')` here was redundant
-    // and removed in batch 91.
+    // SW registration: vite-plugin-pwa auto-injects ./registerSW.js.
+    // Cast sites use /** @type {any} */ (per-module types live in *.ts).
 
     const _remoteLog = RemoteLog.createRemoteLog();
     const REMOTE_LOG_ENABLED = _remoteLog.enabled;
@@ -78,10 +73,7 @@
       openAddSongModal = _stub, closeAddSongModal = _stub,
       completePracticeSection = _stub, renderResultCard = _stub,
       showSessionSummary = _stub, renderSessionSummaryText = _stub;
-    // ESC modal router. Higher priority = topmost-z modal (section-edit can
-    // spawn from add-song, so it sits above settings). The `isOpen` thunks
-    // only fire on user keydown (post-init), so DOM_SECEDIT / DOM_ADDSONG
-    // are always declared by then — no TDZ guards needed.
+    // ESC modal router — higher priority = topmost-z modal.
     const _isOpen = (/** @type {any} */ x) => !!(x?.modal?.classList.contains('visible'));
     const _isVisible = (/** @type {HTMLElement} */ el) => !!el?.classList.contains('visible');
     ModalFocus.createEscRouter({
@@ -168,8 +160,7 @@
     }));
     const loop = _rl.loop;
 
-    // True only when the canvas / HUD is the front-most surface (the user is
-    // actually free-playing, not picking a song or reviewing a result).
+    // True only when the canvas / HUD is the front-most surface.
     function isFreeplayActive() {
       return state.running && !practice.enabled
         && DOM.startScreen.style.display === 'none'
@@ -198,9 +189,7 @@
     ({ renderSessionSummaryText, showSessionSummary } = _sess);
     function resetSession() { _sess.resetSession(); }
 
-    // ── v12: Practice Mode — built-in songs (catalog moved to built-in-songs.ts).
-    //   `sectionDefs` = per-song quest layout (startMeasure → next def's
-    //   startMeasure). User-imported scores merge into SONGS by id.
+    // ── Practice mode catalog — built-in-songs.ts. User-imported scores merge in by id.
     /** @type {any} */
     const SONGS = BuiltInSongs.createBuiltInSongs();
     let currentSong = SONGS.fur_elise;
@@ -211,7 +200,6 @@
       getPractice: () => practice,
       savePracticeProgress: () => savePracticeProgress(),
     }));
-    // loadUserSongs dropped — consumed only inside ShellUserLibrary now.
     const {
       USER_DB_STORE, openUserDb, userDbAll, userDbPut, unzipMxlToXmlText,
       userSongStore: _userSongStore, removeUserSong, fetchLibrary, buildSectionsFromDefs,
