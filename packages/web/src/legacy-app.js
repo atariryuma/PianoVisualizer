@@ -121,12 +121,8 @@
       renderResultCard: () => renderResultCard(),
       renderSessionSummaryText: (/** @type {any} */ animate) => renderSessionSummaryText(animate),
     }));
-    const t = _i18n.t;
-    const stageLabel = _i18n.stageLabel;
-    const applyI18n = _i18n.applyI18n;
-    const applyTheme = _i18n.applyTheme;
-    const applySynesthesia = _i18n.applySynesthesia;
-    const setLang = _i18n.setLang;
+    // applyI18n / applySynesthesia consumed only inside ShellI18n now.
+    const { t, stageLabel, applyTheme, setLang } = _i18n;
 
     // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
     const _fx = ShellEffects.createShellEffects(/** @type {any} */ ({
