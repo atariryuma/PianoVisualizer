@@ -108,6 +108,7 @@ import * as ShellPractice from './shell-practice';
 import * as ShellUi from './shell-ui';
 import * as ShellUserLibrary from './shell-user-library';
 import * as ShellEffects from './shell-effects';
+import * as ShellSessionState from './shell-session-state';
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
@@ -203,6 +204,7 @@ declare global {
     ShellUi: typeof ShellUi;
     ShellUserLibrary: typeof ShellUserLibrary;
     ShellEffects: typeof ShellEffects;
+    ShellSessionState: typeof ShellSessionState;
     /** Cleared by `recoverAudioContext` debounce. Wider than just a Window
      *  prop on stricter checkers, but keeps the legacy `window._audio…`
      *  read site happy without a JSDoc cast. */
@@ -417,6 +419,8 @@ declare global {
   var ShellUserLibrary: typeof import('./shell-user-library');
 
   var ShellEffects: typeof import('./shell-effects');
+
+  var ShellSessionState: typeof import('./shell-session-state');
   // Adapter pinned by legacy-app.js itself (not main.ts) — declared
   // here so a future @ts-check pass on legacy-app.js sees a typed
   // identity for the bare `osmdAdapter` global.
@@ -510,6 +514,7 @@ declare global {
 (globalThis as unknown as Window).ShellUi = ShellUi;
 (globalThis as unknown as Window).ShellUserLibrary = ShellUserLibrary;
 (globalThis as unknown as Window).ShellEffects = ShellEffects;
+(globalThis as unknown as Window).ShellSessionState = ShellSessionState;
 
 // Phase 0b.3 follow-up: drop hand-rolled caches left behind by the
 // retired pre-Vite legacy sw.js. Workbox's `cleanupOutdatedCaches`

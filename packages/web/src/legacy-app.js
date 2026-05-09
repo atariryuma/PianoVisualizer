@@ -341,45 +341,22 @@
       return /** @type {CanvasRenderingContext2D} */ (ShellHelpers.setupHiDPICanvas(canvas, w, h));
     }
 
-    // ── Session summary modal — Phase 0d batch 11 wire-up ──
-    {
-      const _sessionSummary = SessionSummary.createSessionSummary(/** @type {any} */ ({
-        dom: DomBag.pickDom(DOM,
-          'sessionSummary', 'sumCombo', 'sumStage', 'sumTime',
-          'sumQuestList', 'sumBest', 'radarChart',
-        ),
-        state, config: CONFIG,
-        loadJSON, saveJSON, stageLabel, formatTime, t, setupHiDPICanvas,
-      }));
-      saveBestScores = _sessionSummary.saveBestScores;
-      renderSessionSummaryText = _sessionSummary.renderSessionSummaryText;
-      showSessionSummary = _sessionSummary.showSessionSummary;
-    }
-
-    // packages/web/src/session-reset.ts.
-    const _sessionReset = SessionReset.createSessionReset(/** @type {any} */ ({
-      refs: {
-        state, questState: _questState, encState: _encState,
-        getMidiState: () => midiState, sessionRing, ripples, particles,
-      },
-      reducers: {
-        resetQualityHistoryState: PianoCore.resetQualityHistoryState,
-        resetQuestTrackerState: PianoCore.resetQuestTrackerState,
-        resetEncouragementState: PianoCore.resetEncouragementState,
-        resetWakeUpFlashState: PianoCore.resetWakeUpFlashState,
-        resetChordWindowState: PianoCore.resetChordWindowState,
-      },
-      dom: DomBag.pickDom(DOM,
-        'stageLabel', 'encouragement', 'qualityScore', 'noteDisplay',
-        'questDisplay', 'questDots', 'questLabel', 'questToast',
-        'flowFill', 'sessionStatus', 'playTime',
-      ),
-      sessionRingCap: SESSION_RING_CAP,
+    // ── Session summary + reset — moved to packages/web/src/shell-session-state.ts (batch 111).
+    const _sess = ShellSessionState.createShellSessionState(/** @type {any} */ ({
+      state, config: CONFIG, dom: DOM, t,
+      loadJSON, saveJSON, stageLabel, formatTime, setupHiDPICanvas,
+      sessionRing, sessionRingCap: SESSION_RING_CAP,
+      questState: _questState, encState: _encState,
+      getMidiState: () => midiState,
+      particles, ripples,
       invalidateFlowCache: () => _gameUpdate.invalidateFlowCache(),
       resetMidiDispatch: () => _midi.resetMidiDispatch(),
-      remoteLog, now: () => performance.now(),
+      remoteLog,
     }));
-    function resetSession() { _sessionReset.reset(); }
+    saveBestScores = _sess.saveBestScores;
+    renderSessionSummaryText = _sess.renderSessionSummaryText;
+    showSessionSummary = _sess.showSessionSummary;
+    function resetSession() { _sess.resetSession(); }
 
     // ── v12: Practice Mode — built-in songs (catalog moved to built-in-songs.ts).
     //   `sectionDefs` = per-song quest layout (startMeasure → next def's
