@@ -91,13 +91,9 @@
         getMicSourceNode: () => micSourceNode,
         setMicSourceNode: (n) => { micSourceNode = /** @type {any} */ (n); },
         micMeterEl: DOM.micMeter,
-        refreshIntroHint: () => {
-          if (typeof refreshIntroHint === 'function') refreshIntroHint();
-        },
+        refreshIntroHint: () => refreshIntroHint(),
         midiInput: /** @type {any} */ ({
-          get enabled() {
-            return typeof midiInput !== 'undefined' ? midiInput.enabled : false;
-          },
+          get enabled() { return midiInput?.enabled ?? false; },
         }),
         initWebMIDI: () => initWebMIDI(),
         isAppleMobile: () => isAppleMobile(),
@@ -282,7 +278,7 @@
       // proxy so .enabled is read at call-time (post-init), not at
       // factory-build time (TDZ).
       practice: /** @type {any} */ ({
-        get enabled() { return typeof practice !== 'undefined' ? practice.enabled : false; },
+        get enabled() { return practice?.enabled ?? false; },
       }),
       particles: /** @type {any} */ (particles),
       ripples: /** @type {any} */ (ripples),
@@ -789,10 +785,6 @@
       getContainer: () => DOM.osmdContainer,
     });
     function osmdScrollToCursor() { _osmdCursor.scrollToCursor(); }
-    function osmdResetToStart() { _osmdCursor.resetToStart(); }
-    function clearNoteHighlights() { _osmdCursor.clearHighlights(); }
-    function highlightCurrentNotes() { _osmdCursor.highlightCurrentNotes(); }
-    /** @param {any} note */ function setOsmdCursorToNote(note) { _osmdCursor.setCursorToNote(note); }
 
     // OSMD adapter — implements @piano/core's OsmdAdapter interface.
     // extractNotes is a thin shim; real extraction happens in
@@ -812,8 +804,8 @@
           measureTiming: ret.measureStartSec.map((startSec, i) => ({ startSec, bpm: ret.measureBpm[i] ?? 72 })),
         };
       },
-      cursorTo(measureIdx, inBarQuarters) { setOsmdCursorToNote({ measureIdx, inBarQuarters }); },
-      resetCursor() { osmdResetToStart(); },
+      cursorTo(measureIdx, inBarQuarters) { _osmdCursor.setCursorToNote({ measureIdx, inBarQuarters }); },
+      resetCursor() { _osmdCursor.resetToStart(); },
       showCursor() { try { if (osmd && osmd.cursor) osmd.cursor.show(); } catch (_) {} },
       hideCursor() { try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {} },
       getCursorGeometry() {
@@ -821,8 +813,8 @@
         return { offsetTop: osmd.cursor.cursorElement.offsetTop, offsetHeight: osmd.cursor.cursorElement.offsetHeight || 30 };
       },
       // Color param on the interface is ignored — implementation hard-codes HIGHLIGHT_FILL.
-      highlightCurrentNotes() { highlightCurrentNotes(); },
-      clearHighlights() { clearNoteHighlights(); },
+      highlightCurrentNotes() { _osmdCursor.highlightCurrentNotes(); },
+      clearHighlights() { _osmdCursor.clearHighlights(); },
     };
     // Promote to globalThis so Phase 0c-extracted modules can resolve it
     // from typed code without an import (matches the Tone / OSMD / JSZip
@@ -933,11 +925,7 @@
     const _midiDispatch = MidiDispatch.createMidiDispatch({
       midiInput: /** @type {any} */ (midiInput),
       practice: /** @type {any} */ (practice),
-      pulseMidiBadge,
-      onMidiNoteOn,
-      onMidiNoteOff,
-      onMidiCC,
-      matchNoteOnset,
+      pulseMidiBadge, onMidiNoteOn, onMidiNoteOff, onMidiCC, matchNoteOnset,
     });
     /** @param {any} status @param {any} a @param {any} b */ function dispatchMidiMessage(status, a, b) { _midiDispatch.dispatch(status, a, b); }
 
@@ -951,9 +939,6 @@
     });
     function pulseMidiBadge() { _midiIndicator.pulseBadge(); }
     function isAppleMobile() { return _midiIndicator.isAppleMobile(); }
-
-    // WMB (Web MIDI Browser iOS) workarounds bracketed by
-
     function setInputIndicator() { _midiIndicator.setInputIndicator(); }
 
     // Tapping the input badge in the practice topbar triggers a manual rescan
@@ -975,18 +960,11 @@
       // dance — the factory is built before the BLE state object).
       getBleMidi: () => /** @type {any} */ (bleMidi),
       hasAudioCtx: () => !!audioCtx,
-      suspendMic,
-      resumeMic,
-      onMidiMessageHandler,
-      setInputIndicator,
-      isVirtualMidiPort,
-      refreshIntroHint: () =>
-        typeof refreshIntroHint === 'function' && refreshIntroHint(),
+      suspendMic, resumeMic, onMidiMessageHandler, setInputIndicator, isVirtualMidiPort,
+      refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (kind, msg) => showHitChip(kind, msg),
       micMeter: DOM.micMeter,
-      startMidiAutoRescan,
-      stopMidiAutoRescan,
-      t,
+      startMidiAutoRescan, stopMidiAutoRescan, t,
     });
     /** @param {MIDIInput|null} port @returns {boolean} */
     function attachMidiPort(port) { return _midiPorts.attach(/** @type {any} */ (port)); }
@@ -1059,8 +1037,7 @@
       isAppleMobile: () => isAppleMobile(),
       setInputIndicator,
       ensureMidiAccess: () => ensureMidiAccess(),
-      gatherMidiInputs: (access) =>
-        /** @type {any} */ (gatherMidiInputs)(/** @type {any} */ (access)),
+      gatherMidiInputs: (access) => /** @type {any} */ (gatherMidiInputs(/** @type {any} */ (access))),
       attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
       showMidiWaitingHint: () => showMidiWaitingHint(),
       startMidiAutoRescan: () => startMidiAutoRescan(),
@@ -1083,30 +1060,23 @@
     /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
     const bleMidi = /** @type {any} */ ({ device: null, characteristic: null, connected: false });
 
-    // Parse BLE-MIDI 1.0 packet. The packet starts with a header byte (high bit set,
-    // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
-    // use we ignore timestamps and extract MIDI messages of types we care about.
+    // Parse BLE-MIDI 1.0 packet. Header byte (high bit set, top 6 bits of
+    // timestamp), then groups of (timestamp, status?, data...). We ignore
+    // timestamps and extract only the MIDI messages we care about.
     /** @param {ArrayBuffer} buf */
-    function parseBleMidiPacket(buf) {
-      BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage);
-    }
+    function parseBleMidiPacket(buf) { BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage); }
 
     const _bleConnect = BleMidiConnect.createBleMidiConnect({
       bleMidi: /** @type {any} */ (bleMidi),
       midiInput: /** @type {any} */ (midiInput),
       hasAudioCtx: () => !!audioCtx,
       state: { get micSuspended() { return state.micSuspended; }, set micSuspended(v) { state.micSuspended = v; } },
-      suspendMic,
-      resumeMic,
-      setInputIndicator,
-      refreshIntroHint: () =>
-        typeof refreshIntroHint === 'function' && refreshIntroHint(),
+      suspendMic, resumeMic, setInputIndicator,
+      refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (kind, msg) => showHitChip(kind, msg),
       micMeter: DOM.micMeter,
       parsePacket: (buf) => parseBleMidiPacket(buf),
-      t,
-      alert: (msg) => alert(msg),
-      navigator,
+      t, alert: (msg) => alert(msg), navigator,
     });
     async function connectBleMidi() { await _bleConnect.connect(); }
 
@@ -1196,26 +1166,12 @@
       getHeight: () => H,
     });
 
-    /** @param {number} midiNum @param {number} velocity @param {string=} synColor */
-    function spawnMidiNoteVisuals(midiNum, velocity, synColor) {
-      MidiHandlers.spawnMidiNoteVisuals(midiNum, velocity, synColor, _midiHandlerDeps);
-    }
     /** @param {number} midiNum @param {number} velocity */
-    function onMidiNoteOn(midiNum, velocity) {
-      MidiHandlers.onMidiNoteOn(midiNum, velocity, _midiHandlerDeps);
-    }
+    function onMidiNoteOn(midiNum, velocity) { MidiHandlers.onMidiNoteOn(midiNum, velocity, _midiHandlerDeps); }
     /** @param {number} midiNum */
-    function onMidiNoteOff(midiNum) {
-      MidiHandlers.onMidiNoteOff(midiNum, _midiHandlerDeps);
-    }
+    function onMidiNoteOff(midiNum) { MidiHandlers.onMidiNoteOff(midiNum, _midiHandlerDeps); }
     /** @param {number} cc @param {number} value */
-    function onMidiCC(cc, value) {
-      MidiHandlers.onMidiCC(cc, value, _midiHandlerDeps);
-    }
-
-    const KB_WHITE = PianoCore.KB_WHITE;
-    const KB_BLACK = PianoCore.KB_BLACK;
-    const KB_BLACK_LEFT_WHITE_IDX = PianoCore.KB_BLACK_LEFT_WHITE_IDX;
+    function onMidiCC(cc, value) { MidiHandlers.onMidiCC(cc, value, _midiHandlerDeps); }
 
     const _midiRender = MidiRender.createMidiRender({
       ctx,
@@ -1252,13 +1208,9 @@
     });
     function medianRecentPitch() { return _practiceScoring.medianRecentPitch(); }
     /** @param {number} detectedMidi @param {boolean} isExact */
-    function matchNoteOnset(detectedMidi, isExact) {
-      return _practiceScoring.matchNoteOnset(detectedMidi, isExact);
-    }
+    function matchNoteOnset(detectedMidi, isExact) { return _practiceScoring.matchNoteOnset(detectedMidi, isExact); }
     /** @param {number} detectedMidi */
-    function finalizeNoteHold(detectedMidi) {
-      _practiceScoring.finalizeNoteHold(detectedMidi);
-    }
+    function finalizeNoteHold(detectedMidi) { _practiceScoring.finalizeNoteHold(detectedMidi); }
     function practiceRealElapsedMs() { return _practiceScoring.practiceRealElapsedMs(); }
     function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
 
@@ -1276,9 +1228,7 @@
     /** @returns {import('@piano/core').PracticeProgress} */
     function loadPracticeProgress() { return /** @type {any} */ (_practiceProgress.load()); }
     function savePracticeProgress() { _practiceProgress.save(); }
-    function songProg() {
-      return /** @type {any} */ (_practiceProgress.songProg(currentSong.id));
-    }
+    function songProg() { return /** @type {any} */ (_practiceProgress.songProg(currentSong.id)); }
     function recordPracticeDay() { _practiceProgress.recordPracticeDay(); }
 
     // ── Tone.js helpers ──
@@ -1455,15 +1405,10 @@
     });
     const renderSongPanel = _songPanelRender.render;
 
-    // v13: Central invariant — whenever audio is alive and we are NOT on the title
-    function noInputAvailable() { return _introHintUi.noInputAvailable(); }
-    // refreshIntroHint moved to packages/web/src/intro-hint-ui.ts (batch 35).
+    // intro-hint-ui forwarders (batch 35).
     function refreshIntroHint() { _introHintUi.refreshIntroHint(); }
-
     function showRunningUI() { _introHintUi.showRunningUI(); }
-
     function hideIntroHint() { _introHintUi.hideIntroHint(); }
-
     /** @param {any} e */ function alertAudioInitError(e) { _introHintUi.alertAudioInitError(e); }
 
     // ─── song-panel wire-up ─────────────────────────────────────────
