@@ -161,7 +161,8 @@
     const t = PianoCore.createT(PianoCore.T_STRINGS, {
       getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
       userResolver: (id, which) => {
-        const song = (typeof SONGS !== 'undefined') ? SONGS[id] : null;
+        // SONGS is declared later — userResolver only fires post-init.
+        const song = SONGS?.[id];
         if (!song) return null;
         if (which === 'userTitle') return song._userTitle || id;
         if (which === 'userComposer') return song._userComposer || '';
@@ -170,25 +171,20 @@
     });
 
     function applyI18n() { _themeControls.applyI18n(); }
-
-    // setLang moved to theme-controls.ts (Phase 0d batch 7a) — exposed
-    // as `_themeControls.setLang` after createThemeControls() runs below.
-
     /** @param {import('./piano-config').PianoConfig['STAGES'][number]} stage */
     const stageLabel = (stage) => PianoCore.stageLabel(stage, t);
 
-    const _themeControls = ThemeControls.createThemeControls({
-      prefs: /** @type {any} */ (prefs),
-      state: /** @type {any} */ (state),
-      savePrefs,
-      t: (key) => t(key),
+    // setLang exposed by _themeControls below (batch 7a).
+    const _themeControls = ThemeControls.createThemeControls(/** @type {any} */ ({
+      prefs, state, savePrefs,
+      t: (/** @type {any} */ key) => t(key),
       refreshSettingsPanel: () => refreshSettingsPanel(),
-    });
+    }));
     const applyTheme = _themeControls.applyTheme;
     const applySynesthesia = _themeControls.applySynesthesia;
     const setLang = _themeControls.setLang;
-    // Seed the UI from persisted prefs (the click handlers attached
-    // inside createThemeControls take care of subsequent updates).
+    // Seed UI from persisted prefs; createThemeControls' own click handlers
+    // take it from there.
     applyTheme(prefs.theme);
     applySynesthesia(prefs.synesthesia);
 
@@ -216,29 +212,28 @@
     /** @type {(animate: boolean) => void} */ let renderSessionSummaryText = (_animate) => {};
     /** @type {(combo: number, flow: number) => import('./session-summary').BestScores} */
     let saveBestScores = (_c, _f) => /** @type {any} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
-    // ESC modal router. Higher priority = topmost-z modal (section-edit
-    // can spawn from add-song so it sits above settings).
+    // ESC modal router. Higher priority = topmost-z modal (section-edit can
+    // spawn from add-song, so it sits above settings). The `isOpen` thunks
+    // only fire on user keydown (post-init), so DOM_SECEDIT / DOM_ADDSONG
+    // are always declared by then — no TDZ guards needed.
     const _isOpen = (/** @type {any} */ x) => !!(x?.modal?.classList.contains('visible'));
     const _isVisible = (/** @type {HTMLElement} */ el) => !!el?.classList.contains('visible');
     ModalFocus.createEscRouter({
       document,
       routes: [
-        { priority: 50, isOpen: () => _isOpen(typeof DOM_SECEDIT !== 'undefined' ? DOM_SECEDIT : null), close: () => closeSectionEditor() },
+        { priority: 50, isOpen: () => _isOpen(DOM_SECEDIT), close: () => closeSectionEditor() },
         { priority: 40, isOpen: () => _isVisible(DOM.settingsPanel), close: () => closeSettings() },
-        { priority: 30, isOpen: () => _isOpen(typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG : null), close: () => closeAddSongModal() },
+        { priority: 30, isOpen: () => _isOpen(DOM_ADDSONG), close: () => closeAddSongModal() },
         { priority: 20, isOpen: () => _isVisible(DOM.sessionSummary), close: () => DOM.sessionSummary?.classList.remove('visible') },
         { priority: 10, isOpen: () => _isVisible(DOM.sectionResult), close: () => DOM.sectionResult?.classList.remove('visible') },
       ],
     }).install();
 
-    // settings-panel wire-up runs below (after practice + midiInput +
-    // DEFAULT_AUDIO_OFFSET_MS are declared); applyDebug seed lives there.
-
-    // Boot-time i18n seed — set <html lang> + walk [data-i18n*] once.
+    // Boot-time i18n seed — set <html lang> + walk [data-i18n*] once. Page
+    // loads on the title screen — body class drives the home-button hide
+    // (no 🏠 when home is right here) + any future title-only styling.
     document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
     applyI18n();
-    // Page loads on the title screen — body class drives the home-button hide
-    // (no point in 🏠 when home is right here) and any future title-only styling.
     document.body.classList.add('title-screen');
     // langchange handler — refresh hot-path caches + re-render screens
     // with imperative (set-from-JS) localized text. applyI18n only walks
@@ -682,27 +677,15 @@
     /** @param {Parameters<typeof PianoCore.dumpLoadDiagnostics>[0]} p */
     function dumpLoadDiagnostics(p) { PianoCore.dumpLoadDiagnostics(p, remoteLog); }
 
-    const _scoreLoader = ScoreLoader.createScoreLoader({
-      getCurrentSong: () => /** @type {any} */ (currentSong),
-      initOsmd,
-      getOsmd: () => /** @type {any} */ (osmd),
-      parseScoreTimingFromXml,
-      buildMeasureTimingFromXml,
-      extractNotesFromOsmd: (xmlMeasureTiming, scoreTiming) =>
-        /** @type {any} */ (extractNotesFromOsmd(xmlMeasureTiming, scoreTiming)),
-      fetchPlaybackOrder: (forSong) => fetchPlaybackOrder(/** @type {any} */ (forSong)),
-      expandNotesByPlaybackOrder: (baseNotes, order, measures, srcMeasureStartSec) =>
-        /** @type {any} */ (expandNotesByPlaybackOrder(
-          /** @type {any} */ (baseNotes), order, /** @type {any} */ (measures), srcMeasureStartSec,
-        )),
-      buildSectionsFromDefs: (expanded, totalSec, sectionDefs, srcMeasureStartSec) =>
-        buildSectionsFromDefs(
-          /** @type {any} */ (expanded), totalSec,
-          /** @type {any} */ (sectionDefs), srcMeasureStartSec,
-        ),
-      dumpLoadDiagnostics: (info) => dumpLoadDiagnostics(/** @type {any} */ (info)),
+    const _scoreLoader = ScoreLoader.createScoreLoader(/** @type {any} */ ({
+      getCurrentSong: () => currentSong,
+      initOsmd, getOsmd: () => osmd,
+      parseScoreTimingFromXml, buildMeasureTimingFromXml,
+      extractNotesFromOsmd, fetchPlaybackOrder,
+      expandNotesByPlaybackOrder, buildSectionsFromDefs,
+      dumpLoadDiagnostics,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
-    });
+    }));
     async function loadCurrentScore() { await _scoreLoader.loadCurrentScore(); }
 
     const _osmdCursor = OsmdCursor.createOsmdCursor({
@@ -751,13 +734,10 @@
       prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
     ));
 
-    // ── Section banner ──
+    // ── Section banner + Wake Lock + audio-graph helpers ──
     /** @param {any} sec */ function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
-
-    // Wake Lock + MIDI message router (forwarders for verifyMidiAlive + attachMidiPort).
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
-
     /** @param {any} e */ function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
     function verifyMidiAlive() { return _midiPorts.verifyAlive(_midiAccess); }
 
@@ -765,13 +745,13 @@
       fftSize: CONFIG.FFT_SIZE, smoothing: CONFIG.SMOOTHING,
       onsetFftSize: CONFIG.ONSET_FFT_SIZE, onsetSmoothing: CONFIG.ONSET_SMOOTHING,
     };
-    /** Spread a freshly-built graph onto the shell-local node refs. Shared
-     *  by rebuildAudioGraph() (initAudio path) + _audioRecovery.applyContext
-     *  (visibility-recovery path) so the two stay in lock-step. */
-    function _applyAudioGraph(/** @type {any} */ graph) {
-      gainNode = graph.gainNode; analyser = graph.analyser; onsetAnalyser = graph.onsetAnalyser;
-      dataArray = graph.dataArray; freqArray = graph.freqArray; onsetDataArray = graph.onsetDataArray;
-      micSourceNode = graph.micSourceNode;
+    /** Spread a freshly-built graph onto the shell-local node refs. Shared by
+     *  rebuildAudioGraph() (initAudio) + _audioRecovery.applyContext (visibility
+     *  recovery) so the two stay in lock-step. */
+    function _applyAudioGraph(/** @type {any} */ g) {
+      gainNode = g.gainNode; analyser = g.analyser; onsetAnalyser = g.onsetAnalyser;
+      dataArray = g.dataArray; freqArray = g.freqArray; onsetDataArray = g.onsetDataArray;
+      micSourceNode = g.micSourceNode;
     }
     function _resetOnsetState() { state.prevSpectrum = null; state.spectralFluxHistory = []; }
     /** @param {MediaStream|null} prevMicStream */
@@ -804,107 +784,88 @@
     });
     function recoverAudioContext() { return _audioRecovery.recover(); }
 
-    // ========================================
-    // platformBlocked: true on platforms that never expose Web MIDI
-    // (iOS Safari / any iPadOS browser) — drives a friendlier hint.
+    // ── MIDI input state + dispatch + indicator ──
+    // platformBlocked: true on platforms that never expose Web MIDI (iOS
+    // Safari / any iPadOS browser) — drives a friendlier hint.
     const midiInput = /** @type {any} */ ({
       enabled: false, port: null, _accessRequested: false, platformBlocked: false,
     });
 
-    // Single point of MIDI message dispatch — called from Web MIDI port handler
-    const _midiDispatch = MidiDispatch.createMidiDispatch({
-      midiInput: /** @type {any} */ (midiInput),
-      practice: /** @type {any} */ (practice),
+    const _midiDispatch = MidiDispatch.createMidiDispatch(/** @type {any} */ ({
+      midiInput, practice,
       pulseMidiBadge, onMidiNoteOn, onMidiNoteOff, onMidiCC, matchNoteOnset,
-    });
+    }));
     /** @param {any} status @param {any} a @param {any} b */ function dispatchMidiMessage(status, a, b) { _midiDispatch.dispatch(status, a, b); }
 
-    const _midiIndicator = MidiIndicator.createMidiIndicator({
-      midiInput: /** @type {any} */ (midiInput),
+    const _midiIndicator = MidiIndicator.createMidiIndicator(/** @type {any} */ ({
+      midiInput,
       dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput },
       t,
-      // Thunked: _midiRescan's `const` lives further down the file
       isRescanRunning: () => _midiRescan.isRescanRunning(),
       hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
-    });
+    }));
     function pulseMidiBadge() { _midiIndicator.pulseBadge(); }
     function isAppleMobile() { return _midiIndicator.isAppleMobile(); }
     function setInputIndicator() { _midiIndicator.setInputIndicator(); }
+    /** @param {any} port */ function isVirtualMidiPort(port) { return _midiIndicator.isVirtualMidiPort(port); }
 
-    // Tapping the input badge in the practice topbar triggers a manual rescan
+    // Tapping the input badge in the practice topbar triggers a manual rescan.
     DOM.ptbInput?.addEventListener('click', () => {
       if (midiInput.enabled || midiInput.platformBlocked) return;
       console.log('[MIDI] manual rescan triggered by topbar badge tap');
       void rescanMidi(false);
     });
 
-    // Virtual-port filter moved to packages/web/src/midi-indicator.ts —
-    // re-bind to the short name so the existing enumeration callsites
-    // keep working unchanged.
-    /** @param {any} port */ function isVirtualMidiPort(port) { return _midiIndicator.isVirtualMidiPort(port); }
-
-    const _midiPorts = MidiPorts.createMidiPorts({
-      midiInput: /** @type {any} */ (midiInput),
-      state: /** @type {any} */ (state),
-      // Thunked: bleMidi's `const` lives further down the file (TDZ
-      // dance — the factory is built before the BLE state object).
-      getBleMidi: () => /** @type {any} */ (bleMidi),
+    const _midiPorts = MidiPorts.createMidiPorts(/** @type {any} */ ({
+      midiInput, state,
+      // Thunked: bleMidi declared below — factory is built first.
+      getBleMidi: () => bleMidi,
       hasAudioCtx: () => !!audioCtx,
       suspendMic, resumeMic, onMidiMessageHandler, setInputIndicator, isVirtualMidiPort,
       refreshIntroHint: () => refreshIntroHint(),
-      showHitChip: (kind, msg) => showHitChip(kind, msg),
+      showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
       micMeter: DOM.micMeter,
       startMidiAutoRescan, stopMidiAutoRescan, t,
-    });
+    }));
     /** @param {MIDIInput|null} port @returns {boolean} */
     function attachMidiPort(port) { return _midiPorts.attach(/** @type {any} */ (port)); }
     /** @param {MIDIInput|{name:string}|null} port */
     function detachMidiPort(port) { _midiPorts.detach(/** @type {any} */ (port)); }
 
     async function initWebMIDI() { return _midiInit.initWebMIDI(); }
-
-    // Surface a quiet "waiting for MIDI" hint so users on iPad / WMB know
-    // the app is actively listening for their keyboard, not silently broken.
-    // Cleared by attachMidiPort's existing refreshIntroHint() call.
+    /** Quiet "waiting for MIDI" hint — iPad/WMB users need to know we're
+     *  listening; cleared by attachMidiPort's refreshIntroHint() call. */
     function showMidiWaitingHint() { _introDiag.showMidiWaitingHint(); }
 
-    // MIDI rescan — two-stage connection attempt:
+    // ── MIDI rescan + intro-diag ──
     /** @type {MIDIAccess|null} */
     let _midiAccess = null;
-    const _midiRescan = MidiRescan.createMidiRescan({
-      midiInput: /** @type {any} */ (midiInput),
-      attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
-      detachMidiPort: (port) => detachMidiPort(/** @type {any} */ (port)),
+    const _midiRescan = MidiRescan.createMidiRescan(/** @type {any} */ ({
+      midiInput,
+      attachMidiPort: (/** @type {any} */ port) => attachMidiPort(port),
+      detachMidiPort: (/** @type {any} */ port) => detachMidiPort(port),
       isAppleMobile: () => isAppleMobile(),
-      showDiagnostic: (makeLines) => {
+      showDiagnostic: (/** @type {any} */ makeLines) => {
         showIntroDiag(() => {
           const { line1, line2 } = makeLines();
           setIntroHintDiagnostic(line1, line2);
         });
       },
-      t,
-      setInputIndicator,
-      navigator,
-      // [Bug fix 2026-05-09] Pause auto-rescan during active
+      t, setInputIndicator, navigator,
+      // [Bug fix 2026-05-09] Pause auto-rescan during practice playback.
       isPaused: () => !!practice.enabled,
-    });
+    }));
     /** @param {boolean} [force] @returns {Promise<MIDIAccess>} */
     async function ensureMidiAccess(force) {
       _midiAccess = /** @type {any} */ (await _midiRescan.ensureAccess(force));
       return /** @type {MIDIAccess} */ (_midiAccess);
     }
-
-    // to packages/web/src/midi-ports.ts (pure helper).
     /** @param {MIDIAccess} access */
-    function gatherMidiInputs(access) {
-      return /** @type {any} */ (MidiPorts.gatherMidiInputs(access));
-    }
-
+    function gatherMidiInputs(access) { return /** @type {any} */ (MidiPorts.gatherMidiInputs(access)); }
     /** @param {any} [silent] */ function rescanMidi(silent) { return _midiRescan.rescan(silent); }
 
-    // Show diagnostic info on introHint (sticky). Cleared by MIDI connect or refreshIntroHint.
-    // ユーザがあとでボタンで一度消した場合は、新しいセッション(returnToTitle)
-    // か再スキャンの明示的な操作までは再表示しない。
+    // introHint diagnostic — sticky, cleared by MIDI connect or refreshIntroHint.
+    // 一度ボタンで消した場合は、returnToTitle / 再スキャンの明示的な操作まで再表示しない。
     const _introDiag = IntroDiag.createIntroDiag(/** @type {any} */ ({
       state, introHintEl: DOM.introHint,
       isAppleMobile: () => isAppleMobile(),
@@ -917,78 +878,73 @@
     function startMidiAutoRescan() { _midiRescan.startAutoRescan(); }
     function stopMidiAutoRescan() { _midiRescan.stopAutoRescan(); }
 
-    const _midiInit = MidiInit.createMidiInit({
-      midiInput: /** @type {any} */ (midiInput),
-      navigator,
+    const _midiInit = MidiInit.createMidiInit(/** @type {any} */ ({
+      midiInput, navigator,
       isAppleMobile: () => isAppleMobile(),
       setInputIndicator,
       ensureMidiAccess: () => ensureMidiAccess(),
-      gatherMidiInputs: (access) => /** @type {any} */ (gatherMidiInputs(/** @type {any} */ (access))),
-      attachMidiPort: (port) => attachMidiPort(/** @type {any} */ (port)),
+      gatherMidiInputs: (/** @type {any} */ access) => gatherMidiInputs(access),
+      attachMidiPort: (/** @type {any} */ port) => attachMidiPort(port),
       showMidiWaitingHint: () => showMidiWaitingHint(),
       startMidiAutoRescan: () => startMidiAutoRescan(),
-    });
+    }));
 
-    AudioInit.createAudioLifecycle({
+    AudioInit.createAudioLifecycle(/** @type {any} */ ({
       getAudioCtx: () => audioCtx, recover: () => recoverAudioContext(),
       isRunning: () => !!state.running, requestWakeLock: () => requestWakeLock(),
-      navigator: /** @type {any} */ (navigator),
-      midiInput: /** @type {any} */ (midiInput),
+      navigator, midiInput,
       verifyMidiAlive: () => verifyMidiAlive(),
       clearMidiAccessCache: () => { _midiAccess = null; },
-      rescanMidi: (silent) => rescanMidi(silent),
+      rescanMidi: (/** @type {any} */ silent) => rescanMidi(silent),
       startMidiAutoRescan: () => startMidiAutoRescan(),
-    }).install();
+    })).install();
 
-    // ========================================
+    // ── BLE-MIDI ──
     /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
     const bleMidi = /** @type {any} */ ({ device: null, characteristic: null, connected: false });
 
-    // Parse BLE-MIDI 1.0 packet. Header byte (high bit set, top 6 bits of
-    // timestamp), then groups of (timestamp, status?, data...). We ignore
-    // timestamps and extract only the MIDI messages we care about.
+    // BLE-MIDI 1.0 packet: header byte (high bit set, top 6 bits of timestamp)
+    // then groups of (timestamp, status?, data...). Timestamps ignored.
     /** @param {ArrayBuffer} buf */
     function parseBleMidiPacket(buf) { BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage); }
 
-    const _bleConnect = BleMidiConnect.createBleMidiConnect({
-      bleMidi: /** @type {any} */ (bleMidi),
-      midiInput: /** @type {any} */ (midiInput),
+    const _bleConnect = BleMidiConnect.createBleMidiConnect(/** @type {any} */ ({
+      bleMidi, midiInput,
       hasAudioCtx: () => !!audioCtx,
       state: { get micSuspended() { return state.micSuspended; }, set micSuspended(v) { state.micSuspended = v; } },
       suspendMic, resumeMic, setInputIndicator,
       refreshIntroHint: () => refreshIntroHint(),
-      showHitChip: (kind, msg) => showHitChip(kind, msg),
+      showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
       micMeter: DOM.micMeter,
-      parsePacket: (buf) => parseBleMidiPacket(buf),
-      t, alert: (msg) => alert(msg), navigator,
-    });
+      parsePacket: (/** @type {any} */ buf) => parseBleMidiPacket(buf),
+      t, alert: (/** @type {any} */ msg) => alert(msg), navigator,
+    }));
     async function connectBleMidi() { await _bleConnect.connect(); }
 
     // ─── settings-panel wire-up ──────────────────────────────────────
+    // Settings-panel uses different prop names than DOM.*, so the remap is
+    // explicit (no pickDom shortcut). applyDebug seed runs immediately so
+    // the persisted-prefs debug overlay state is honored across reloads.
     {
-      // Settings-panel DOM contract uses different prop names than DOM.*,
-      // so spell out each remap explicitly (no pickDom shortcut here).
-      const _settings = SettingsPanel.createSettingsPanel({
-        dom: /** @type {import('./settings-panel').SettingsPanelDom} */ ({
+      const _settings = SettingsPanel.createSettingsPanel(/** @type {any} */ ({
+        dom: {
           panel: DOM.settingsPanel, openBtn: DOM.settingsBtn, closeBtn: DOM.settingsCloseBtn,
           audioOffsetSlider: DOM.audioOffsetSlider, audioOffsetVal: DOM.audioOffsetVal,
           audioOffsetAuto: DOM.audioOffsetAuto, audioOffsetReset: DOM.audioOffsetReset,
           rescanBtn: DOM.settingsRescanBtn, bleBtn: DOM.settingsBleBtn,
           resetBtn: DOM.settingsResetBtn, inputStatus: DOM.settingsInputStatus,
           debugToggle: DOM.settingsDebugToggle, debugOverlay: DOM.debugOverlay,
-        }),
+        },
         prefs, practice, state, midiInput,
         defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
         savePrefs, t, modalFocus,
         rescanMidi: () => { void rescanMidi(); },
         connectBleMidi: () => connectBleMidi(),
         showSessionSummary: () => showSessionSummary(),
-      });
+      }));
       openSettings = _settings.open;
       closeSettings = _settings.close;
       refreshSettingsPanel = _settings.refresh;
-      // persisted prefs. The toggle's click handler is attached
-      // inside createSettingsPanel and self-persists via savePrefs.
       _settings.applyDebug(prefs.debug);
     }
 
@@ -1323,44 +1279,34 @@
 
     // ─── section-editor wire-up ─────────────────────────────────────
     {
-      const _sectionEditor = SectionEditor.createSectionEditor({
-        dom: /** @type {any} */ (DomBag.pickDom(DOM_SECEDIT,
-          'modal', 'help', 'rows', 'error', 'cancelBtn', 'saveBtn', 'closeBtn',
-        )),
-        openUserDb,
-        userDbStoreName: USER_DB_STORE,
-        unzipMxlToXmlText,
-        userDbPut,
-        t,
-        modalFocus,
+      const _sectionEditor = SectionEditor.createSectionEditor(/** @type {any} */ ({
+        dom: DomBag.pickDom(DOM_SECEDIT, 'modal', 'help', 'rows', 'error', 'cancelBtn', 'saveBtn', 'closeBtn'),
+        openUserDb, userDbStoreName: USER_DB_STORE,
+        unzipMxlToXmlText, userDbPut, t, modalFocus,
         // Update in-memory SONGS so a selectSong() right after save picks
         // up the new boundaries without a page reload.
-        onSaved: (rec) => {
+        onSaved: (/** @type {any} */ rec) => {
           const song = SONGS[rec.id];
-          if (song) {
-            song.sectionDefs = rec.sectionDefs;
-            song._loaded = false;
-            song.sections = [];
-          }
+          if (song) { song.sectionDefs = rec.sectionDefs; song._loaded = false; song.sections = []; }
         },
-      });
+      }));
       openSectionEditor = _sectionEditor.open;
       closeSectionEditor = _sectionEditor.close;
     }
 
     // ─── user-songs wire-up ─────────────────────────────────────────
     {
-      const _userSongs = UserSongsUi.createUserSongsUi({
-        dom: /** @type {any} */ (DomBag.pickDom(DOM_ADDSONG,
+      const _userSongs = UserSongsUi.createUserSongsUi(/** @type {any} */ ({
+        dom: DomBag.pickDom(DOM_ADDSONG,
           'modal', 'btn', 'closeBtn', 'tabs', 'bodies',
           'libraryList', 'libraryStatus', 'librarySearch',
           'fileInput', 'pdCheckbox', 'urlInput', 'fetchBtn', 'status',
           'myList', 'userSongList', 'exportBtn', 'importBtn', 'importInput',
-        )),
+        ),
         songs: SONGS,
-        getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
+        getLang: () => prefs.lang,
         getLibrary: () => ONLINE_LIBRARY,
-        setLibrary: (entries) => { ONLINE_LIBRARY = entries; },
+        setLibrary: (/** @type {any} */ entries) => { ONLINE_LIBRARY = entries; },
         fetchLibrary,
         addUserSongFromBlob: _userSongStore.addFromBlob,
         addUserSongFromUrl: _userSongStore.addFromUrl,
@@ -1369,9 +1315,8 @@
         registerUserSong: _userSongStore.register,
         userDbAll, userDbPut, unzipMxlToXmlText,
         autoSectionDefs: PianoCore.autoSectionDefs,
-        // Thunk so a future reorder of the section-editor wire-up can't
-        // capture a stale placeholder reference.
-        openSectionEditor: (id) => openSectionEditor(id),
+        // Thunked so a future section-editor reorder can't capture a stale placeholder.
+        openSectionEditor: (/** @type {any} */ id) => openSectionEditor(id),
         selectSong, getCurrentSong: () => currentSong,
         refreshSongPanelHeader: () => {
           if (!currentSong) return;
@@ -1379,7 +1324,7 @@
           DOM.songComposer.textContent = t(currentSong.composerKey);
         },
         t, modalFocus,
-      });
+      }));
       openAddSongModal = _userSongs.open;
       closeAddSongModal = _userSongs.close;
       renderUserSongButtons = _userSongs.renderUserSongButtons;
