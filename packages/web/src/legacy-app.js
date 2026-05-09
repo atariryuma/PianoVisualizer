@@ -86,11 +86,9 @@
       perfTier: _vp.perfTier, getScreen: _vp.getScreen, getBgStars: _vp.getBgStars,
       getPractice: () => practice,
     }));
-    const {
-      particles, ripples, Particle, Ripple, getNoteColor, spawnBurst, spawnStream,
+    const { particles, ripples, Particle, Ripple, getNoteColor, spawnBurst, spawnStream,
       effectGlowPulse, effectStarShower, effectFlowerBurst, effectGoldenBurst, triggerEffect,
-      drawBgStars, drawAurora, drawGroundFlowers,
-    } = _fx;
+      drawBgStars, drawAurora, drawGroundFlowers } = _fx;
 
     // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
     const clamp01 = PianoCore.clamp01;
@@ -245,13 +243,13 @@
     const _practiceLane = ShellPracticeLane.createShellPracticeLane(/** @type {any} */ ({
       ctx, practice, state, midiInput, config: CONFIG, t, osmdAdapter,
       practiceElapsedMs, practiceRealElapsedMs, noteThemeColor, midiToPitchName,
+      drawPracticeLane: PianoCore.drawPracticeLane,
+      cachedOsmdRect: _vp.cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
       getScreen: _vp.getScreen, getKbHeight: _vp.getKbHeight,
       getKbSafeBottom: _vp.getKbSafeBottom, getSafeRight: _vp.getSafeRight,
       getCurrentLayoutMode: () => _vp.layout.getCurrentLayoutMode(),
-      cachedOsmdRect: _vp.cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
       getCurrentSong: () => currentSong,
       laneLookaheadMs: _practice.getLaneLookaheadMs(), countInMs: _practice.getCountInMs(),
-      drawPracticeLane: PianoCore.drawPracticeLane,
     }));
     _practice.setPracticeLane(_practiceLane.instance);
     /** @param {number} timeMs */ function drawPracticeLane(timeMs) { _practiceLane.draw(timeMs); }
@@ -295,8 +293,7 @@
       getHeight: () => _vp.getScreen().H, byId,
     }));
     const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
-    renderResultCard = _ui.renderResultCard;
-    completePracticeSection = _ui.completePracticeSection;
+    ({ renderResultCard, completePracticeSection } = _ui);
     _ui.installPracticeSongButtons();
 
     // ── Dev-mode shell — moved to packages/web/src/shell-dev-mode.ts (batch 154).
