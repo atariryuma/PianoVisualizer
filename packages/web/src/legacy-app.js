@@ -290,7 +290,7 @@
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
       t,
       hideIntroHint: () => hideIntroHint(),
-      syncLayout: _vp.syncLayout, setInputIndicator, requestWakeLock,
+      syncLayout: _vp.syncLayout, setInputIndicator: () => _midi.setInputIndicator(), requestWakeLock,
       audioScheduler: AudioScheduler,
       Tone: typeof Tone !== 'undefined' ? Tone : undefined,
       loadCurrentScore: () => _osmd.loadCurrentScore(),
@@ -330,13 +330,12 @@
       isRunning: () => !!state.running,
       requestWakeLock: () => requestWakeLock(),
     }));
-    const { midiInput } = _midi;
-    function isAppleMobile() { return _midi.isAppleMobile(); }
-    function setInputIndicator() { _midi.setInputIndicator(); }
-    async function initWebMIDI() { return _midi.initWebMIDI(); }
-    /** @param {any} [silent] */ function rescanMidi(silent) { return _midi.rescanMidi(silent); }
-    function startMidiAutoRescan() { _midi.startMidiAutoRescan(); }
-    function stopMidiAutoRescan() { _midi.stopMidiAutoRescan(); }
+    // setInputIndicator: only consumer is ShellPractice (created above
+    // _midi), so the deps thunk reads _midi.setInputIndicator() lazily.
+    const {
+      midiInput, isAppleMobile, initWebMIDI,
+      rescanMidi, startMidiAutoRescan, stopMidiAutoRescan,
+    } = _midi;
 
     // ── Settings panel — moved to packages/web/src/shell-settings.ts (batch 118).
     const _settings = ShellSettings.createShellSettings(/** @type {any} */ ({
