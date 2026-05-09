@@ -136,14 +136,11 @@
       getScreen: _vp.getScreen,
       getBgStars: _vp.getBgStars,
     }));
-    const particles = _fx.particles, ripples = _fx.ripples;
-    const Particle = _fx.Particle, Ripple = _fx.Ripple;
-    const getNoteColor = _fx.getNoteColor;
-    const spawnBurst = _fx.spawnBurst, spawnStream = _fx.spawnStream;
-    const effectGlowPulse = _fx.effectGlowPulse;
-    const effectStarShower = _fx.effectStarShower, effectFlowerBurst = _fx.effectFlowerBurst;
-    const effectGoldenBurst = _fx.effectGoldenBurst, triggerEffect = _fx.triggerEffect;
-    const drawBgStars = _fx.drawBgStars, drawAurora = _fx.drawAurora, drawGroundFlowers = _fx.drawGroundFlowers;
+    const {
+      particles, ripples, Particle, Ripple, getNoteColor, spawnBurst, spawnStream,
+      effectGlowPulse, effectStarShower, effectFlowerBurst, effectGoldenBurst, triggerEffect,
+      drawBgStars, drawAurora, drawGroundFlowers,
+    } = _fx;
 
     // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
     // Encouragement / quest reducer state + onset/pitch hysteresis frames
@@ -316,21 +313,14 @@
       prefsStore: _prefsStore,
       getCompletePracticeSection: () => completePracticeSection,
     }));
-    const practice = _practice.practice;
     // Dead forwarders (practiceBeatMs / recomputePracticeTimings /
     // showSectionBanner / matchNoteOnset / midiToScreenX / synColorFor /
-    // midiToName / midiToPitchName) removed — only used inside shells now.
-    function finalizeNoteHold(/** @type {any} */ m) { _practice.finalizeNoteHold(m); }
-    function practiceElapsedMs() { return _practice.practiceElapsedMs(); }
-    function practiceRealElapsedMs() { return _practice.practiceRealElapsedMs(); }
-    function loadPracticeProgress() { return _practice.loadPracticeProgress(); }
-    function savePracticeProgress() { _practice.savePracticeProgress(); }
-    function songProg() { return _practice.songProg(); }
-    function recordPracticeDay() { _practice.recordPracticeDay(); }
-    function startPracticeSection(/** @type {any} */ idx) { return _practice.startPracticeSection(idx); }
-    function stopPracticeAudio() { _practice.stopPracticeAudio(); }
-    const updatePractice = _practice.updatePractice;
-    function midiToPitchName(/** @type {any} */ m) { return _practice.midiToPitchName(m); }
+    // midiToName) removed — only used inside shells now.
+    const {
+      practice, finalizeNoteHold, practiceElapsedMs, practiceRealElapsedMs,
+      loadPracticeProgress, savePracticeProgress, songProg, recordPracticeDay,
+      startPracticeSection, stopPracticeAudio, updatePractice, midiToPitchName,
+    } = _practice;
 
     // ── MIDI shell — the entire MIDI cluster (state + dispatch + indicator
     //   + ports + rescan + init + intro-diag + BLE-MIDI + audio-lifecycle
