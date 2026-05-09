@@ -104,7 +104,6 @@
         hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
       })
     );
-    async function acquireMic() { return _micLifecycle.acquire(); }
     function suspendMic() { _micLifecycle.suspend(); }
     async function resumeMic() { return _micLifecycle.resume(); }
 
@@ -113,7 +112,6 @@
     let H = 0;
     let kbSafeBottom = 4;
     let kbHeight = 50;
-    let safeLeft = 0;
     let safeRight = 0;
     const PERF_TIER_RESOLVED = PianoCore.detectPerfTier();
     const PERF_PROFILE = PianoCore.PERF_PROFILES[PERF_TIER_RESOLVED];
@@ -127,7 +125,7 @@
     function resize() {
       const d = _canvasResize.resize();
       W = d.W; H = d.H; kbHeight = d.kbHeight;
-      kbSafeBottom = d.kbSafeBottom; safeLeft = d.safeLeft; safeRight = d.safeRight;
+      kbSafeBottom = d.kbSafeBottom; safeRight = d.safeRight;
     }
     function initBgStars() { _canvasResize.initBgStars(); }
     resize();
@@ -140,7 +138,6 @@
       getKbHeight: () => kbHeight,
       cachedOsmdRect,
     });
-    function detectLayout() { return _viewportLayout.getCurrentLayoutMode(); }
     function refreshOsmdRect() { _viewportLayout.refreshOsmdRect(); }
     function syncLayout() { _viewportLayout.syncLayout(); }
     function onResizeBurst() { _viewportLayout.onResizeBurst(); }
@@ -272,12 +269,6 @@
     let laneLabelL = t('laneLeft');
     let laneLabelR = t('laneRight');
 
-    // Adapter passes the closure W/H so call sites stay positional.
-    const FOCAL_LENGTH = PianoCore.FOCAL_LENGTH;
-    const NEAR_CLIPPING = PianoCore.NEAR_CLIPPING;
-    /** @param {number} x @param {number} y @param {number} z @param {number} size */
-    const project3D = (x, y, z, size) => PianoCore.project3D(x, y, z, size, { screenW: W, screenH: H });
-
     /** @type {InstanceType<typeof PianoCore.Particle>[]} */
     let particles = [];
     /** @type {InstanceType<typeof PianoCore.Ripple>[]} */
@@ -299,25 +290,14 @@
     });
     const Particle = _particleEffects.Particle;
     const Ripple = _particleEffects.Ripple;
-    const PERF_TIER = _particleEffects.PERF_TIER;
-    const MAX_PARTICLES_3D = _particleEffects.MAX_PARTICLES_3D;
     const getNoteColor = _particleEffects.getNoteColor;
     const spawnBurst = _particleEffects.spawnBurst;
     const spawnStream = _particleEffects.spawnStream;
     const effectGlowPulse = _particleEffects.effectGlowPulse;
-    const effectGlowParticles = _particleEffects.effectGlowParticles;
-    const effectColorWave = _particleEffects.effectColorWave;
     const effectStarShower = _particleEffects.effectStarShower;
     const effectFlowerBurst = _particleEffects.effectFlowerBurst;
-    const effectShimmer = _particleEffects.effectShimmer;
-    const effectRadiance = _particleEffects.effectRadiance;
     const effectGoldenBurst = _particleEffects.effectGoldenBurst;
     const triggerEffect = _particleEffects.triggerEffect;
-
-    // drawStar / drawFlower — drop-in from @piano/core (still used by
-    // other modules).
-    const drawStar = PianoCore.drawStar;
-    const drawFlower = PianoCore.drawFlower;
 
     // Sentinel for state.activeQuestId when every quest in
     // CONFIG.QUESTS is cleared.
@@ -661,7 +641,6 @@
     // ── User-added songs (IndexedDB-backed; merged into SONGS at boot) ──
     // DB `pianoViz_v1`, store `userSongs`. PianoCore stateless ops live below;
     // parseMusicXmlMetadata + auto-section heuristic delegate to @piano/core.
-    const USER_DB_NAME = PianoCore.USER_DB_NAME;
     const USER_DB_STORE = PianoCore.USER_DB_STORE;
     const _userDb = UserSongsMxl.createUserDb({
       openUserDb: () => PianoCore.openUserDb(),
@@ -673,10 +652,7 @@
     async function userDbAll() { return _userDb.all(); }
     /** @param {import('@piano/core').UserSongRecord} record */
     async function userDbPut(record) { return _userDb.put(/** @type {any} */ (record)); }
-    /** @param {string} id */
-    async function userDbDelete(id) { return _userDb.delete(id); }
     const parseMusicXmlMetadata = PianoCore.parseMusicXmlMetadata;
-    const collectSectionCandidates = PianoCore.collectSectionCandidates;
     const autoSectionDefs = PianoCore.autoSectionDefs;
 
     /** @param {Blob} blob */
@@ -723,7 +699,6 @@
       localStorage,
       now: () => Date.now(),
     });
-    /** @param {any} f */ function libraryEntryFromGhFile(f) { return _onlineLibrary.entryFromGhFile(/** @type {any} */ (f)); }
     /** @param {boolean} [force] */
     async function fetchLibrary(force) { return _onlineLibrary.fetchEntries(force); }
     /** @type {Array<Partial<import('@piano/core').LibraryEntry> & {url:string, label:string, icon:string}>} */
@@ -736,8 +711,6 @@
     /** @type {any} OSMD instance (typed `any` because OSMD's surface is wide and version-fragile;
      *  consumers go through osmdAdapter for the typed boundary). */
     let osmd = null;
-    /** @type {Promise<any> | null} */
-    let _osmdInitPromise = null;
 
     const _osmdInit = OsmdInit.createOsmdInit({
       opensheetmusicdisplay:
@@ -745,11 +718,6 @@
       getCurrentSong: () => /** @type {any} */ (currentSong),
     });
     async function initOsmd() { osmd = /** @type {any} */ (await _osmdInit.initOsmd()); return osmd; }
-
-    /** @param {Parameters<typeof PianoCore.mergeTiedNotes>[0]} notes */
-    function mergeTiedNotes(notes) {
-      return PianoCore.mergeTiedNotes(notes, { collectSamples: REMOTE_LOG_ENABLED });
-    }
 
     /** @param {import('@piano/core').MeasureTimingResult|null|undefined} xmlMeasureTiming
      *  @param {import('@piano/core').ScoreTiming|null|undefined} scoreTiming */
@@ -878,7 +846,6 @@
         t,
       })
     );
-    function effectiveTempoPct() { return _practiceTimings.effectiveTempoPct(); }
     function practiceBeatMs() { return _practiceTimings.practiceBeatMs(); }
     function recomputePracticeTimings() { _practiceTimings.recomputePracticeTimings(); }
     // Asymmetric hit windows: early presses are punished much harder than late
@@ -983,7 +950,6 @@
       hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
     });
     function pulseMidiBadge() { _midiIndicator.pulseBadge(); }
-    function refreshMidiBadge() { _midiIndicator.refreshBadge(); }
     function isAppleMobile() { return _midiIndicator.isAppleMobile(); }
 
     // WMB (Web MIDI Browser iOS) workarounds bracketed by
@@ -1083,7 +1049,6 @@
     );
     /** @param {any} line1 @param {any} line2 */ function setIntroHintDiagnostic(line1, line2) { _introDiag.setDiagnostic(line1, line2); }
     /** @param {any} thunk */ function showIntroDiag(thunk) { _introDiag.showDiag(thunk); }
-    function clearIntroDiagCache() { _introDiag.clearCache(); }
 
     function startMidiAutoRescan() { _midiRescan.startAutoRescan(); }
     function stopMidiAutoRescan() { _midiRescan.stopAutoRescan(); }
@@ -1115,9 +1080,6 @@
     }).install();
 
     // ========================================
-    const BLE_MIDI_SERVICE = BleMidiConnect.BLE_MIDI_SERVICE;
-    const BLE_MIDI_CHAR    = BleMidiConnect.BLE_MIDI_CHAR;
-
     /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
     const bleMidi = /** @type {any} */ ({ device: null, characteristic: null, connected: false });
 
@@ -1300,7 +1262,6 @@
     function practiceRealElapsedMs() { return _practiceScoring.practiceRealElapsedMs(); }
     function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
 
-    const defaultSongProgress = PianoCore.defaultSongProgress;
     const dateKey = PianoCore.formatDateKey;
     const _practiceProgress = PracticeProgress.createPracticeProgress({
       storage: _prefsStore,
@@ -1333,8 +1294,6 @@
       _practiceToneAudio.scheduleCountIn(startAudioTime);
     }
 
-    const notePitchClass = ShellHelpers.notePitchClass;
-    const midiToFreq = ShellHelpers.midiToFreq;
     /** @param {any} n */ function n_state(n) { return ShellHelpers.noteStateLabel(n); }
     const NOTE_NAMES_JP = CoreOpts.NOTE_NAMES_JP;
     // Hot-path cache — refreshed on langchange so the per-frame lane draw
@@ -1453,7 +1412,6 @@
     const SECTION_IDS = ['A1', 'B', 'A2'];
 
     // Result-screen tier + unlock gating delegated to @piano/core
-    const STAR_TIERS = PianoCore.STAR_TIERS;
     const computeStars = PianoCore.computeStars;
     const resolveResultTier = PianoCore.resolveResultTier;
     const computeUnlocks = PianoCore.computeUnlocks;
@@ -1703,7 +1661,6 @@
       hideIntroHint, stopMidiAutoRescan, resetSession,
     });
     returnToTitle = _practiceFlow.returnToTitle;
-    const transitionToSection = _practiceFlow.transitionToSection;
 
     // Initialize progress on load (so panel works without audio start)
     practice.progress = loadPracticeProgress();
