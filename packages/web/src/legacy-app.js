@@ -443,15 +443,13 @@
       getHeight: () => _vp.getScreen().H,
       byId,
     }));
-    function showHitChip(/** @type {any} */ kind, /** @type {any} */ text) { _ui.showHitChip(kind, text); }
-    function refreshIntroHint() { _ui.refreshIntroHint(); }
-    function showRunningUI() { _ui.showRunningUI(); }
-    function hideIntroHint() { _ui.hideIntroHint(); }
-    /** @param {any} e */ function alertAudioInitError(e) { _ui.alertAudioInitError(e); }
+    // showRunningUI / alertAudioInitError / selectSong dropped — every
+    // reader uses _ui.* directly. The remaining forwarders all flow
+    // through arrow-thunk deps sites earlier in the file (lazy reads),
+    // so the destructured consts only need to exist post-init.
+    const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
     renderResultCard = _ui.renderResultCard;
     completePracticeSection = _ui.completePracticeSection;
-    const renderSongPanel = _ui.renderSongPanel;
-    function selectSong(/** @type {any} */ id) { _ui.selectSong(id); }
     returnToTitle = _ui.returnToTitle;
     _ui.installPracticeSongButtons();
 
