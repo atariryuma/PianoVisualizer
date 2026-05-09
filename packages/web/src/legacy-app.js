@@ -114,41 +114,31 @@
     const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
 
     const _gameUpdate = ShellGameUpdate.createShellGameUpdate(/** @type {any} */ ({
-      state,
-      getPractice: () => practice,
-      getMidiInput: () => midiInput,
-      config: CONFIG,
+      state, config: CONFIG, dom: DOM, t, audio: _audio, coreOpts: _coreOpts,
       sessionRing, sessionRingCap: SESSION_RING_CAP,
-      audio: _audio,
-      coreOpts: _coreOpts,
-      dom: DOM, t,
       spawnBurst, effectGoldenBurst, effectStarShower, triggerEffect,
-      getScreen: _vp.getScreen,
       stageLabel, remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
+      getScreen: _vp.getScreen,
+      getPractice: () => practice, getMidiInput: () => midiInput,
     }));
     const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
       _gameUpdate;
 
     // ── Main loop — moved to packages/web/src/shell-render-loop.ts (batch 112).
     const _rl = ShellRenderLoop.createShellRenderLoop(/** @type {any} */ ({
-      ctx, state, config: CONFIG, dom: DOM,
-      getPractice: () => practice,
-      getMidiInput: () => midiInput,
-      getUpdatePractice: () => updatePractice,
-      getScreen: _vp.getScreen,
-      audio: _audio,
+      ctx, state, config: CONFIG, dom: DOM, audio: _audio, pianoCore: PianoCore,
       particles, ripples, Particle, Ripple,
       drawBgStars, drawAurora, drawGroundFlowers,
+      getNoteColor, spawnBurst, spawnStream, isFreeplayActive,
       updateAGC, updateGameState, updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
+      wufOpts: WUF_OPTS, remoteLogEnabled: REMOTE_LOG_ENABLED,
+      getPractice: () => practice, getMidiInput: () => midiInput,
+      getUpdatePractice: () => updatePractice, getScreen: _vp.getScreen,
       getDrawMidiBeams: () => drawMidiBeams, getDrawMidiChordDisplay: () => drawMidiChordDisplay,
       getDrawMidiKeyboard: () => drawMidiKeyboard, getDrawPracticeLane: () => drawPracticeLane,
       getShowNoteDisplay: () => showNoteDisplay,
-      getNoteColor, spawnBurst, spawnStream,
       hideIntroHint: () => hideIntroHint(),
-      isFreeplayActive,
-      wufOpts: WUF_OPTS, remoteLogEnabled: REMOTE_LOG_ENABLED,
       getTone: () => (typeof Tone !== 'undefined' ? Tone : null),
-      pianoCore: PianoCore,
     }));
     const loop = _rl.loop;
 
