@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-90 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **2,095 lines** (was
-5,100 at the prior NEXT refresh, **−3,005 across 40 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-91 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,851 lines** (was
+5,100 at the prior NEXT refresh, **−3,249 across 41 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
@@ -196,6 +196,15 @@ every commit.**
   - batch 87 — initAudio block + file-header + WMB banner trim.
   - batch 88-89 — multi-line `dom: {...}` literals → single-line (19 sites).
   - batch 90 — `pickDom()` helper in dom-bag.ts (4 large DOM bags consolidated).
+- **batch 91 (commit `3785326`)** — pure compaction pass on top of the bulk
+  commit, no module extractions: PWA reg cleanup (vite-plugin-pwa already
+  injects registerSW.js), audio-singleton triple-cast → single any-cast (8
+  sites), DOM bag inline → `DomBag.pickDom()` (8 sites: `_selectSong`,
+  `_introHintUi`, `_viewportLayout`, `_songPanelControls`, `_sessionSummary`,
+  `devMode`, `_questStateUpdate`, render-loop), ESC router `_isOpen` /
+  `_isVisible` predicate dedup (5 routes), tuning bag field-grouping (agc,
+  sessionConfidence, practiceScoring), score-loader cast cleanup (-244, −11.6% —
+  2,095 → 1,851).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
