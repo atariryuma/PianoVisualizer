@@ -50,50 +50,20 @@
     const suspendMic = _audio.suspendMic;
     const resumeMic = _audio.resumeMic;
 
-    // ── Canvas (CSS pixel dimensions; mirrors _canvasResize.getDimensions()) ──
-    let W = 0;
-    let H = 0;
-    let kbSafeBottom = 4;
-    let kbHeight = 50;
-    let safeRight = 0;
-    const PERF_TIER_RESOLVED = PianoCore.detectPerfTier();
-    const PERF_PROFILE = PianoCore.PERF_PROFILES[PERF_TIER_RESOLVED];
-    const _canvasResize = ViewportLayout.createCanvasResize({
-      canvas: /** @type {HTMLCanvasElement} */ (DOM.canvas),
-      ctx,
-      isRunning: () => !!state.running,
-      getStarCount: () => PERF_PROFILE.bgStarCount,
-      initBackground: (opts) => /** @type {any} */ (PianoCore.initBackground(opts)),
-    });
-    function resize() {
-      const d = _canvasResize.resize();
-      W = d.W; H = d.H; kbHeight = d.kbHeight;
-      kbSafeBottom = d.kbSafeBottom; safeRight = d.safeRight;
-    }
-    function initBgStars() { _canvasResize.initBgStars(); }
-    resize();
-    window.addEventListener('resize', resize);
-
-    // Single source of truth for "where things live on the screen": JS
-    const cachedOsmdRect = ViewportLayout.makeCachedOsmdRect();
-    const _viewportLayout = ViewportLayout.createViewportLayout({
-      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'practiceTopBar', 'themeBar', 'osmdContainer')),
-      getKbHeight: () => kbHeight,
-      cachedOsmdRect,
-    });
-    function refreshOsmdRect() { _viewportLayout.refreshOsmdRect(); }
-    function syncLayout() { _viewportLayout.syncLayout(); }
-    function onResizeBurst() { _viewportLayout.onResizeBurst(); }
-    syncLayout();
-    window.addEventListener('resize', onResizeBurst);
-    window.addEventListener('orientationchange', onResizeBurst);
-    if (typeof ResizeObserver !== 'undefined') {
-      if (DOM.practiceTopBar) new ResizeObserver(syncLayout).observe(DOM.practiceTopBar);
-      // Watch OSMD too — its height changes on score load, OSMD re-render,
-      // and any layout-mode flip. Without this, drawPracticeLane would read
-      // stale rect after osmd renders fresh notation.
-      if (DOM.osmdContainer) new ResizeObserver(refreshOsmdRect).observe(DOM.osmdContainer);
-    }
+    // ── Viewport — moved to packages/web/src/shell-viewport.ts (batch 114).
+    const _vp = ShellViewport.createShellViewport(/** @type {any} */ ({
+      canvas: DOM.canvas, ctx, state,
+      practiceTopBarEl: DOM.practiceTopBar,
+      osmdContainerEl: DOM.osmdContainer,
+      dom: DomBag.pickDom(DOM, 'practiceTopBar', 'themeBar', 'osmdContainer'),
+      pianoCore: PianoCore,
+    }));
+    const PERF_TIER_RESOLVED = _vp.perfTier;
+    const PERF_PROFILE = _vp.perfProfile;
+    const cachedOsmdRect = _vp.cachedOsmdRect;
+    const _viewportLayout = _vp.layout;
+    const initBgStars = _vp.initBgStars;
+    const syncLayout = _vp.syncLayout;
 
     // ── Theme switching + persisted user preferences ──
     const prefs = /** @type {any} */ (PracticeStateInit.createInitialPrefs());
@@ -205,8 +175,8 @@
       pianoCore: PianoCore, ctx, state, config: CONFIG,
       getPractice: () => practice,
       perfTier: PERF_TIER_RESOLVED,
-      getScreen: () => ({ W, H }),
-      getBgStars: () => _canvasResize.getBgStars(),
+      getScreen: _vp.getScreen,
+      getBgStars: _vp.getBgStars,
     }));
     const particles = _fx.particles, ripples = _fx.ripples;
     const Particle = _fx.Particle, Ripple = _fx.Ripple;
@@ -263,7 +233,7 @@
       questState: _questState, questOpts: _questOpts, questAllDoneSentinel: QUEST_ALL_DONE,
       dom: DOM, t,
       spawnBurst, effectGoldenBurst, effectStarShower, triggerEffect,
-      getScreen: () => ({ W, H }),
+      getScreen: _vp.getScreen,
       stageLabel, remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
     }));
     const updateMultiFeatureOnset = _gameUpdate.updateMultiFeatureOnset;
@@ -282,7 +252,7 @@
       getPractice: () => practice,
       getMidiInput: () => midiInput,
       getUpdatePractice: () => updatePractice,
-      getScreen: () => ({ W, H }),
+      getScreen: _vp.getScreen,
       audio: _audio,
       particles, ripples, Particle, Ripple,
       drawBgStars, drawAurora, drawGroundFlowers,
@@ -413,7 +383,7 @@
       getOsmd, getMidiInput: () => midiInput,
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ text) => showHitChip(kind, text),
       spawnBurst,
-      getScreen: () => ({ W, H }),
+      getScreen: _vp.getScreen,
       prefsStore: _prefsStore,
       getCompletePracticeSection: () => completePracticeSection,
     }));
@@ -502,8 +472,8 @@
       chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
       shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
       t,
-      getScreen: () => ({ W, H }),
-      getKbHeight: () => kbHeight, getKbSafeBottom: () => kbSafeBottom,
+      getScreen: _vp.getScreen,
+      getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom,
     }));
     // Forwarders (function declarations — hoisted, so render-loop-wireup
     // earlier in the file captures the live binding).
@@ -522,12 +492,15 @@
     // ── Practice lane ──
     const _practiceLane = PracticeLane.createPracticeLane(/** @type {any} */ ({
       ctx, practice, state, midiInput,
-      getLayout: () => ({
-        W, H, kbHeight, kbSafeBottom, safeRight,
-        currentLayoutMode: _viewportLayout.getCurrentLayoutMode(),
-        cachedOsmdRect,
-        osmdContainerVisible: !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
-      }),
+      getLayout: () => {
+        const { W, H } = _vp.getScreen();
+        return {
+          W, H, kbHeight: _vp.getKbHeight(), kbSafeBottom: _vp.getKbSafeBottom(), safeRight: _vp.getSafeRight(),
+          currentLayoutMode: _viewportLayout.getCurrentLayoutMode(),
+          cachedOsmdRect,
+          osmdContainerVisible: !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
+        };
+      },
       getCurrentSong: () => currentSong,
       osmdAdapter, osmdScrollToCursor: () => _osmd.osmdScrollToCursor(),
       practiceElapsedMs, practiceRealElapsedMs,
@@ -590,7 +563,7 @@
       effectGoldenBurst, effectStarShower, effectFlowerBurst,
       setupHiDPICanvas, clamp01,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
-      getHeight: () => H,
+      getHeight: () => _vp.getScreen().H,
       byId,
     }));
     function showHitChip(/** @type {any} */ kind, /** @type {any} */ text) { _ui.showHitChip(kind, text); }
@@ -613,7 +586,7 @@
       dom: DomBag.pickDom(DOM, 'settingsPanel', 'sectionResult'),
       domAddSong: { modal: DOM_ADDSONG.modal },
       state, practice, prefs, midiInput, midiState, ctx, particles, ripples,
-      getScreen: () => ({ W, H }),
+      getScreen: _vp.getScreen,
       getAudioCtx: _audio.getAudioCtx, getCurrentSong: () => currentSong,
       openUserDb: () => openUserDb(), userDbAll: () => userDbAll(),
       userDbPut: (rec) => userDbPut(/** @type {any} */ (rec)),
