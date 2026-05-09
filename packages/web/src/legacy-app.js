@@ -367,17 +367,14 @@
       getScreen: _vp.getScreen,
       getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom,
     }));
-    // Forwarders (function declarations — hoisted, so render-loop-wireup
-    // earlier in the file captures the live binding).
-    const midiState = _midiH.midiState;
-    function noteThemeColor(/** @type {any} */ m) { return _midiH.noteThemeColor(m); }
-    function showNoteDisplay(/** @type {any} */ a, /** @type {any} */ b, /** @type {any} */ c, /** @type {any} */ d) { _midiH.showNoteDisplay(a, b, c, d); }
-    function onMidiNoteOn(/** @type {any} */ m, /** @type {any} */ v) { _midiH.onMidiNoteOn(m, v); }
-    function onMidiNoteOff(/** @type {any} */ m) { _midiH.onMidiNoteOff(m); }
-    function onMidiCC(/** @type {any} */ cc, /** @type {any} */ v) { _midiH.onMidiCC(cc, v); }
-    function drawMidiKeyboard() { _midiH.drawMidiKeyboard(); }
-    function drawMidiBeams(/** @type {any} */ t) { _midiH.drawMidiBeams(t); }
-    function drawMidiChordDisplay(/** @type {any} */ t) { _midiH.drawMidiChordDisplay(t); }
+    // Render-loop-wireup earlier in the file captures these via getter
+    // thunks (() => onMidiNoteOn etc.), so the destructured consts only
+    // need to be defined by the time those thunks fire post-init.
+    const {
+      midiState, noteThemeColor, showNoteDisplay,
+      onMidiNoteOn, onMidiNoteOff, onMidiCC,
+      drawMidiKeyboard, drawMidiBeams, drawMidiChordDisplay,
+    } = _midiH;
     window.addEventListener('langchange', () => _midiH.refreshLabels());
     const dateKey = PianoCore.formatDateKey;
 
