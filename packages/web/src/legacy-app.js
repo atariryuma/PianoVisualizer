@@ -387,32 +387,18 @@
     function startMidiAutoRescan() { _midi.startMidiAutoRescan(); }
     function stopMidiAutoRescan() { _midi.stopMidiAutoRescan(); }
 
-    // ─── settings-panel wire-up ──────────────────────────────────────
-    // Settings-panel uses different prop names than DOM.*, so the remap is
-    // explicit (no pickDom shortcut). applyDebug seed runs immediately so
-    // the persisted-prefs debug overlay state is honored across reloads.
-    {
-      const _settings = SettingsPanel.createSettingsPanel(/** @type {any} */ ({
-        dom: {
-          panel: DOM.settingsPanel, openBtn: DOM.settingsBtn, closeBtn: DOM.settingsCloseBtn,
-          audioOffsetSlider: DOM.audioOffsetSlider, audioOffsetVal: DOM.audioOffsetVal,
-          audioOffsetAuto: DOM.audioOffsetAuto, audioOffsetReset: DOM.audioOffsetReset,
-          rescanBtn: DOM.settingsRescanBtn, bleBtn: DOM.settingsBleBtn,
-          resetBtn: DOM.settingsResetBtn, inputStatus: DOM.settingsInputStatus,
-          debugToggle: DOM.settingsDebugToggle, debugOverlay: DOM.debugOverlay,
-        },
-        prefs, practice, state, midiInput,
-        defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
-        savePrefs, t, modalFocus,
-        rescanMidi: () => { void rescanMidi(); },
-        connectBleMidi: () => _midi.connectBleMidi(),
-        showSessionSummary: () => showSessionSummary(),
-      }));
-      openSettings = _settings.open;
-      closeSettings = _settings.close;
-      refreshSettingsPanel = _settings.refresh;
-      _settings.applyDebug(prefs.debug);
-    }
+    // ── Settings panel — moved to packages/web/src/shell-settings.ts (batch 118).
+    const _settings = ShellSettings.createShellSettings(/** @type {any} */ ({
+      dom: DOM, prefs, practice, state, midiInput,
+      defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
+      savePrefs, t, modalFocus,
+      rescanMidi: () => { void rescanMidi(); },
+      connectBleMidi: () => _midi.connectBleMidi(),
+      showSessionSummary: () => showSessionSummary(),
+    }));
+    openSettings = _settings.open;
+    closeSettings = _settings.close;
+    refreshSettingsPanel = _settings.refresh;
 
     // ── MIDI handlers + render — moved to packages/web/src/shell-midi-handlers.ts (batch 106).
     const detectChord = PianoCore.detectChord;
