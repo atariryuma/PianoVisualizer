@@ -312,29 +312,25 @@
     // ── Dev-mode shell — moved to packages/web/src/shell-dev-mode.ts (batch 154).
     ShellDevMode.createShellDevMode(/** @type {any} */ ({
       document, dom: DOM, ctx, state, practice, prefs, midiInput, midiState,
-      particles, ripples, themes: CONFIG.THEMES,
+      particles, ripples, themes: CONFIG.THEMES, t, setLang, applyTheme,
+      onMidiNoteOn, onMidiNoteOff, getEnergy, wufOpts: WUF_OPTS,
+      drawBgStars, drawAurora, drawGroundFlowers,
+      openUserDb, userDbAll, userDbPut, removeUserSong, isAppleMobile,
+      openSettings, closeSettings, openAddSongModal, closeAddSongModal,
       appVersion: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : undefined,
       buildDate: typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : undefined,
       domAddSong: { modal: DOM_ADDSONG.modal },
       getScreen: _vp.getScreen, getAudioCtx: _audio.getAudioCtx,
       getCurrentSong: () => currentSong,
-      openUserDb, userDbAll, userDbPut, removeUserSong, isAppleMobile,
-      t, setLang, applyTheme,
-      openSettings, closeSettings, openAddSongModal, closeAddSongModal,
       completePracticeSection: () => completePracticeSection(),
-      onMidiNoteOn, onMidiNoteOff,
-      drawBgStars, drawAurora, drawGroundFlowers,
       decayWakeUpFlash: PianoCore.decayWakeUpFlash, drawCenterGlow: PianoCore.drawCenterGlow,
-      wufOpts: WUF_OPTS, getEnergy,
       renderFrame: RenderFrame, audioInit: AudioInit,
     }));
 
-    // Initialize progress on load (so panel works without audio start).
+    // Initialize progress on load (so the panel works without audio start) +
+    // install ▶ Start button.
     practice.progress = loadPracticeProgress();
-    // Install ▶ Start button — moved into shell-ui.ts (batch 108).
     _ui.installStartButtons();
 
-// Phase 0c kickoff (2026-05-06): real ES module so main.ts can import it
-// without a `.d.ts` shim. Enables `allowJs: true` in packages/web/tsconfig.json
-// to bring this into the typecheck graph (checkJs stays off — next ratchet).
+// Real ES module so main.ts can import it. Enables `allowJs: true` in tsconfig.
 export {};
