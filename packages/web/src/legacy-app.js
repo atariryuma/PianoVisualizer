@@ -306,24 +306,18 @@
     ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 
     // ── MIDI handlers + render — moved to packages/web/src/shell-midi-handlers.ts (batch 106).
-    const detectChord = PianoCore.detectChord;
     const _midiH = ShellMidiHandlers.createShellMidiHandlers(/** @type {any} */ ({
-      state, getPractice: () => practice,
-      ctx, config: CONFIG,
-      noteDisplayEl: DOM.noteDisplay,
+      state, ctx, config: CONFIG, t, effectGlowPulse,
       spawnBurst, spawnStream, ripples, Ripple,
-      hideIntroHint: () => hideIntroHint(),
-      effectGlowPulse,
-      finalizeNoteHold: (/** @type {any} */ midi) => finalizeNoteHold(midi),
+      noteDisplayEl: DOM.noteDisplay,
       qhOptsMidi: QH_OPTS_MIDI, psOpts: PS_OPTS, cwOpts: CW_OPTS, wufOpts: WUF_OPTS,
       shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
-      t,
+      getPractice: () => practice,
+      hideIntroHint: () => hideIntroHint(),
+      finalizeNoteHold: (/** @type {any} */ midi) => finalizeNoteHold(midi),
       getScreen: _vp.getScreen,
       getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom,
     }));
-    // Render-loop-wireup earlier in the file captures these via getter
-    // thunks (() => onMidiNoteOn etc.), so the destructured consts only
-    // need to be defined by the time those thunks fire post-init.
     const {
       midiState, noteThemeColor, showNoteDisplay,
       onMidiNoteOn, onMidiNoteOff, onMidiCC,
