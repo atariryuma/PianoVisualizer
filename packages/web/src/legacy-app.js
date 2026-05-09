@@ -96,22 +96,15 @@
     }).install();
 
     // ── i18n + theme shell — moved to packages/web/src/shell-i18n.ts (batch 115).
-    // Bundles t() + stageLabel + applyI18n + theme controls + boot-time
-    // <html lang>/applyI18n/title-screen seed + the langchange re-renderer.
     const _i18n = ShellI18n.createShellI18n(/** @type {any} */ ({
-      document, prefs, state, config: CONFIG,
-      getSongs: () => SONGS,
-      savePrefs,
+      document, prefs, state, config: CONFIG, dom: DOM, savePrefs,
+      getSongs: () => SONGS, getCurrentSong: () => currentSong, getPractice: () => practice,
       refreshSettingsPanel: () => refreshSettingsPanel(),
-      dom: DOM,
-      getCurrentSong: () => currentSong,
-      getPractice: () => practice,
       refreshLangCaches: () => _practice.refreshLangCaches(),
       renderSongPanel: () => renderSongPanel(),
       renderResultCard: () => renderResultCard(),
       renderSessionSummaryText: (/** @type {any} */ animate) => renderSessionSummaryText(animate),
     }));
-    // applyI18n / applySynesthesia consumed only inside ShellI18n now.
     const { t, stageLabel, applyTheme, setLang } = _i18n;
 
     // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
@@ -396,24 +389,18 @@
       getOsmd, setOsmd: (/** @type {any} */ o) => _osmd.setOsmd(o),
       clearHighlights: () => _osmd.cursor.clearHighlights(),
       loadCurrentScore: () => _osmd.loadCurrentScore(),
-      songProg: () => songProg(),
-      loadPracticeProgress, savePracticeProgress, recordPracticeDay,
+      songProg, loadPracticeProgress, savePracticeProgress, recordPracticeDay,
       startPracticeSection, stopPracticeAudio,
-      initAudio: _audio.initAudio, initBgStars: _vp.initBgStars, loop, alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
+      initAudio: _audio.initAudio, initBgStars: _vp.initBgStars, loop,
+      alertAudioInitError: (/** @type {any} */ e) => _ui.alertAudioInitError(e),
       initWebMIDI, startMidiAutoRescan, stopMidiAutoRescan, rescanMidi,
-      releaseWakeLock, requestWakeLock,
+      releaseWakeLock, requestWakeLock, resetSession,
       hideIntroHint: () => _ui.hideIntroHint(),
-      resetSession,
       effectGoldenBurst, effectStarShower, effectFlowerBurst,
       setupHiDPICanvas: ShellHelpers.setupHiDPICanvas, clamp01,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
-      getHeight: () => _vp.getScreen().H,
-      byId,
+      getHeight: () => _vp.getScreen().H, byId,
     }));
-    // showRunningUI / alertAudioInitError / selectSong dropped — every
-    // reader uses _ui.* directly. The remaining forwarders all flow
-    // through arrow-thunk deps sites earlier in the file (lazy reads),
-    // so the destructured consts only need to exist post-init.
     const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
     renderResultCard = _ui.renderResultCard;
     completePracticeSection = _ui.completePracticeSection;
