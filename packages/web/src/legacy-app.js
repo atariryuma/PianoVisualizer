@@ -234,14 +234,6 @@
     const effectGoldenBurst = _particleEffects.effectGoldenBurst;
     const triggerEffect = _particleEffects.triggerEffect;
 
-    // Sentinel for state.activeQuestId when every quest in
-    // CONFIG.QUESTS is cleared.
-    const QUEST_ALL_DONE = 'ALL_DONE';
-
-    const _encState = PianoCore.initEncouragementState();
-    const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
-
-    // ========================================
     const _themeColors = () => CONFIG.THEMES[state.currentTheme].colors;
     /** @param {number} _time */
     const drawBgStars = (_time) => {
@@ -263,62 +255,8 @@
     const coefficientOfVariation = PianoCore.coefficientOfVariation;
     const computeHarmonicity = PianoCore.computeHarmonicity;
 
-    // ── Multi-Feature Onset Detection (v9 — with harmonicity) ──
-    const _onsetDetectDeps = OnsetDetect.buildOnsetDetectDeps({
-      state: /** @type {any} */ (state),
-      getPractice: () => /** @type {any} */ (practice),
-      config: CONFIG,
-      getOnsetHysteresisFrames: () => ONSET_HYSTERESIS_FRAMES,
-      features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation },
-      getOnsetAnalyser: _audio.getOnsetAnalyser, getOnsetDataArray: _audio.getOnsetDataArray, getAudioCtx: _audio.getAudioCtx,
-    });
-    /** @param {number} timeMs @param {number} currentPitchHz */
-    function updateMultiFeatureOnset(timeMs, currentPitchHz) {
-      return OnsetDetect.updateMultiFeatureOnset(timeMs, currentPitchHz, _onsetDetectDeps);
-    }
-
-    // ── Session Confidence Layer ──
-    const _sessionConfidenceDeps = /** @type {import('./session-confidence-ui').SessionConfidenceDeps} */ ({
-      state: /** @type {any} */ (state),
-      sessionRing,
-      tuning: {
-        sampleIntervalMs: CONFIG.SESSION_SAMPLE_INTERVAL_MS, windowMs: CONFIG.SESSION_WINDOW_MS,
-        confirmThreshold: CONFIG.SESSION_CONFIRM_THRESHOLD, loseThreshold: CONFIG.SESSION_LOSE_THRESHOLD,
-        warmupMs: CONFIG.SESSION_WARMUP_MS, motivationGoalMs: CONFIG.MOTIVATION_GOAL_MS,
-        ringCap: SESSION_RING_CAP,
-      },
-      dom: { sessionStatus: DOM.sessionStatus }, t, triggerEffect,
-    });
-    /** @param {number} timeMs @param {boolean} isPianoDetected */
-    function updateSessionConfidence(timeMs, isPianoDetected) {
-      SessionConfidenceUi.updateSessionConfidence(timeMs, isPianoDetected, _sessionConfidenceDeps);
-    }
-
-    const _questState = PianoCore.initQuestTrackerState();
-    // Share the underlying array so state.completedQuests stays in sync
-    // automatically (no per-tick copy needed).
-    _questState.completedIds = state.completedQuests;
-    const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
-
-    const _questStateUpdate = QuestStateUpdate.createQuestStateUpdate(/** @type {any} */ ({
-      state, trackerState: _questState,
-      quests: CONFIG.QUESTS, allDoneSentinel: QUEST_ALL_DONE,
-      applyQuestTick: PianoCore.applyQuestTick,
-      observation: state, // quest.condition reads state.combo, state.flow, etc.
-      questOpts: _questOpts,
-      dom: DomBag.pickDom(DOM, 'toastTitle', 'toastSub', 'questToast', 'questLabel', 'questDots', 'questDisplay'),
-      t, spawnBurst, effectGoldenBurst,
-      getScreen: () => ({ W, H }),
-      setTimeout: (/** @type {any} */ fn, /** @type {any} */ ms) => setTimeout(fn, ms),
-      toastHideMs: 2600,
-    }));
-    /** @param {any} timeMs */ function updateQuestState(timeMs) { _questStateUpdate.tick(timeMs); }
-
-    // ── Quality Scoring — simplified for kids ──
-
+    // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
     const clamp01 = PianoCore.clamp01;
-
-    // moved to packages/web/src/core-opts.ts.
     const _coreOpts = CoreOpts.createCoreOpts({
       config: CONFIG,
       detectChord: /** @type {any} */ (PianoCore.detectChord),
@@ -328,95 +266,45 @@
     const PS_OPTS = _coreOpts.psOpts;
     const CW_OPTS = _coreOpts.cwOpts;
     const WUF_OPTS = _coreOpts.wufOpts;
+    const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
+    const ONSET_HYSTERESIS_FRAMES = CoreOpts.ONSET_HYSTERESIS_FRAMES;
+    const PITCH_MEDIAN_FRAMES = CoreOpts.PITCH_MEDIAN_FRAMES;
+    const _encState = PianoCore.initEncouragementState();
+    const _encOpts = { tiers: CONFIG.ENCOURAGEMENT_TIERS, displayMs: CONFIG.ENCOURAGEMENT_DISPLAY_MS };
+    const _questState = PianoCore.initQuestTrackerState();
+    // Share the underlying array so state.completedQuests stays in sync
+    // automatically (no per-tick copy needed).
+    _questState.completedIds = state.completedQuests;
+    const _questOpts = { throttleMs: 300, postCompletionDelayMs: 2500 };
+    const QUEST_ALL_DONE = 'ALL_DONE';
 
-    // packages/web/src/quality-update.ts.
-    const _qualityUpdate = QualityUpdate.createQualityUpdate(
-      /** @type {import('./quality-update').QualityUpdateDeps} */ ({
-        state: /** @type {any} */ (state),
-        tuning: { updateIntervalMs: CONFIG.SCORE_UPDATE_INTERVAL_MS, rhythmWeight: CONFIG.SCORE_RHYTHM_WEIGHT, dynamicsWeight: CONFIG.SCORE_DYNAMICS_WEIGHT, stabilityWeight: CONFIG.SCORE_STABILITY_WEIGHT, smoothing: CONFIG.SCORE_SMOOTHING, displayedScoreFloor: 0.25, },
-        scoringOpts: { ioiIdealCV: CONFIG.IOI_IDEAL_CV, ioiMaxCV: CONFIG.IOI_MAX_CV, dynamicsIdealCVMin: CONFIG.DYNAMICS_IDEAL_CV_MIN, dynamicsIdealCVMax: CONFIG.DYNAMICS_IDEAL_CV_MAX, growthWindowMs: CONFIG.GROWTH_WINDOW_MS, },
-        fns: { computeRhythmScore: PianoCore.computeRhythmScore, computeDynamicsScore: PianoCore.computeDynamicsScore, computeStabilityScore: PianoCore.computeStabilityScore, updateGrowthTrend: PianoCore.updateGrowthTrend, buildCoachingFeedback: PianoCore.buildCoachingFeedback, },
-        qualityScoreEl: DOM.qualityScore,
-        t,
-      })
-    );
-    /** @param {any} timeMs */ function updateQualityScores(timeMs) { _qualityUpdate.tick(timeMs); }
-
-    // ── Software AGC — with v9 voice suppression ──
-    // packages/web/src/agc-controller.ts.
-    const _agcDeps = /** @type {import('./agc-controller').AgcControllerDeps} */ ({
-      state: /** @type {any} */ (state),
-      tuning: {
-        updateIntervalMs: CONFIG.AGC_UPDATE_INTERVAL_MS,
-        silenceFloor: CONFIG.AGC_SILENCE_FLOOR, voiceSuppressMax: CONFIG.AGC_VOICE_SUPPRESS_MAX,
-        maxGain: CONFIG.AGC_MAX_GAIN, minGain: CONFIG.AGC_MIN_GAIN, targetRms: CONFIG.AGC_TARGET_RMS,
-        attackCoeff: CONFIG.AGC_ATTACK_COEFF, releaseCoeff: CONFIG.AGC_RELEASE_COEFF,
-      },
-      getGainNode: _audio.getGainNode, getAudioCtx: _audio.getAudioCtx,
-    });
-    /** @param {number} timeMs @param {number} postGainRms */
-    function updateAGC(timeMs, postGainRms) {
-      AgcController.updateAGC(timeMs, postGainRms, _agcDeps);
-    }
-
-    // ── Game Logic — 4-layer architecture (v9) ──
-    const _gameStateDeps = GameStateUpdate.buildGameStateUpdateDeps({
-      state: /** @type {any} */ (state),
-      getPractice: () => /** @type {any} */ (practice),
-      getMidiInput: () => /** @type {any} */ (midiInput),
-      getPitchMedianFrames: () => PITCH_MEDIAN_FRAMES,
-      config: CONFIG, qhOptsMic: QH_OPTS_MIC, psOpts: PS_OPTS,
-      // PianoCore signatures are slightly wider than the consumed shape — cast to any.
-      core: /** @type {any} */ ({
-        applyOnsetToHistory: PianoCore.applyOnsetToHistory,
-        applyOnsetPitch: PianoCore.applyOnsetPitch,
-        applyActivePlay: PianoCore.applyActivePlay,
-        decayStability: PianoCore.decayStability,
-        stageForFlow: PianoCore.stageForFlow,
-        classifyStageTransition: PianoCore.classifyStageTransition,
-        pitchHzToSemitones: PianoCore.pitchHzToSemitones,
-      }),
-      updateMultiFeatureOnset, updateSessionConfidence, updateQualityScores, updateHUD,
-      spawnBurst, effectStarShower,
+    const _gameUpdate = ShellGameUpdate.createShellGameUpdate(/** @type {any} */ ({
+      state,
+      getPractice: () => practice,
+      getMidiInput: () => midiInput,
+      config: CONFIG,
+      sessionRing, sessionRingCap: SESSION_RING_CAP,
+      onsetHysteresisFrames: ONSET_HYSTERESIS_FRAMES,
+      pitchMedianFrames: PITCH_MEDIAN_FRAMES,
+      features: { computeSpectralFlatness, computeSpectralCrest, computeSpectralCentroid, computeHarmonicity, coefficientOfVariation },
+      audio: _audio,
+      coreOpts: _coreOpts,
+      encState: _encState, encOpts: _encOpts,
+      questState: _questState, questOpts: _questOpts, questAllDoneSentinel: QUEST_ALL_DONE,
+      dom: DOM, t,
+      spawnBurst, effectGoldenBurst, effectStarShower, triggerEffect,
       getScreen: () => ({ W, H }),
-      stageLabelEl: DOM.stageLabel, stageLabelText: stageLabel,
-      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
-    });
-    /** @param {number} timeMs @param {number} dt @param {{pitch:number, conf:number, rms:number}} pitchResult */
-    function updateGameState(timeMs, dt, pitchResult) {
-      return GameStateUpdate.updateGameState(timeMs, dt, pitchResult, _gameStateDeps);
-    }
-    // ── v9: updateHUD — encouragement instead of numbers ──
-    /** @param {number} timeMs */
-    // moved to packages/web/src/hud-update.ts.
-    const _hudUpdate = HudUpdate.createHudUpdate(/** @type {any} */ ({
-      state, encState: _encState, encOpts: _encOpts,
-      applyEncouragementEvent: PianoCore.applyEncouragementEvent,
-      encouragementEl: DOM.encouragement, flowFillEl: DOM.flowFill,
-      t, triggerEffect,
+      stageLabel, remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
     }));
-    /** @param {any} timeMs */ function updateHUD(timeMs) { _hudUpdate.tick(timeMs); }
-
-    // ── Debug overlay (v9) — Phase 0d batch 44. ──
-    const _debugOverlay = HudUpdate.createDebugOverlay(/** @type {any} */ ({
-      state, overlayEl: DOM.debugOverlay,
-      tuning: { onsetGateDurationMs: CONFIG.ONSET_GATE_DURATION_MS },
-      now: () => performance.now(),
-    }));
-    function updateDebugOverlay() { _debugOverlay.tick(); }
-
-    // ── Energy calculation ──
-    function getEnergy() {
-      const a = _audio.getAnalyser(), data = _audio.getDataArray(), ctx2 = _audio.getAudioCtx();
-      if (!a || state.micSuspended) return 0;
-      a.getByteFrequencyData(data);
-      let sum = 0;
-      const binHz = ctx2.sampleRate / a.fftSize;
-      const s = Math.floor(CONFIG.PIANO_FREQ_MIN / binHz);
-      const e = Math.min(Math.floor(CONFIG.PIANO_FREQ_MAX / binHz), data.length);
-      for (let i = s; i < e; i++) sum += data[i];
-      return sum / ((e - s) * 255);
-    }
+    const updateMultiFeatureOnset = _gameUpdate.updateMultiFeatureOnset;
+    const updateSessionConfidence = _gameUpdate.updateSessionConfidence;
+    const updateQuestState = _gameUpdate.updateQuestState;
+    const updateQualityScores = _gameUpdate.updateQualityScores;
+    const updateAGC = _gameUpdate.updateAGC;
+    const updateGameState = _gameUpdate.updateGameState;
+    const updateHUD = _gameUpdate.updateHUD;
+    const updateDebugOverlay = _gameUpdate.updateDebugOverlay;
+    const getEnergy = _gameUpdate.getEnergy;
 
     // ── Main Loop ──
     /** @param {number} timeMs */
@@ -504,7 +392,7 @@
         'flowFill', 'sessionStatus', 'playTime',
       ),
       sessionRingCap: SESSION_RING_CAP,
-      invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
+      invalidateFlowCache: () => _gameUpdate.invalidateFlowCache(),
       resetMidiDispatch: () => _midi.resetMidiDispatch(),
       remoteLog, now: () => performance.now(),
     }));
@@ -609,16 +497,13 @@
     function practiceBeatMs() { return _practiceTimings.practiceBeatMs(); }
     function recomputePracticeTimings() { _practiceTimings.recomputePracticeTimings(); }
 
-    // Hit windows + audio-offset constants — early presses punished harder than late.
+    // Hit windows — early presses punished harder than late.
     const HIT_WINDOW_EARLY_MS = PianoCore.HIT_WINDOW_EARLY_MS;
     const HIT_WINDOW_MS = PianoCore.HIT_WINDOW_MS;
     const PERFECT_MS = PianoCore.PERFECT_MS;
     const CHORD_MATE_TOLERANCE_MS = PianoCore.CHORD_MATE_TOLERANCE_MS;
     const DURATION_MIN_TOL_MS = PianoCore.DURATION_MIN_TOL_MS;
     const DURATION_TOL_FRACTION = PianoCore.DURATION_TOL_FRACTION;
-    const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
-    const ONSET_HYSTERESIS_FRAMES = CoreOpts.ONSET_HYSTERESIS_FRAMES;
-    const PITCH_MEDIAN_FRAMES = CoreOpts.PITCH_MEDIAN_FRAMES;
 
     const practice = /** @type {any} */ (PracticeStateInit.createInitialPractice(
       prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
