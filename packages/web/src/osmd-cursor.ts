@@ -267,11 +267,22 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       const sysIdx = computeSystemIdx(osmd);
       const sysChanged = _lastSysIdx !== null && sysIdx !== null && sysIdx !== _lastSysIdx;
       const isFirstScroll = _lastSysIdx === null;
+      const prevSysIdx = _lastSysIdx;
       if (sysIdx !== null) _lastSysIdx = sysIdx;
 
       // Only scroll on system change OR the first time (initial cursor
       // visibility). Within-system onsets stay where they are.
-      if (!sysChanged && !isFirstScroll) return;
+      if (!sysChanged && !isFirstScroll) {
+        // Diagnostic: log skip events (rate-limited 1/16 calls).
+        // [CURSOR-SCROLL v4] is the version marker — search console
+        // for this prefix to confirm v4 code is actually running.
+        if (++_diagSkipTick % 16 === 1) {
+          console.log(
+            `[CURSOR-SCROLL v4] skip same-system m=${cursor?.iterator?.CurrentMeasureIndex} sys=${sysIdx}`
+          );
+        }
+        return;
+      }
 
       // `scroll-margin-top` defines a "comfort zone" — when scrollIntoView
       // with block:'start' lands the cursor, the cursor TOP is offset
@@ -289,10 +300,15 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
         block: 'start',
         inline: 'nearest',
       });
-    } catch {
-      /* swallow — scroll is a nice-to-have, never block the cursor. */
+
+      console.log(
+        `[CURSOR-SCROLL v4] FIRE ${isFirstScroll ? 'first-scroll' : `sys ${prevSysIdx}→${sysIdx}`} m=${cursor?.iterator?.CurrentMeasureIndex} block=start margin=25vh`
+      );
+    } catch (e) {
+      console.warn('[CURSOR-SCROLL v4] error:', e);
     }
   }
+  let _diagSkipTick = 0;
 
   /** Resolve the music-system index of the cursor's current measure.
    *  Returns null when the GraphicalMusicSheet path is unpopulated
