@@ -94,9 +94,7 @@
 
     // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
     const clamp01 = PianoCore.clamp01;
-    const _coreOpts = CoreOpts.createCoreOpts({
-      config: CONFIG, detectChord: /** @type {any} */ (PianoCore.detectChord),
-    });
+    const _coreOpts = CoreOpts.createCoreOpts({ config: CONFIG, detectChord: /** @type {any} */ (PianoCore.detectChord) });
     const { qhOptsMidi: QH_OPTS_MIDI, psOpts: PS_OPTS, cwOpts: CW_OPTS, wufOpts: WUF_OPTS } = _coreOpts;
     const DEFAULT_AUDIO_OFFSET_MS = CoreOpts.DEFAULT_AUDIO_OFFSET_MS;
 
@@ -108,8 +106,7 @@
       getScreen: _vp.getScreen,
       getPractice: () => practice, getMidiInput: () => midiInput,
     }));
-    const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
-      _gameUpdate;
+    const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } = _gameUpdate;
 
     // ── Main loop — moved to packages/web/src/shell-render-loop.ts (batch 112).
     const _rl = ShellRenderLoop.createShellRenderLoop(/** @type {any} */ ({
@@ -131,8 +128,7 @@
 
     // True only when the canvas / HUD is the front-most surface.
     function isFreeplayActive() {
-      return state.running && !practice.enabled
-        && DOM.startScreen.style.display === 'none'
+      return state.running && !practice.enabled && DOM.startScreen.style.display === 'none'
         && !DOM.songPanel.classList.contains('visible')
         && !DOM.sessionSummary.classList.contains('visible')
         && !DOM.sectionResult.classList.contains('visible');
