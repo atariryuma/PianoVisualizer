@@ -334,36 +334,31 @@
 
     // ── Practice lane — moved to packages/web/src/shell-practice-lane.ts (batch 117).
     const _practiceLane = ShellPracticeLane.createShellPracticeLane(/** @type {any} */ ({
-      ctx, practice, state, midiInput, config: CONFIG,
-      getScreen: _vp.getScreen,
-      getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom, getSafeRight: _vp.getSafeRight,
+      ctx, practice, state, midiInput, config: CONFIG, t, osmdAdapter,
+      practiceElapsedMs, practiceRealElapsedMs, noteThemeColor, midiToPitchName,
+      getScreen: _vp.getScreen, getKbHeight: _vp.getKbHeight,
+      getKbSafeBottom: _vp.getKbSafeBottom, getSafeRight: _vp.getSafeRight,
       getCurrentLayoutMode: () => _vp.layout.getCurrentLayoutMode(),
       cachedOsmdRect: _vp.cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
       getCurrentSong: () => currentSong,
-      osmdAdapter,
-      practiceElapsedMs, practiceRealElapsedMs,
-      noteThemeColor, midiToPitchName,
       laneLookaheadMs: _practice.getLaneLookaheadMs(), countInMs: _practice.getCountInMs(),
-      drawPracticeLane: PianoCore.drawPracticeLane, t,
+      drawPracticeLane: PianoCore.drawPracticeLane,
     }));
     _practice.setPracticeLane(_practiceLane.instance);
     /** @param {number} timeMs */ function drawPracticeLane(timeMs) { _practiceLane.draw(timeMs); }
 
     // ── Add-song modal + Section editor — moved to packages/web/src/shell-add-song.ts (batch 102).
     const _addSong = ShellAddSong.createShellAddSong(/** @type {any} */ ({
-      document, songs: SONGS,
+      document, songs: SONGS, t, modalFocus, fetchLibrary,
+      openUserDb, userDbAll, userDbPut, unzipMxlToXmlText,
+      userDbStoreName: USER_DB_STORE, userSongStore: _userSongStore,
+      autoSectionDefs: PianoCore.autoSectionDefs,
       getLang: () => prefs.lang,
       getLibrary: () => _lib.getOnlineLibrary(),
       setLibrary: (/** @type {any} */ entries) => _lib.setOnlineLibrary(entries),
-      userSongStore: _userSongStore,
-      fetchLibrary,
-      openUserDb, userDbStoreName: USER_DB_STORE, unzipMxlToXmlText,
-      userDbAll, userDbPut,
-      autoSectionDefs: PianoCore.autoSectionDefs,
       getCurrentSong: () => currentSong,
       selectSong: (/** @type {any} */ id) => _ui.selectSong(id),
-      songPanelHeaderDom: { songTitle: DOM.songTitle, songComposer: DOM.songComposer },
-      t, modalFocus,
+      songPanelHeaderDom: DomBag.pickDom(DOM, 'songTitle', 'songComposer'),
     }));
     const { byId, domAddSong: DOM_ADDSONG, domSecEdit: DOM_SECEDIT } = _addSong;
     ({ openSectionEditor, closeSectionEditor, openAddSongModal, closeAddSongModal } = _addSong);
