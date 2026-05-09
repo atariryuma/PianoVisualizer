@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-91 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,851 lines** (was
-5,100 at the prior NEXT refresh, **−3,249 across 41 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-92 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,727 lines** (was
+5,100 at the prior NEXT refresh, **−3,373 across 42 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
@@ -205,6 +205,16 @@ every commit.**
   `_isVisible` predicate dedup (5 routes), tuning bag field-grouping (agc,
   sessionConfidence, practiceScoring), score-loader cast cleanup (-244, −11.6% —
   2,095 → 1,851).
+- **batch 92 (commit `aa02e92`)** — second pure compaction pass: shared
+  `_applyAudioGraph` / `_resetOnsetState` helpers dedup the 7-prop audio-node
+  rebinding across `rebuildAudioGraph` + `_audioRecovery.applyContext`; new
+  `byId(id)` shorthand kills 26 `document.getElementById('...')` call sites in
+  `DOM_ADDSONG` / `DOM_SECEDIT`; `_bgOpts(time)` shared by `drawAurora` /
+  `drawGroundFlowers`; `_selectSong` deps cast widened (12 per-field casts → 1
+  outer-cast); 7 wireup blocks field-grouped onto fewer lines; dead `typeof`
+  guards removed (`osmd`, `DOM_ADDSONG`); double/triple-cast collapses on
+  `ensureMidiAccess`, `gatherMidiInputs`, `attachMidiPort` / `detachMidiPort`.
+  (-124, −6.7% — 1,851 → 1,727).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -343,10 +353,11 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **2,095 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−1,982
-net** across 20 batches in the bulk commit `685d5df` + the parallel `f3f226c`
-tie-aware OSMD cursor fix; **−6,905 net** since Phase 0a baseline).
+Start click) reports zero console errors. `legacy-app.js`: **1,727 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,350
+net** across 22 batches in `685d5df` + `3785326` (batch 91) + `aa02e92` (batch
+92), plus the parallel `f3f226c` tie-aware OSMD cursor fix; **−7,273 net** since
+Phase 0a baseline).
 
 ---
 
