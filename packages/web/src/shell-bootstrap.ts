@@ -1,20 +1,48 @@
 // Bootstrap shell — Phase 0e (legacy-app.js retirement).
 //
-// Absorbs the final 320 lines that lived in legacy-app.js. Wires the
-// foundational state (RemoteLog / CONFIG / DOM / ctx / state /
+// Wires the foundational state (RemoteLog / CONFIG / DOM / ctx / state /
 // sessionRing / prefs / modalFocus), the forward-decl placeholders
 // + ESC modal router, the 17 shell-* factory call sites in the
 // correct dependency order, and the post-create init (initial
 // practice progress + ▶ Start button).
 //
-// All shell-* / module references are bare identifiers that resolve
-// against the `declare global { var XXX: typeof import('./xxx'); }`
-// block in main.ts. main.ts pins each onto globalThis BEFORE
-// importing this shell, so the bare references resolve at fire time.
-//
 // Tone + opensheetmusicdisplay + __APP_VERSION__ + __BUILD_DATE__
 // are runtime browser/build-time globals; the typeof guards mirror
 // the legacy code's defensive reads.
+
+ 
+import * as PianoCore from '@piano/core';
+import * as RemoteLog from './remote-log';
+import * as PianoConfig from './piano-config';
+import * as DomBag from './dom-bag';
+import * as GameStateInit from './game-state-init';
+import * as PrefsStorage from './prefs-storage';
+import * as PracticeStateInit from './practice-state-init';
+import * as ModalFocus from './modal-focus';
+import * as PianoWakeLock from './wakelock';
+import * as CoreOpts from './core-opts';
+import * as AudioScheduler from './audio-scheduler';
+import * as BuiltInSongs from './built-in-songs';
+import * as RenderFrame from './render-frame';
+import * as AudioInit from './audio-init';
+import * as ShellHelpers from './shell-helpers';
+import * as ShellAudio from './shell-audio';
+import * as ShellViewport from './shell-viewport';
+import * as ShellI18n from './shell-i18n';
+import * as ShellEffects from './shell-effects';
+import * as ShellGameUpdate from './shell-game-update';
+import * as ShellRenderLoop from './shell-render-loop';
+import * as ShellSessionState from './shell-session-state';
+import * as ShellUserLibrary from './shell-user-library';
+import * as ShellOsmd from './shell-osmd';
+import * as ShellPractice from './shell-practice';
+import * as ShellMidi from './shell-midi';
+import * as ShellSettings from './shell-settings';
+import * as ShellMidiHandlers from './shell-midi-handlers';
+import * as ShellPracticeLane from './shell-practice-lane';
+import * as ShellAddSong from './shell-add-song';
+import * as ShellUi from './shell-ui';
+import * as ShellDevMode from './shell-dev-mode';
 
 declare const __APP_VERSION__: string | undefined;
 declare const __BUILD_DATE__: string | undefined;
