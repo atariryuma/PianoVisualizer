@@ -1016,44 +1016,13 @@
       // wire-up is decided in the MIDI-probe block below.
       rebuildAudioGraph(null);
 
-      // Probe MIDI BEFORE asking for the mic. If a MIDI keyboard is already
-      // plugged in, we skip getUserMedia entirely — no permission prompt,
-      // no privacy LED, no idle CPU on YIN/FFT. The user gesture from the
-      // start-button click is still alive, so getUserMedia later (on MIDI
-      // detach) works without re-prompting.
-      try { await initWebMIDI(); } catch (e) { /* fall back to mic */ }
-
-      if (midiInput.enabled) {
-        console.log('[AUDIO] MIDI detected — skipping microphone acquisition');
-        state.micSuspended = true;
-      } else if (isAppleMobile() && typeof navigator.requestMIDIAccess === 'function') {
-        // Web MIDI Browser (or any iOS WKWebView wrapper that polyfills Web MIDI):
-        // mic permission is consistently broken on iOS WKWebView wrappers, so we
-        // skip it on purpose. Note we set `micIntentionallySkipped` (not
-        // `micPermissionFailed`) so downstream code doesn't pop a "MIDI required"
-        // diagnostic on every screen entry — the kid is fine to wait for a
-        // keyboard or just listen passively.
-        state.micSuspended = true;
-        state.micIntentionallySkipped = true;
-        console.log('[AUDIO] iOS WKWebView with Web MIDI polyfill — running MIDI-only (mic skipped)');
-      } else {
-        // Try to acquire the mic. The earlier hang case (iOS WKWebView wrappers
-        // freezing on getUserMedia) is already handled by the
-        // micIntentionallySkipped branch above, so the regular browser path
-        // doesn't need the aggressive 5s timeout — that was firing while the
-        // kid was still reading the permission dialog and falsely flipping the
-        // app into "mic failed" mode. Use a generous 20s safety net only.
-        try {
-          await Promise.race([
-            acquireMic(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('mic permission timeout')), 20000))
-          ]);
-        } catch (e) {
-          state.micSuspended = true;
-          state.micPermissionFailed = true;
-          console.warn('[AUDIO] mic unavailable — running in MIDI-only mode:', e && e.message);
-        }
-      }
+      // Phase 0d batch 64: 38-line MIDI-probe + 3-way input-source
+      // decision (MIDI-detected / iOS-WMB-skip / mic-acquire-with-
+      // timeout) folded into mic-lifecycle.ts decideInitialInputMode().
+      // The factory closes over its own deps; the shell only needs
+      // to hand over `initWebMIDI` + isAppleMobile + hasRequestMIDIAccess
+      // (all done at factory wire-up below — search "_micLifecycle").
+      await _micLifecycle.decideInitialInputMode();
     }
 
     // Phase 0d batch 56: mic acquire / suspend / resume (concurrency
@@ -1074,6 +1043,19 @@
         refreshIntroHint: () => {
           if (typeof refreshIntroHint === 'function') refreshIntroHint();
         },
+        // Phase 0d batch 64: input-mode decision deps. midiInput +
+        // initWebMIDI + isAppleMobile are forward-declared further
+        // down the file (function declarations hoist; consts are
+        // wrapped in thunks so the lookup happens at call-time
+        // when the audio session boots).
+        midiInput: /** @type {any} */ ({
+          get enabled() {
+            return typeof midiInput !== 'undefined' ? midiInput.enabled : false;
+          },
+        }),
+        initWebMIDI: () => initWebMIDI(),
+        isAppleMobile: () => isAppleMobile(),
+        hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
       })
     );
     async function acquireMic() { return _micLifecycle.acquire(); }
