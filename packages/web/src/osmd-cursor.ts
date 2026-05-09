@@ -128,6 +128,12 @@ const FRACTION_NUM_PER_QUARTER = 24;
 export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   const fill = deps.highlightFill ?? DEFAULT_HIGHLIGHT_FILL;
   const highlightedPaths: SVGPathElement[] = [];
+  /** Tracks the last music-system index the cursor was on. Used by
+   *  `ensureCursorVisible` to fire scroll only at system boundaries —
+   *  scrolling on every onset would race the smooth-scroll animation
+   *  and cause the visible cursor to lag behind its target position
+   *  (user-reported: "カーソルがだんだんずれていく"). */
+  let _lastSysIdx: number | null = null;
 
   function clearHighlights(): void {
     for (const p of highlightedPaths) {
@@ -183,6 +189,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     const osmd = deps.getOsmd();
     if (!osmd?.cursor) return;
     clearHighlights();
+    resetScrollTracking();
     try {
       osmd.cursor.reset?.();
     } catch {
@@ -213,40 +220,105 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   }
 
   /**
-   * Industry-standard "follow this element" idiom: scroll the minimum
-   * amount necessary to keep the cursor visible, with smooth animation.
+   * System-boundary scroll tracker (v4 — 2026-05-09).
    *
-   *   - In viewport: no-op (zero scroll churn).
-   *   - About to leave viewport: minimal scroll to bring it back.
-   *   - System-boundary cross: naturally page-turns because the next
-   *     system is the "nearest off-screen" target.
+   * Why this design after three failed iterations:
    *
-   * Replaces the prior SAFE_TOP / TRIGGER_BOTTOM / LAND_TOP magic-number
-   * page-turn logic with browser-native `scrollIntoView({ block: 'nearest' })`
-   * semantics. References:
-   *   - {@link https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollIntoView MDN scrollIntoView}
-   *   - {@link https://github.com/scroll-into-view/scroll-into-view-if-needed scroll-into-view-if-needed}
-   *   - {@link https://github.com/infojunkie/musicxml-player musicxml-player}, the canonical OSMD-based player
+   *   v1 (Type 1 + OSMD followCursor + block:'center'):
+   *      Center-anchor swung staff TOP 45px between systems with
+   *      varying heights. User: "段ごとにずれていく".
    *
-   * Honors `prefers-reduced-motion` per WCAG 2.3.3 — falls back to
-   * 'instant' for users who opt out of motion.
+   *   v2 (Type 1 + custom top-anchor every onset):
+   *      Fought OSMD's center-scroll. User: "上下に揺れる".
+   *
+   *   v3 (Type 1 + block:'nearest' + behavior:'smooth' every onset):
+   *      Smooth-scroll animation (~300ms) couldn't keep up with
+   *      rapid onsets (~125ms apart at tempoPct=60% on La Campanella).
+   *      The cursor's RENDERED position trailed the TARGET position
+   *      by 1-2 notes worth, accumulating into a visible drift.
+   *      User: "カーソルがだんだんずれていく / 描画の問題".
+   *
+   * v4 (this implementation): scroll ONLY when the cursor crosses a
+   *    music-system boundary. Within a system the cursor walks
+   *    horizontally and stays visible without scroll. At a boundary
+   *    we fire one `scrollIntoView({ block: 'start', behavior: 'auto' })`
+   *    to bring the new system into view. `block: 'start'` aligns the
+   *    cursor TOP to viewport top — combined with `scroll-margin-top`
+   *    on the cursor element, the cursor lands at ~25% of viewport
+   *    height, leaving the lower 75% for lookahead (like a kid reading
+   *    sheet music with eyes on the line being played + future lines
+   *    visible below). `behavior: 'auto'` defers to the user's CSS
+   *    `scroll-behavior` — usually 'smooth' OR 'instant' — but the
+   *    once-per-system cadence means animation has time to settle
+   *    before the next call.
+   *
+   * The system index comes from
+   * `GraphicalMusicSheet.MeasureList[m][0].parentMusicSystem`, the same
+   * path OSMD's own Cursor.update uses internally. `null` falls back
+   * to "always scroll" (safe degradation when the graphic-sheet path
+   * isn't yet populated — e.g. mid-load).
    */
   function ensureCursorVisible(osmd: OsmdInstanceRef): void {
     try {
-      const ce = (osmd.cursor as any)?.cursorElement as HTMLElement | undefined;
+      const cursor = osmd.cursor as any;
+      const ce = cursor?.cursorElement as HTMLElement | undefined;
       if (!ce?.scrollIntoView) return;
+
+      const sysIdx = computeSystemIdx(osmd);
+      const sysChanged = _lastSysIdx !== null && sysIdx !== null && sysIdx !== _lastSysIdx;
+      const isFirstScroll = _lastSysIdx === null;
+      if (sysIdx !== null) _lastSysIdx = sysIdx;
+
+      // Only scroll on system change OR the first time (initial cursor
+      // visibility). Within-system onsets stay where they are.
+      if (!sysChanged && !isFirstScroll) return;
+
+      // `scroll-margin-top` defines a "comfort zone" — when scrollIntoView
+      // with block:'start' lands the cursor, the cursor TOP is offset
+      // from viewport top by this amount. 25vh keeps the cursor in the
+      // upper portion of the viewport, with the rest of the viewport
+      // available for lookahead at upcoming systems.
+      if (ce.style) ce.style.scrollMarginTop = '25vh';
+
       const reduceMotion =
         typeof window !== 'undefined' &&
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       ce.scrollIntoView({
         behavior: reduceMotion ? 'instant' : 'smooth',
-        block: 'nearest',
+        block: 'start',
         inline: 'nearest',
       });
     } catch {
       /* swallow — scroll is a nice-to-have, never block the cursor. */
     }
+  }
+
+  /** Resolve the music-system index of the cursor's current measure.
+   *  Returns null when the GraphicalMusicSheet path is unpopulated
+   *  (mid-load) or the OSMD library doesn't expose the chain (test
+   *  fixtures). The chain
+   *  `GraphicalMusicSheet.MeasureList[m][0].parentMusicSystem` mirrors
+   *  what OSMD's own Cursor.update uses to position the cursor. */
+  function computeSystemIdx(osmd: OsmdInstanceRef): number | null {
+    try {
+      const cursor = osmd.cursor as any;
+      const m = cursor?.iterator?.CurrentMeasureIndex;
+      if (typeof m !== 'number') return null;
+      const gms = (osmd as any).GraphicalMusicSheet ?? (osmd as any).graphic;
+      const sys = gms?.MeasureList?.[m]?.[0]?.parentMusicSystem;
+      const idRaw = sys?.Id ?? sys?.id;
+      return typeof idRaw === 'number' ? idRaw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Reset the scroll tracker (called from resetToStart). After reset
+   *  the cursor is at the score's beginning; the next ensureCursorVisible
+   *  call should fire the first-scroll branch. */
+  function resetScrollTracking(): void {
+    _lastSysIdx = null;
   }
 
   let _diagCalls = 0;

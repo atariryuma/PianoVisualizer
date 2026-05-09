@@ -118,7 +118,12 @@ describe('resetToStart', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('calls scrollIntoView({ block: "nearest" }) on cursor element', () => {
+  it('calls scrollIntoView({ block: "start" }) on cursor element (first-scroll path)', () => {
+    // resetToStart is the "first-scroll" branch — _lastSysIdx is null
+    // before this call, so ensureCursorVisible always fires here even
+    // though the system-boundary tracker would normally skip same-system
+    // onsets. Verifies the v4 behavior: block:'start' aligns cursor TOP
+    // to viewport top (offset by scroll-margin-top to stay in upper 25%).
     const reset = vi.fn();
     const scrollIntoView = vi.fn();
     const cursor = createOsmdCursor({
@@ -131,7 +136,7 @@ describe('resetToStart', () => {
     cursor.resetToStart();
     expect(scrollIntoView).toHaveBeenCalledOnce();
     const opts = scrollIntoView.mock.calls[0][0] as ScrollIntoViewOptions;
-    expect(opts.block).toBe('nearest');
+    expect(opts.block).toBe('start');
     // behavior is 'smooth' unless prefers-reduced-motion. Either is
     // acceptable to the test — we only pin the standard fallback list.
     expect(['smooth', 'instant']).toContain(opts.behavior);
@@ -160,6 +165,18 @@ describe('resetToStart', () => {
       getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 0, scrollIntoView } }),
     });
     expect(() => cursor.resetToStart()).not.toThrow();
+  });
+
+  it('first-scroll: fires even with null systemIdx (graceful degradation)', () => {
+    // When the GraphicalMusicSheet path isn't populated (mid-load fixture),
+    // computeSystemIdx returns null. The first-scroll branch (_lastSysIdx
+    // === null) still fires so the cursor lands at score start.
+    const scrollIntoView = vi.fn();
+    const cursor = createOsmdCursor({
+      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 0, scrollIntoView } }),
+    });
+    cursor.resetToStart();
+    expect(scrollIntoView).toHaveBeenCalledOnce();
   });
 });
 
