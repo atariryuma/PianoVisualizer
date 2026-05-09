@@ -1005,37 +1005,16 @@
       }
       // [DIAG-AUDIOCTX] Watch for unexpected state transitions
       // (suspended / interrupted) — these correlate with audio
-      // glitches and the playback-restart symptoms.
-      if (REMOTE_LOG_ENABLED) {
-        try {
-          audioCtx.onstatechange = () => {
-            console.log(
-              '[DIAG-AUDIOCTX] state=' + audioCtx.state +
-              ' sampleRate=' + audioCtx.sampleRate +
-              ' currentTime=' + (audioCtx.currentTime || 0).toFixed(3)
-            );
-          };
-        } catch (_e) { /* onstatechange may be readonly on some polyfills */ }
-      }
+      // glitches and the playback-restart symptoms. Phase 0d batch 63:
+      // shared helper in audio-init.ts.
+      AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED);
 
       // Audio graph (sourceless): gain → analyser, gain → onsetAnalyser.
-      // The mic source is wired in separately so we can drop / re-acquire it
-      // when MIDI attaches / detaches without rebuilding everything.
-      gainNode = audioCtx.createGain();
-      gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
-
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = CONFIG.FFT_SIZE;
-      analyser.smoothingTimeConstant = CONFIG.SMOOTHING;
-      gainNode.connect(analyser);
-      dataArray = new Uint8Array(analyser.frequencyBinCount);
-      freqArray = new Float32Array(analyser.fftSize);
-
-      onsetAnalyser = audioCtx.createAnalyser();
-      onsetAnalyser.fftSize = CONFIG.ONSET_FFT_SIZE;
-      onsetAnalyser.smoothingTimeConstant = CONFIG.ONSET_SMOOTHING;
-      gainNode.connect(onsetAnalyser);
-      onsetDataArray = new Uint8Array(onsetAnalyser.frequencyBinCount);
+      // Phase 0d batch 63: deduped with rebuildAudioGraph — both paths
+      // build the same gain → analyser graph + reset prevSpectrum. The
+      // first-time call passes null for prevMicStream because the mic
+      // wire-up is decided in the MIDI-probe block below.
+      rebuildAudioGraph(null);
 
       // Probe MIDI BEFORE asking for the mic. If a MIDI keyboard is already
       // plugged in, we skip getUserMedia entirely — no permission prompt,
@@ -2900,18 +2879,8 @@
         micSourceNode = graph.micSourceNode;
         // [DIAG-AUDIOCTX] Re-bind the state listener onto the new
         // context — the old one's onstatechange went away with it.
-        if (REMOTE_LOG_ENABLED) {
-          try {
-            audioCtx.onstatechange = () => {
-              console.log(
-                '[DIAG-AUDIOCTX] state=' + audioCtx.state +
-                ' sampleRate=' + audioCtx.sampleRate +
-                ' currentTime=' + (audioCtx.currentTime || 0).toFixed(3) +
-                ' (post-recovery)'
-              );
-            };
-          } catch (_e) { /* readonly polyfill */ }
-        }
+        // Phase 0d batch 63: shared helper in audio-init.ts.
+        AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED, undefined, '(post-recovery)');
       },
       isMicSuspended: () => !!state.micSuspended,
       config: {

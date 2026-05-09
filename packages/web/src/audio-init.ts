@@ -275,6 +275,40 @@ export function createAudioRecovery(deps: AudioRecoveryDeps): AudioRecovery {
   return { recover };
 }
 
+// ─── Audio context diag wire (Phase 0d batch 63 helper) ───────────
+
+/** Optional onstatechange diagnostic — when `enabled` is true,
+ *  attaches a logger that prints the new state + sampleRate +
+ *  currentTime every time the AudioContext transitions. Used to
+ *  catch the unexplained 'suspended' / 'interrupted' flips that
+ *  correlated with the 2026-05-09 listen-mode silent-restart bug.
+ *  No-ops if `onstatechange` is read-only on the polyfill. */
+export function wireAudioCtxDiag(
+  ctx: AudioContext,
+  enabled: boolean,
+  log?: (msg: string) => void,
+  suffix?: string
+): void {
+  if (!enabled) return;
+  const out = log ?? ((m: string) => console.log(m));
+  const tag = suffix ? ' ' + suffix : '';
+  try {
+    ctx.onstatechange = () => {
+      out(
+        '[DIAG-AUDIOCTX] state=' +
+          ctx.state +
+          ' sampleRate=' +
+          ctx.sampleRate +
+          ' currentTime=' +
+          (ctx.currentTime || 0).toFixed(3) +
+          tag
+      );
+    };
+  } catch {
+    /* onstatechange may be readonly on some polyfills */
+  }
+}
+
 // ─── Audio lifecycle handlers (Phase 0d batch 60) ─────────────────
 
 /** Subset of `navigator` we touch. */

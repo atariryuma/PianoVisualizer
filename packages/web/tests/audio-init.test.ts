@@ -12,6 +12,7 @@ import {
   buildAudioGraph,
   createAudioRecovery,
   createAudioLifecycle,
+  wireAudioCtxDiag,
   MIC_CONSTRAINTS,
   AUDIO_SAMPLE_RATE,
   type AudioGraphConfig,
@@ -704,5 +705,89 @@ describe('createAudioLifecycle — visibilitychange', () => {
     expect(fx.requestWakeLock).toHaveBeenCalledOnce();
     expect(fx.verifyMidiAlive).not.toHaveBeenCalled();
     expect(fx.rescanMidi).not.toHaveBeenCalled();
+  });
+});
+
+// ─── wireAudioCtxDiag (Phase 0d batch 63 helper) ──────────────────
+
+describe('wireAudioCtxDiag', () => {
+  function makeFakeCtx(): {
+    state: string;
+    sampleRate: number;
+    currentTime: number;
+    onstatechange: (() => void) | null;
+  } {
+    return {
+      state: 'running',
+      sampleRate: 48000,
+      currentTime: 1.234,
+      onstatechange: null,
+    };
+  }
+
+  it('does nothing when enabled is false', () => {
+    const ctx = makeFakeCtx();
+    wireAudioCtxDiag(ctx as unknown as AudioContext, false);
+    expect(ctx.onstatechange).toBeNull();
+  });
+
+  it('installs onstatechange when enabled is true', () => {
+    const ctx = makeFakeCtx();
+    wireAudioCtxDiag(ctx as unknown as AudioContext, true);
+    expect(typeof ctx.onstatechange).toBe('function');
+  });
+
+  it('logs state + sampleRate + currentTime when fired', () => {
+    const ctx = makeFakeCtx();
+    const log = vi.fn();
+    wireAudioCtxDiag(ctx as unknown as AudioContext, true, log);
+    ctx.onstatechange?.();
+    expect(log).toHaveBeenCalledOnce();
+    const msg = log.mock.calls[0][0];
+    expect(msg).toContain('[DIAG-AUDIOCTX]');
+    expect(msg).toContain('state=running');
+    expect(msg).toContain('sampleRate=48000');
+    expect(msg).toContain('currentTime=1.234');
+  });
+
+  it('appends optional suffix to the log line', () => {
+    const ctx = makeFakeCtx();
+    const log = vi.fn();
+    wireAudioCtxDiag(ctx as unknown as AudioContext, true, log, '(post-recovery)');
+    ctx.onstatechange?.();
+    expect(log.mock.calls[0][0]).toContain('(post-recovery)');
+  });
+
+  it('reads ctx.state fresh per fire', () => {
+    const ctx = makeFakeCtx();
+    const log = vi.fn();
+    wireAudioCtxDiag(ctx as unknown as AudioContext, true, log);
+    ctx.onstatechange?.();
+    ctx.state = 'suspended';
+    ctx.onstatechange?.();
+    expect(log.mock.calls[0][0]).toContain('state=running');
+    expect(log.mock.calls[1][0]).toContain('state=suspended');
+  });
+
+  it('survives onstatechange being readonly (silently no-ops)', () => {
+    const ctx = Object.defineProperty(makeFakeCtx(), 'onstatechange', {
+      get() {
+        return null;
+      },
+      set() {
+        throw new Error('readonly');
+      },
+      configurable: true,
+    });
+    expect(() => wireAudioCtxDiag(ctx as unknown as AudioContext, true)).not.toThrow();
+  });
+
+  it('falls back to console.log when no logger override', () => {
+    const ctx = makeFakeCtx();
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    wireAudioCtxDiag(ctx as unknown as AudioContext, true);
+    ctx.onstatechange?.();
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });
