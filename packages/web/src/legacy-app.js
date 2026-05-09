@@ -290,13 +290,9 @@
       // `practice` is declared further down the file — use a getter
       // proxy so .enabled is read at call-time (post-init), not at
       // factory-build time (TDZ).
-      practice: /** @type {import('./particle-effects').ParticleEffectsPracticeRef} */ (
-        /** @type {any} */ ({
-          get enabled() {
-            return typeof practice !== 'undefined' ? practice.enabled : false;
-          },
-        })
-      ),
+      practice: /** @type {any} */ ({
+        get enabled() { return typeof practice !== 'undefined' ? practice.enabled : false; },
+      }),
       particles: /** @type {any} */ (particles),
       ripples: /** @type {any} */ (ripples),
       perfTier: PERF_TIER_RESOLVED,
@@ -338,24 +334,11 @@
       if (!bg) return;
       PianoCore.drawBgStars(ctx, /** @type {any} */ (bg), { flow: state.flow, themeColors: _themeColors() });
     };
-    /** @param {number} time */
-    const drawAurora = (time) =>
-      PianoCore.drawAurora(ctx, {
-        screenW: W,
-        screenH: H,
-        flow: state.flow,
-        themeColors: _themeColors(),
-        timeMs: time,
-      });
-    /** @param {number} time */
-    const drawGroundFlowers = (time) =>
-      PianoCore.drawGroundFlowers(ctx, {
-        screenW: W,
-        screenH: H,
-        flow: state.flow,
-        themeColors: _themeColors(),
-        timeMs: time,
-      });
+    const _bgOpts = (/** @type {number} */ time) => ({
+      screenW: W, screenH: H, flow: state.flow, themeColors: _themeColors(), timeMs: time,
+    });
+    /** @param {number} time */ const drawAurora = (time) => PianoCore.drawAurora(ctx, _bgOpts(time));
+    /** @param {number} time */ const drawGroundFlowers = (time) => PianoCore.drawGroundFlowers(ctx, _bgOpts(time));
 
     const detectPitchYIN = PianoCore.detectPitchYIN;
     const freqToNote = PianoCore.freqToNote;
@@ -597,9 +580,7 @@
     // setupHiDPICanvas moved to packages/web/src/shell-helpers.ts (batch 38).
     /** @param {HTMLCanvasElement} canvas @param {number} w @param {number} h */
     function setupHiDPICanvas(canvas, w, h) {
-      return /** @type {CanvasRenderingContext2D} */ (
-        ShellHelpers.setupHiDPICanvas(canvas, w, h)
-      );
+      return /** @type {CanvasRenderingContext2D} */ (ShellHelpers.setupHiDPICanvas(canvas, w, h));
     }
 
     // ── Session summary modal — Phase 0d batch 11 wire-up ──
@@ -611,12 +592,7 @@
         )),
         state: /** @type {any} */ (state),
         config: /** @type {any} */ (CONFIG),
-        loadJSON,
-        saveJSON,
-        stageLabel,
-        formatTime,
-        t,
-        setupHiDPICanvas,
+        loadJSON, saveJSON, stageLabel, formatTime, t, setupHiDPICanvas,
       });
       saveBestScores = _sessionSummary.saveBestScores;
       renderSessionSummaryText = _sessionSummary.renderSessionSummaryText;
@@ -624,35 +600,28 @@
     }
 
     // packages/web/src/session-reset.ts.
-    const _sessionReset = SessionReset.createSessionReset(
-      /** @type {any} */ ({
-        refs: {
-          state: /** @type {any} */ (state),
-          questState: /** @type {any} */ (_questState),
-          encState: /** @type {any} */ (_encState),
-          getMidiState: () => /** @type {any} */ (midiState),
-          sessionRing: /** @type {any} */ (sessionRing),
-          ripples, particles,
-        },
-        reducers: {
-          resetQualityHistoryState: PianoCore.resetQualityHistoryState,
-          resetQuestTrackerState: PianoCore.resetQuestTrackerState,
-          resetEncouragementState: PianoCore.resetEncouragementState,
-          resetWakeUpFlashState: PianoCore.resetWakeUpFlashState,
-          resetChordWindowState: PianoCore.resetChordWindowState,
-        },
-        dom: DomBag.pickDom(DOM,
-          'stageLabel', 'encouragement', 'qualityScore', 'noteDisplay',
-          'questDisplay', 'questDots', 'questLabel', 'questToast',
-          'flowFill', 'sessionStatus', 'playTime',
-        ),
-        sessionRingCap: SESSION_RING_CAP,
-        invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
-        resetMidiDispatch: () => _midiDispatch.reset(),
-        remoteLog,
-        now: () => performance.now(),
-      })
-    );
+    const _sessionReset = SessionReset.createSessionReset(/** @type {any} */ ({
+      refs: {
+        state, questState: _questState, encState: _encState,
+        getMidiState: () => midiState, sessionRing, ripples, particles,
+      },
+      reducers: {
+        resetQualityHistoryState: PianoCore.resetQualityHistoryState,
+        resetQuestTrackerState: PianoCore.resetQuestTrackerState,
+        resetEncouragementState: PianoCore.resetEncouragementState,
+        resetWakeUpFlashState: PianoCore.resetWakeUpFlashState,
+        resetChordWindowState: PianoCore.resetChordWindowState,
+      },
+      dom: DomBag.pickDom(DOM,
+        'stageLabel', 'encouragement', 'qualityScore', 'noteDisplay',
+        'questDisplay', 'questDots', 'questLabel', 'questToast',
+        'flowFill', 'sessionStatus', 'playTime',
+      ),
+      sessionRingCap: SESSION_RING_CAP,
+      invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
+      resetMidiDispatch: () => _midiDispatch.reset(),
+      remoteLog, now: () => performance.now(),
+    }));
     function resetSession() { _sessionReset.reset(); }
 
     // ── v12: Practice Mode — songs lazily-loaded MusicXML, sectionDefs
@@ -717,27 +686,22 @@
       return UserSongsMxl.unzipMxlToXmlText(blob, { jszip: /** @type {any} */ (JSZipLib) });
     }
 
-    // Promote a stored-or-just-fetched record into the SONGS registry. Returns
+    // Promote a stored-or-just-fetched record into the SONGS registry.
     const USER_SONG_URL_TIMEOUT_MS = 30000;
     const USER_SONG_MAX_BYTES = 20 * 1024 * 1024; // 20 MB
     const _userSongs = UserSongsStore.createUserSongsStore(
       /** @type {import('./user-songs-store').UserSongsStoreDeps} */ ({
-        userDb: /** @type {any} */ (_userDb),
-        userDbStoreName: USER_DB_STORE,
+        userDb: /** @type {any} */ (_userDb), userDbStoreName: USER_DB_STORE,
         unzipMxlToXmlText: /** @type {any} */ (unzipMxlToXmlText),
-        fns: { parseMusicXmlMetadata: /** @type {any} */ (parseMusicXmlMetadata), autoSectionDefs: /** @type {any} */ (autoSectionDefs), },
-        songs: /** @type {any} */ (SONGS),
-        getPractice: () => /** @type {any} */ (practice),
+        fns: { parseMusicXmlMetadata: /** @type {any} */ (parseMusicXmlMetadata), autoSectionDefs: /** @type {any} */ (autoSectionDefs) },
+        songs: /** @type {any} */ (SONGS), getPractice: () => /** @type {any} */ (practice),
         savePracticeProgress: () => savePracticeProgress(),
-        urlTimeoutMs: USER_SONG_URL_TIMEOUT_MS,
-        maxBytes: USER_SONG_MAX_BYTES,
+        urlTimeoutMs: USER_SONG_URL_TIMEOUT_MS, maxBytes: USER_SONG_MAX_BYTES,
         fetch: (...args) => fetch(...args),
         AbortController,
         setTimeout: (fn, ms) => setTimeout(fn, ms),
         clearTimeout: (id) => clearTimeout(/** @type {any} */ (id)),
-        url: URL,
-        now: () => Date.now(),
-        random: () => Math.random(),
+        url: URL, now: () => Date.now(), random: () => Math.random(),
       })
     );
     /** @param {import('@piano/core').UserSongRecord} record */
@@ -780,27 +744,17 @@
         typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
       getCurrentSong: () => /** @type {any} */ (currentSong),
     });
-    async function initOsmd() {
-      const inst = await _osmdInit.initOsmd();
-      osmd = /** @type {any} */ (inst);
-      return osmd;
-    }
+    async function initOsmd() { osmd = /** @type {any} */ (await _osmdInit.initOsmd()); return osmd; }
 
     /** @param {Parameters<typeof PianoCore.mergeTiedNotes>[0]} notes */
     function mergeTiedNotes(notes) {
-      return PianoCore.mergeTiedNotes(notes, {
-        collectSamples: REMOTE_LOG_ENABLED,
-      });
+      return PianoCore.mergeTiedNotes(notes, { collectSamples: REMOTE_LOG_ENABLED });
     }
 
     /** @param {import('@piano/core').MeasureTimingResult|null|undefined} xmlMeasureTiming
      *  @param {import('@piano/core').ScoreTiming|null|undefined} scoreTiming */
     function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
-      return NoteExtractor.extractNotesFromOsmd(osmd, {
-        xmlMeasureTiming,
-        scoreTiming,
-        collectDiag: REMOTE_LOG_ENABLED,
-      });
+      return NoteExtractor.extractNotesFromOsmd(osmd, { xmlMeasureTiming, scoreTiming, collectDiag: REMOTE_LOG_ENABLED });
     }
 
     // Parse the raw MusicXML for everything that affects playback timing —
@@ -827,10 +781,8 @@
      *  @param {number[]=} sourceMeasureStartSec */
     function expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec) {
       return _playbackOrder.expandNotesByPlaybackOrder(
-        /** @type {any} */ (baseNotes),
-        /** @type {any} */ (order),
-        /** @type {any} */ (measures),
-        sourceMeasureStartSec
+        /** @type {any} */ (baseNotes), /** @type {any} */ (order),
+        /** @type {any} */ (measures), sourceMeasureStartSec,
       );
     }
 
@@ -961,50 +913,38 @@
 
     function verifyMidiAlive() { return _midiPorts.verifyAlive(_midiAccess); }
 
+    const _audioGraphCfg = {
+      fftSize: CONFIG.FFT_SIZE, smoothing: CONFIG.SMOOTHING,
+      onsetFftSize: CONFIG.ONSET_FFT_SIZE, onsetSmoothing: CONFIG.ONSET_SMOOTHING,
+    };
+    /** Spread a freshly-built graph onto the shell-local node refs. Shared
+     *  by rebuildAudioGraph() (initAudio path) + _audioRecovery.applyContext
+     *  (visibility-recovery path) so the two stay in lock-step. */
+    function _applyAudioGraph(/** @type {any} */ graph) {
+      gainNode = graph.gainNode; analyser = graph.analyser; onsetAnalyser = graph.onsetAnalyser;
+      dataArray = graph.dataArray; freqArray = graph.freqArray; onsetDataArray = graph.onsetDataArray;
+      micSourceNode = graph.micSourceNode;
+    }
+    function _resetOnsetState() { state.prevSpectrum = null; state.spectralFluxHistory = []; }
     /** @param {MediaStream|null} prevMicStream */
     function rebuildAudioGraph(prevMicStream) {
-      const graph = AudioInit.buildAudioGraph(audioCtx, prevMicStream, {
-        fftSize: CONFIG.FFT_SIZE,
-        smoothing: CONFIG.SMOOTHING,
-        onsetFftSize: CONFIG.ONSET_FFT_SIZE,
-        onsetSmoothing: CONFIG.ONSET_SMOOTHING,
-      }, !!state.micSuspended);
-      gainNode = graph.gainNode;
-      analyser = graph.analyser;
-      onsetAnalyser = graph.onsetAnalyser;
-      dataArray = graph.dataArray;
-      freqArray = graph.freqArray;
-      onsetDataArray = graph.onsetDataArray;
-      micSourceNode = graph.micSourceNode;
-      // Reset per-frame onset state — old prevSpectrum was sized to the old context.
-      state.prevSpectrum = null;
-      state.spectralFluxHistory = [];
+      _applyAudioGraph(AudioInit.buildAudioGraph(audioCtx, prevMicStream, _audioGraphCfg, !!state.micSuspended));
+      _resetOnsetState();
     }
 
     // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone
     const _audioRecovery = AudioInit.createAudioRecovery({
-      getSnapshot: () => ({
-        audioCtx, gainNode, analyser, onsetAnalyser, micSourceNode, micStream
-      }),
+      getSnapshot: () => ({ audioCtx, gainNode, analyser, onsetAnalyser, micSourceNode, micStream }),
       applyContext: (newCtx, graph) => {
         audioCtx = newCtx;
-        gainNode = graph.gainNode;
-        analyser = graph.analyser;
-        onsetAnalyser = graph.onsetAnalyser;
-        dataArray = graph.dataArray;
-        freqArray = graph.freqArray;
-        onsetDataArray = graph.onsetDataArray;
-        micSourceNode = graph.micSourceNode;
+        _applyAudioGraph(graph);
         // [DIAG-AUDIOCTX] Re-bind the state listener onto the new
         // context — the old one's onstatechange went away with it.
         AudioInit.wireAudioCtxDiag(audioCtx, REMOTE_LOG_ENABLED, undefined, '(post-recovery)');
       },
       isMicSuspended: () => !!state.micSuspended,
-      config: { fftSize: CONFIG.FFT_SIZE, smoothing: CONFIG.SMOOTHING, onsetFftSize: CONFIG.ONSET_FFT_SIZE, onsetSmoothing: CONFIG.ONSET_SMOOTHING, },
-      resetOnsetState: () => {
-        state.prevSpectrum = null;
-        state.spectralFluxHistory = [];
-      },
+      config: _audioGraphCfg,
+      resetOnsetState: _resetOnsetState,
       onAfterRecovery: () => {
         // iOS WKWebView contract: post-background the audio engine is
         if (practice.enabled) {
@@ -1083,13 +1023,9 @@
       t,
     });
     /** @param {MIDIInput|null} port @returns {boolean} */
-    function attachMidiPort(port) {
-      return _midiPorts.attach(/** @type {any} */ (port));
-    }
+    function attachMidiPort(port) { return _midiPorts.attach(/** @type {any} */ (port)); }
     /** @param {MIDIInput|{name:string}|null} port */
-    function detachMidiPort(port) {
-      _midiPorts.detach(/** @type {any} */ (port));
-    }
+    function detachMidiPort(port) { _midiPorts.detach(/** @type {any} */ (port)); }
 
     async function initWebMIDI() { return _midiInit.initWebMIDI(); }
 
@@ -1120,17 +1056,14 @@
     });
     /** @param {boolean} [force] @returns {Promise<MIDIAccess>} */
     async function ensureMidiAccess(force) {
-      const access = await _midiRescan.ensureAccess(force);
-      _midiAccess = /** @type {MIDIAccess} */ (/** @type {any} */ (access));
-      return _midiAccess;
+      _midiAccess = /** @type {any} */ (await _midiRescan.ensureAccess(force));
+      return /** @type {MIDIAccess} */ (_midiAccess);
     }
 
     // to packages/web/src/midi-ports.ts (pure helper).
     /** @param {MIDIAccess} access */
     function gatherMidiInputs(access) {
-      return /** @type {MIDIInput[]} */ (
-        /** @type {any} */ (MidiPorts.gatherMidiInputs(access))
-      );
+      return /** @type {any} */ (MidiPorts.gatherMidiInputs(access));
     }
 
     /** @param {any} [silent] */ function rescanMidi(silent) { return _midiRescan.rescan(silent); }
@@ -1176,9 +1109,7 @@
       navigator: /** @type {any} */ (navigator),
       midiInput: /** @type {any} */ (midiInput),
       verifyMidiAlive: () => verifyMidiAlive(),
-      clearMidiAccessCache: () => {
-        _midiAccess = null;
-      },
+      clearMidiAccessCache: () => { _midiAccess = null; },
       rescanMidi: (silent) => rescanMidi(silent),
       startMidiAutoRescan: () => startMidiAutoRescan(),
     }).install();
@@ -1230,14 +1161,9 @@
           resetBtn: DOM.settingsResetBtn, inputStatus: DOM.settingsInputStatus,
           debugToggle: DOM.settingsDebugToggle, debugOverlay: DOM.debugOverlay,
         }),
-        prefs,
-        practice,
-        state,
-        midiInput,
+        prefs, practice, state, midiInput,
         defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
-        savePrefs,
-        t,
-        modalFocus,
+        savePrefs, t, modalFocus,
         rescanMidi: () => { void rescanMidi(); },
         connectBleMidi: () => connectBleMidi(),
         showSessionSummary: () => showSessionSummary(),
@@ -1449,8 +1375,7 @@
       ensureToneInstruments, scheduleCountInBeeps,
       audioScheduler: /** @type {any} */ (AudioScheduler),
       getInstruments: () => _practiceToneAudio.getInstruments(),
-      practiceBeatMs,
-      pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
+      practiceBeatMs, pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
     });
     /** @param {number} sectionIdx */
     async function startPracticeSection(sectionIdx) { await _startPracticeSection(sectionIdx); }
@@ -1462,19 +1387,14 @@
       dom: { ptbProgress: DOM.ptbProgress },
       practice: /** @type {any} */ (practice),
       midiInput: /** @type {any} */ (midiInput),
-      getOsmd: () => /** @type {any} */ (typeof osmd !== 'undefined' ? osmd : null),
-      practiceElapsedMs,
-      hitWindowMs: HIT_WINDOW_MS,
-      medianRecentPitch,
-      matchNoteOnset,
-      showHitChip,
-      t,
+      getOsmd: () => /** @type {any} */ (osmd),
+      practiceElapsedMs, hitWindowMs: HIT_WINDOW_MS,
+      medianRecentPitch, matchNoteOnset, showHitChip, t,
       // Thunk so the live binding (reassigned after createResultCard
       // runs further down) is read at section-complete time, not at
       // wire-up time (which would hit TDZ on the placeholder above).
       completePracticeSection: () => completePracticeSection(),
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
-      remoteLog,
+      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
       noteStateLabel: n_state,
     });
 
@@ -1549,13 +1469,8 @@
       getCurrentSong: () => /** @type {any} */ (currentSong),
       songProg: () => /** @type {any} */ (songProg()),
       sectionIds: SECTION_IDS,
-      stopPracticeAudio,
-      releaseWakeLock,
-      recordPracticeDay,
-      savePracticeProgress,
-      computeStars,
-      resolveResultTier,
-      computeUnlocks,
+      stopPracticeAudio, releaseWakeLock, recordPracticeDay, savePracticeProgress,
+      computeStars, resolveResultTier, computeUnlocks,
       effectGoldenBurst,
       effectStarShower,
       effectFlowerBurst,
@@ -1607,35 +1522,27 @@
     BootSession.installSongStartButton(DOM.songStart, {
       state: /** @type {any} */ (state),
       practice: /** @type {any} */ (practice),
-      initAudio,
-      showRunningUI,
-      initBgStars,
-      loop,
-      alertAudioInitError,
+      initAudio, showRunningUI, initBgStars, loop, alertAudioInitError,
       startPracticeSection: (idx) => startPracticeSection(idx),
       songPanel: DOM.songPanel,
     });
 
-    const _selectSong = SelectSong.createSelectSong(
-      /** @type {import('./select-song').SelectSongDeps} */ ({
-        songs: /** @type {any} */ (SONGS),
-        state: /** @type {any} */ (state),
-        practice: /** @type {any} */ (practice),
-        dom: /** @type {any} */ (DomBag.pickDom(DOM, 'osmdContainer', 'songTitle', 'songComposer', 'startScreen', 'songPanel', 'questDisplay')),
-        getCurrentSong: () => /** @type {any} */ (currentSong),
-        setCurrentSong: (s) => { currentSong = /** @type {any} */ (s); },
-        getOsmd: () => osmd,
-        setOsmd: (o) => { osmd = /** @type {any} */ (o); },
-        clearHighlights: () => _osmdCursor.clearHighlights(),
-        t,
-        loadPracticeProgress: () => loadPracticeProgress(),
-        showRunningUI: () => showRunningUI(),
-        renderSongPanel: () => renderSongPanel(),
-        initWebMIDI: () => { void initWebMIDI(); },
-        loadCurrentScore: () => loadCurrentScore(),
-        remoteLogEnabled: REMOTE_LOG_ENABLED,
-      })
-    );
+    const _selectSong = SelectSong.createSelectSong(/** @type {any} */ ({
+      songs: SONGS, state, practice,
+      dom: DomBag.pickDom(DOM, 'osmdContainer', 'songTitle', 'songComposer', 'startScreen', 'songPanel', 'questDisplay'),
+      getCurrentSong: () => currentSong,
+      setCurrentSong: (/** @type {any} */ s) => { currentSong = s; },
+      getOsmd: () => osmd,
+      setOsmd: (/** @type {any} */ o) => { osmd = o; },
+      clearHighlights: () => _osmdCursor.clearHighlights(),
+      t,
+      loadPracticeProgress: () => loadPracticeProgress(),
+      showRunningUI: () => showRunningUI(),
+      renderSongPanel: () => renderSongPanel(),
+      initWebMIDI: () => { void initWebMIDI(); },
+      loadCurrentScore: () => loadCurrentScore(),
+      remoteLogEnabled: REMOTE_LOG_ENABLED,
+    }));
     /** @param {any} songId */ function selectSong(songId) { _selectSong.selectSong(songId); }
 
     document.querySelectorAll('.practice-song-btn').forEach((btn) => {
@@ -1646,38 +1553,30 @@
     });
 
     // ── Add-song modal + Section editor — Phase 0d batches 2, 6 wire-up ──
+    // `byId` does NO null-check; missing-id surfaces as a runtime
+    // TypeError downstream, which is what we want for shell wiring.
+    const byId = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
     /** @type {Record<string, HTMLElement> & {tabs: NodeListOf<Element>, bodies: NodeListOf<Element>}} */
     const DOM_ADDSONG = /** @type {any} */ ({
-      modal: document.getElementById('addSongModal'),
-      btn: document.getElementById('addSongBtn'),
-      closeBtn: document.getElementById('addSongCloseBtn'),
+      modal: byId('addSongModal'), btn: byId('addSongBtn'), closeBtn: byId('addSongCloseBtn'),
       tabs: document.querySelectorAll('.add-song-tab'),
       bodies: document.querySelectorAll('.add-song-tab-body'),
-      libraryList: document.getElementById('addSongLibraryList'),
-      libraryStatus: document.getElementById('addSongLibraryStatus'),
-      librarySearch: document.getElementById('addSongLibrarySearch'),
-      fileInput: document.getElementById('addSongFileInput'),
-      pdCheckbox: document.getElementById('addSongPdCheckbox'),
-      urlInput: document.getElementById('addSongUrlInput'),
-      fetchBtn: document.getElementById('addSongFetchBtn'),
-      status: document.getElementById('addSongStatus'),
-      myList: document.getElementById('addSongMyList'),
-      userSongList: document.getElementById('userSongList'),
-      exportBtn: document.getElementById('addSongExportBtn'),
-      importBtn: document.getElementById('addSongImportBtn'),
-      importInput: document.getElementById('addSongImportInput'),
+      libraryList: byId('addSongLibraryList'), libraryStatus: byId('addSongLibraryStatus'),
+      librarySearch: byId('addSongLibrarySearch'), fileInput: byId('addSongFileInput'),
+      pdCheckbox: byId('addSongPdCheckbox'), urlInput: byId('addSongUrlInput'),
+      fetchBtn: byId('addSongFetchBtn'), status: byId('addSongStatus'),
+      myList: byId('addSongMyList'), userSongList: byId('userSongList'),
+      exportBtn: byId('addSongExportBtn'), importBtn: byId('addSongImportBtn'),
+      importInput: byId('addSongImportInput'),
     });
 
-    // Section-editor DOM bag — kept in the shell for the same reason.
-    /** @type {Record<string, HTMLElement>} */
+    /** Section-editor DOM bag — kept in the shell for the same reason.
+     *  @type {Record<string, HTMLElement>} */
     const DOM_SECEDIT = /** @type {any} */ ({
-      modal: document.getElementById('sectionEditModal'),
-      help: document.getElementById('sectionEditHelp'),
-      rows: document.getElementById('sectionEditRows'),
-      error: document.getElementById('sectionEditError'),
-      cancelBtn: document.getElementById('sectionEditCancelBtn'),
-      saveBtn: document.getElementById('sectionEditSaveBtn'),
-      closeBtn: document.getElementById('sectionEditCloseBtn'),
+      modal: byId('sectionEditModal'), help: byId('sectionEditHelp'),
+      rows: byId('sectionEditRows'), error: byId('sectionEditError'),
+      cancelBtn: byId('sectionEditCancelBtn'), saveBtn: byId('sectionEditSaveBtn'),
+      closeBtn: byId('sectionEditCloseBtn'),
     });
 
     // ─── section-editor wire-up ─────────────────────────────────────
@@ -1720,28 +1619,20 @@
         getLang: () => /** @type {"en"|"jp"} */ (prefs.lang),
         getLibrary: () => ONLINE_LIBRARY,
         setLibrary: (entries) => { ONLINE_LIBRARY = entries; },
-        fetchLibrary,
-        addUserSongFromBlob,
-        addUserSongFromUrl,
-        renameUserSong,
-        removeUserSong,
-        registerUserSong,
-        userDbAll,
-        userDbPut,
-        unzipMxlToXmlText,
+        fetchLibrary, addUserSongFromBlob, addUserSongFromUrl,
+        renameUserSong, removeUserSong, registerUserSong,
+        userDbAll, userDbPut, unzipMxlToXmlText,
         autoSectionDefs: PianoCore.autoSectionDefs,
         // Thunk so a future reorder of the section-editor wire-up can't
         // capture a stale placeholder reference.
         openSectionEditor: (id) => openSectionEditor(id),
-        selectSong,
-        getCurrentSong: () => currentSong,
+        selectSong, getCurrentSong: () => currentSong,
         refreshSongPanelHeader: () => {
           if (!currentSong) return;
           DOM.songTitle.textContent = t(currentSong.titleKey);
           DOM.songComposer.textContent = t(currentSong.composerKey);
         },
-        t,
-        modalFocus,
+        t, modalFocus,
       });
       openAddSongModal = _userSongs.open;
       closeAddSongModal = _userSongs.close;
@@ -1769,31 +1660,25 @@
         (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') + ' ' +
         (typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''),
       dom: DomBag.pickDom(DOM, 'settingsPanel', 'sectionResult'),
-      domAddSong: { modal: typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG.modal : null },
+      domAddSong: { modal: DOM_ADDSONG.modal },
       state, practice, prefs, midiInput, midiState, ctx, particles, ripples,
       getScreen: () => ({ W, H }),
-      getAudioCtx: () => audioCtx,
-      getCurrentSong: () => currentSong,
-      openUserDb: () => openUserDb(),
-      userDbAll: () => userDbAll(),
+      getAudioCtx: () => audioCtx, getCurrentSong: () => currentSong,
+      openUserDb: () => openUserDb(), userDbAll: () => userDbAll(),
       userDbPut: (rec) => userDbPut(/** @type {any} */ (rec)),
       removeUserSong: (id) => removeUserSong(id),
       isAppleMobile: () => isAppleMobile(),
       t, setLang, applyTheme,
-      openSettings: () => openSettings(),
-      closeSettings: () => closeSettings(),
-      openAddSongModal: () => openAddSongModal(),
-      closeAddSongModal: () => closeAddSongModal(),
+      openSettings: () => openSettings(), closeSettings: () => closeSettings(),
+      openAddSongModal: () => openAddSongModal(), closeAddSongModal: () => closeAddSongModal(),
       completePracticeSection: () => completePracticeSection(),
       onMidiNoteOn, onMidiNoteOff,
       themes: CONFIG.THEMES,
       drawBgStars, drawAurora, drawGroundFlowers,
       decayWakeUpFlash: PianoCore.decayWakeUpFlash,
       drawCenterGlow: PianoCore.drawCenterGlow,
-      wufOpts: WUF_OPTS,
-      getEnergy,
-      renderFrame: RenderFrame,
-      audioInit: AudioInit,
+      wufOpts: WUF_OPTS, getEnergy,
+      renderFrame: RenderFrame, audioInit: AudioInit,
     });
 
     // The legacy floating BLE button is gone — Bluetooth pairing now lives
@@ -1807,20 +1692,15 @@
           'osmdContainer', 'songPanel', 'sectionResult', 'sessionSummary',
           'hud', 'questDisplay', 'micMeter', 'startScreen',
         ),
-        resTryPlay: document.getElementById('resTryPlay'),
+        resTryPlay: byId('resTryPlay'),
       }),
       practice: /** @type {any} */ (practice),
       state: /** @type {any} */ (state),
       midiState: /** @type {any} */ (midiState),
       getCurrentSong: () => /** @type {any} */ (currentSong),
       songProg: () => /** @type {any} */ (songProg()),
-      startPracticeSection,
-      renderSongPanel,
-      stopPracticeAudio,
-      releaseWakeLock,
-      hideIntroHint,
-      stopMidiAutoRescan,
-      resetSession,
+      startPracticeSection, renderSongPanel, stopPracticeAudio, releaseWakeLock,
+      hideIntroHint, stopMidiAutoRescan, resetSession,
     });
     returnToTitle = _practiceFlow.returnToTitle;
     const transitionToSection = _practiceFlow.transitionToSection;
@@ -1833,11 +1713,7 @@
     BootSession.installStartButton(DOM.startBtn, {
       state: /** @type {any} */ (state),
       practice: /** @type {any} */ (practice),
-      initAudio,
-      showRunningUI,
-      initBgStars,
-      loop,
-      alertAudioInitError,
+      initAudio, showRunningUI, initBgStars, loop, alertAudioInitError,
     });
 
     // sumClose / homeBtn / sumHome / resHome listeners + the
