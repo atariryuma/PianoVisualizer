@@ -1,10 +1,14 @@
-// OSMD cursor — four operations on the OSMD instance + its cursor.
-// Industry-standard implementation matching musicxml-player and
-// osmd-audio-player; OSMD handles cursor positioning AND scroll.
+// OSMD cursor — four operations on the OSMD instance + its cursor,
+// plus the scroll-tracking concern.
 //
-//   1. resetToStart() — reset cursor to score start, clear highlights.
-//      OSMD's `cursor.reset()` repositions + scrolls (when
-//      cursorOptions.follow is true).
+// Industry-standard architecture (mirrors musicxml-player +
+// osmd-audio-player), with one local choice: OSMD's built-in
+// `followCursor` is OFF and we drive scroll ourselves with the
+// browser-native `scrollIntoView({ block: 'nearest' })` idiom (see
+// `ensureCursorVisible` below for rationale).
+//
+//   1. resetToStart() — reset cursor to score start, clear highlights,
+//      ensure visible.
 //
 //   2. clearHighlights() — restore each painted notehead's original
 //      inline `fill`, captured into `dataset._origFill` at paint time.
@@ -25,9 +29,7 @@
 //      `EngravingRules.CursorIgnoreRepetitions = false` the
 //      constructor's walk takes back-jumps at repeat ends, so the
 //      iterator naturally lands at the correct repeat iteration.
-//      `cursor.update()` then runs OSMD's `scrollIntoView` (cursor
-//      option `follow: true` set in osmd-init.ts), so the score
-//      auto-centers without us touching scrollTop.
+//      Finally `ensureCursorVisible()` keeps the cursor on-screen.
 //
 // All side-effects flow through deps; the factory closes over the
 // highlighted-paths tracker.
@@ -186,10 +188,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     } catch {
       /* OSMD's reset can throw on a partially-loaded score */
     }
-    // [Bug fix 2026-05-09] OSMD's followCursor is now disabled, so
-    // `cursor.reset()` no longer scrolls. Anchor cursor top to our
-    // target Y so the score visually rewinds to its first system.
-    _ensureCentered(osmd);
+    ensureCursorVisible(osmd);
   }
 
   function setCursorToNote(target: CursorTarget): void {
@@ -205,96 +204,45 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       /* cursor.update math can throw on grace notes / unformatted
        * notes; the visual stays at the last successful place. */
     }
-    // [Bug fix 2026-05-09] Centering safety-net.
-    //
-    // OSMD's `cursor.update()` calls `cursorElement.scrollIntoView(
-    // {block: 'center'})` internally, but in 1.9.x the scroll doesn't
-    // always settle synchronously when crossing a staff-system boundary
-    // — DIAG showed the cursor's screen Y at ~480px (bottom of viewport)
-    // immediately after update() instead of the expected ~170px (center)
-    // for one onset, then snapping to center on the next onset. The
-    // visual artifact is the cursor appearing well below the staff
-    // (which the page hadn't yet scrolled to bring into the centre).
-    //
-    // We re-check the cursor's bounding rect; if it's drifted >25% of
-    // viewport height from the center, kick scrollIntoView again. This
-    // is a no-op on the common case (already centered) but fixes the
-    // boundary lag. Keeping the original `update()` call so OSMD's
-    // own positioning math + repaint still runs first.
-    _ensureCentered(osmd);
+    ensureCursorVisible(osmd);
     highlightCurrentNotes();
-    // [DIAG-CURSORPOS 2026-05-09] Verify cursor visual lines up with
-    // the staff. Logs once every 16 calls. Compares cursor top vs
-    // first highlighted note top vs the system's expected top.
+    // [DIAG-CURSORPOS] Verify cursor visual lines up with the staff.
+    // Logs once every 16 calls. Compares cursor top vs first highlighted
+    // note top vs the system's expected top.
     _diagCursorPos(osmd);
   }
 
-  /** Page-turn behavior:
+  /**
+   * Industry-standard "follow this element" idiom: scroll the minimum
+   * amount necessary to keep the cursor visible, with smooth animation.
    *
-   *   - SAFE_TOP_FRACTION: don't scroll if cursor.top is at or below
-   *     this fraction of viewport height (= cursor still on-screen above
-   *     the safe zone).
-   *   - TRIGGER_BOTTOM_FRACTION: scroll once cursor.bottom passes this
-   *     fraction (= cursor about to slide below the viewport).
-   *   - LAND_TOP_FRACTION: after the page-turn, the cursor's top edge
-   *     lands at this fraction of viewport height — leaving the rest of
-   *     the viewport for upcoming systems, like turning a page in a
-   *     paper score.
+   *   - In viewport: no-op (zero scroll churn).
+   *   - About to leave viewport: minimal scroll to bring it back.
+   *   - System-boundary cross: naturally page-turns because the next
+   *     system is the "nearest off-screen" target.
    *
-   *  Earlier we tried two simpler strategies:
+   * Replaces the prior SAFE_TOP / TRIGGER_BOTTOM / LAND_TOP magic-number
+   * page-turn logic with browser-native `scrollIntoView({ block: 'nearest' })`
+   * semantics. References:
+   *   - {@link https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollIntoView MDN scrollIntoView}
+   *   - {@link https://github.com/scroll-into-view/scroll-into-view-if-needed scroll-into-view-if-needed}
+   *   - {@link https://github.com/infojunkie/musicxml-player musicxml-player}, the canonical OSMD-based player
    *
-   *    1. OSMD's `block: 'center'` (cursor center → viewport center).
-   *       Stable cursor center, but staff TOP swung 45px between
-   *       differently-tall systems. User: "ちょっとずつずれていく."
-   *
-   *    2. Top-anchor (cursor top fixed at y=200 every onset). Stable
-   *       staff top, but the page jumped 300px every system boundary,
-   *       making the just-played staff fly upward off-screen. User:
-   *       "弾いている五線譜が枠外に外れていく."
-   *
-   *  Page-turning trades scroll FREQUENCY for scroll AMPLITUDE: the
-   *  staff stays put while the cursor walks down, then a single
-   *  page-turn moves several systems at once. Mirrors how a kid would
-   *  read sheet music. */
-  const SAFE_TOP_FRACTION = 0;
-  const TRIGGER_BOTTOM_FRACTION = 0.78;
-  const LAND_TOP_FRACTION = 0.12;
-
-  function _ensureCentered(osmd: OsmdInstanceRef): void {
+   * Honors `prefers-reduced-motion` per WCAG 2.3.3 — falls back to
+   * 'instant' for users who opt out of motion.
+   */
+  function ensureCursorVisible(osmd: OsmdInstanceRef): void {
     try {
       const ce = (osmd.cursor as any)?.cursorElement as HTMLElement | undefined;
-      if (!ce?.getBoundingClientRect) return;
-      const rect = ce.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const triggerBottom = vh * TRIGGER_BOTTOM_FRACTION;
-      const safeTop = vh * SAFE_TOP_FRACTION;
-      // Inside the comfortable reading zone — no scroll. This is the
-      // common case for consecutive onsets within the same staff
-      // system, and even across short system jumps that don't cross
-      // the bottom trigger line.
-      if (rect.bottom <= triggerBottom && rect.top >= safeTop) return;
-      // Page-turn: re-anchor cursor top to LAND_TOP_FRACTION.
-      const landTop = vh * LAND_TOP_FRACTION;
-      const delta = rect.top - landTop;
-      if (Math.abs(delta) <= 4) return;
-      let scrollEl: Element | null = ce.parentElement;
-      while (scrollEl && scrollEl !== document.body) {
-        const cs = getComputedStyle(scrollEl);
-        const ovy = cs.overflowY;
-        if (
-          (ovy === 'auto' || ovy === 'scroll') &&
-          (scrollEl as HTMLElement).scrollHeight > (scrollEl as HTMLElement).clientHeight
-        ) {
-          break;
-        }
-        scrollEl = scrollEl.parentElement;
-      }
-      if (!scrollEl || scrollEl === document.body) {
-        scrollEl = document.scrollingElement ?? document.documentElement;
-      }
-      (scrollEl as HTMLElement).scrollBy({
-        top: delta,
-        behavior: 'instant' as ScrollBehavior,
+      if (!ce?.scrollIntoView) return;
+      const reduceMotion =
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      ce.scrollIntoView({
+        behavior: reduceMotion ? 'instant' : 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
       });
     } catch {
       /* swallow — scroll is a nice-to-have, never block the cursor. */

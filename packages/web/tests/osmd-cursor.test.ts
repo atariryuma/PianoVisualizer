@@ -48,7 +48,11 @@ function makeOsmd(over: {
   iterator?: ReturnType<typeof makeIterator>;
   reset?: () => void;
   next?: () => void;
-  cursorElement?: { offsetTop: number; offsetHeight?: number } | null;
+  cursorElement?: {
+    offsetTop: number;
+    offsetHeight?: number;
+    scrollIntoView?: (...args: unknown[]) => void;
+  } | null;
   noCursor?: boolean;
   measures?: number; // count of source measures
   notesUnderCursor?: OsmdGraphicalNote[] | null;
@@ -93,16 +97,17 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-// scrollToCursor was removed in favor of OSMD's native
-// `cursorOptions.follow: true` (osmd-init.ts) — cursor.update() inside
-// setCursorToNote calls scrollIntoView({block:"center"}) for us.
+// Custom scroll-tracking landed in 2026-05-09 (Phase 0e v3): we use
+// `scrollIntoView({ block: 'nearest', behavior: 'smooth' })` per
+// industry standard ("follow this element" idiom; see osmd-cursor.ts/
+// ensureCursorVisible). OSMD's built-in `followCursor` is OFF.
 
 // ─── resetToStart ──────────────────────────────────────────────────
 
 describe('resetToStart', () => {
-  // `cursorsOptions.follow: true` (osmd-init.ts) lets OSMD's own
-  // `cursor.reset()` invoke `scrollIntoView` on the iterator's first
-  // note, so resetToStart no longer reaches for a container ref.
+  // resetToStart calls cursor.reset() then ensureCursorVisible(); the
+  // latter invokes cursorElement.scrollIntoView when available. Tests
+  // pass cursorElement objects with scrollIntoView spies as needed.
 
   it('calls cursor.reset', () => {
     const reset = vi.fn();
@@ -111,6 +116,25 @@ describe('resetToStart', () => {
     });
     cursor.resetToStart();
     expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it('calls scrollIntoView({ block: "nearest" }) on cursor element', () => {
+    const reset = vi.fn();
+    const scrollIntoView = vi.fn();
+    const cursor = createOsmdCursor({
+      getOsmd: () =>
+        makeOsmd({
+          reset,
+          cursorElement: { offsetTop: 100, scrollIntoView },
+        }),
+    });
+    cursor.resetToStart();
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    const opts = scrollIntoView.mock.calls[0][0] as ScrollIntoViewOptions;
+    expect(opts.block).toBe('nearest');
+    // behavior is 'smooth' unless prefers-reduced-motion. Either is
+    // acceptable to the test — we only pin the standard fallback list.
+    expect(['smooth', 'instant']).toContain(opts.behavior);
   });
 
   it('no-op when osmd cursor missing', () => {
@@ -124,6 +148,16 @@ describe('resetToStart', () => {
     });
     const cursor = createOsmdCursor({
       getOsmd: () => makeOsmd({ reset, cursorElement: { offsetTop: 0 } }),
+    });
+    expect(() => cursor.resetToStart()).not.toThrow();
+  });
+
+  it('swallows scrollIntoView throws (best-effort scroll)', () => {
+    const scrollIntoView = vi.fn(() => {
+      throw new Error('scroll boom');
+    });
+    const cursor = createOsmdCursor({
+      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 0, scrollIntoView } }),
     });
     expect(() => cursor.resetToStart()).not.toThrow();
   });
