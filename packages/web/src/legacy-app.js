@@ -557,7 +557,7 @@
       ),
       sessionRingCap: SESSION_RING_CAP,
       invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
-      resetMidiDispatch: () => _midiDispatch.reset(),
+      resetMidiDispatch: () => _midi.resetMidiDispatch(),
       remoteLog, now: () => performance.now(),
     }));
     function resetSession() { _sessionReset.reset(); }
@@ -738,7 +738,6 @@
     /** @param {any} sec */ function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
-    /** @param {any} e */ function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
 
     const _audioGraphCfg = {
       fftSize: CONFIG.FFT_SIZE, smoothing: CONFIG.SMOOTHING,
@@ -782,128 +781,31 @@
       },
     });
 
-    // ── MIDI input state + dispatch + indicator ──
-    // platformBlocked: true on platforms that never expose Web MIDI (iOS
-    // Safari / any iPadOS browser) — drives a friendlier hint.
-    const midiInput = /** @type {any} */ ({
-      enabled: false, port: null, _accessRequested: false, platformBlocked: false,
-    });
-
-    const _midiIndicator = MidiIndicator.createMidiIndicator(/** @type {any} */ ({
-      midiInput,
-      dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput },
-      t,
-      isRescanRunning: () => _midiRescan.isRescanRunning(),
-      hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
-    }));
-    function isAppleMobile() { return _midiIndicator.isAppleMobile(); }
-    function setInputIndicator() { _midiIndicator.setInputIndicator(); }
-
-    const _midiDispatch = MidiDispatch.createMidiDispatch(/** @type {any} */ ({
-      midiInput, practice,
-      pulseMidiBadge: () => _midiIndicator.pulseBadge(),
-      onMidiNoteOn, onMidiNoteOff, onMidiCC, matchNoteOnset,
-    }));
-
-    // Tapping the input badge in the practice topbar triggers a manual rescan.
-    DOM.ptbInput?.addEventListener('click', () => {
-      if (midiInput.enabled || midiInput.platformBlocked) return;
-      console.log('[MIDI] manual rescan triggered by topbar badge tap');
-      void rescanMidi(false);
-    });
-
-    const _midiPorts = MidiPorts.createMidiPorts(/** @type {any} */ ({
-      midiInput, state,
-      // Thunked: bleMidi declared below — factory is built first.
-      getBleMidi: () => bleMidi,
-      hasAudioCtx: () => !!audioCtx,
+    // ── MIDI shell — the entire MIDI cluster (state + dispatch + indicator
+    //   + ports + rescan + init + intro-diag + BLE-MIDI + audio-lifecycle
+    //   hook) lives in packages/web/src/shell-midi.ts (Phase 0d batch 101).
+    const _midi = ShellMidi.createShellMidi(/** @type {any} */ ({
+      state, practice,
+      getAudioCtx: () => audioCtx,
+      dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput, introHint: DOM.introHint, micMeter: DOM.micMeter },
+      t, navigator,
       suspendMic, resumeMic,
-      onMidiMessageHandler: (/** @type {any} */ e) => _midiDispatch.onMessage(e),
-      setInputIndicator,
-      isVirtualMidiPort: (/** @type {any} */ port) => _midiIndicator.isVirtualMidiPort(port),
       refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
-      micMeter: DOM.micMeter,
-      startMidiAutoRescan, stopMidiAutoRescan, t,
+      onMidiNoteOn, onMidiNoteOff, onMidiCC, matchNoteOnset,
+      recover: () => _audioRecovery.recover(),
+      isRunning: () => !!state.running,
+      requestWakeLock: () => requestWakeLock(),
     }));
-    /** @param {MIDIInput|null} port @returns {boolean} */
-    function attachMidiPort(port) { return _midiPorts.attach(/** @type {any} */ (port)); }
-
-    async function initWebMIDI() { return _midiInit.initWebMIDI(); }
-
-    // ── MIDI rescan + intro-diag ──
-    /** @type {MIDIAccess|null} */
-    let _midiAccess = null;
-    const _midiRescan = MidiRescan.createMidiRescan(/** @type {any} */ ({
-      midiInput,
-      attachMidiPort: (/** @type {any} */ port) => attachMidiPort(port),
-      detachMidiPort: (/** @type {any} */ port) => _midiPorts.detach(port),
-      isAppleMobile: () => isAppleMobile(),
-      showDiagnostic: (/** @type {any} */ makeLines) => {
-        _introDiag.showDiag(() => {
-          const { line1, line2 } = makeLines();
-          _introDiag.setDiagnostic(line1, line2);
-        });
-      },
-      t, setInputIndicator, navigator,
-      // [Bug fix 2026-05-09] Pause auto-rescan during practice playback.
-      isPaused: () => !!practice.enabled,
-    }));
-    /** @param {any} [silent] */ function rescanMidi(silent) { return _midiRescan.rescan(silent); }
-
-    // introHint diagnostic — sticky, cleared by MIDI connect or refreshIntroHint.
-    // 一度ボタンで消した場合は、returnToTitle / 再スキャンの明示的な操作まで再表示しない。
-    const _introDiag = IntroDiag.createIntroDiag(/** @type {any} */ ({
-      state, introHintEl: DOM.introHint,
-      isAppleMobile: () => isAppleMobile(),
-      hasRequestMIDIAccess: () => !!navigator.requestMIDIAccess,
-      t,
-    }));
-
-    function startMidiAutoRescan() { _midiRescan.startAutoRescan(); }
-    function stopMidiAutoRescan() { _midiRescan.stopAutoRescan(); }
-
-    const _midiInit = MidiInit.createMidiInit(/** @type {any} */ ({
-      midiInput, navigator,
-      isAppleMobile: () => isAppleMobile(),
-      setInputIndicator,
-      ensureMidiAccess: async (/** @type {boolean} */ force) => {
-        _midiAccess = /** @type {any} */ (await _midiRescan.ensureAccess(force));
-        return _midiAccess;
-      },
-      gatherMidiInputs: (/** @type {any} */ access) => MidiPorts.gatherMidiInputs(access),
-      attachMidiPort: (/** @type {any} */ port) => attachMidiPort(port),
-      showMidiWaitingHint: () => _introDiag.showMidiWaitingHint(),
-      startMidiAutoRescan: () => startMidiAutoRescan(),
-    }));
-
-    AudioInit.createAudioLifecycle(/** @type {any} */ ({
-      getAudioCtx: () => audioCtx, recover: () => _audioRecovery.recover(),
-      isRunning: () => !!state.running, requestWakeLock: () => requestWakeLock(),
-      navigator, midiInput,
-      verifyMidiAlive: () => _midiPorts.verifyAlive(_midiAccess),
-      clearMidiAccessCache: () => { _midiAccess = null; },
-      rescanMidi: (/** @type {any} */ silent) => rescanMidi(silent),
-      startMidiAutoRescan: () => startMidiAutoRescan(),
-    })).install();
-
-    // ── BLE-MIDI ──
-    /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
-    const bleMidi = /** @type {any} */ ({ device: null, characteristic: null, connected: false });
-
-    const _bleConnect = BleMidiConnect.createBleMidiConnect(/** @type {any} */ ({
-      bleMidi, midiInput,
-      hasAudioCtx: () => !!audioCtx,
-      state: { get micSuspended() { return state.micSuspended; }, set micSuspended(v) { state.micSuspended = v; } },
-      suspendMic, resumeMic, setInputIndicator,
-      refreshIntroHint: () => refreshIntroHint(),
-      showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
-      micMeter: DOM.micMeter,
-      // BLE-MIDI 1.0 packet: header byte (high bit + top 6 bits of timestamp)
-      // then groups of (timestamp, status?, data...). Timestamps ignored.
-      parsePacket: (/** @type {any} */ buf) => BleMidiParser.parseBleMidiPacket(buf, (s, a, b) => _midiDispatch.dispatch(s, a, b)),
-      t, alert: (/** @type {any} */ msg) => alert(msg), navigator,
-    }));
+    const midiInput = _midi.midiInput;
+    const bleMidi = _midi.bleMidi;
+    function isAppleMobile() { return _midi.isAppleMobile(); }
+    function setInputIndicator() { _midi.setInputIndicator(); }
+    function attachMidiPort(/** @type {any} */ port) { return _midi.attachMidiPort(port); }
+    async function initWebMIDI() { return _midi.initWebMIDI(); }
+    /** @param {any} [silent] */ function rescanMidi(silent) { return _midi.rescanMidi(silent); }
+    function startMidiAutoRescan() { _midi.startMidiAutoRescan(); }
+    function stopMidiAutoRescan() { _midi.stopMidiAutoRescan(); }
 
     // ─── settings-panel wire-up ──────────────────────────────────────
     // Settings-panel uses different prop names than DOM.*, so the remap is
@@ -923,7 +825,7 @@
         defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
         savePrefs, t, modalFocus,
         rescanMidi: () => { void rescanMidi(); },
-        connectBleMidi: () => _bleConnect.connect(),
+        connectBleMidi: () => _midi.connectBleMidi(),
         showSessionSummary: () => showSessionSummary(),
       }));
       openSettings = _settings.open;
