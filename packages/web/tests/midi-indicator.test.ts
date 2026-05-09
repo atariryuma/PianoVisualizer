@@ -250,6 +250,40 @@ describe('createMidiIndicator — setInputIndicator', () => {
     expect(deps.dom.ptbInput!.textContent).toBe('🎙️');
   });
 
+  it('rescan-running + Web MIDI present, but practice active → suppress 🎹⏳, show 🎙️', () => {
+    // Bug fix 2026-05-09: user-reported screenshot — kid practicing in
+    // mic mode saw 🎹⏳ "waiting for MIDI" because the auto-rescan
+    // poller was still alive in the background. The pill should
+    // collapse to 🎙️ once the user has committed to a practice
+    // session — the poller stays alive (still hot-detects mid-session
+    // USB MIDI plug) but doesn't get an indicator.
+    const deps = makeDeps({
+      midiInput: { enabled: false, port: null },
+      isRescanRunning: () => true,
+      hasRequestMIDIAccess: () => true,
+      isPracticeActive: () => true,
+    });
+    const ind = createMidiIndicator(deps);
+    ind.setInputIndicator();
+    expect(deps.dom.ptbInput!.textContent).toBe('🎙️');
+    expect(deps.dom.ptbInput!.classList.contains('midi-waiting')).toBe(false);
+  });
+
+  it('rescan-running + Web MIDI present, practice not active → still show 🎹⏳', () => {
+    // Companion test to the practice-active suppression: confirms the
+    // "waiting" state still fires on the title / pre-practice screen.
+    const deps = makeDeps({
+      midiInput: { enabled: false, port: null },
+      isRescanRunning: () => true,
+      hasRequestMIDIAccess: () => true,
+      isPracticeActive: () => false,
+    });
+    const ind = createMidiIndicator(deps);
+    ind.setInputIndicator();
+    expect(deps.dom.ptbInput!.textContent).toBe('🎹⏳');
+    expect(deps.dom.ptbInput!.classList.contains('midi-waiting')).toBe(true);
+  });
+
   it('mic-only (default) → 🎙️ + tipMicMode tooltip', () => {
     const deps = makeDeps();
     const ind = createMidiIndicator(deps);

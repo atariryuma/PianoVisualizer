@@ -60,6 +60,12 @@ export interface MidiIndicatorDeps {
    *  `navigator.requestMIDIAccess` exists). Pulled in via a thunk so
    *  tests can override; the legacy shell just reads `navigator`. */
   hasRequestMIDIAccess: () => boolean;
+  /** True while the user is actively practicing (count-in + section
+   *  + post-section result). Suppresses the 🎹⏳ "waiting for MIDI"
+   *  state during practice — once the user has committed to a session
+   *  the waiting hint is just visual noise. The poller stays alive
+   *  (ホットプラグで MIDI 接続を検出する) but doesn't get an indicator. */
+  isPracticeActive?: () => boolean;
 }
 
 /** Public surface returned by the factory. */
@@ -155,11 +161,19 @@ export function createMidiIndicator(deps: MidiIndicatorDeps): MidiIndicator {
         v: deps.midiInput.port?.name || 'unknown',
       });
       pill.setAttribute('aria-label', pill.title);
-    } else if (deps.isRescanRunning() && deps.hasRequestMIDIAccess()) {
+    } else if (
+      deps.isRescanRunning() &&
+      deps.hasRequestMIDIAccess() &&
+      !deps.isPracticeActive?.()
+    ) {
       // Auto-rescan poller is running (= we know MIDI is supported
-      // but no port has shown up yet). Show a "waiting" hourglass so
-      // users see the app is actively listening rather than silently
-      // mic-only.
+      // but no port has shown up yet) AND the user is still on the
+      // title / pre-practice screen. Show a "waiting" hourglass so
+      // they see the app is actively listening rather than silently
+      // mic-only. Once practice starts the poller stays alive (still
+      // hot-detects mid-session keyboard plugs), but the indicator
+      // collapses to 🎙️ so it stops shouting "MIDI" at a kid who's
+      // already committed to a mic session.
       pill.textContent = '🎹⏳';
       pill.classList.remove('midi');
       pill.classList.add('midi-waiting');

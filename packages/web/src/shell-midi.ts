@@ -85,6 +85,11 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     t,
     isRescanRunning: () => _rescan.isRescanRunning(),
     hasRequestMIDIAccess: () => typeof nav.requestMIDIAccess === 'function',
+    // [Bug fix 2026-05-09] Suppress the 🎹⏳ "waiting for MIDI" pill
+    // during practice — once the user has committed to a mic session
+    // the hint is just visual noise (user-reported screenshot). The
+    // poller stays alive so a mid-practice USB plug still auto-attaches.
+    isPracticeActive: () => !!practice.enabled,
   });
 
   const _dispatch = MidiDispatch.createMidiDispatch({
