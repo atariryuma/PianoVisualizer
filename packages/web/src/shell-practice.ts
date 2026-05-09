@@ -23,7 +23,6 @@ import * as DomBag from './dom-bag';
 import * as CoreOpts from './core-opts';
 import * as PracticeStateInit from './practice-state-init';
 
- 
 export interface ShellPracticeDeps {
   state: any;
   prefs: any;
@@ -32,15 +31,6 @@ export interface ShellPracticeDeps {
   /** Mutable in the shell — getter so renames mid-session pick up. */
   getCurrentSong: () => any;
   dom: any;
-  /** Hit window + tolerance constants from PianoCore. */
-  hitWindows: {
-    HIT_WINDOW_EARLY_MS: number;
-    HIT_WINDOW_MS: number;
-    PERFECT_MS: number;
-    CHORD_MATE_TOLERANCE_MS: number;
-    DURATION_MIN_TOL_MS: number;
-    DURATION_TOL_FRACTION: number;
-  };
   defaultAudioOffsetMs: number;
   remoteLogEnabled: boolean;
   remoteLog: (msg: any) => void;
@@ -144,12 +134,12 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     state,
     practice,
     tuning: {
-      hitWindowEarlyMs: deps.hitWindows.HIT_WINDOW_EARLY_MS,
-      hitWindowMs: deps.hitWindows.HIT_WINDOW_MS,
-      perfectMs: deps.hitWindows.PERFECT_MS,
-      chordMateToleranceMs: deps.hitWindows.CHORD_MATE_TOLERANCE_MS,
-      durationMinTolMs: deps.hitWindows.DURATION_MIN_TOL_MS,
-      durationTolFraction: deps.hitWindows.DURATION_TOL_FRACTION,
+      hitWindowEarlyMs: PianoCore.HIT_WINDOW_EARLY_MS,
+      hitWindowMs: PianoCore.HIT_WINDOW_MS,
+      perfectMs: PianoCore.PERFECT_MS,
+      chordMateToleranceMs: PianoCore.CHORD_MATE_TOLERANCE_MS,
+      durationMinTolMs: PianoCore.DURATION_MIN_TOL_MS,
+      durationTolFraction: PianoCore.DURATION_TOL_FRACTION,
       countInMs: COUNT_IN_MS,
     },
     Tone: deps.Tone,
@@ -260,7 +250,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     } as any,
     getOsmd: deps.getOsmd,
     practiceElapsedMs: () => _practiceScoring.practiceElapsedMs(),
-    hitWindowMs: deps.hitWindows.HIT_WINDOW_MS,
+    hitWindowMs: PianoCore.HIT_WINDOW_MS,
     medianRecentPitch: () => _practiceScoring.medianRecentPitch(),
     matchNoteOnset: (m: number, exact: boolean) => _practiceScoring.matchNoteOnset(m, exact),
     showHitChip: deps.showHitChip,

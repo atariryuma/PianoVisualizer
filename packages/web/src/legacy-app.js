@@ -305,26 +305,18 @@
     /** Backward-compat alias — the few remaining shell readers expect a getter. */
     function getOsmd() { return _osmd.getOsmd(); }
 
-    // ── Practice cluster — moved to packages/web/src/shell-practice.ts (batch 107).
-    // Hit windows — early presses punished harder than late. Pulled here
-    // because the shell still needs HIT_WINDOW_MS / PERFECT_MS / etc. for
-    // practice-lane wireup.
-    const HIT_WINDOW_EARLY_MS = PianoCore.HIT_WINDOW_EARLY_MS;
-    const HIT_WINDOW_MS = PianoCore.HIT_WINDOW_MS;
-    const PERFECT_MS = PianoCore.PERFECT_MS;
-    const CHORD_MATE_TOLERANCE_MS = PianoCore.CHORD_MATE_TOLERANCE_MS;
-    const DURATION_MIN_TOL_MS = PianoCore.DURATION_MIN_TOL_MS;
-    const DURATION_TOL_FRACTION = PianoCore.DURATION_TOL_FRACTION;
-
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
 
     // ── Practice cluster — moved to packages/web/src/shell-practice.ts (batch 107).
+    // Hit-window / chord-mate / duration-tolerance constants live in PianoCore;
+    // shell-practice / shell-practice-lane / shell-midi-handlers each pull
+    // them module-locally (batch 119), so legacy-app.js only ferries the
+    // tunable defaultAudioOffsetMs.
     const _practice = ShellPractice.createShellPractice(/** @type {any} */ ({
       state, prefs, config: CONFIG, ctx,
       getCurrentSong: () => currentSong,
       dom: DOM,
-      hitWindows: { HIT_WINDOW_EARLY_MS, HIT_WINDOW_MS, PERFECT_MS, CHORD_MATE_TOLERANCE_MS, DURATION_MIN_TOL_MS, DURATION_TOL_FRACTION },
       defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
       t,
@@ -411,7 +403,6 @@
       effectGlowPulse,
       finalizeNoteHold: (/** @type {any} */ midi) => finalizeNoteHold(midi),
       qhOptsMidi: QH_OPTS_MIDI, psOpts: PS_OPTS, cwOpts: CW_OPTS, wufOpts: WUF_OPTS,
-      chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
       shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
       t,
       getScreen: _vp.getScreen,
@@ -443,7 +434,6 @@
       practiceElapsedMs, practiceRealElapsedMs,
       noteThemeColor, midiToPitchName,
       laneLookaheadMs: _practice.getLaneLookaheadMs(), countInMs: _practice.getCountInMs(),
-      hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
       drawPracticeLane: PianoCore.drawPracticeLane, t,
     }));
     _practice.setPracticeLane(_practiceLane.instance);

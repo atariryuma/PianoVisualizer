@@ -12,7 +12,6 @@
 
 import * as PracticeLane from './practice-lane';
 
- 
 export interface ShellPracticeLaneDeps {
   ctx: CanvasRenderingContext2D;
   practice: any;
@@ -36,9 +35,6 @@ export interface ShellPracticeLaneDeps {
   practiceRealElapsedMs: () => number;
   laneLookaheadMs: number;
   countInMs: number;
-  hitWindowEarlyMs: number;
-  hitWindowMs: number;
-  perfectMs: number;
   /** MIDI render helpers. */
   noteThemeColor: (m: any) => any;
   midiToPitchName: (m: any) => any;
@@ -57,6 +53,7 @@ export interface ShellPracticeLane {
 }
 
 export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPracticeLane {
+  const PianoCore: any = (globalThis as any).PianoCore;
   const { t } = deps;
   const _lane = PracticeLane.createPracticeLane({
     ctx: deps.ctx,
@@ -89,9 +86,9 @@ export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPract
     noteNames: deps.config.NOTE_NAMES,
     laneLookaheadMs: deps.laneLookaheadMs,
     countInMs: deps.countInMs,
-    hitWindowEarlyMs: deps.hitWindowEarlyMs,
-    hitWindowMs: deps.hitWindowMs,
-    perfectMs: deps.perfectMs,
+    hitWindowEarlyMs: PianoCore.HIT_WINDOW_EARLY_MS,
+    hitWindowMs: PianoCore.HIT_WINDOW_MS,
+    perfectMs: PianoCore.PERFECT_MS,
     drawPracticeLane: deps.drawPracticeLane,
     laneLabelL: t('laneLeft'),
     laneLabelR: t('laneRight'),

@@ -12,7 +12,6 @@
 import * as MidiHandlers from './midi-handlers';
 import * as MidiRender from './midi-render';
 
- 
 export interface ShellMidiHandlersDeps {
   state: any;
   /** practice forward-declared in shell — getter for hot-path read. */
@@ -34,7 +33,6 @@ export interface ShellMidiHandlersDeps {
   psOpts: any;
   cwOpts: any;
   wufOpts: any;
-  chordMateToleranceMs: number;
   shadowBlurEnabled: boolean;
   t: (key: string, vars?: any) => string;
   /** Live geometry — practice-lane + chord-display read W/H/kb at call time. */
@@ -163,7 +161,7 @@ export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiH
     drawMidiBeams: PianoCore.drawMidiBeams,
     midiToScreenX,
     noteThemeColor,
-    chordMateToleranceMs: deps.chordMateToleranceMs,
+    chordMateToleranceMs: PianoCore.CHORD_MATE_TOLERANCE_MS,
     shadowBlurEnabled: deps.shadowBlurEnabled,
     sustainLabel: t('sustainLabel'),
   });
