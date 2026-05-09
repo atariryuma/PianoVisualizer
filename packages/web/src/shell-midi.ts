@@ -20,7 +20,6 @@ import * as BleMidiParser from './ble-midi-parser';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as AudioInit from './audio-init';
 
- 
 export interface ShellMidiDeps {
   state: any;
   practice: any;
@@ -37,11 +36,13 @@ export interface ShellMidiDeps {
   resumeMic: () => Promise<unknown>;
   refreshIntroHint: () => void;
   showHitChip: (kind: any, msg: any) => void;
-  /** Per-note callbacks defined in the shell (close over midiState etc). */
-  onMidiNoteOn: (m: number, v: number) => void;
-  onMidiNoteOff: (m: number) => void;
-  onMidiCC: (cc: number, v: number) => void;
-  matchNoteOnset: (m: number, exact: boolean) => any;
+  /** Per-note callbacks defined in the shell (close over midiState etc).
+   *  Passed as thunks so the shell can build ShellMidi before the handlers
+   *  cluster — the actual fns are read lazily at dispatch time. */
+  getOnMidiNoteOn: () => (m: number, v: number) => void;
+  getOnMidiNoteOff: () => (m: number) => void;
+  getOnMidiCC: () => (cc: number, v: number) => void;
+  getMatchNoteOnset: () => (m: number, exact: boolean) => any;
   /** AudioInit lifecycle deps. */
   recover: () => Promise<unknown>;
   isRunning: () => boolean;
@@ -90,10 +91,10 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     midiInput,
     practice,
     pulseMidiBadge: () => _indicator.pulseBadge(),
-    onMidiNoteOn: deps.onMidiNoteOn,
-    onMidiNoteOff: deps.onMidiNoteOff,
-    onMidiCC: deps.onMidiCC,
-    matchNoteOnset: deps.matchNoteOnset,
+    onMidiNoteOn: (m: number, v: number) => deps.getOnMidiNoteOn()(m, v),
+    onMidiNoteOff: (m: number) => deps.getOnMidiNoteOff()(m),
+    onMidiCC: (cc: number, v: number) => deps.getOnMidiCC()(cc, v),
+    matchNoteOnset: (m: number, exact: boolean) => deps.getMatchNoteOnset()(m, exact),
   });
 
   // Tap the input badge in the practice topbar to trigger a manual rescan.

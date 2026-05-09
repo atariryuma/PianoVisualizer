@@ -525,7 +525,10 @@
       suspendMic, resumeMic,
       refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
-      onMidiNoteOn, onMidiNoteOff, onMidiCC, matchNoteOnset,
+      getOnMidiNoteOn: () => onMidiNoteOn,
+      getOnMidiNoteOff: () => onMidiNoteOff,
+      getOnMidiCC: () => onMidiCC,
+      getMatchNoteOnset: () => matchNoteOnset,
       recover: _audio.recover,
       isRunning: () => !!state.running,
       requestWakeLock: () => requestWakeLock(),
@@ -567,82 +570,37 @@
       _settings.applyDebug(prefs.debug);
     }
 
-    // ── MIDI state + per-note color/screen helpers ──
-    const midiState = /** @type {any} */ ({
-      activeNotes: new Map(),     // midiNum -> { velocity, onTimeMs, synColor }
-      sustainOn: false,
-      sustainedNotes: new Set(),  // released keys held by pedal
-      recentOnsets: [],           // {midi, timeMs} within 80ms — chord candidate
-      lastChordName: '', lastChordTimeMs: 0,
-    });
-
+    // ── MIDI handlers + render — moved to packages/web/src/shell-midi-handlers.ts (batch 106).
     const detectChord = PianoCore.detectChord;
-
-    /** @param {number} midiNum */
-    function midiToScreenX(midiNum) { return ((midiNum - CONFIG.PIANO_KEY_MIN) / CONFIG.PIANO_KEY_COUNT) * W; }
-    /** @param {number} midiNum */
-    const noteThemeColor = (midiNum) => PianoCore.noteThemeColor(midiNum, CONFIG.THEMES[state.currentTheme]);
-    /** @param {number} midiNum */
-    const synColorFor = (midiNum) =>
-      PianoCore.synColorFor(midiNum, {
-        enabled: state.useSynesthesiaMode,
-        noteNames: CONFIG.NOTE_NAMES,
-        colorMap: CONFIG.NOTE_COLORS,
-      });
-
-    /** @param {string} displayText @param {string} changeKey @param {string|null|undefined} color @param {number} timeMs */
-    function showNoteDisplay(displayText, changeKey, color, timeMs) {
-      // In practice mode the falling lane already shows the just-played note,
-      // so showing noteDisplay where it overlaps the score is visual noise.
-      if (practice.enabled) return;
-      state.noteShowTimeMs = timeMs;
-      if (state.lastDetectedNote === changeKey) return;
-      state.lastDetectedNote = changeKey;
-      DOM.noteDisplay.textContent = displayText;
-      DOM.noteDisplay.style.color = color || '';
-      DOM.noteDisplay.style.textShadow = color ? ('0 0 20px ' + color) : '';
-      DOM.noteDisplay.classList.add('visible');
-    }
-
-    const _midiHandlerDeps = /** @type {any} */ ({
-      state, midiState, practice,
-      midiToScreenX, noteThemeColor, synColorFor, spawnBurst, spawnStream,
-      ripples, Ripple,
-      hideIntroHint, showNoteDisplay, effectGlowPulse, finalizeNoteHold,
-      applyOnsetToHistory: PianoCore.applyOnsetToHistory,
-      applyOnsetPitch: PianoCore.applyOnsetPitch,
-      applyOnsetToWindow: PianoCore.applyOnsetToWindow,
-      triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
+    const _midiH = ShellMidiHandlers.createShellMidiHandlers(/** @type {any} */ ({
+      state, getPractice: () => practice,
+      ctx, config: CONFIG,
+      noteDisplayEl: DOM.noteDisplay,
+      spawnBurst, spawnStream, ripples, Ripple,
+      hideIntroHint: () => hideIntroHint(),
+      effectGlowPulse,
+      finalizeNoteHold: (/** @type {any} */ midi) => finalizeNoteHold(midi),
       qhOptsMidi: QH_OPTS_MIDI, psOpts: PS_OPTS, cwOpts: CW_OPTS, wufOpts: WUF_OPTS,
-      config: { NOTE_NAMES: CONFIG.NOTE_NAMES, COMBO_WINDOW_MS: CONFIG.COMBO_WINDOW_MS },
-      getHeight: () => H,
-    });
-
-    /** @param {number} midiNum @param {number} velocity */
-    function onMidiNoteOn(midiNum, velocity) { MidiHandlers.onMidiNoteOn(midiNum, velocity, _midiHandlerDeps); }
-    /** @param {number} midiNum */
-    function onMidiNoteOff(midiNum) { MidiHandlers.onMidiNoteOff(midiNum, _midiHandlerDeps); }
-    /** @param {number} cc @param {number} value */
-    function onMidiCC(cc, value) { MidiHandlers.onMidiCC(cc, value, _midiHandlerDeps); }
-
-    const _midiRender = MidiRender.createMidiRender({
-      ctx,
-      midiState: /** @type {any} */ (midiState),
-      practice: /** @type {any} */ (practice),
-      getLayout: () => ({ W, H, kbHeight, kbSafeBottom }),
-      drawMidiKeyboard: PianoCore.drawMidiKeyboard, drawMidiBeams: PianoCore.drawMidiBeams,
-      midiToScreenX, noteThemeColor,
       chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
       shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
-      sustainLabel: t('sustainLabel'),
-    });
-    function drawMidiKeyboard() { _midiRender.drawKeyboard(); }
-    /** @param {any} timeMs */ function drawMidiBeams(timeMs) { _midiRender.drawBeams(timeMs); }
-    /** @param {any} timeMs */ function drawMidiChordDisplay(timeMs) { _midiRender.drawChordDisplay(timeMs); }
-    // Refresh the sustainLabel on language change.
-    window.addEventListener('langchange', () =>
-      _midiRender.setLabels({ sustainLabel: t('sustainLabel') })
-    );
+      t,
+      getScreen: () => ({ W, H }),
+      getKbHeight: () => kbHeight, getKbSafeBottom: () => kbSafeBottom,
+    }));
+    // Forwarders (function declarations — hoisted, so render-loop-wireup
+    // earlier in the file captures the live binding).
+    const midiState = _midiH.midiState;
+    function midiToScreenX(/** @type {any} */ m) { return _midiH.midiToScreenX(m); }
+    function noteThemeColor(/** @type {any} */ m) { return _midiH.noteThemeColor(m); }
+    function synColorFor(/** @type {any} */ m) { return _midiH.synColorFor(m); }
+    function showNoteDisplay(/** @type {any} */ a, /** @type {any} */ b, /** @type {any} */ c, /** @type {any} */ d) { _midiH.showNoteDisplay(a, b, c, d); }
+    function onMidiNoteOn(/** @type {any} */ m, /** @type {any} */ v) { _midiH.onMidiNoteOn(m, v); }
+    function onMidiNoteOff(/** @type {any} */ m) { _midiH.onMidiNoteOff(m); }
+    function onMidiCC(/** @type {any} */ cc, /** @type {any} */ v) { _midiH.onMidiCC(cc, v); }
+    function drawMidiKeyboard() { _midiH.drawMidiKeyboard(); }
+    function drawMidiBeams(/** @type {any} */ t) { _midiH.drawMidiBeams(t); }
+    function drawMidiChordDisplay(/** @type {any} */ t) { _midiH.drawMidiChordDisplay(t); }
+    window.addEventListener('langchange', () => _midiH.refreshLabels());
 
     const _practiceScoring = PracticeScoring.createPracticeScoring(/** @type {any} */ ({
       state, practice,
