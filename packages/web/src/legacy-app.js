@@ -251,52 +251,41 @@
     // them module-locally (batch 119), so legacy-app.js only ferries the
     // tunable defaultAudioOffsetMs.
     const _practice = ShellPractice.createShellPractice(/** @type {any} */ ({
-      state, prefs, config: CONFIG, ctx,
-      getCurrentSong: () => currentSong,
-      dom: DOM,
+      state, prefs, config: CONFIG, ctx, dom: DOM, t, spawnBurst,
       defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
-      t,
-      hideIntroHint: () => hideIntroHint(),
-      syncLayout: _vp.syncLayout, setInputIndicator: () => _midi.setInputIndicator(), requestWakeLock,
       audioScheduler: AudioScheduler,
       Tone: typeof Tone !== 'undefined' ? Tone : undefined,
+      getCurrentSong: () => currentSong,
+      hideIntroHint: () => hideIntroHint(),
+      syncLayout: _vp.syncLayout, setInputIndicator: () => _midi.setInputIndicator(),
+      requestWakeLock,
       loadCurrentScore: () => _osmd.loadCurrentScore(),
       osmdAdapter: _osmd.osmdAdapter,
       getOsmd, getMidiInput: () => midiInput,
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ text) => showHitChip(kind, text),
-      spawnBurst,
       getScreen: _vp.getScreen,
       prefsStore: _prefsStore,
       getCompletePracticeSection: () => completePracticeSection,
     }));
-    // Dead forwarders (practiceBeatMs / recomputePracticeTimings /
-    // showSectionBanner / matchNoteOnset / midiToScreenX / synColorFor /
-    // midiToName) removed — only used inside shells now.
     const {
       practice, finalizeNoteHold, practiceElapsedMs, practiceRealElapsedMs,
       loadPracticeProgress, savePracticeProgress, songProg, recordPracticeDay,
       startPracticeSection, stopPracticeAudio, updatePractice, midiToPitchName,
     } = _practice;
 
-    // ── MIDI shell — the entire MIDI cluster (state + dispatch + indicator
-    //   + ports + rescan + init + intro-diag + BLE-MIDI + audio-lifecycle
-    //   hook) lives in packages/web/src/shell-midi.ts (Phase 0d batch 101).
+    // ── MIDI shell — moved to packages/web/src/shell-midi.ts (batch 101).
     const _midi = ShellMidi.createShellMidi(/** @type {any} */ ({
-      state, practice,
+      state, practice, t, navigator,
       getAudioCtx: _audio.getAudioCtx,
-      dom: { midiBadge: DOM.midiBadge, ptbInput: DOM.ptbInput, introHint: DOM.introHint, micMeter: DOM.micMeter },
-      t, navigator,
-      suspendMic: _audio.suspendMic, resumeMic: _audio.resumeMic,
+      dom: DomBag.pickDom(DOM, 'midiBadge', 'ptbInput', 'introHint', 'micMeter'),
+      suspendMic: _audio.suspendMic, resumeMic: _audio.resumeMic, recover: _audio.recover,
       refreshIntroHint: () => refreshIntroHint(),
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ msg) => showHitChip(kind, msg),
-      getOnMidiNoteOn: () => onMidiNoteOn,
-      getOnMidiNoteOff: () => onMidiNoteOff,
+      getOnMidiNoteOn: () => onMidiNoteOn, getOnMidiNoteOff: () => onMidiNoteOff,
       getOnMidiCC: () => onMidiCC,
       getMatchNoteOnset: () => _practice.matchNoteOnset,
-      recover: _audio.recover,
-      isRunning: () => !!state.running,
-      requestWakeLock: () => requestWakeLock(),
+      isRunning: () => !!state.running, requestWakeLock,
     }));
     // setInputIndicator: only consumer is ShellPractice (created above
     // _midi), so the deps thunk reads _midi.setInputIndicator() lazily.
