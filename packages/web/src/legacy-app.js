@@ -445,33 +445,23 @@
     window.addEventListener('langchange', () => _midiH.refreshLabels());
     const dateKey = PianoCore.formatDateKey;
 
-    // ── Practice lane ──
-    const _practiceLane = PracticeLane.createPracticeLane(/** @type {any} */ ({
-      ctx, practice, state, midiInput,
-      getLayout: () => {
-        const { W, H } = _vp.getScreen();
-        return {
-          W, H, kbHeight: _vp.getKbHeight(), kbSafeBottom: _vp.getKbSafeBottom(), safeRight: _vp.getSafeRight(),
-          currentLayoutMode: _viewportLayout.getCurrentLayoutMode(),
-          cachedOsmdRect,
-          osmdContainerVisible: !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
-        };
-      },
+    // ── Practice lane — moved to packages/web/src/shell-practice-lane.ts (batch 117).
+    const _practiceLane = ShellPracticeLane.createShellPracticeLane(/** @type {any} */ ({
+      ctx, practice, state, midiInput, config: CONFIG,
+      getScreen: _vp.getScreen,
+      getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom, getSafeRight: _vp.getSafeRight,
+      getCurrentLayoutMode: () => _viewportLayout.getCurrentLayoutMode(),
+      cachedOsmdRect, osmdContainerEl: DOM.osmdContainer,
       getCurrentSong: () => currentSong,
       osmdAdapter, osmdScrollToCursor: () => _osmd.osmdScrollToCursor(),
       practiceElapsedMs, practiceRealElapsedMs,
       noteThemeColor, midiToPitchName,
-      noteColors: CONFIG.NOTE_COLORS, noteNames: CONFIG.NOTE_NAMES,
       laneLookaheadMs: _practice.getLaneLookaheadMs(), countInMs: _practice.getCountInMs(),
       hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
-      drawPracticeLane: PianoCore.drawPracticeLane,
-      laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo'),
+      drawPracticeLane: PianoCore.drawPracticeLane, t,
     }));
-    _practice.setPracticeLane(_practiceLane);
+    _practice.setPracticeLane(_practiceLane.instance);
     /** @param {number} timeMs */ function drawPracticeLane(timeMs) { _practiceLane.draw(timeMs); }
-    window.addEventListener('langchange', () =>
-      _practiceLane.setLabels({ laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo') }),
-    );
 
     // ── Add-song modal + Section editor — moved to packages/web/src/shell-add-song.ts (batch 102).
     const _addSong = ShellAddSong.createShellAddSong(/** @type {any} */ ({
