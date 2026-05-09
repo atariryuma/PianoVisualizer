@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-97 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,487 lines** (was
-5,100 at the prior NEXT refresh, **−3,613 across 47 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-99 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,405 lines** (was
+5,100 at the prior NEXT refresh, **−3,695 across 49 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
@@ -257,6 +257,23 @@ every commit.**
   buildSectionNotes/buildFullSongNotes args literal; dead `roundRect` helper
   removed; dead langchange `typeof activeNoteNames` guard removed (TDZ guards on
   let-decls are dead code). (-51, −3.3% — 1,538 → 1,487).
+- **batch 98 (commit `971b833`)** — user-songs forwarder dedup + new
+  `osmd-adapter.ts` extraction. Outer `_userSongs` (UserSongsStore) renamed to
+  `_userSongStore`; 4 forwarder declarations (`registerUserSong`,
+  `addUserSongFromBlob`, `addUserSongFromUrl`, `renameUserSong`) deleted —
+  UserSongsUi consumes them as direct property references on `_userSongStore`.
+  The `osmd-adapter.ts` factory holds the 30-line `OsmdAdapter` literal (the
+  typed boundary that lets score-loader/cursor drive OSMD). (-27, −1.8% — 1,487
+  → 1,460).
+- **batch 99 (commit `d3f0b4e`)** — third wireup deps-block field-grouping pass:
+  10 more factories (`_sectionEditor`, `_userSongs` UI, `_midiDispatch`,
+  `_midiIndicator`, `_midiPorts`, `_midiRescan`, `_midiInit`,
+  `AudioInit.createAudioLifecycle`, `_bleConnect`, `_settings`, `_scoreLoader`);
+  \_scoreLoader cast-laden delegating arrow-fn block collapsed from 20 to 8
+  lines (deps signatures align with shell function references after the outer
+  any-cast); 2 dead TDZ guards on `DOM_SECEDIT` / `DOM_ADDSONG` removed;
+  `typeof SONGS !== 'undefined' ? ... : null` → `SONGS?.[id]`; 6
+  separator-comment lines removed. (-55, −3.8% — 1,460 → 1,405).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -393,14 +410,15 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 | 118 | `web/render-loop-wireup.ts`     | —     | `packages/web/src/render-loop-wireup.ts`        |
 | 119 | `web/boot-session.ts`           | —     | `packages/web/src/boot-session.ts`              |
 | 120 | `web/built-in-songs.ts`         | —     | `packages/web/src/built-in-songs.ts`            |
+| 121 | `web/osmd-adapter.ts`           | —     | `packages/web/src/osmd-adapter.ts`              |
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **1,487 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,590
-net** across 27 batches in `685d5df` + 91 / 92 / 93 / 94 / 95 / 96 / 97, plus
-the parallel `f3f226c` tie-aware OSMD cursor fix; **−7,513 net** since Phase 0a
-baseline).
+Start click) reports zero console errors. `legacy-app.js`: **1,405 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,672
+net** across 29 batches in `685d5df` + 91 / 92 / 93 / 94 / 95 / 96 / 97 / 98 /
+99, plus the parallel `f3f226c` tie-aware OSMD cursor fix; **−7,595 net** since
+Phase 0a baseline).
 
 ---
 
