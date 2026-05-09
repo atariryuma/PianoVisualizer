@@ -12,7 +12,6 @@
 import * as DevModeWireup from './dev-mode-wireup';
 import * as DomBag from './dom-bag';
 
- 
 export interface ShellDevModeDeps {
   document: Document;
   /** Build constants — versionLabel = `${__APP_VERSION__} ${__BUILD_DATE__}`. */

@@ -17,7 +17,6 @@
 //     `notes` / `totalSec` / `sections` / `playbackOrder` / `_loaded` /
 //     `_loadingPromise`
 
- 
 export type SectionDef = {
   id: string;
   nameKey: string;

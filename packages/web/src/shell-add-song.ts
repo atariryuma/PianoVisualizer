@@ -20,7 +20,6 @@ import * as SectionEditor from './section-editor';
 import * as UserSongsUi from './user-songs-ui';
 import * as DomBag from './dom-bag';
 
- 
 export interface ShellAddSongDeps {
   document: Document;
   /** Mutable in-place by SectionEditor.onSaved + UserSongsUi.register. */

@@ -38,8 +38,6 @@
 // installs the new draw signature once + the spawn opts close over the
 // right dimensions.
 
- 
-
 /** Particle shape returned by @piano/core's spawn API. Opaque to this
  *  module — we only push them into the `particles` array. */
 export interface ParticleLike {

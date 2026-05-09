@@ -7,7 +7,6 @@
 
 import * as ParticleEffects from './particle-effects';
 
- 
 export interface ShellEffectsDeps {
   pianoCore: any;
   ctx: CanvasRenderingContext2D;

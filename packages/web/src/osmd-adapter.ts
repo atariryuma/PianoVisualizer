@@ -12,7 +12,6 @@
 
 import type { OsmdAdapter } from '@piano/core';
 
- 
 export interface OsmdAdapterDeps {
   /** Live OSMD instance ref — null pre-init, set by `initOsmd()`. */
   getOsmd: () => any;

@@ -17,8 +17,6 @@
 // same dep object as the render-loop factory, and its context
 // snapshot reads from the same shell-locals.
 
- 
-
 import type * as RenderLoopModule from './render-loop';
 import type * as RenderFrameModule from './render-frame';
 import type * as MicPipelineModule from './mic-pipeline';

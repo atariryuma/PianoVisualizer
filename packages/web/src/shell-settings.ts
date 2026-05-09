@@ -11,7 +11,6 @@
 
 import * as SettingsPanel from './settings-panel';
 
- 
 export interface ShellSettingsDeps {
   /** Full DOM bag — the panel pulls 13 named elements via the explicit
    *  remap (different prop names than DOM.*, so no pickDom shortcut). */

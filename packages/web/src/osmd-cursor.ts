@@ -261,7 +261,6 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   const LAND_TOP_FRACTION = 0.12;
 
   function _ensureCentered(osmd: OsmdInstanceRef): void {
-     
     try {
       const ce = (osmd.cursor as any)?.cursorElement as HTMLElement | undefined;
       if (!ce?.getBoundingClientRect) return;
@@ -300,14 +299,13 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     } catch {
       /* swallow — scroll is a nice-to-have, never block the cursor. */
     }
-     
   }
 
   let _diagCalls = 0;
   function _diagCursorPos(osmd: OsmdInstanceRef): void {
     _diagCalls++;
     if (_diagCalls % 16 !== 1) return;
-     
+
     try {
       const cursor = osmd.cursor as any;
       const ce = cursor?.cursorElement as HTMLElement | undefined;
@@ -398,7 +396,6 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     } catch (e) {
       console.warn('[DIAG-CURSORPOS] threw: ' + (e as Error).message);
     }
-     
   }
 
   /** Seeds `cursor.iterator` from a fresh `MusicPartManagerIterator`

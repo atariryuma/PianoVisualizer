@@ -11,7 +11,6 @@
 
 import * as ViewportLayout from './viewport-layout';
 
- 
 export interface ShellViewportDeps {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;

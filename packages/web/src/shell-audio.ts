@@ -15,7 +15,6 @@
 import * as AudioInit from './audio-init';
 import * as MicLifecycle from './mic-lifecycle';
 
- 
 export interface ShellAudioDeps {
   state: any;
   /** practice is forward-declared in the shell — getter so the after-recovery

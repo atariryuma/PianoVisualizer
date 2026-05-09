@@ -18,8 +18,6 @@
 //   7. finally: clear state.starting + (start-only) reset the
 //      loading pip.
 
- 
-
 export interface BootSessionDeps {
   /** Live state — read + written. */
   state: {
