@@ -629,79 +629,21 @@
     let ONLINE_LIBRARY = OnlineLibrary.LIBRARY_SEED.slice();
     const buildSectionsFromDefs = PianoCore.buildSectionsFromDefs;
 
-    // ========================================
-    /** @type {any} OSMD instance (typed `any` because OSMD's surface is wide and version-fragile;
-     *  consumers go through osmdAdapter for the typed boundary). */
-    let osmd = null;
-
-    const _osmdInit = OsmdInit.createOsmdInit({
-      opensheetmusicdisplay: typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
-      getCurrentSong: () => /** @type {any} */ (currentSong),
-    });
-    async function initOsmd() { osmd = /** @type {any} */ (await _osmdInit.initOsmd()); return osmd; }
-
-    /** @param {import('@piano/core').MeasureTimingResult|null|undefined} xmlMeasureTiming
-     *  @param {import('@piano/core').ScoreTiming|null|undefined} scoreTiming */
-    function extractNotesFromOsmd(xmlMeasureTiming, scoreTiming) {
-      return NoteExtractor.extractNotesFromOsmd(osmd, { xmlMeasureTiming, scoreTiming, collectDiag: REMOTE_LOG_ENABLED });
-    }
-
-    // @piano/core/library/{score-timing, measure-timing} — handles mid-bar
-    // tempo events + partial-measure exporters (la Campanella m=5 case).
-    const parseScoreTimingFromXml = PianoCore.parseScoreTimingFromXml;
-    const buildMeasureTimingFromXml = PianoCore.buildMeasureTimingFromXml;
-
-    const _playbackOrder = PlaybackOrder.createPlaybackOrder({
-      fns: {
-        parsePlaybackOrderFromXml: PianoCore.parsePlaybackOrderFromXml,
-        expandNotesByPlaybackOrder: /** @type {any} */ (PianoCore.expandNotesByPlaybackOrder),
-      },
-      fetch: (...args) => fetch(...args),
-    });
-    /** @param {any} [forSong] */
-    async function fetchPlaybackOrder(forSong) {
-      return _playbackOrder.fetchPlaybackOrder(/** @type {any} */ (forSong || currentSong));
-    }
-    /** @param {Parameters<typeof PianoCore.expandNotesByPlaybackOrder>[0]} baseNotes
-     *  @param {Parameters<typeof PianoCore.expandNotesByPlaybackOrder>[1]} order
-     *  @param {ReadonlyArray<{TempoInBPM?:number, Duration?:{realValue:number}}>} measures
-     *  @param {number[]=} sourceMeasureStartSec */
-    function expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec) {
-      return _playbackOrder.expandNotesByPlaybackOrder(
-        /** @type {any} */ (baseNotes), /** @type {any} */ (order),
-        /** @type {any} */ (measures), sourceMeasureStartSec,
-      );
-    }
-
-    // @piano/core/library/diag-load. The shim threads the legacy remoteLog as the logger.
-    /** @param {Parameters<typeof PianoCore.dumpLoadDiagnostics>[0]} p */
-    function dumpLoadDiagnostics(p) { PianoCore.dumpLoadDiagnostics(p, remoteLog); }
-
-    const _scoreLoader = ScoreLoader.createScoreLoader(/** @type {any} */ ({
+    // ── OSMD shell — moved to packages/web/src/shell-osmd.ts (batch 103).
+    const _osmd = ShellOsmd.createShellOsmd(/** @type {any} */ ({
       getCurrentSong: () => currentSong,
-      initOsmd, getOsmd: () => osmd,
-      parseScoreTimingFromXml, buildMeasureTimingFromXml,
-      extractNotesFromOsmd, fetchPlaybackOrder,
-      expandNotesByPlaybackOrder, buildSectionsFromDefs,
-      dumpLoadDiagnostics,
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
+      osmdContainer: DOM.osmdContainer,
+      opensheetmusicdisplay: typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
+      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
+      buildSectionsFromDefs,
     }));
-    async function loadCurrentScore() { await _scoreLoader.loadCurrentScore(); }
-
-    const _osmdCursor = OsmdCursor.createOsmdCursor({
-      getOsmd: () => /** @type {any} */ (osmd),
-      getContainer: () => DOM.osmdContainer,
-    });
-    function osmdScrollToCursor() { _osmdCursor.scrollToCursor(); }
-
-    // OSMD adapter — moved to packages/web/src/osmd-adapter.ts (batch 99).
-    const osmdAdapter = OsmdAdapterMod.createOsmdAdapter({
-      getOsmd: () => osmd, getCurrentSong: () => currentSong,
-      initOsmd, extractNotesFromOsmd, cursor: _osmdCursor,
-    });
-    // Promote to globalThis so Phase 0c-extracted modules can resolve it
-    // bare (matches the Tone / OSMD / JSZip / PianoCore main.ts globals).
-    globalThis.osmdAdapter = osmdAdapter;
+    const osmdAdapter = _osmd.osmdAdapter;
+    const initOsmd = _osmd.initOsmd;
+    const extractNotesFromOsmd = _osmd.extractNotesFromOsmd;
+    const loadCurrentScore = _osmd.loadCurrentScore;
+    const osmdScrollToCursor = _osmd.osmdScrollToCursor;
+    /** Backward-compat alias — the few remaining shell readers expect a getter. */
+    function getOsmd() { return _osmd.getOsmd(); }
 
     // ── Practice state + tunable constants ──
     let COUNT_IN_MS = 4000;            // pre-roll before the first note (4 beats)
@@ -982,7 +924,7 @@
       loadCurrentScore: () => loadCurrentScore(),
       recomputePracticeTimings, buildSectionNotes, buildFullSongNotes, computeHandRanges,
       osmdAdapter,
-      resetScrollThrottle: () => _osmdCursor.resetScrollThrottle(),
+      resetScrollThrottle: () => _osmd.resetScrollThrottle(),
       osmdScrollToCursor,
       Tone: typeof Tone !== 'undefined' ? Tone : undefined,
       ensureToneInstruments: () => _practiceToneAudio.ensureInstruments(),
@@ -999,7 +941,7 @@
     const updatePractice = PracticeTick.createPracticeTick(/** @type {any} */ ({
       dom: { ptbProgress: DOM.ptbProgress },
       practice, midiInput,
-      getOsmd: () => osmd,
+      getOsmd,
       practiceElapsedMs, hitWindowMs: HIT_WINDOW_MS,
       medianRecentPitch, matchNoteOnset, showHitChip, t,
       // Thunk so the live binding (reassigned after createResultCard) is read
@@ -1114,9 +1056,9 @@
       dom: DomBag.pickDom(DOM, 'osmdContainer', 'songTitle', 'songComposer', 'startScreen', 'songPanel', 'questDisplay'),
       getCurrentSong: () => currentSong,
       setCurrentSong: (/** @type {any} */ s) => { currentSong = s; },
-      getOsmd: () => osmd,
-      setOsmd: (/** @type {any} */ o) => { osmd = o; },
-      clearHighlights: () => _osmdCursor.clearHighlights(),
+      getOsmd,
+      setOsmd: (/** @type {any} */ o) => _osmd.setOsmd(o),
+      clearHighlights: () => _osmd.cursor.clearHighlights(),
       t,
       loadPracticeProgress: () => loadPracticeProgress(),
       showRunningUI: () => showRunningUI(),
