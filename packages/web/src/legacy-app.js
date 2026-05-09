@@ -246,13 +246,10 @@
       getScreen: _vp.getScreen,
       getKbHeight: _vp.getKbHeight, getKbSafeBottom: _vp.getKbSafeBottom,
     }));
-    const {
-      midiState, noteThemeColor, showNoteDisplay,
+    const { midiState, noteThemeColor, showNoteDisplay,
       onMidiNoteOn, onMidiNoteOff, onMidiCC,
-      drawMidiKeyboard, drawMidiBeams, drawMidiChordDisplay,
-    } = _midiH;
+      drawMidiKeyboard, drawMidiBeams, drawMidiChordDisplay } = _midiH;
     window.addEventListener('langchange', () => _midiH.refreshLabels());
-    const dateKey = PianoCore.formatDateKey;
 
     // ── Practice lane — moved to packages/web/src/shell-practice-lane.ts (batch 117).
     const _practiceLane = ShellPracticeLane.createShellPracticeLane(/** @type {any} */ ({
@@ -287,12 +284,12 @@
 
     // ── UI cluster — moved to packages/web/src/shell-ui.ts (batch 108).
     const _ui = ShellUi.createShellUi(/** @type {any} */ ({
-      document, songs: SONGS,
+      document, songs: SONGS, dom: DOM, t, getOsmd,
       state, practice, midiInput, midiState, prefs, config: CONFIG,
+      dateKey: PianoCore.formatDateKey,
       getCurrentSong: () => currentSong,
       setCurrentSong: (/** @type {any} */ s) => { currentSong = s; },
-      dom: DOM, t, dateKey,
-      getOsmd, setOsmd: (/** @type {any} */ o) => _osmd.setOsmd(o),
+      setOsmd: (/** @type {any} */ o) => _osmd.setOsmd(o),
       clearHighlights: () => _osmd.cursor.clearHighlights(),
       loadCurrentScore: () => _osmd.loadCurrentScore(),
       songProg, loadPracticeProgress, savePracticeProgress, recordPracticeDay,
