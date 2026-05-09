@@ -186,7 +186,7 @@
     // with imperative (set-from-JS) localized text. applyI18n only walks
     // [data-i18n*] attrs; these labels need explicit redraw.
     window.addEventListener('langchange', () => {
-      activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
+      _practice.refreshLangCaches();
       laneLabelL = t('laneLeft'); laneLabelR = t('laneRight');
       if (DOM.songPanel?.classList.contains('visible')) renderSongPanel();
       if (DOM.practiceHud?.classList.contains('visible') && currentSong) {
@@ -481,23 +481,10 @@
     /** Backward-compat alias — the few remaining shell readers expect a getter. */
     function getOsmd() { return _osmd.getOsmd(); }
 
-    // ── Practice state + tunable constants ──
-    let COUNT_IN_MS = 4000;            // pre-roll before the first note (4 beats)
-    let LANE_LOOKAHEAD_MS = 4000;      // how far ahead notes appear in the lane
-
-    // Song's quarter-note duration at the kid's chosen tempo. Falls back to a
-    const _practiceTimings = PracticeTimings.createPracticeTimings(/** @type {any} */ ({
-      getPractice: () => practice, getCurrentSong: () => currentSong,
-      fns: { practiceBeatMs: PianoCore.practiceBeatMs, computePracticeTimings: PianoCore.computePracticeTimings },
-      setCountInMs: (/** @type {any} */ ms) => { COUNT_IN_MS = ms; },
-      setLaneLookaheadMs: (/** @type {any} */ ms) => { LANE_LOOKAHEAD_MS = ms; },
-      getPracticeLane: () => _practiceLane,
-      sectionBannerEl: DOM.sectionBanner, t,
-    }));
-    function practiceBeatMs() { return _practiceTimings.practiceBeatMs(); }
-    function recomputePracticeTimings() { _practiceTimings.recomputePracticeTimings(); }
-
-    // Hit windows — early presses punished harder than late.
+    // ── Practice cluster — moved to packages/web/src/shell-practice.ts (batch 107).
+    // Hit windows — early presses punished harder than late. Pulled here
+    // because the shell still needs HIT_WINDOW_MS / PERFECT_MS / etc. for
+    // practice-lane wireup.
     const HIT_WINDOW_EARLY_MS = PianoCore.HIT_WINDOW_EARLY_MS;
     const HIT_WINDOW_MS = PianoCore.HIT_WINDOW_MS;
     const PERFECT_MS = PianoCore.PERFECT_MS;
@@ -505,14 +492,50 @@
     const DURATION_MIN_TOL_MS = PianoCore.DURATION_MIN_TOL_MS;
     const DURATION_TOL_FRACTION = PianoCore.DURATION_TOL_FRACTION;
 
-    const practice = /** @type {any} */ (PracticeStateInit.createInitialPractice(
-      prefs.audioOffsetMs != null ? prefs.audioOffsetMs : DEFAULT_AUDIO_OFFSET_MS,
-    ));
-
-    // ── Section banner + Wake Lock ──
-    /** @param {any} sec */ function showSectionBanner(sec) { _practiceTimings.showSectionBanner(sec); }
     const requestWakeLock = PianoWakeLock.requestWakeLock;
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
+
+    // ── Practice cluster — moved to packages/web/src/shell-practice.ts (batch 107).
+    const _practice = ShellPractice.createShellPractice(/** @type {any} */ ({
+      state, prefs, config: CONFIG, ctx,
+      getCurrentSong: () => currentSong,
+      dom: DOM,
+      hitWindows: { HIT_WINDOW_EARLY_MS, HIT_WINDOW_MS, PERFECT_MS, CHORD_MATE_TOLERANCE_MS, DURATION_MIN_TOL_MS, DURATION_TOL_FRACTION },
+      defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
+      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
+      t,
+      hideIntroHint: () => hideIntroHint(),
+      syncLayout, setInputIndicator, requestWakeLock,
+      audioScheduler: AudioScheduler,
+      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
+      loadCurrentScore: () => _osmd.loadCurrentScore(),
+      osmdAdapter: _osmd.osmdAdapter,
+      resetScrollThrottle: () => _osmd.resetScrollThrottle(),
+      osmdScrollToCursor: () => _osmd.osmdScrollToCursor(),
+      getOsmd, getMidiInput: () => midiInput,
+      showHitChip: (/** @type {any} */ kind, /** @type {any} */ text) => showHitChip(kind, text),
+      spawnBurst,
+      getScreen: () => ({ W, H }),
+      prefsStore: _prefsStore,
+      getCompletePracticeSection: () => completePracticeSection,
+    }));
+    const practice = _practice.practice;
+    function practiceBeatMs() { return _practice.practiceBeatMs(); }
+    function recomputePracticeTimings() { _practice.recomputePracticeTimings(); }
+    function showSectionBanner(/** @type {any} */ sec) { _practice.showSectionBanner(sec); }
+    function matchNoteOnset(/** @type {any} */ m, /** @type {any} */ x) { return _practice.matchNoteOnset(m, x); }
+    function finalizeNoteHold(/** @type {any} */ m) { _practice.finalizeNoteHold(m); }
+    function practiceElapsedMs() { return _practice.practiceElapsedMs(); }
+    function practiceRealElapsedMs() { return _practice.practiceRealElapsedMs(); }
+    function loadPracticeProgress() { return _practice.loadPracticeProgress(); }
+    function savePracticeProgress() { _practice.savePracticeProgress(); }
+    function songProg() { return _practice.songProg(); }
+    function recordPracticeDay() { _practice.recordPracticeDay(); }
+    function startPracticeSection(/** @type {any} */ idx) { return _practice.startPracticeSection(idx); }
+    function stopPracticeAudio() { _practice.stopPracticeAudio(); }
+    const updatePractice = _practice.updatePractice;
+    function midiToPitchName(/** @type {any} */ m) { return _practice.midiToPitchName(m); }
+    function midiToName(/** @type {any} */ m) { return _practice.midiToName(m); }
 
     // ── MIDI shell — the entire MIDI cluster (state + dispatch + indicator
     //   + ports + rescan + init + intro-diag + BLE-MIDI + audio-lifecycle
@@ -601,104 +624,7 @@
     function drawMidiBeams(/** @type {any} */ t) { _midiH.drawMidiBeams(t); }
     function drawMidiChordDisplay(/** @type {any} */ t) { _midiH.drawMidiChordDisplay(t); }
     window.addEventListener('langchange', () => _midiH.refreshLabels());
-
-    const _practiceScoring = PracticeScoring.createPracticeScoring(/** @type {any} */ ({
-      state, practice,
-      tuning: {
-        hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
-        chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
-        durationMinTolMs: DURATION_MIN_TOL_MS, durationTolFraction: DURATION_TOL_FRACTION,
-        countInMs: COUNT_IN_MS,
-      },
-      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
-      showHitChip, spawnBurst, getScreen: () => ({ W, H }), t, midiToName, remoteLog,
-    }));
-    function medianRecentPitch() { return _practiceScoring.medianRecentPitch(); }
-    /** @param {number} detectedMidi @param {boolean} isExact */
-    function matchNoteOnset(detectedMidi, isExact) { return _practiceScoring.matchNoteOnset(detectedMidi, isExact); }
-    /** @param {number} detectedMidi */
-    function finalizeNoteHold(detectedMidi) { _practiceScoring.finalizeNoteHold(detectedMidi); }
-    function practiceRealElapsedMs() { return _practiceScoring.practiceRealElapsedMs(); }
-    function practiceElapsedMs() { return _practiceScoring.practiceElapsedMs(); }
-
     const dateKey = PianoCore.formatDateKey;
-    const _practiceProgress = PracticeProgress.createPracticeProgress(/** @type {any} */ ({
-      storage: _prefsStore,
-      core: {
-        migrateAndDefaultProgress: PianoCore.migrateAndDefaultProgress,
-        getSongProgress: PianoCore.getSongProgress,
-        recordPracticeDay: PianoCore.recordPracticeDay,
-        formatDateKey: PianoCore.formatDateKey,
-      },
-      practice,
-    }));
-    /** @returns {import('@piano/core').PracticeProgress} */
-    function loadPracticeProgress() { return /** @type {any} */ (_practiceProgress.load()); }
-    function savePracticeProgress() { _practiceProgress.save(); }
-    function songProg() { return /** @type {any} */ (_practiceProgress.songProg(currentSong.id)); }
-    function recordPracticeDay() { _practiceProgress.recordPracticeDay(); }
-
-    // ── Tone.js helpers ──
-    const _practiceToneAudio = PracticeToneAudio.createPracticeToneAudio(/** @type {any} */ ({
-      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
-      audioScheduler: AudioScheduler, cursor: osmdAdapter,
-      getCountInMs: () => COUNT_IN_MS,
-    }));
-
-    /** @param {any} n */ function n_state(n) { return ShellHelpers.noteStateLabel(n); }
-    const NOTE_NAMES_JP = CoreOpts.NOTE_NAMES_JP;
-    // Hot-path cache — refreshed on langchange so the per-frame lane draw
-    // doesn't re-evaluate the prefs.lang ternary 25× per frame.
-    let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
-    /** @param {number} midi */ function midiToPitchName(midi) { return ShellHelpers.midiToPitchName(midi, activeNoteNames); }
-    /** @param {number} midi */ function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
-
-    // ── Section build + start ──
-    const _sectionNotesArgs = () => /** @type {any} */ ({ song: currentSong, practice, countInMs: COUNT_IN_MS });
-    /** @param {number} sectionIdx */
-    function buildSectionNotes(sectionIdx) { return SectionNotes.buildSectionNotes(sectionIdx, _sectionNotesArgs()); }
-    function buildFullSongNotes() { return SectionNotes.buildFullSongNotes(_sectionNotesArgs()); }
-    /** @param {any[]} sectionNotes */
-    function computeHandRanges(sectionNotes) { return SectionNotes.computeHandRanges(sectionNotes); }
-
-    const _startPracticeSection = StartPracticeSection.createStartPracticeSection(/** @type {any} */ ({
-      state, practice, prefs,
-      getCurrentSong: () => currentSong,
-      countInMs: () => COUNT_IN_MS,
-      defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
-      alert: (/** @type {any} */ msg) => alert(msg),
-      remoteLog, t, hideIntroHint, syncLayout, setInputIndicator, requestWakeLock, showSectionBanner,
-      dom: DomBag.pickDom(DOM, 'ptbSection', 'ptbTempo', 'ptbProgress', 'practiceHud', 'osmdContainer'),
-      loadCurrentScore: () => loadCurrentScore(),
-      recomputePracticeTimings, buildSectionNotes, buildFullSongNotes, computeHandRanges,
-      osmdAdapter,
-      resetScrollThrottle: () => _osmd.resetScrollThrottle(),
-      osmdScrollToCursor,
-      Tone: typeof Tone !== 'undefined' ? Tone : undefined,
-      ensureToneInstruments: () => _practiceToneAudio.ensureInstruments(),
-      scheduleCountInBeeps: (/** @type {any} */ t) => _practiceToneAudio.scheduleCountIn(t),
-      audioScheduler: AudioScheduler,
-      getInstruments: () => _practiceToneAudio.getInstruments(),
-      practiceBeatMs, pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
-    }));
-    /** @param {number} sectionIdx */
-    async function startPracticeSection(sectionIdx) { await _startPracticeSection(sectionIdx); }
-    function stopPracticeAudio() { _practiceToneAudio.stopPracticeAudio(); }
-
-    // ── Per-frame practice tick — Phase 0d batch 8 wire-up ──
-    const updatePractice = PracticeTick.createPracticeTick(/** @type {any} */ ({
-      dom: { ptbProgress: DOM.ptbProgress },
-      practice, midiInput,
-      getOsmd,
-      practiceElapsedMs, hitWindowMs: HIT_WINDOW_MS,
-      medianRecentPitch, matchNoteOnset, showHitChip, t,
-      // Thunk so the live binding (reassigned after createResultCard) is read
-      // at section-complete time, not at wire-up time (placeholder TDZ).
-      completePracticeSection: () => completePracticeSection(),
-      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
-      noteStateLabel: n_state,
-    }));
 
     // ── Practice lane ──
     const _practiceLane = PracticeLane.createPracticeLane(/** @type {any} */ ({
@@ -710,20 +636,20 @@
         osmdContainerVisible: !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
       }),
       getCurrentSong: () => currentSong,
-      osmdAdapter, osmdScrollToCursor,
+      osmdAdapter, osmdScrollToCursor: () => _osmd.osmdScrollToCursor(),
       practiceElapsedMs, practiceRealElapsedMs,
       noteThemeColor, midiToPitchName,
       noteColors: CONFIG.NOTE_COLORS, noteNames: CONFIG.NOTE_NAMES,
-      laneLookaheadMs: LANE_LOOKAHEAD_MS, countInMs: COUNT_IN_MS,
+      laneLookaheadMs: _practice.getLaneLookaheadMs(), countInMs: _practice.getCountInMs(),
       hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
       drawPracticeLane: PianoCore.drawPracticeLane,
       laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo'),
     }));
+    _practice.setPracticeLane(_practiceLane);
     /** @param {number} timeMs */ function drawPracticeLane(timeMs) { _practiceLane.draw(timeMs); }
-    function refreshLaneOptsI18n() {
-      _practiceLane.setLabels({ laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo') });
-    }
-    window.addEventListener('langchange', refreshLaneOptsI18n);
+    window.addEventListener('langchange', () =>
+      _practiceLane.setLabels({ laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo') }),
+    );
 
     // ── Intro-hint UI + hit feedback chip ──
     const _introHintUi = IntroHintUi.createIntroHintUi(/** @type {any} */ ({
