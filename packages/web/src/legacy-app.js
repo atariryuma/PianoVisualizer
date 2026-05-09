@@ -280,46 +280,31 @@
     const updateDebugOverlay = _gameUpdate.updateDebugOverlay;
     const getEnergy = _gameUpdate.getEnergy;
 
-    // ── Main Loop ──
-    /** @param {number} timeMs */
-    const _renderLoop = RenderLoopWireup.wireRenderLoop({
-      renderLoop: RenderLoop, renderFrame: RenderFrame, micPipeline: MicPipeline,
-      renderMid: RenderMid, renderLate: RenderLate, pianoCore: PianoCore,
-      ctx,
-      state: /** @type {any} */ (state),
-      // practice / midiInput / updatePractice are forward-declared below; thunks
-      // defer the read until the builders fire (post-IIFE) so we don't TDZ.
-      getPractice: () => /** @type {any} */ (practice),
-      getMidiInput: () => /** @type {any} */ (midiInput),
-      config: /** @type {any} */ (CONFIG),
-      getScreen: () => ({ W, H }),
-      getAudioCtx: _audio.getAudioCtx, getAnalyser: _audio.getAnalyser,
-      getDataArray: _audio.getDataArray, getFreqArray: /** @type {any} */ (_audio.getFreqArray),
-      particles, ripples, Particle, Ripple,
-      dom: /** @type {any} */ (DomBag.pickDom(DOM,
-        'micMeter', 'micMeterFill', 'introHint', 'noteDisplay',
-        'startScreen', 'songPanel', 'sessionSummary', 'sectionResult',
-      )),
-      drawBgStars, drawAurora, drawGroundFlowers,
-      detectPitchYIN, updateAGC, updateGameState, hideIntroHint,
+    // ── Main loop — moved to packages/web/src/shell-render-loop.ts (batch 112).
+    const _rl = ShellRenderLoop.createShellRenderLoop(/** @type {any} */ ({
+      ctx, state, config: CONFIG, dom: DOM,
+      getPractice: () => practice,
+      getMidiInput: () => midiInput,
       getUpdatePractice: () => updatePractice,
-      freqToNote: /** @type {any} */ (freqToNote),
+      getScreen: () => ({ W, H }),
+      audio: _audio,
+      particles, ripples, Particle, Ripple,
+      drawBgStars, drawAurora, drawGroundFlowers,
+      detectPitchYIN, freqToNote,
+      updateAGC, updateGameState, updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
+      getDrawMidiBeams: () => drawMidiBeams,
+      getDrawMidiChordDisplay: () => drawMidiChordDisplay,
+      getDrawMidiKeyboard: () => drawMidiKeyboard,
+      getDrawPracticeLane: () => drawPracticeLane,
+      getShowNoteDisplay: () => showNoteDisplay,
       getNoteColor, spawnBurst, spawnStream,
-      // [TDZ workaround 2026-05-09] Vite/esbuild minification converts
-      // the bundled `function showNoteDisplay` declaration (~line 619)
-      // to a `let`-style binding, so the shorthand reference here lands
-      // inside its temporal dead zone (browser console:
-      // "Cannot access 'bo' before initialization" — `bo` is the
-      // minified name). Forwarding through a lambda defers the lookup
-      // to call time when the binding is set.
-      showNoteDisplay: (/** @type {any} */ a, /** @type {any} */ b, /** @type {any} */ c, /** @type {any} */ d) => showNoteDisplay(a, b, c, d),
+      hideIntroHint: () => hideIntroHint(),
       isFreeplayActive,
-      drawMidiBeams, drawMidiChordDisplay, drawMidiKeyboard, drawPracticeLane,
-      updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
       wufOpts: WUF_OPTS, remoteLogEnabled: REMOTE_LOG_ENABLED,
       getTone: () => (typeof Tone !== 'undefined' ? Tone : null),
-    });
-    /** @param {any} timeMs */ function loop(timeMs) { _renderLoop.tick(timeMs); }
+      pianoCore: PianoCore,
+    }));
+    const loop = _rl.loop;
 
     // True only when the canvas / HUD is the front-most surface (the user is
     // actually free-playing, not picking a song or reviewing a result).
