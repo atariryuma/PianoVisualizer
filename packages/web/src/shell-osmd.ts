@@ -2,10 +2,9 @@
 //
 // Bundles the OSMD instance + score-loader + cursor + osmdAdapter into
 // one factory. Owns the mutable `osmd` ref so the shell doesn't have to.
-// Also pins the `osmdAdapter` to `globalThis.osmdAdapter` so Phase
-// 0c-extracted modules (ScoreLoader, PracticeToneAudio, etc.) can resolve
-// it bare.
 
+import * as opensheetmusicdisplay from 'opensheetmusicdisplay';
+import * as PianoCore from '@piano/core';
 import * as OsmdInit from './osmd-init';
 import * as NoteExtractor from './note-extractor';
 import * as PlaybackOrder from './playback-order';
@@ -18,8 +17,6 @@ export interface ShellOsmdDeps {
   getCurrentSong: () => any;
   /** Container for the OSMD <svg> render. */
   osmdContainer: HTMLElement;
-  /** Vendored OSMD ctor — null on early load (typeof guard). */
-  opensheetmusicdisplay: any;
   /** Score-load logging gate (REMOTE_LOG_ENABLED). */
   remoteLogEnabled: boolean;
   remoteLog: (msg: any) => void;
@@ -40,7 +37,7 @@ export interface ShellOsmd {
    *  Auto-scrolls via OSMD's `cursor.update()` (cursorOptions.follow:
    *  true set in osmd-init.ts). */
   cursor: ReturnType<typeof OsmdCursor.createOsmdCursor>;
-  /** OsmdAdapter typed-boundary — also pinned to globalThis.osmdAdapter. */
+  /** OsmdAdapter typed-boundary. */
   osmdAdapter: import('@piano/core').OsmdAdapter;
   /** Shell shim around NoteExtractor — needed by start-practice-section deps. */
   extractNotesFromOsmd: (xmlMeasureTiming: any, scoreTiming: any) => any;
@@ -58,7 +55,7 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
   let osmd: any = null;
 
   const _osmdInit = OsmdInit.createOsmdInit({
-    opensheetmusicdisplay: deps.opensheetmusicdisplay,
+    opensheetmusicdisplay,
     getCurrentSong: deps.getCurrentSong,
   });
   const initOsmd = async (): Promise<any> => {
@@ -75,8 +72,10 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
 
   const _playbackOrder = PlaybackOrder.createPlaybackOrder({
     fns: {
-      parsePlaybackOrderFromXml: (globalThis as any).PianoCore.parsePlaybackOrderFromXml,
-      expandNotesByPlaybackOrder: (globalThis as any).PianoCore.expandNotesByPlaybackOrder,
+      parsePlaybackOrderFromXml: PianoCore.parsePlaybackOrderFromXml,
+      // PianoCore's signature is generically narrower than PlaybackOrder's
+      // expected `unknown[]`; cast at the boundary.
+      expandNotesByPlaybackOrder: PianoCore.expandNotesByPlaybackOrder as never,
     },
     fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
   });
@@ -90,15 +89,14 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
   ) => _playbackOrder.expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec);
 
   // @piano/core/library/diag-load. The shim threads the shell remoteLog.
-  const dumpLoadDiagnostics = (p: any) =>
-    (globalThis as any).PianoCore.dumpLoadDiagnostics(p, deps.remoteLog);
+  const dumpLoadDiagnostics = (p: any) => PianoCore.dumpLoadDiagnostics(p, deps.remoteLog);
 
   const _scoreLoader = ScoreLoader.createScoreLoader({
     getCurrentSong: deps.getCurrentSong,
     initOsmd,
     getOsmd: () => osmd,
-    parseScoreTimingFromXml: (globalThis as any).PianoCore.parseScoreTimingFromXml,
-    buildMeasureTimingFromXml: (globalThis as any).PianoCore.buildMeasureTimingFromXml,
+    parseScoreTimingFromXml: PianoCore.parseScoreTimingFromXml,
+    buildMeasureTimingFromXml: PianoCore.buildMeasureTimingFromXml,
     extractNotesFromOsmd,
     fetchPlaybackOrder: fetchPlaybackOrder as any,
     expandNotesByPlaybackOrder: expandNotesByPlaybackOrder as any,
@@ -107,17 +105,13 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     remoteLogEnabled: deps.remoteLogEnabled,
   });
 
-  // The OSMD library namespace is seeded onto globalThis by main.ts.
   // setCursorToNote pulls `MusicPartManagerIterator` + `Fraction` off
-  // it to drive the cursor by sheet timestamp (the musicxml-player
-  // pattern); cursor.update() then auto-scrolls via OSMD's
-  // scrollIntoView (cursorOptions.follow: true in osmd-init.ts).
-  const getOsmdLib = (): OsmdCursor.OsmdLibRef | undefined =>
-    (globalThis as { opensheetmusicdisplay?: OsmdCursor.OsmdLibRef }).opensheetmusicdisplay;
-
+  // the imported OSMD namespace to drive the cursor by sheet timestamp
+  // (the musicxml-player pattern); cursor.update() then auto-scrolls
+  // via OSMD's scrollIntoView (cursorOptions.follow: true in osmd-init.ts).
   const _osmdCursor = OsmdCursor.createOsmdCursor({
     getOsmd: () => osmd,
-    getLib: getOsmdLib,
+    getLib: () => opensheetmusicdisplay as unknown as OsmdCursor.OsmdLibRef,
   });
 
   const osmdAdapter = OsmdAdapterMod.createOsmdAdapter({
@@ -127,9 +121,6 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     extractNotesFromOsmd,
     cursor: _osmdCursor,
   });
-  // Promote to globalThis so Phase 0c-extracted modules can resolve it bare
-  // (matches the Tone / OSMD / JSZip / PianoCore main.ts globals).
-  (globalThis as any).osmdAdapter = osmdAdapter;
 
   return {
     getOsmd: () => osmd,

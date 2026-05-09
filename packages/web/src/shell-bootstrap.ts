@@ -6,11 +6,9 @@
 // correct dependency order, and the post-create init (initial
 // practice progress + ▶ Start button).
 //
-// Tone + opensheetmusicdisplay + __APP_VERSION__ + __BUILD_DATE__
-// are runtime browser/build-time globals; the typeof guards mirror
-// the legacy code's defensive reads.
+// Tone + __APP_VERSION__ + __BUILD_DATE__ are runtime browser/build-time
+// globals; the typeof guards mirror the legacy code's defensive reads.
 
- 
 import * as PianoCore from '@piano/core';
 import * as RemoteLog from './remote-log';
 import * as PianoConfig from './piano-config';
@@ -338,8 +336,6 @@ export function boot(): void {
     remoteLog,
     buildSectionsFromDefs,
     getCurrentSong: () => currentSong,
-    opensheetmusicdisplay:
-      typeof opensheetmusicdisplay !== 'undefined' ? opensheetmusicdisplay : undefined,
   } as any);
   const { osmdAdapter, getOsmd } = _osmd;
 

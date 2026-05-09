@@ -13,11 +13,11 @@
 // SessionReset reaches for `_questState` / `_encState` which the shell
 // owns directly (they're per-frame reducer state for ShellGameUpdate).
 
+import * as PianoCore from '@piano/core';
 import * as SessionSummary from './session-summary';
 import * as SessionReset from './session-reset';
 import * as DomBag from './dom-bag';
 
- 
 export interface ShellSessionStateDeps {
   state: any;
   config: any;
@@ -58,8 +58,6 @@ export interface ShellSessionState {
 }
 
 export function createShellSessionState(deps: ShellSessionStateDeps): ShellSessionState {
-  const PianoCore: any = (globalThis as any).PianoCore;
-
   const _sessionSummary = SessionSummary.createSessionSummary({
     dom: DomBag.pickDom(
       deps.dom,

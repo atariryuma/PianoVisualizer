@@ -9,6 +9,7 @@
 //   ShellMidiHandlers → fires visuals + advances midiState
 //   ShellMidiHandlers (per-frame) → draws keyboard + beams + chord
 
+import * as PianoCore from '@piano/core';
 import * as MidiHandlers from './midi-handlers';
 import * as MidiRender from './midi-render';
 
@@ -62,7 +63,6 @@ export interface ShellMidiHandlers {
 
 export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiHandlers {
   const { state, ctx, config, t } = deps;
-  const PianoCore: any = (globalThis as any).PianoCore;
 
   const midiState: any = {
     activeNotes: new Map(), // midiNum → { velocity, onTimeMs, synColor }
@@ -84,7 +84,7 @@ export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiH
       enabled: state.useSynesthesiaMode,
       noteNames: config.NOTE_NAMES,
       colorMap: config.NOTE_COLORS,
-    });
+    }) ?? '';
 
   function showNoteDisplay(
     displayText: string,

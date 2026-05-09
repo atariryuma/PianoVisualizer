@@ -9,9 +9,9 @@
 // intro diag) need explicit redraw on lang change. The handler here
 // dispatches the redraw calls through deps callbacks.
 
+import * as PianoCore from '@piano/core';
 import * as ThemeControls from './theme-controls';
 
- 
 export interface ShellI18nDeps {
   document: Document;
   prefs: any;
@@ -47,7 +47,6 @@ export interface ShellI18n {
 }
 
 export function createShellI18n(deps: ShellI18nDeps): ShellI18n {
-  const PianoCore: any = (globalThis as any).PianoCore;
   const { prefs, state, config, dom } = deps;
 
   const t = PianoCore.createT(PianoCore.T_STRINGS, {

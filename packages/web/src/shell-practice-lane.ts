@@ -10,6 +10,7 @@
 // legacy-app.js. PracticeLane has a setLabels() mutator so the
 // per-frame draw doesn't pay for translator calls.
 
+import * as PianoCore from '@piano/core';
 import * as PracticeLane from './practice-lane';
 
 export interface ShellPracticeLaneDeps {
@@ -52,7 +53,6 @@ export interface ShellPracticeLane {
 }
 
 export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPracticeLane {
-  const PianoCore: any = (globalThis as any).PianoCore;
   const { t } = deps;
   const _lane = PracticeLane.createPracticeLane({
     ctx: deps.ctx,

@@ -11,6 +11,7 @@
 // reads `songProg`; practice-flow exposes `returnToTitle` etc.).
 // Bundling lets us hide that orchestration behind the public surface.
 
+import * as PianoCore from '@piano/core';
 import * as IntroHintUi from './intro-hint-ui';
 import * as ResultCard from './result-card';
 import * as SongPanelRender from './song-panel-render';
@@ -20,7 +21,6 @@ import * as PracticeFlow from './practice-flow';
 import * as BootSession from './boot-session';
 import * as DomBag from './dom-bag';
 
- 
 export interface ShellUiDeps {
   document: Document;
   songs: any;
@@ -119,7 +119,6 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
 
   // ── Result-card ──
   const SECTION_IDS = ['A1', 'B', 'A2'];
-  const PianoCore: any = (globalThis as any).PianoCore;
   const _resultCard = ResultCard.createResultCard({
     dom: DomBag.pickDom(
       dom,

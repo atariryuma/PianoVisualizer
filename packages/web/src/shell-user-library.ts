@@ -13,11 +13,12 @@
 // DevModeWireup. Mutability is preserved through getter+setter for
 // ONLINE_LIBRARY.
 
+import JSZipImpl from 'jszip';
+import * as PianoCore from '@piano/core';
 import * as UserSongsMxl from './user-songs-mxl';
 import * as UserSongsStore from './user-songs-store';
 import * as OnlineLibrary from './online-library';
 
- 
 export interface ShellUserLibraryDeps {
   /** Built-in SONGS registry — user imports merge in by id. */
   songs: any;
@@ -51,7 +52,6 @@ export interface ShellUserLibrary {
 }
 
 export function createShellUserLibrary(deps: ShellUserLibraryDeps): ShellUserLibrary {
-  const PianoCore: any = (globalThis as any).PianoCore;
   const USER_DB_STORE = PianoCore.USER_DB_STORE;
 
   const _userDb = UserSongsMxl.createUserDb({
@@ -66,11 +66,7 @@ export function createShellUserLibrary(deps: ShellUserLibraryDeps): ShellUserLib
   const buildSectionsFromDefs = PianoCore.buildSectionsFromDefs;
 
   async function unzipMxlToXmlText(blob: Blob): Promise<string> {
-    const JSZipLib =
-      (window as any).JSZip ||
-      (typeof (globalThis as any).JSZip !== 'undefined' ? (globalThis as any).JSZip : null);
-    if (!JSZipLib) throw new Error('JSZip not available — cannot read .mxl');
-    return UserSongsMxl.unzipMxlToXmlText(blob, { jszip: JSZipLib });
+    return UserSongsMxl.unzipMxlToXmlText(blob, { jszip: JSZipImpl });
   }
 
   // Promote stored-or-just-fetched records into the SONGS registry.

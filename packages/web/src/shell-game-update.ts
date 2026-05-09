@@ -17,6 +17,7 @@
 // here saves ~150 lines of shell glue. Returns the public update*
 // thunks the render loop calls each tick.
 
+import * as PianoCore from '@piano/core';
 import * as OnsetDetect from './onset-detect';
 import * as SessionConfidenceUi from './session-confidence-ui';
 import * as QuestStateUpdate from './quest-state-update';
@@ -93,7 +94,6 @@ export interface ShellGameUpdate {
 
 export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdate {
   const { state, dom, t } = deps;
-  const PianoCore: any = (globalThis as any).PianoCore;
 
   // ── Per-tick reducer state owned by this shell. encState/questState
   // are exposed on the result so ShellSessionState can drain them on

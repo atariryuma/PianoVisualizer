@@ -11,6 +11,7 @@
 // scoring + tone-audio + recomputeTimings; PracticeTick needs the
 // scoring's medianRecentPitch + matchNoteOnset.
 
+import * as PianoCore from '@piano/core';
 import * as PracticeTimings from './practice-timings';
 import * as PracticeScoring from './practice-scoring';
 import * as PracticeProgress from './practice-progress';
@@ -98,7 +99,6 @@ export interface ShellPractice {
 
 export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const { state, prefs, config, t, dom } = deps;
-  const PianoCore: any = (globalThis as any).PianoCore;
 
   let COUNT_IN_MS = 4000; // pre-roll before the first note (4 beats)
   let LANE_LOOKAHEAD_MS = 4000; // how far ahead notes appear in the lane
