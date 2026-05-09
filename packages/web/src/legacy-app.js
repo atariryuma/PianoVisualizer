@@ -236,9 +236,7 @@
       resetMidiDispatch: () => _midi.resetMidiDispatch(),
       remoteLog,
     }));
-    saveBestScores = _sess.saveBestScores;
-    renderSessionSummaryText = _sess.renderSessionSummaryText;
-    showSessionSummary = _sess.showSessionSummary;
+    ({ saveBestScores, renderSessionSummaryText, showSessionSummary } = _sess);
     function resetSession() { _sess.resetSession(); }
 
     // ── v12: Practice Mode — built-in songs (catalog moved to built-in-songs.ts).
@@ -346,9 +344,7 @@
       connectBleMidi: () => _midi.connectBleMidi(),
       showSessionSummary: () => showSessionSummary(),
     }));
-    openSettings = _settings.open;
-    closeSettings = _settings.close;
-    refreshSettingsPanel = _settings.refresh;
+    ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 
     // ── MIDI handlers + render — moved to packages/web/src/shell-midi-handlers.ts (batch 106).
     const detectChord = PianoCore.detectChord;
@@ -410,14 +406,8 @@
       songPanelHeaderDom: { songTitle: DOM.songTitle, songComposer: DOM.songComposer },
       t, modalFocus,
     }));
-    const byId = _addSong.byId;
-    const DOM_ADDSONG = _addSong.domAddSong;
-    const DOM_SECEDIT = _addSong.domSecEdit;
-    openSectionEditor = _addSong.openSectionEditor;
-    closeSectionEditor = _addSong.closeSectionEditor;
-    openAddSongModal = _addSong.openAddSongModal;
-    closeAddSongModal = _addSong.closeAddSongModal;
-    renderUserSongButtons = _addSong.renderUserSongButtons;
+    const { byId, domAddSong: DOM_ADDSONG, domSecEdit: DOM_SECEDIT } = _addSong;
+    ({ openSectionEditor, closeSectionEditor, openAddSongModal, closeAddSongModal, renderUserSongButtons } = _addSong);
 
     // ── UI cluster — moved to packages/web/src/shell-ui.ts (batch 108).
     const _ui = ShellUi.createShellUi(/** @type {any} */ ({
