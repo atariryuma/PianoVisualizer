@@ -123,13 +123,36 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
           drawHiddenNotes: false,
           autoResize: false,
           backend: 'svg',
-          // CursorType 1 = ThinLeft (thin gold vertical line marking
-          // the current beat) + `follow: true` (OSMD calls
-          // `scrollIntoView({ block: "center" })` on every
-          // cursor.update, auto-centering the score in
-          // #osmdContainer's overflow-y:auto). Same pattern as
-          // musicxml-player and osmd-audio-player.
-          cursorsOptions: [{ type: 1, color: '#FFD700', alpha: 0.85, follow: true }],
+          // CursorType 2 = ShortThinTopLeft (thin gold line just above
+          // the top staff, NOT spanning the full grand-staff).
+          //
+          // [Bug fix 2026-05-09] Switched from Type 1 (ThinLeft, full
+          // system span) to Type 2 because grand-staff systems have
+          // 130–219px varying heights — anchoring the cursor TOP at a
+          // fixed y left the BOTTOM swinging by ~80px between systems,
+          // which the user perceived as the cursor "drifting down from
+          // the staff." A short top-of-staff line is height-stable, so
+          // the visual position is consistent across systems.
+          //
+          // [Bug fix 2026-05-09] OSMD's auto-scroll is DISABLED
+          // (`followCursor: false`, `follow: false`) because:
+          //
+          //   - `block: 'center'` puts the cursor *center* at viewport
+          //     center, which makes the staff TOP swing 45px between
+          //     systems whose heights differ (130–219px observed).
+          //     User-reported "段ごとにちょっとずつずれていく" was
+          //     this swing.
+          //
+          //   - When we layered our own anchor-by-top scroll on top,
+          //     OSMD's center-scroll fought with our top-scroll on
+          //     every onset, producing a visible vertical oscillation
+          //     (the user-reported "楽譜が上下に揺れる").
+          //
+          // We now own all scroll: `osmd-cursor.ts/_ensureCentered`
+          // pins the cursor's top edge to a fixed Y (= staff top
+          // anchor) after every cursor.update() call.
+          followCursor: false,
+          cursorsOptions: [{ type: 2, color: '#FFD700', alpha: 0.85, follow: false }],
         });
 
         // RenderPedals quirk — see header note.
