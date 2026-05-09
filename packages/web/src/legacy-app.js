@@ -4,14 +4,10 @@
     // Phase 0c boundary JSDoc typedefs deleted — types now live in
     // each per-module .ts file. Cast sites use /** @type {any} */.
 
-    // PWA registration — failure is non-fatal (HTTPS required, self-signed certs may reject).
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch((err) => {
-          console.warn('[SW] register failed:', err && err.message);
-        });
-      });
-    }
+    // SW registration is handled by vite-plugin-pwa's auto-injected
+    // ./registerSW.js (see vite.config.ts). The legacy
+    // `navigator.serviceWorker.register('./sw.js')` here was redundant
+    // and removed in batch 91.
 
     const _remoteLog = RemoteLog.createRemoteLog();
     const REMOTE_LOG_ENABLED = _remoteLog.enabled;
@@ -39,28 +35,18 @@
     for (let i = 0; i < SESSION_RING_CAP; i++) sessionRing[i] = { timeMs: 0, isPiano: false };
 
     // ── Audio — dual analyser + software AGC ──
-    /** @type {AudioContext} */
-    let audioCtx = /** @type {AudioContext} */ (/** @type {unknown} */ (null));
-    /** @type {AnalyserNode} */
-    let analyser = /** @type {AnalyserNode} */ (/** @type {unknown} */ (null));
-    /** @type {AnalyserNode} */
-    let onsetAnalyser = /** @type {AnalyserNode} */ (/** @type {unknown} */ (null));
-    /** @type {GainNode} */
-    let gainNode = /** @type {GainNode} */ (/** @type {unknown} */ (null));
-    /** @type {Uint8Array<ArrayBuffer>} */
-    let dataArray = /** @type {Uint8Array<ArrayBuffer>} */ (/** @type {unknown} */ (null));
-    /** @type {Float32Array<ArrayBuffer>} */
-    let freqArray = /** @type {Float32Array<ArrayBuffer>} */ (/** @type {unknown} */ (null));
-    /** @type {Uint8Array<ArrayBuffer>} */
-    let onsetDataArray = /** @type {Uint8Array<ArrayBuffer>} */ (/** @type {unknown} */ (null));
-    /** @type {MediaStream | null} v13: keep ref so we can stop tracks when MIDI takes over */
-    let micStream = null;
-    /** @type {MediaStreamAudioSourceNode | null} v13: rewireable source between gainNode and the live mic */
-    let micSourceNode = null;
-
-    const MIC_CONSTRAINTS = AudioInit.MIC_CONSTRAINTS;
-    const AUDIO_SAMPLE_RATE = AudioInit.AUDIO_SAMPLE_RATE;
-    const createAudioContext = AudioInit.createAudioContext;
+    // Singletons populated by initAudio() / rebuildAudioGraph(). Cast
+    // to `any` because every reader is gated by `state.running` which
+    // is set after init; pre-init reads never happen at runtime.
+    /** @type {any} */ let audioCtx = null;
+    /** @type {any} */ let analyser = null;
+    /** @type {any} */ let onsetAnalyser = null;
+    /** @type {any} */ let gainNode = null;
+    /** @type {any} */ let dataArray = null;
+    /** @type {any} */ let freqArray = null;
+    /** @type {any} */ let onsetDataArray = null;
+    /** @type {MediaStream | null} */ let micStream = null;
+    /** @type {MediaStreamAudioSourceNode | null} */ let micSourceNode = null;
 
     async function initAudio() {
       // [Bug fix 2026-05-09] Idempotent re-entry: re-using the existing
@@ -79,7 +65,7 @@
       }
 
       console.log("Initializing Audio...");
-      audioCtx = createAudioContext();
+      audioCtx = AudioInit.createAudioContext();
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
         console.log("AudioContext resumed @" + audioCtx.sampleRate + "Hz");
@@ -96,7 +82,7 @@
     const _micLifecycle = MicLifecycle.createMicLifecycle(
       /** @type {import('./mic-lifecycle').MicLifecycleDeps} */ ({
         state: /** @type {any} */ (state),
-        micConstraints: MIC_CONSTRAINTS,
+        micConstraints: AudioInit.MIC_CONSTRAINTS,
         getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
         getAudioCtx: () => /** @type {any} */ (audioCtx),
         getGainNode: () => /** @type {any} */ (gainNode),
@@ -122,12 +108,9 @@
     function suspendMic() { _micLifecycle.suspend(); }
     async function resumeMic() { return _micLifecycle.resume(); }
 
-    // ── Canvas ──
-    /** @type {number} canvas width in CSS pixels */
+    // ── Canvas (CSS pixel dimensions; mirrors _canvasResize.getDimensions()) ──
     let W = 0;
-    /** @type {number} canvas height in CSS pixels */
     let H = 0;
-    /** @type {number} bottom inset (safe-area + small pad), CSS px */
     let kbSafeBottom = 4;
     let kbHeight = 50;
     let safeLeft = 0;
@@ -139,18 +122,12 @@
       ctx,
       isRunning: () => !!state.running,
       getStarCount: () => PERF_PROFILE.bgStarCount,
-      initBackground: (opts) =>
-        /** @type {any} */ (PianoCore.initBackground(opts)
-        ),
+      initBackground: (opts) => /** @type {any} */ (PianoCore.initBackground(opts)),
     });
     function resize() {
       const d = _canvasResize.resize();
-      W = d.W;
-      H = d.H;
-      kbHeight = d.kbHeight;
-      kbSafeBottom = d.kbSafeBottom;
-      safeLeft = d.safeLeft;
-      safeRight = d.safeRight;
+      W = d.W; H = d.H; kbHeight = d.kbHeight;
+      kbSafeBottom = d.kbSafeBottom; safeLeft = d.safeLeft; safeRight = d.safeRight;
     }
     function initBgStars() { _canvasResize.initBgStars(); }
     resize();
@@ -159,7 +136,7 @@
     // Single source of truth for "where things live on the screen": JS
     const cachedOsmdRect = ViewportLayout.makeCachedOsmdRect();
     const _viewportLayout = ViewportLayout.createViewportLayout({
-      dom: { practiceTopBar: DOM.practiceTopBar, themeBar: DOM.themeBar, osmdContainer: DOM.osmdContainer, },
+      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'practiceTopBar', 'themeBar', 'osmdContainer')),
       getKbHeight: () => kbHeight,
       cachedOsmdRect,
     });
@@ -179,11 +156,8 @@
     }
 
     // ── Theme switching + persisted user preferences ──
-    const prefs = /** @type {any} */ (PracticeStateInit.createInitialPrefs()
-    );
-    /** @template T @param {string} key @param {T} fallback @returns {T} */
+    const prefs = /** @type {any} */ (PracticeStateInit.createInitialPrefs());
     const _prefsStore = PrefsStorage.createJSONStore();
-    /** @template T @param {string} key @param {T} fallback @returns {T} */
     /** @param {any} key @param {any} fallback */ function loadJSON(key, fallback) { return _prefsStore.loadJSON(key, fallback); }
     /** @param {any} key @param {any} val */ function saveJSON(key, val) { _prefsStore.saveJSON(key, val); }
     Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
@@ -249,40 +223,18 @@
     /** @type {(animate: boolean) => void} */ let renderSessionSummaryText = (_animate) => {};
     /** @type {(combo: number, flow: number) => import('./session-summary').BestScores} */
     let saveBestScores = (_c, _f) => /** @type {any} */ ({ bestCombo: 0, peakFlow: 0, totalSessions: 0 });
+    // ESC modal router. Higher priority = topmost-z modal (section-edit
+    // can spawn from add-song so it sits above settings).
+    const _isOpen = (/** @type {any} */ x) => !!(x?.modal?.classList.contains('visible'));
+    const _isVisible = (/** @type {HTMLElement} */ el) => !!el?.classList.contains('visible');
     ModalFocus.createEscRouter({
       document,
       routes: [
-        {
-          priority: 50,
-          isOpen: () => {
-            const SECEDIT = typeof DOM_SECEDIT !== 'undefined' ? DOM_SECEDIT : null;
-            return !!(SECEDIT && SECEDIT.modal && SECEDIT.modal.classList.contains('visible'));
-          },
-          close: () => closeSectionEditor(),
-        },
-        {
-          priority: 40,
-          isOpen: () => DOM.settingsPanel.classList.contains('visible'),
-          close: () => closeSettings(),
-        },
-        {
-          priority: 30,
-          isOpen: () => {
-            const ADDSONG = typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG : null;
-            return !!(ADDSONG && ADDSONG.modal && ADDSONG.modal.classList.contains('visible'));
-          },
-          close: () => closeAddSongModal(),
-        },
-        {
-          priority: 20,
-          isOpen: () => !!(DOM.sessionSummary && DOM.sessionSummary.classList.contains('visible')),
-          close: () => DOM.sessionSummary && DOM.sessionSummary.classList.remove('visible'),
-        },
-        {
-          priority: 10,
-          isOpen: () => !!(DOM.sectionResult && DOM.sectionResult.classList.contains('visible')),
-          close: () => DOM.sectionResult && DOM.sectionResult.classList.remove('visible'),
-        },
+        { priority: 50, isOpen: () => _isOpen(typeof DOM_SECEDIT !== 'undefined' ? DOM_SECEDIT : null), close: () => closeSectionEditor() },
+        { priority: 40, isOpen: () => _isVisible(DOM.settingsPanel), close: () => closeSettings() },
+        { priority: 30, isOpen: () => _isOpen(typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG : null), close: () => closeAddSongModal() },
+        { priority: 20, isOpen: () => _isVisible(DOM.sessionSummary), close: () => DOM.sessionSummary?.classList.remove('visible') },
+        { priority: 10, isOpen: () => _isVisible(DOM.sectionResult), close: () => DOM.sectionResult?.classList.remove('visible') },
       ],
     }).install();
 
@@ -434,17 +386,12 @@
       state: /** @type {any} */ (state),
       sessionRing,
       tuning: {
-        sampleIntervalMs: CONFIG.SESSION_SAMPLE_INTERVAL_MS,
-        windowMs: CONFIG.SESSION_WINDOW_MS,
-        confirmThreshold: CONFIG.SESSION_CONFIRM_THRESHOLD,
-        loseThreshold: CONFIG.SESSION_LOSE_THRESHOLD,
-        warmupMs: CONFIG.SESSION_WARMUP_MS,
-        motivationGoalMs: CONFIG.MOTIVATION_GOAL_MS,
+        sampleIntervalMs: CONFIG.SESSION_SAMPLE_INTERVAL_MS, windowMs: CONFIG.SESSION_WINDOW_MS,
+        confirmThreshold: CONFIG.SESSION_CONFIRM_THRESHOLD, loseThreshold: CONFIG.SESSION_LOSE_THRESHOLD,
+        warmupMs: CONFIG.SESSION_WARMUP_MS, motivationGoalMs: CONFIG.MOTIVATION_GOAL_MS,
         ringCap: SESSION_RING_CAP,
       },
-      dom: { sessionStatus: DOM.sessionStatus },
-      t,
-      triggerEffect,
+      dom: { sessionStatus: DOM.sessionStatus }, t, triggerEffect,
     });
     /** @param {number} timeMs @param {boolean} isPianoDetected */
     function updateSessionConfidence(timeMs, isPianoDetected) {
@@ -467,7 +414,7 @@
         applyQuestTick: PianoCore.applyQuestTick,
         observation: state, // quest.condition reads state.combo, state.flow, etc.
         questOpts: _questOpts,
-        dom: { toastTitle: DOM.toastTitle, toastSub: DOM.toastSub, questToast: DOM.questToast, questLabel: DOM.questLabel, questDots: DOM.questDots, questDisplay: DOM.questDisplay, },
+        dom: /** @type {any} */ (DomBag.pickDom(DOM, 'toastTitle', 'toastSub', 'questToast', 'questLabel', 'questDots', 'questDisplay')),
         t,
         spawnBurst,
         effectGoldenBurst,
@@ -512,16 +459,11 @@
       state: /** @type {any} */ (state),
       tuning: {
         updateIntervalMs: CONFIG.AGC_UPDATE_INTERVAL_MS,
-        silenceFloor: CONFIG.AGC_SILENCE_FLOOR,
-        voiceSuppressMax: CONFIG.AGC_VOICE_SUPPRESS_MAX,
-        maxGain: CONFIG.AGC_MAX_GAIN,
-        minGain: CONFIG.AGC_MIN_GAIN,
-        targetRms: CONFIG.AGC_TARGET_RMS,
-        attackCoeff: CONFIG.AGC_ATTACK_COEFF,
-        releaseCoeff: CONFIG.AGC_RELEASE_COEFF,
+        silenceFloor: CONFIG.AGC_SILENCE_FLOOR, voiceSuppressMax: CONFIG.AGC_VOICE_SUPPRESS_MAX,
+        maxGain: CONFIG.AGC_MAX_GAIN, minGain: CONFIG.AGC_MIN_GAIN, targetRms: CONFIG.AGC_TARGET_RMS,
+        attackCoeff: CONFIG.AGC_ATTACK_COEFF, releaseCoeff: CONFIG.AGC_RELEASE_COEFF,
       },
-      getGainNode: () => gainNode,
-      getAudioCtx: () => audioCtx,
+      getGainNode: () => gainNode, getAudioCtx: () => audioCtx,
     });
     /** @param {number} timeMs @param {number} postGainRms */
     function updateAGC(timeMs, postGainRms) {
@@ -534,10 +476,8 @@
       getPractice: () => /** @type {any} */ (practice),
       getMidiInput: () => /** @type {any} */ (midiInput),
       getPitchMedianFrames: () => PITCH_MEDIAN_FRAMES,
-      config: CONFIG,
-      qhOptsMic: QH_OPTS_MIC,
-      psOpts: PS_OPTS,
-      // PianoCore signatures are slightly wider than the consumed
+      config: CONFIG, qhOptsMic: QH_OPTS_MIC, psOpts: PS_OPTS,
+      // PianoCore signatures are slightly wider than the consumed shape — cast to any.
       core: /** @type {any} */ ({
         applyOnsetToHistory: PianoCore.applyOnsetToHistory,
         applyOnsetPitch: PianoCore.applyOnsetPitch,
@@ -547,17 +487,11 @@
         classifyStageTransition: PianoCore.classifyStageTransition,
         pitchHzToSemitones: PianoCore.pitchHzToSemitones,
       }),
-      updateMultiFeatureOnset,
-      updateSessionConfidence,
-      updateQualityScores,
-      updateHUD,
-      spawnBurst,
-      effectStarShower,
+      updateMultiFeatureOnset, updateSessionConfidence, updateQualityScores, updateHUD,
+      spawnBurst, effectStarShower,
       getScreen: () => ({ W, H }),
-      stageLabelEl: DOM.stageLabel,
-      stageLabelText: stageLabel,
-      remoteLogEnabled: REMOTE_LOG_ENABLED,
-      remoteLog,
+      stageLabelEl: DOM.stageLabel, stageLabelText: stageLabel,
+      remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
     });
     /** @param {number} timeMs @param {number} dt @param {{pitch:number, conf:number, rms:number}} pitchResult */
     function updateGameState(timeMs, dt, pitchResult) {
@@ -621,46 +555,20 @@
       getMidiInput: () => /** @type {any} */ (midiInput),
       config: /** @type {any} */ (CONFIG),
       getScreen: () => ({ W, H }),
-      getAudioCtx: () => audioCtx,
-      getAnalyser: () => analyser,
-      getDataArray: () => dataArray,
-      getFreqArray: () => /** @type {any} */ (freqArray),
-      particles,
-      ripples,
-      Particle,
-      Ripple,
-      dom: {
-        micMeter: DOM.micMeter,
-        micMeterFill: DOM.micMeterFill,
-        introHint: DOM.introHint,
-        noteDisplay: DOM.noteDisplay,
-        startScreen: DOM.startScreen,
-        songPanel: DOM.songPanel,
-        sessionSummary: DOM.sessionSummary,
-        sectionResult: DOM.sectionResult,
-      },
-      drawBgStars,
-      drawAurora,
-      drawGroundFlowers,
-      detectPitchYIN,
-      updateAGC,
-      updateGameState,
-      hideIntroHint,
+      getAudioCtx: () => audioCtx, getAnalyser: () => analyser,
+      getDataArray: () => dataArray, getFreqArray: () => /** @type {any} */ (freqArray),
+      particles, ripples, Particle, Ripple,
+      dom: /** @type {any} */ (DomBag.pickDom(DOM,
+        'micMeter', 'micMeterFill', 'introHint', 'noteDisplay',
+        'startScreen', 'songPanel', 'sessionSummary', 'sectionResult',
+      )),
+      drawBgStars, drawAurora, drawGroundFlowers,
+      detectPitchYIN, updateAGC, updateGameState, hideIntroHint,
       getUpdatePractice: () => updatePractice,
       freqToNote: /** @type {any} */ (freqToNote),
-      getNoteColor,
-      spawnBurst,
-      spawnStream,
-      showNoteDisplay,
-      isFreeplayActive,
-      drawMidiBeams,
-      drawMidiChordDisplay,
-      drawMidiKeyboard,
-      drawPracticeLane,
-      updateQuestState,
-      updatePlayTime,
-      updateDebugOverlay,
-      getEnergy,
+      getNoteColor, spawnBurst, spawnStream, showNoteDisplay, isFreeplayActive,
+      drawMidiBeams, drawMidiChordDisplay, drawMidiKeyboard, drawPracticeLane,
+      updateQuestState, updatePlayTime, updateDebugOverlay, getEnergy,
       wufOpts: WUF_OPTS,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
       getTone: () => (typeof Tone !== 'undefined' ? Tone : null),
@@ -697,15 +605,10 @@
     // ── Session summary modal — Phase 0d batch 11 wire-up ──
     {
       const _sessionSummary = SessionSummary.createSessionSummary({
-        dom: /** @type {import('./session-summary').SessionSummaryDom} */ ({
-          sessionSummary: DOM.sessionSummary,
-          sumCombo: DOM.sumCombo,
-          sumStage: DOM.sumStage,
-          sumTime: DOM.sumTime,
-          sumQuestList: DOM.sumQuestList,
-          sumBest: DOM.sumBest,
-          radarChart: /** @type {HTMLCanvasElement} */ (DOM.radarChart),
-        }),
+        dom: /** @type {any} */ (DomBag.pickDom(DOM,
+          'sessionSummary', 'sumCombo', 'sumStage', 'sumTime',
+          'sumQuestList', 'sumBest', 'radarChart',
+        )),
         state: /** @type {any} */ (state),
         config: /** @type {any} */ (CONFIG),
         loadJSON,
@@ -722,30 +625,27 @@
 
     // packages/web/src/session-reset.ts.
     const _sessionReset = SessionReset.createSessionReset(
-      /** @type {import('./session-reset').SessionResetDeps} */ ({
+      /** @type {any} */ ({
         refs: {
           state: /** @type {any} */ (state),
           questState: /** @type {any} */ (_questState),
           encState: /** @type {any} */ (_encState),
           getMidiState: () => /** @type {any} */ (midiState),
           sessionRing: /** @type {any} */ (sessionRing),
-          ripples,
-          particles,
+          ripples, particles,
         },
-        reducers: { resetQualityHistoryState: PianoCore.resetQualityHistoryState, resetQuestTrackerState: PianoCore.resetQuestTrackerState, resetEncouragementState: PianoCore.resetEncouragementState, resetWakeUpFlashState: PianoCore.resetWakeUpFlashState, resetChordWindowState: PianoCore.resetChordWindowState, },
-        dom: {
-          stageLabel: DOM.stageLabel,
-          encouragement: DOM.encouragement,
-          qualityScore: DOM.qualityScore,
-          noteDisplay: DOM.noteDisplay,
-          questDisplay: DOM.questDisplay,
-          questDots: DOM.questDots,
-          questLabel: DOM.questLabel,
-          questToast: DOM.questToast,
-          flowFill: DOM.flowFill,
-          sessionStatus: DOM.sessionStatus,
-          playTime: DOM.playTime,
+        reducers: {
+          resetQualityHistoryState: PianoCore.resetQualityHistoryState,
+          resetQuestTrackerState: PianoCore.resetQuestTrackerState,
+          resetEncouragementState: PianoCore.resetEncouragementState,
+          resetWakeUpFlashState: PianoCore.resetWakeUpFlashState,
+          resetChordWindowState: PianoCore.resetChordWindowState,
         },
+        dom: DomBag.pickDom(DOM,
+          'stageLabel', 'encouragement', 'qualityScore', 'noteDisplay',
+          'questDisplay', 'questDots', 'questLabel', 'questToast',
+          'flowFill', 'sessionStatus', 'playTime',
+        ),
         sessionRingCap: SESSION_RING_CAP,
         invalidateFlowCache: () => _hudUpdate.invalidateFlowCache(),
         resetMidiDispatch: () => _midiDispatch.reset(),
@@ -759,22 +659,15 @@
     //   = per-song quest layout (startMeasure → next def's startMeasure). ──
     /** @param {string} id @param {string} titleKey @param {string} composerKey @param {string} icon @param {any[]} sectionDefs @returns {any} */
     function makeSong(id, titleKey, composerKey, icon, sectionDefs) {
-      return /** @type {any} */ (/** @type {any} */ ({
-        id,
-        titleKey,
-        composerKey,
-        icon,
+      return /** @type {any} */ ({
+        id, titleKey, composerKey, icon,
         mxlUrl: 'assets/' + id + '.mxl',
         xmlUrl: 'assets/' + id + '.xml',
-        sectionDefs: sectionDefs,
+        sectionDefs,
         // Populated on first load:
-        notes: null,
-        totalSec: 0,
-        sections: [],
-        playbackOrder: [],
-        _loaded: false,
-        _loadingPromise: null
-      }));
+        notes: null, totalSec: 0, sections: [], playbackOrder: [],
+        _loaded: false, _loadingPromise: null,
+      });
     }
     /** @type {any} */
     const SONGS = {
@@ -949,33 +842,22 @@
     }
 
     const _scoreLoader = ScoreLoader.createScoreLoader({
-      getCurrentSong: () =>
-        /** @type {any} */ (currentSong),
+      getCurrentSong: () => /** @type {any} */ (currentSong),
       initOsmd,
       getOsmd: () => /** @type {any} */ (osmd),
       parseScoreTimingFromXml,
       buildMeasureTimingFromXml,
       extractNotesFromOsmd: (xmlMeasureTiming, scoreTiming) =>
-        /** @type {any} */ (extractNotesFromOsmd(xmlMeasureTiming, scoreTiming)
-        ),
+        /** @type {any} */ (extractNotesFromOsmd(xmlMeasureTiming, scoreTiming)),
       fetchPlaybackOrder: (forSong) => fetchPlaybackOrder(/** @type {any} */ (forSong)),
       expandNotesByPlaybackOrder: (baseNotes, order, measures, srcMeasureStartSec) =>
-        /** @type {import('./score-loader').OsmdLikeNote[]} */ (
-          /** @type {any} */ (
-            expandNotesByPlaybackOrder(
-              /** @type {any} */ (baseNotes),
-              order,
-              /** @type {any} */ (measures),
-              srcMeasureStartSec
-            )
-          )
-        ),
+        /** @type {any} */ (expandNotesByPlaybackOrder(
+          /** @type {any} */ (baseNotes), order, /** @type {any} */ (measures), srcMeasureStartSec,
+        )),
       buildSectionsFromDefs: (expanded, totalSec, sectionDefs, srcMeasureStartSec) =>
         buildSectionsFromDefs(
-          /** @type {any} */ (expanded),
-          totalSec,
-          /** @type {any} */ (sectionDefs),
-          srcMeasureStartSec
+          /** @type {any} */ (expanded), totalSec,
+          /** @type {any} */ (sectionDefs), srcMeasureStartSec,
         ),
       dumpLoadDiagnostics: (info) => dumpLoadDiagnostics(/** @type {any} */ (info)),
       remoteLogEnabled: REMOTE_LOG_ENABLED,
@@ -1001,51 +883,26 @@
         if (currentSong) currentSong.mxlUrl = url;
         await initOsmd();
       },
-      isLoaded() {
-        return !!osmd;
-      },
+      isLoaded() { return !!osmd; },
       extractNotes(opts) {
-        // Shell extractNotesFromOsmd returns `{notes, measureStartSec, measureBpm, _diag}`
-        const ret = extractNotesFromOsmd(
-          /** @type {any} */ (opts?.xmlMeasureTiming),
-          null
-        );
+        // Shell extractNotesFromOsmd → `{notes, measureStartSec, measureBpm, _diag}`
+        const ret = extractNotesFromOsmd(/** @type {any} */ (opts?.xmlMeasureTiming), null);
         return {
           notes: ret.notes,
-          measureTiming: ret.measureStartSec.map((startSec, i) => ({
-            startSec,
-            bpm: ret.measureBpm[i] ?? 72,
-          })),
+          measureTiming: ret.measureStartSec.map((startSec, i) => ({ startSec, bpm: ret.measureBpm[i] ?? 72 })),
         };
       },
-      cursorTo(measureIdx, inBarQuarters) {
-        setOsmdCursorToNote({ measureIdx, inBarQuarters });
-      },
-      resetCursor() {
-        osmdResetToStart();
-      },
-      showCursor() {
-        try { if (osmd && osmd.cursor) osmd.cursor.show(); } catch (_) {}
-      },
-      hideCursor() {
-        try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {}
-      },
+      cursorTo(measureIdx, inBarQuarters) { setOsmdCursorToNote({ measureIdx, inBarQuarters }); },
+      resetCursor() { osmdResetToStart(); },
+      showCursor() { try { if (osmd && osmd.cursor) osmd.cursor.show(); } catch (_) {} },
+      hideCursor() { try { if (osmd && osmd.cursor) osmd.cursor.hide(); } catch (_) {} },
       getCursorGeometry() {
         if (!osmd || !osmd.cursor || !osmd.cursor.cursorElement) return null;
-        return {
-          offsetTop: osmd.cursor.cursorElement.offsetTop,
-          offsetHeight: osmd.cursor.cursorElement.offsetHeight || 30,
-        };
+        return { offsetTop: osmd.cursor.cursorElement.offsetTop, offsetHeight: osmd.cursor.cursorElement.offsetHeight || 30 };
       },
-      highlightCurrentNotes() {
-        // Legacy implementation hard-codes HIGHLIGHT_FILL; the color
-        // parameter on the interface is ignored for now (Phase 0c will
-        // thread it through).
-        highlightCurrentNotes();
-      },
-      clearHighlights() {
-        clearNoteHighlights();
-      },
+      // Color param on the interface is ignored — implementation hard-codes HIGHLIGHT_FILL.
+      highlightCurrentNotes() { highlightCurrentNotes(); },
+      clearHighlights() { clearNoteHighlights(); },
     };
     // Promote to globalThis so Phase 0c-extracted modules can resolve it
     // from typed code without an import (matches the Tone / OSMD / JSZip
@@ -1100,7 +957,6 @@
     // Single source of truth for the port-message handler. attachMidiPort and
     // verifyMidiAlive both use this so re-binding after a suspend produces
     // exactly the same routing.
-    /** @param {MIDIMessageEvent} e */
     /** @param {any} e */ function onMidiMessageHandler(e) { _midiDispatch.onMessage(e); }
 
     function verifyMidiAlive() { return _midiPorts.verifyAlive(_midiAccess); }
@@ -1160,14 +1016,11 @@
     function recoverAudioContext() { return _audioRecovery.recover(); }
 
     // ========================================
-    const midiInput = /** @type {any} */ (/** @type {any} */ ({
-      enabled: false,           // true while a MIDI input port is connected
-      port: null,
-      _accessRequested: false,
-      // Set when the platform is known to never expose Web MIDI (iOS Safari /
-      // any iPadOS browser). Drives a friendlier hint in the UI.
-      platformBlocked: false
-    }));
+    // platformBlocked: true on platforms that never expose Web MIDI
+    // (iOS Safari / any iPadOS browser) — drives a friendlier hint.
+    const midiInput = /** @type {any} */ ({
+      enabled: false, port: null, _accessRequested: false, platformBlocked: false,
+    });
 
     // Single point of MIDI message dispatch — called from Web MIDI port handler
     const _midiDispatch = MidiDispatch.createMidiDispatch({
@@ -1246,7 +1099,6 @@
     function showMidiWaitingHint() { _introDiag.showMidiWaitingHint(); }
 
     // MIDI rescan — two-stage connection attempt:
-    /** @type {MIDIAccess|null} */
     /** @type {MIDIAccess|null} */
     let _midiAccess = null;
     const _midiRescan = MidiRescan.createMidiRescan({
@@ -1336,16 +1188,11 @@
     const BLE_MIDI_CHAR    = BleMidiConnect.BLE_MIDI_CHAR;
 
     /** @type {{device: any, characteristic: any, connected: boolean, _disconnectHandler?: (()=>void)|null}} */
-    const bleMidi = /** @type {any} */ ({
-      device: null,
-      characteristic: null,
-      connected: false
-    });
+    const bleMidi = /** @type {any} */ ({ device: null, characteristic: null, connected: false });
 
     // Parse BLE-MIDI 1.0 packet. The packet starts with a header byte (high bit set,
     // top 6 bits of timestamp), then groups of (timestamp, status?, data...). For our
     // use we ignore timestamps and extract MIDI messages of types we care about.
-    /** @param {ArrayBuffer} buf */
     /** @param {ArrayBuffer} buf */
     function parseBleMidiPacket(buf) {
       BleMidiParser.parseBleMidiPacket(buf, dispatchMidiMessage);
@@ -1372,21 +1219,16 @@
 
     // ─── settings-panel wire-up ──────────────────────────────────────
     {
+      // Settings-panel DOM contract uses different prop names than DOM.*,
+      // so spell out each remap explicitly (no pickDom shortcut here).
       const _settings = SettingsPanel.createSettingsPanel({
         dom: /** @type {import('./settings-panel').SettingsPanelDom} */ ({
-          panel: DOM.settingsPanel,
-          openBtn: DOM.settingsBtn,
-          closeBtn: DOM.settingsCloseBtn,
-          audioOffsetSlider: DOM.audioOffsetSlider,
-          audioOffsetVal: DOM.audioOffsetVal,
-          audioOffsetAuto: DOM.audioOffsetAuto,
-          audioOffsetReset: DOM.audioOffsetReset,
-          rescanBtn: DOM.settingsRescanBtn,
-          bleBtn: DOM.settingsBleBtn,
-          resetBtn: DOM.settingsResetBtn,
-          inputStatus: DOM.settingsInputStatus,
-          debugToggle: DOM.settingsDebugToggle,
-          debugOverlay: DOM.debugOverlay,
+          panel: DOM.settingsPanel, openBtn: DOM.settingsBtn, closeBtn: DOM.settingsCloseBtn,
+          audioOffsetSlider: DOM.audioOffsetSlider, audioOffsetVal: DOM.audioOffsetVal,
+          audioOffsetAuto: DOM.audioOffsetAuto, audioOffsetReset: DOM.audioOffsetReset,
+          rescanBtn: DOM.settingsRescanBtn, bleBtn: DOM.settingsBleBtn,
+          resetBtn: DOM.settingsResetBtn, inputStatus: DOM.settingsInputStatus,
+          debugToggle: DOM.settingsDebugToggle, debugOverlay: DOM.debugOverlay,
         }),
         prefs,
         practice,
@@ -1409,14 +1251,14 @@
     }
 
     // ========================================
-    const midiState = /** @type {any} */ (/** @type {any} */ ({
+    const midiState = /** @type {any} */ ({
       activeNotes: new Map(),     // midiNum -> { velocity, onTimeMs, synColor }
       sustainOn: false,
       sustainedNotes: new Set(),  // released keys held by pedal
       recentOnsets: [],           // {midi, timeMs} within 80ms — chord candidate
       lastChordName: '',
       lastChordTimeMs: 0,
-    }));
+    });
 
     const detectChord = PianoCore.detectChord;
 
@@ -1454,25 +1296,14 @@
       state: /** @type {any} */ (state),
       midiState: /** @type {any} */ (midiState),
       practice: /** @type {any} */ (practice),
-      midiToScreenX,
-      noteThemeColor,
-      synColorFor,
-      spawnBurst,
-      spawnStream,
-      ripples: /** @type {any} */ (ripples),
-      Ripple: /** @type {any} */ (Ripple),
-      hideIntroHint,
-      showNoteDisplay,
-      effectGlowPulse,
-      finalizeNoteHold,
+      midiToScreenX, noteThemeColor, synColorFor, spawnBurst, spawnStream,
+      ripples: /** @type {any} */ (ripples), Ripple: /** @type {any} */ (Ripple),
+      hideIntroHint, showNoteDisplay, effectGlowPulse, finalizeNoteHold,
       applyOnsetToHistory: PianoCore.applyOnsetToHistory,
       applyOnsetPitch: PianoCore.applyOnsetPitch,
       applyOnsetToWindow: PianoCore.applyOnsetToWindow,
       triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
-      qhOptsMidi: QH_OPTS_MIDI,
-      psOpts: PS_OPTS,
-      cwOpts: CW_OPTS,
-      wufOpts: WUF_OPTS,
+      qhOptsMidi: QH_OPTS_MIDI, psOpts: PS_OPTS, cwOpts: CW_OPTS, wufOpts: WUF_OPTS,
       config: { NOTE_NAMES: CONFIG.NOTE_NAMES, COMBO_WINDOW_MS: CONFIG.COMBO_WINDOW_MS },
       getHeight: () => H,
     });
@@ -1523,21 +1354,13 @@
       state: /** @type {any} */ (state),
       practice: /** @type {any} */ (practice),
       tuning: {
-        hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
-        hitWindowMs: HIT_WINDOW_MS,
-        perfectMs: PERFECT_MS,
+        hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
         chordMateToleranceMs: CHORD_MATE_TOLERANCE_MS,
-        durationMinTolMs: DURATION_MIN_TOL_MS,
-        durationTolFraction: DURATION_TOL_FRACTION,
+        durationMinTolMs: DURATION_MIN_TOL_MS, durationTolFraction: DURATION_TOL_FRACTION,
         countInMs: COUNT_IN_MS,
       },
       Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
-      showHitChip,
-      spawnBurst,
-      getScreen: () => ({ W, H }),
-      t,
-      midiToName,
-      remoteLog,
+      showHitChip, spawnBurst, getScreen: () => ({ W, H }), t, midiToName, remoteLog,
     });
     function medianRecentPitch() { return _practiceScoring.medianRecentPitch(); }
     /** @param {number} detectedMidi @param {boolean} isExact */
@@ -1564,10 +1387,7 @@
       practice: /** @type {any} */ (practice),
     });
     /** @returns {import('@piano/core').PracticeProgress} */
-    function loadPracticeProgress() {
-      return /** @type {any} */ (_practiceProgress.load()
-      );
-    }
+    function loadPracticeProgress() { return /** @type {any} */ (_practiceProgress.load()); }
     function savePracticeProgress() { _practiceProgress.save(); }
     function songProg() {
       return /** @type {any} */ (_practiceProgress.songProg(currentSong.id));
@@ -1589,37 +1409,24 @@
 
     const notePitchClass = ShellHelpers.notePitchClass;
     const midiToFreq = ShellHelpers.midiToFreq;
-    /** @param {any} n */
     /** @param {any} n */ function n_state(n) { return ShellHelpers.noteStateLabel(n); }
     const NOTE_NAMES_JP = CoreOpts.NOTE_NAMES_JP;
     // Hot-path cache — refreshed on langchange so the per-frame lane draw
     // doesn't re-evaluate the prefs.lang ternary 25× per frame.
     let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : CONFIG.NOTE_NAMES;
-    /** @param {number} midi */
-    /** @param {any} midi */ function midiToPitchName(midi) { return ShellHelpers.midiToPitchName(midi, activeNoteNames); }
-    /** @param {number} midi */
-    /** @param {any} midi */ function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
+    /** @param {number} midi */ function midiToPitchName(midi) { return ShellHelpers.midiToPitchName(midi, activeNoteNames); }
+    /** @param {number} midi */ function midiToName(midi) { return ShellHelpers.midiToFullName(midi, activeNoteNames); }
 
     // ── Section build + start ──
     /** @param {number} sectionIdx */
     function buildSectionNotes(sectionIdx) {
-      return SectionNotes.buildSectionNotes(sectionIdx, {
-        song: /** @type {any} */ (currentSong),
-        practice: /** @type {any} */ (practice),
-        countInMs: COUNT_IN_MS,
-      });
+      return SectionNotes.buildSectionNotes(sectionIdx, { song: /** @type {any} */ (currentSong), practice: /** @type {any} */ (practice), countInMs: COUNT_IN_MS });
     }
     function buildFullSongNotes() {
-      return SectionNotes.buildFullSongNotes({
-        song: /** @type {any} */ (currentSong),
-        practice: /** @type {any} */ (practice),
-        countInMs: COUNT_IN_MS,
-      });
+      return SectionNotes.buildFullSongNotes({ song: /** @type {any} */ (currentSong), practice: /** @type {any} */ (practice), countInMs: COUNT_IN_MS });
     }
     /** @param {any[]} sectionNotes */
-    function computeHandRanges(sectionNotes) {
-      return SectionNotes.computeHandRanges(sectionNotes);
-    }
+    function computeHandRanges(sectionNotes) { return SectionNotes.computeHandRanges(sectionNotes); }
 
     const _startPracticeSection = StartPracticeSection.createStartPracticeSection({
       state: /** @type {any} */ (state),
@@ -1630,34 +1437,23 @@
       defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
       remoteLogEnabled: REMOTE_LOG_ENABLED,
       alert: (msg) => alert(msg),
-      remoteLog,
-      t,
-      hideIntroHint,
-      syncLayout,
-      setInputIndicator,
-      requestWakeLock,
-      showSectionBanner,
-      dom: { ptbSection: DOM.ptbSection, ptbTempo: DOM.ptbTempo, ptbProgress: DOM.ptbProgress, practiceHud: DOM.practiceHud, osmdContainer: DOM.osmdContainer, },
+      remoteLog, t, hideIntroHint, syncLayout, setInputIndicator, requestWakeLock, showSectionBanner,
+      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'ptbSection', 'ptbTempo', 'ptbProgress', 'practiceHud', 'osmdContainer')),
       loadCurrentScore: () => loadCurrentScore(),
-      recomputePracticeTimings,
-      buildSectionNotes,
-      buildFullSongNotes,
+      recomputePracticeTimings, buildSectionNotes, buildFullSongNotes,
       computeHandRanges: /** @type {any} */ (computeHandRanges),
       osmdAdapter: /** @type {any} */ (osmdAdapter),
       resetScrollThrottle: () => _osmdCursor.resetScrollThrottle(),
       osmdScrollToCursor,
       Tone: typeof Tone !== 'undefined' ? /** @type {any} */ (Tone) : undefined,
-      ensureToneInstruments,
-      scheduleCountInBeeps,
+      ensureToneInstruments, scheduleCountInBeeps,
       audioScheduler: /** @type {any} */ (AudioScheduler),
       getInstruments: () => _practiceToneAudio.getInstruments(),
       practiceBeatMs,
       pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
     });
     /** @param {number} sectionIdx */
-    async function startPracticeSection(sectionIdx) {
-      await _startPracticeSection(sectionIdx);
-    }
+    async function startPracticeSection(sectionIdx) { await _startPracticeSection(sectionIdx); }
 
     function stopPracticeAudio() { _practiceToneAudio.stopPracticeAudio(); }
 
@@ -1689,65 +1485,39 @@
       state: /** @type {any} */ (state),
       midiInput,
       getLayout: () => ({
-        W,
-        H,
-        kbHeight,
-        kbSafeBottom,
-        safeRight,
+        W, H, kbHeight, kbSafeBottom, safeRight,
         currentLayoutMode: _viewportLayout.getCurrentLayoutMode(),
-        cachedOsmdRect: /** @type {import('./practice-lane').PracticeLaneOsmdRect} */ (
-          cachedOsmdRect
-        ),
-        osmdContainerVisible:
-          !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
+        cachedOsmdRect: /** @type {any} */ (cachedOsmdRect),
+        osmdContainerVisible: !!(DOM.osmdContainer && DOM.osmdContainer.classList.contains('visible')),
       }),
       getCurrentSong: () => /** @type {any} */ (currentSong),
-      osmdAdapter,
-      osmdScrollToCursor,
-      practiceElapsedMs,
-      practiceRealElapsedMs,
-      noteThemeColor,
-      midiToPitchName,
-      noteColors: CONFIG.NOTE_COLORS,
-      noteNames: CONFIG.NOTE_NAMES,
-      laneLookaheadMs: LANE_LOOKAHEAD_MS,
-      countInMs: COUNT_IN_MS,
-      hitWindowEarlyMs: HIT_WINDOW_EARLY_MS,
-      hitWindowMs: HIT_WINDOW_MS,
-      perfectMs: PERFECT_MS,
+      osmdAdapter, osmdScrollToCursor,
+      practiceElapsedMs, practiceRealElapsedMs,
+      noteThemeColor, midiToPitchName,
+      noteColors: CONFIG.NOTE_COLORS, noteNames: CONFIG.NOTE_NAMES,
+      laneLookaheadMs: LANE_LOOKAHEAD_MS, countInMs: COUNT_IN_MS,
+      hitWindowEarlyMs: HIT_WINDOW_EARLY_MS, hitWindowMs: HIT_WINDOW_MS, perfectMs: PERFECT_MS,
       drawPracticeLane: PianoCore.drawPracticeLane,
-      laneLabelL: t('laneLeft'),
-      laneLabelR: t('laneRight'),
-      countInGoLabel: t('countInGo'),
+      laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo'),
     });
-    /** @param {number} timeMs */
-    function drawPracticeLane(timeMs) {
-      _practiceLane.draw(timeMs);
-    }
+    /** @param {number} timeMs */ function drawPracticeLane(timeMs) { _practiceLane.draw(timeMs); }
     function refreshLaneOptsI18n() {
-      _practiceLane.setLabels({
-        laneLabelL: t('laneLeft'),
-        laneLabelR: t('laneRight'),
-        countInGoLabel: t('countInGo'),
-      });
+      _practiceLane.setLabels({ laneLabelL: t('laneLeft'), laneLabelR: t('laneRight'), countInGoLabel: t('countInGo') });
     }
     window.addEventListener('langchange', refreshLaneOptsI18n);
 
     /** @param {CanvasRenderingContext2D} c @param {number} x @param {number} y @param {number} w @param {number} h @param {number} r */
     function roundRect(c, x, y, w, h, r) {
-      c.beginPath();
-      c.moveTo(x + r, y);
-      c.arcTo(x + w, y, x + w, y + h, r);
-      c.arcTo(x + w, y + h, x, y + h, r);
-      c.arcTo(x, y + h, x, y, r);
-      c.arcTo(x, y, x + w, y, r);
+      c.beginPath(); c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r);
       c.closePath();
     }
 
     // ========================================
     // Hit feedback chip (DOM)
     const _introHintUi = IntroHintUi.createIntroHintUi({
-      dom: { introHint: DOM.introHint, startScreen: DOM.startScreen, hud: DOM.hud, micMeter: DOM.micMeter, },
+      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'introHint', 'startScreen', 'hud', 'micMeter')),
       state: /** @type {any} */ (state),
       midiInput: /** @type {any} */ (midiInput),
       practice: /** @type {any} */ (practice),
@@ -1825,7 +1595,7 @@
 
     // ─── song-panel wire-up ─────────────────────────────────────────
     SongPanelControls.createSongPanelControls({
-      dom: { ghostToggle: DOM.ghostToggle, metronomeToggle: DOM.metronomeToggle, fullSongToggle: DOM.fullSongToggle, songBack: DOM.songBack, },
+      dom: /** @type {any} */ (DomBag.pickDom(DOM, 'ghostToggle', 'metronomeToggle', 'fullSongToggle', 'songBack')),
       practice: /** @type {any} */ (practice),
       renderSongPanel,
       // Thunk so the placeholder-then-reassigned `returnToTitle` reads
@@ -1851,7 +1621,7 @@
         songs: /** @type {any} */ (SONGS),
         state: /** @type {any} */ (state),
         practice: /** @type {any} */ (practice),
-        dom: { osmdContainer: DOM.osmdContainer, songTitle: DOM.songTitle, songComposer: DOM.songComposer, startScreen: DOM.startScreen, songPanel: DOM.songPanel, questDisplay: DOM.questDisplay, },
+        dom: /** @type {any} */ (DomBag.pickDom(DOM, 'osmdContainer', 'songTitle', 'songComposer', 'startScreen', 'songPanel', 'questDisplay')),
         getCurrentSong: () => /** @type {any} */ (currentSong),
         setCurrentSong: (s) => { currentSong = /** @type {any} */ (s); },
         getOsmd: () => osmd,
@@ -1987,29 +1757,20 @@
       }
     });
 
-    // Request persistent storage so iOS Safari ITP / Chrome eviction policies
+    // Request persistent storage so iOS Safari ITP / Chrome eviction
+    // policies don't drop user-imported songs.
     if (navigator.storage && navigator.storage.persist) {
-      navigator.storage.persist().then(granted => {
-        if (granted) console.log('[Storage] persistent storage granted');
-      }).catch(() => {});
+      navigator.storage.persist().then(g => { if (g) console.log('[Storage] persistent storage granted'); }).catch(() => {});
     }
 
     DevModeWireup.installDevMode({
       triggerEl: /** @type {HTMLElement|null} */ (document.querySelector('.tagline')),
       versionLabel:
-        (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') +
-        ' ' +
+        (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '(unknown)') + ' ' +
         (typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''),
-      dom: { settingsPanel: DOM.settingsPanel, sectionResult: DOM.sectionResult },
+      dom: DomBag.pickDom(DOM, 'settingsPanel', 'sectionResult'),
       domAddSong: { modal: typeof DOM_ADDSONG !== 'undefined' ? DOM_ADDSONG.modal : null },
-      state,
-      practice,
-      prefs,
-      midiInput,
-      midiState,
-      ctx,
-      particles,
-      ripples,
+      state, practice, prefs, midiInput, midiState, ctx, particles, ripples,
       getScreen: () => ({ W, H }),
       getAudioCtx: () => audioCtx,
       getCurrentSong: () => currentSong,
@@ -2018,20 +1779,15 @@
       userDbPut: (rec) => userDbPut(/** @type {any} */ (rec)),
       removeUserSong: (id) => removeUserSong(id),
       isAppleMobile: () => isAppleMobile(),
-      t,
-      setLang,
-      applyTheme,
+      t, setLang, applyTheme,
       openSettings: () => openSettings(),
       closeSettings: () => closeSettings(),
       openAddSongModal: () => openAddSongModal(),
       closeAddSongModal: () => closeAddSongModal(),
       completePracticeSection: () => completePracticeSection(),
-      onMidiNoteOn,
-      onMidiNoteOff,
+      onMidiNoteOn, onMidiNoteOff,
       themes: CONFIG.THEMES,
-      drawBgStars,
-      drawAurora,
-      drawGroundFlowers,
+      drawBgStars, drawAurora, drawGroundFlowers,
       decayWakeUpFlash: PianoCore.decayWakeUpFlash,
       drawCenterGlow: PianoCore.drawCenterGlow,
       wufOpts: WUF_OPTS,
