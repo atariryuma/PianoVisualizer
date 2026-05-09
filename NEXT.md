@@ -6,9 +6,9 @@ unchecked item if no specific issue is assigned to you.
 Each item has: **What**, **Why**, **Acceptance criteria**, **Estimated lines**,
 **Playbook**. Read the playbook before starting.
 
-Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-94 + Issue 1/2 fix
-detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,629 lines** (was
-5,100 at the prior NEXT refresh, **−3,471 across 44 batches**, the heaviest
+Last refreshed: **2026-05-09 (cycle 2 cont., batches 51-95 + Issue 1/2 fix
+detour + tie-aware OSMD cursor)**. `legacy-app.js` is now **1,565 lines** (was
+5,100 at the prior NEXT refresh, **−3,535 across 45 batches**, the heaviest
 cycle on record). **2,157 tests** total (786 core, 1,371 web; **+279 this
 cycle**). `pnpm verify` clean. Production build smoke test (puppeteer load + ▶
 Start click) reports zero console errors.
@@ -235,6 +235,15 @@ every commit.**
   `typeof midiInput !== 'undefined' ? midiInput.enabled : false` →
   `midiInput?.enabled ?? false` (same semantics, shorter). (-55, −3.3% — 1,684 →
   1,629).
+- **batch 95 (commit `b9251f1`)** — wireup deps-block field-grouping pass: 13
+  factories (`_questStateUpdate`, `_hudUpdate`, `_debugOverlay`,
+  `_practiceTimings`, `_onlineLibrary`, `_osmdInit`, `_introDiag`,
+  `_introHintUi`, `_resultCard`, `_songPanelRender`, `_midiHandlerDeps`,
+  `_midiRender`, RenderLoopWireup, AudioInit.createAudioLifecycle) had their
+  verbose `/** @type {import('./xxx').XxxDeps} */` casts replaced by a single
+  outer `/** @type {any} */` cast + shorthand-property field-grouping; comment
+  trimming (4 separator-comment-only lines + dangling fragment cleanups). (-64,
+  −3.9% — 1,629 → 1,565).
 
 **iPad verification — landed earlier**:
 `https://atariryuma.github.io/PianoVisualizer/?dev=1` activates a hidden toolbar
@@ -373,10 +382,10 @@ refresh), **🎯 Benchmark** (11 long-running behavioural probes), **📋 Copy**
 
 **Status: 2,157/2,157 tests green (786 core + 1,371 web), 0 lint errors, 0 type
 errors. `pnpm verify` clean.** Production build smoke test (puppeteer load + ▶
-Start click) reports zero console errors. `legacy-app.js`: **1,629 lines** (was
-9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,448
-net** across 24 batches in `685d5df` + 91 / 92 / 93 / 94, plus the parallel
-`f3f226c` tie-aware OSMD cursor fix; **−7,371 net** since Phase 0a baseline).
+Start click) reports zero console errors. `legacy-app.js`: **1,565 lines** (was
+9,000+ at Phase 0a; 4,077 at this commit window's start `f1efbe5`, **−2,512
+net** across 25 batches in `685d5df` + 91 / 92 / 93 / 94 / 95, plus the parallel
+`f3f226c` tie-aware OSMD cursor fix; **−7,435 net** since Phase 0a baseline).
 
 ---
 
