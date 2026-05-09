@@ -50,15 +50,10 @@
     Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
     function savePrefs() { saveJSON('pianoViz_prefs', prefs); }
 
-    // ── Settings panel modal-focus ──
-    const modalFocus = ModalFocus.createModalFocus({
-      document,
-      requestAnimationFrame: (cb) => requestAnimationFrame(cb),
-    });
+    const modalFocus = ModalFocus.createModalFocus({ document, requestAnimationFrame: (cb) => requestAnimationFrame(cb) });
 
-    // Forward-decl placeholders — reassigned by createXxx wire-ups
-    // further down. Avoids TDZ in ESC handler / langchange listener /
-    // settings-panel deps that close over the short names.
+    // Forward-decl placeholders — reassigned by createXxx wire-ups further
+    // down. Avoids TDZ in ESC handler / langchange / settings-panel deps.
     const _stub = /** @type {any} */ (() => {});
     let openSettings = _stub, closeSettings = _stub, refreshSettingsPanel = _stub,
       openSectionEditor = _stub, closeSectionEditor = _stub,
@@ -94,10 +89,8 @@
     // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
     const _fx = ShellEffects.createShellEffects(/** @type {any} */ ({
       pianoCore: PianoCore, ctx, state, config: CONFIG,
+      perfTier: _vp.perfTier, getScreen: _vp.getScreen, getBgStars: _vp.getBgStars,
       getPractice: () => practice,
-      perfTier: _vp.perfTier,
-      getScreen: _vp.getScreen,
-      getBgStars: _vp.getBgStars,
     }));
     const {
       particles, ripples, Particle, Ripple, getNoteColor, spawnBurst, spawnStream,
