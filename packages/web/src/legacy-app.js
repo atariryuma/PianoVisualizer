@@ -174,10 +174,8 @@
       getPractice: () => practice,
       savePracticeProgress: () => savePracticeProgress(),
     }));
-    const {
-      USER_DB_STORE, openUserDb, userDbAll, userDbPut, unzipMxlToXmlText,
-      userSongStore: _userSongStore, removeUserSong, fetchLibrary, buildSectionsFromDefs,
-    } = _lib;
+    const { USER_DB_STORE, openUserDb, userDbAll, userDbPut, unzipMxlToXmlText,
+      userSongStore: _userSongStore, removeUserSong, fetchLibrary, buildSectionsFromDefs } = _lib;
 
     // ── OSMD shell — moved to packages/web/src/shell-osmd.ts (batch 103).
     const _osmd = ShellOsmd.createShellOsmd(/** @type {any} */ ({
@@ -191,26 +189,18 @@
     const releaseWakeLock = PianoWakeLock.releaseWakeLock;
 
     // ── Practice cluster — moved to packages/web/src/shell-practice.ts (batch 107).
-    // Hit-window / chord-mate / duration-tolerance constants live in PianoCore;
-    // shell-practice / shell-practice-lane / shell-midi-handlers each pull
-    // them module-locally (batch 119), so legacy-app.js only ferries the
-    // tunable defaultAudioOffsetMs.
     const _practice = ShellPractice.createShellPractice(/** @type {any} */ ({
-      state, prefs, config: CONFIG, ctx, dom: DOM, t, spawnBurst,
+      state, prefs, config: CONFIG, ctx, dom: DOM, t, spawnBurst, requestWakeLock,
+      audioScheduler: AudioScheduler, prefsStore: _prefsStore,
       defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
       remoteLogEnabled: REMOTE_LOG_ENABLED, remoteLog,
-      audioScheduler: AudioScheduler,
       Tone: typeof Tone !== 'undefined' ? Tone : undefined,
-      getCurrentSong: () => currentSong,
-      hideIntroHint: () => hideIntroHint(),
-      syncLayout: _vp.syncLayout, setInputIndicator: () => _midi.setInputIndicator(),
-      requestWakeLock,
+      osmdAdapter: _osmd.osmdAdapter, getOsmd, syncLayout: _vp.syncLayout,
+      getScreen: _vp.getScreen, getMidiInput: () => midiInput,
+      getCurrentSong: () => currentSong, hideIntroHint: () => hideIntroHint(),
+      setInputIndicator: () => _midi.setInputIndicator(),
       loadCurrentScore: () => _osmd.loadCurrentScore(),
-      osmdAdapter: _osmd.osmdAdapter,
-      getOsmd, getMidiInput: () => midiInput,
       showHitChip: (/** @type {any} */ kind, /** @type {any} */ text) => showHitChip(kind, text),
-      getScreen: _vp.getScreen,
-      prefsStore: _prefsStore,
       getCompletePracticeSection: () => completePracticeSection,
     }));
     const { practice, finalizeNoteHold, practiceElapsedMs, practiceRealElapsedMs,
