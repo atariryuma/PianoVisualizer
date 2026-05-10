@@ -5,21 +5,11 @@
     "rootDir": "./src",
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
     "types": ["vite/client", "vite-plugin-pwa/client"],
-    // Phase 0c.5 (2026-05-07): legacy-app.js now passes strict TS with
-    // 0 residual errors. `// @ts-check` at the top of legacy-app.js
-    // belt-and-suspenders the ratchet so future regressions error at
-    // typecheck time. `checkJs: true` would also work; we keep it false
-    // here so dist-built JS (Vite output, vendor chunks) doesn't pull
-    // into the typecheck graph — only files that opt in via `@ts-check`
-    // are checked.
-    "allowJs": true,
+    // Phase 0e retired legacy-app.js; keep JavaScript out of the web
+    // typecheck graph so new shell work stays typed by default.
+    "allowJs": false,
     "checkJs": false,
-    // Phase 0c: relax catch-variable narrowing for the legacy shell. The
-    // strict default (`unknown`) would force a JSDoc `@type {Error}` cast
-    // at every `e.message` / `e.name` read across ~30 catch blocks. The
-    // typed @piano/core modules don't lean on catch-variable strictness
-    // anyway — every `throw` they emit is `new Error(...)`, and the
-    // shell's catch sites only stringify for log output.
+    // Shell catch sites stringify browser/library errors for diagnostics.
     "useUnknownInCatchVariables": false
   },
   "include": ["src/**/*", "index.html"],

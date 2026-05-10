@@ -120,7 +120,7 @@ export function createRemoteLog(deps: RemoteLogDeps = {}): RemoteLog {
   let pending = 0;
 
   function send(msg: string | object): void {
-    if (pending > maxPending) return;
+    if (pending >= maxPending) return;
     pending++;
     const body = typeof msg === 'string' ? msg : JSON.stringify(msg);
     // Each fetch swallows its own rejection so the chain itself

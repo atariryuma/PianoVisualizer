@@ -402,6 +402,7 @@ export function boot(): void {
     getMatchNoteOnset: () => _practice.matchNoteOnset,
     isRunning: () => !!state.running,
     requestWakeLock,
+    getTone: () => Tone,
   });
   const {
     midiInput,

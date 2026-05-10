@@ -7,6 +7,7 @@ cert.pfx
 
 # Runtime artifacts
 server.log
+server.err.log
 
 # OS files
 .DS_Store

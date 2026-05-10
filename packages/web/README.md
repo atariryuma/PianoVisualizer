@@ -6,8 +6,8 @@ experience lives in `@piano/mobile` (native CoreMIDI plugin).
 
 ## Status
 
-**Scaffold (Phase 0b in progress).** The actual app code lives in `app.js` at
-the repo root; this package contains the eventual entry point + adapters.
+**Production entry.** Phase 0e retired `legacy-app.js`; the app now boots from
+`src/main.ts` into `src/shell-bootstrap.ts`, which wires typed shell modules.
 
 ## Build
 
@@ -20,17 +20,16 @@ pnpm --filter @piano/web preview
 The build output (`dist/`) is what Capacitor picks up via
 `packages/mobile/capacitor.config.ts → webDir`.
 
-## Migration from the legacy single file
+## Runtime shape
 
-Until the migration completes, the LAN-served root files (`index.html`,
-`app.css`, `app.js`) remain authoritative. To validate this package against real
-users without breaking the LAN setup:
-
-1. `pnpm --filter @piano/web dev` → http://localhost:8443
-2. iPad on same LAN points at `https://<dev-host-ip>:8443` (after Vite SSL
-   setup)
-3. Once feature parity confirmed, delete the root `index.html` / `app.css` /
-   `app.js` and update `https_server.ps1` to serve `packages/web/dist/` instead.
+- `src/main.ts` imports Tone / OSMD / JSZip / `@piano/core`, keeps them on
+  `globalThis` for console diagnostics, clears stale pre-Vite caches, and calls
+  `ShellBootstrap.boot()`.
+- `src/shell-bootstrap.ts` is the only high-level composition point. It creates
+  shared state, DOM bags, modal routing, shell factories, dev-mode hooks, and
+  the start buttons.
+- `src/app.css` is Vite-managed CSS. `public/manifest.json`, `public/icon.svg`,
+  and `public/assets/*` are copied as static assets.
 
 ## SW behavior
 

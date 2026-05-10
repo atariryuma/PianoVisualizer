@@ -14,19 +14,15 @@ Current version: **0.14**
 
 ## Repository structure
 
-The repo is a pnpm workspace; **`packages/web` is the production entry** (Phase
-0b.3 complete as of 2026-05-06). The legacy 3-file shell at the repo root has
-been retired — `legacy-app.js` lives at
-[`packages/web/src/legacy-app.js`](packages/web/src/legacy-app.js) until its
-Phase 0c TypeScript conversion.
+The repo is a pnpm workspace; **`packages/web` is the production entry**. Phase
+0e retired both the repo-root 3-file shell and `legacy-app.js`. The browser app
+boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
+[`packages/web/src/shell-bootstrap.ts`](packages/web/src/shell-bootstrap.ts).
 
-**Engine extraction status (2026-05-06)**: 680 tests across 38 test files; 35
-pure modules in `@piano/core` covering audio detection, render layers,
-practice + free-play state machines, library catalog + section assembly, i18n,
-result-tier / unlock gating, per-onset reducers, daily-streak math, and the MIDI
-sustained-note beam adapter. The remaining work is Phase 0c (TypeScript
-conversion of `legacy-app.js` into proper modules) and the OSMD adapter design —
-see [NEXT.md](NEXT.md).
+**Engine + shell extraction status (2026-05-09)**: `@piano/core` holds the
+DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
+composition layer. `pnpm verify` currently covers lint, typecheck, 786 core
+tests, 1364 web tests, and the Vite web build.
 
 ```text
 piano-visualizer/
@@ -34,11 +30,13 @@ piano-visualizer/
 │   ├── core/               # Pure-TS engine (DOM-free, testable, shared)
 │   ├── web/                # ★ Vite PWA shell — production entry
 │   │   ├── index.html      # Web app shell
-│   │   ├── public/         # app.css + manifest + icon + assets/
+│   │   ├── public/         # manifest + icon + assets/
 │   │   └── src/
-│   │       ├── main.ts     # Module entry — seeds globals, imports legacy
-│   │       ├── legacy-app.js   # Vanilla shell (Phase 0c rewrite pending)
-│   │       └── adapters/   # WebMIDI / WebAudio (Phase 0c wiring pending)
+│   │       ├── app.css     # Vite-managed stylesheet
+│   │       ├── main.ts     # Module entry — pins vendor globals, boots shell
+│   │       ├── shell-bootstrap.ts  # High-level typed composition point
+│   │       ├── shell-*.ts  # Browser shell factories
+│   │       └── adapters/   # WebMIDI / WebAudio adapters
 │   ├── mobile/             # Capacitor 6 wrapper (iOS + Android)
 │   └── plugins/
 │       └── capacitor-piano-midi/   # Native MIDI plugin (Swift + Kotlin)
@@ -58,24 +56,28 @@ piano-visualizer/
 
 ## Single source of truth: packages/web
 
-Phase 0b.3 retired the repo-root 3-file shell on 2026-05-06. The flow is:
+Phase 0e retired `legacy-app.js` on 2026-05-09. The flow is:
 
 - `packages/web/src/main.ts` — module entry. Imports Tone / OSMD / JSZip /
-  `@piano/core` from npm, pins each to `globalThis` (legacy code still reads
-  them as browser globals), then dynamically imports `legacy-app.js` for its
-  IIFE-style side effects.
-- `packages/web/src/legacy-app.js` — the still-vanilla shell. Most pure logic
-  now delegates via `PianoCore.*`; awaiting Phase 0c TS conversion.
-- `packages/web/public/` — static assets (`app.css`, `manifest.json`,
-  `icon.svg`, `assets/*.{mxl,xml}`) copied through unchanged at build time.
+  `@piano/core` from npm, pins each to `globalThis` for diagnostics, clears
+  stale pre-Vite caches, then calls `ShellBootstrap.boot()`.
+- `packages/web/src/shell-bootstrap.ts` — the high-level composition point for
+  state, DOM bags, shell factories, modal routing, dev-mode hooks, and start
+  buttons.
+- `packages/web/src/shell-*.ts` and focused `*.ts` modules — typed browser shell
+  code.
+- `packages/web/src/app.css` — Vite-managed stylesheet.
+- `packages/web/public/` — static assets (`manifest.json`, `icon.svg`,
+  `assets/*.{mxl,xml}`) copied through unchanged at build time.
 - `pnpm build:web` → `packages/web/dist/` is the deployable output.
 
 When making changes, decide:
 
-- Hot bug fix or new feature on existing behavior → edit
-  `packages/web/src/legacy-app.js` + `packages/web/public/app.css`.
-- New abstraction or platform-specific code → edit `packages/*` and document
-  what needs to flow back into the legacy shell.
+- Hot bug fix or new feature on existing behavior → edit the focused
+  `packages/web/src/*.ts` module, `shell-bootstrap.ts` if it is composition
+  only, and `packages/web/src/app.css` for styling.
+- New abstraction or platform-specific code → edit `packages/*` and document the
+  web/mobile call sites that need it.
 
 The 9000-line `piano-visualizer.html` monolith was split into a 3-file shell on
 2026-05-05; that 3-file shell was retired into `packages/web` on 2026-05-06 once
@@ -243,8 +245,9 @@ Canvas-based with `requestAnimationFrame`. Layers drawn back-to-front:
 
 ### Key Configuration
 
-All tunable parameters are in the `CONFIG` object at the top of `legacy-app.js`.
-Key groups:
+All tunable parameters are created in
+[`packages/web/src/piano-config.ts`](packages/web/src/piano-config.ts). Key
+groups:
 
 - Audio analysis: `FFT_SIZE`, `SMOOTHING`, `YIN_*`
 - Onset detection: `SPECTRAL_FLUX_*`, `ONSET_*`, `FLATNESS_*`, `CREST_*`,
@@ -284,9 +287,9 @@ change between releases (App Store 4.7 compliance).
   → length-thirds fallback.
 - Manual section editor for parents/teachers.
 - Export/import as JSON.
-- See: `addUserSongFromBlob`, `addUserSongFromUrl`, `autoSectionDefs`,
-  `openSectionEditor`, `exportUserLibrary`, `importUserLibrary` in
-  `legacy-app.js`.
+- See the user-song modules in `packages/web/src/user-songs-*.ts`,
+  `packages/web/src/shell-user-library.ts`, and
+  `packages/web/src/shell-add-song.ts`.
 
 ## Native (Capacitor) plans
 

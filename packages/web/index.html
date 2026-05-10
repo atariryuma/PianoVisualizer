@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PianoViz" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="/src/app.css" />
   </head>
 
   <body>
@@ -518,9 +518,9 @@
        (title/composer/measure count) BEFORE handing the blob to OSMD.
        OSMD bundles its own copy internally but doesn't reliably expose it as global. -->
 
-    <!-- @piano/core — IIFE bundle (Phase 0b.3): exposes window.PianoCore.
-       Must load before app.js so the shim assignments at the top of app.js
-       can reference PianoCore.* at parse time. -->
+    <!-- Vendor libraries and @piano/core are imported by src/main.ts.
+       main.ts keeps selected globals for console diagnostics, then boots
+       the typed shell via shell-bootstrap.ts. -->
 
     <script type="module" src="/src/main.ts"></script>
   </body>

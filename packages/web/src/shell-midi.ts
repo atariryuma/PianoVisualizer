@@ -19,6 +19,7 @@ import * as IntroDiag from './intro-diag';
 import * as BleMidiParser from './ble-midi-parser';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as AudioInit from './audio-init';
+import * as PracticeVisibility from './practice-visibility';
 
 export interface ShellMidiDeps {
   state: any;
@@ -47,6 +48,7 @@ export interface ShellMidiDeps {
   recover: () => Promise<unknown>;
   isRunning: () => boolean;
   requestWakeLock: () => Promise<unknown>;
+  getTone: () => PracticeVisibility.PracticeVisibilityToneRef | undefined | null;
 }
 
 export interface ShellMidi {
@@ -176,6 +178,11 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     startMidiAutoRescan: () => _rescan.startAutoRescan(),
   });
 
+  const _practiceVisibility = PracticeVisibility.createPracticeVisibilityController({
+    practice,
+    getTone: deps.getTone,
+  });
+
   // Audio-lifecycle hook (visibilitychange + devicechange) — the same MIDI
   // module owns the access cache because recovery routes back through the
   // rescan poller. Lives here so the cache mutation is local.
@@ -196,6 +203,8 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     },
     rescanMidi: (silent: any) => _rescan.rescan(silent),
     startMidiAutoRescan: () => _rescan.startAutoRescan(),
+    onHidden: () => _practiceVisibility.onHidden(),
+    onVisible: () => _practiceVisibility.onVisible(),
   }).install();
 
   // ── BLE-MIDI ──

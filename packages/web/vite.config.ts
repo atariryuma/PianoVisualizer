@@ -19,11 +19,9 @@ function readGitSha(): string {
 const APP_VERSION = readGitSha();
 const BUILD_DATE = new Date().toISOString().slice(0, 10);
 
-// Phase 0b.3 (complete as of 2026-05-06): packages/web is the production
-// entry. The repo-root 3-file shell has been retired; legacy-app.js now
-// lives under src/ and is dynamically imported by main.ts after Tone /
-// OSMD / JSZip / @piano/core get pinned to globalThis. Migrating the
-// per-call-site references off `globalThis` is Phase 0c TypeScript work.
+// Phase 0e (complete as of 2026-05-09): packages/web is the production
+// entry. legacy-app.js is retired; main.ts pins vendor libraries for
+// console diagnostics, then boots the typed shell via shell-bootstrap.ts.
 //
 // `--mode mobile` strips the service worker registration for Capacitor
 // builds — SW lifecycle + WebView reload semantics don't mix well. The

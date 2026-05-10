@@ -4,20 +4,10 @@
 # Format/lint anything under packages/** that's about to be committed.
 pnpm exec lint-staged
 
-# Cheap end-to-end syntax check for legacy-app.js — only when the file is
-# both staged and still present (it was retired in Phase 0e). The full
-# test suite still runs in CI.
-LEGACY_APP="packages/web/src/legacy-app.js"
-if [ -f "$LEGACY_APP" ] && git diff --cached --name-only | grep -qF "$LEGACY_APP"; then
-  node --check "$LEGACY_APP" || { echo "✗ legacy-app.js syntax error" ; exit 1; }
-fi
-
 # Block commits that re-enable remoteLog by accident on a tagged release
-# branch. Targets shell-bootstrap.ts (post-Phase 0e) + legacy-app.js (if
-# it ever gets re-introduced) — both are the only files where
-# REMOTE_LOG_ENABLED gets resolved at runtime.
+# branch. REMOTE_LOG_ENABLED gets resolved at shell boot.
 if git symbolic-ref --short HEAD | grep -q '^release/'; then
-  if git diff --cached -- packages/web/src/shell-bootstrap.ts "$LEGACY_APP" 2>/dev/null \
+  if git diff --cached -- packages/web/src/shell-bootstrap.ts 2>/dev/null \
       | grep -qE "^\+.*REMOTE_LOG_ENABLED.*=.*true"; then
     echo "✗ release branch must not enable REMOTE_LOG_ENABLED. Use pre-build replacement instead."
     exit 1

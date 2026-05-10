@@ -1,5 +1,33 @@
 # NEXT — agent task queue
 
+## Current handoff (2026-05-10)
+
+`legacy-app.js` has been retired. The production web app boots from
+`packages/web/src/main.ts` into `packages/web/src/shell-bootstrap.ts`, with the
+former shell split across typed `packages/web/src/*.ts` modules. Treat the long
+Phase 0d / 0e extraction log below as historical context unless a newer issue or
+user request points at it.
+
+Immediate maintenance queue:
+
+1. Keep documentation synchronized with the Phase 0e runtime shape.
+2. Reduce remaining `any` casts in `shell-bootstrap.ts` and shell factory
+   boundaries where that can be done without widening diffs.
+3. Narrow `cursor: any` in `packages/web/src/osmd-cursor.ts` (deferred from the
+   2026-05-10 /simplify pass). The scroll-controller helpers
+   (`ensureCursorVisible`, `computeActiveCursorRect`, `logScrollEvent`,
+   `_diagCursorPos`) read `cursor.cursorElement`,
+   `cursor.iterator.CurrentMeasureIndex`, and the GNotes/NotesUnderCursor
+   fallback. Extend `OsmdCursorRef` to carry these members (or add a
+   `ScrollCursorRef = OsmdCursorRef & { cursorElement: HTMLElement }`) and drop
+   the `as any` casts at the four call sites. Pre-existing pattern, not
+   introduced by the v10 refactor — kept out of the simplify pass to avoid
+   widening the diff.
+4. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
+   with regression tests before each behavioral change.
+5. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
+   Vitest may need approval because Vite/esbuild spawns a child process.
+
 The next 5–10 actionable items, in **execution order**. Pick the topmost
 unchecked item if no specific issue is assigned to you.
 

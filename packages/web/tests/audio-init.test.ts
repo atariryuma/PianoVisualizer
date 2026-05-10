@@ -610,6 +610,24 @@ describe('createAudioLifecycle — visibilitychange', () => {
     expect(fx.requestWakeLock).not.toHaveBeenCalled();
   });
 
+  it('hidden calls the optional onHidden hook before returning', async () => {
+    const onHidden = vi.fn();
+    const fx = makeLifecycleFixture({ onHidden });
+    fx.install();
+    await fx.fireVisibility('hidden');
+    expect(onHidden).toHaveBeenCalledOnce();
+    expect(fx.requestWakeLock).not.toHaveBeenCalled();
+  });
+
+  it('visible calls the optional onVisible hook before resume work', async () => {
+    const onVisible = vi.fn();
+    const fx = makeLifecycleFixture({ onVisible });
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(onVisible).toHaveBeenCalledOnce();
+    expect(fx.requestWakeLock).toHaveBeenCalledOnce();
+  });
+
   it('visible + running → re-acquires wake lock', async () => {
     const fx = makeLifecycleFixture();
     fx.install();

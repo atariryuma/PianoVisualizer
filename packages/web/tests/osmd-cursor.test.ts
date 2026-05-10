@@ -92,54 +92,94 @@ function makeContainer(): { scrollTop: number; clientHeight: number } {
   return { scrollTop: 0, clientHeight: 400 };
 }
 
+function makeCursorElement(offsetTop: number): HTMLElement {
+  const el = document.createElement('div');
+  Object.defineProperty(el, 'offsetTop', { configurable: true, value: offsetTop });
+  return el;
+}
+
+function makeScorePanelFixture(opts: {
+  cursorTop: number;
+  panelTop?: number;
+  panelHeight: number;
+}): { container: HTMLElement; cursorEl: HTMLElement } {
+  const panelTop = opts.panelTop ?? 0;
+  const container = document.createElement('div');
+  container.id = 'osmdContainer';
+  Object.defineProperty(container, 'clientHeight', { configurable: true, value: opts.panelHeight });
+  container.getBoundingClientRect = vi.fn(
+    () =>
+      ({
+        top: panelTop,
+        bottom: panelTop + opts.panelHeight,
+        left: 0,
+        right: 320,
+        width: 320,
+        height: opts.panelHeight,
+        x: 0,
+        y: panelTop,
+        toJSON: () => ({}),
+      }) as DOMRect
+  );
+  const cursorEl = makeCursorElement(opts.cursorTop);
+  cursorEl.getBoundingClientRect = vi.fn(
+    () =>
+      ({
+        top: opts.cursorTop,
+        bottom: opts.cursorTop + 120,
+        left: 0,
+        right: 2,
+        width: 2,
+        height: 120,
+        x: 0,
+        y: opts.cursorTop,
+        toJSON: () => ({}),
+      }) as DOMRect
+  );
+  container.appendChild(cursorEl);
+  document.body.appendChild(container);
+  return { container, cursorEl };
+}
+
 beforeEach(() => {
+  document.body.innerHTML = '';
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-// Custom scroll-tracking landed in 2026-05-09 (Phase 0e v3): we use
-// `scrollIntoView({ block: 'nearest', behavior: 'smooth' })` per
-// industry standard ("follow this element" idiom; see osmd-cursor.ts/
-// ensureCursorVisible). OSMD's built-in `followCursor` is OFF.
+// Custom scroll-tracking drives #osmdContainer.scrollTop directly.
+// OSMD's built-in `followCursor` is OFF.
 
 // ─── resetToStart ──────────────────────────────────────────────────
 
 describe('resetToStart', () => {
   // resetToStart calls cursor.reset() then ensureCursorVisible(); the
-  // latter invokes cursorElement.scrollIntoView when available. Tests
-  // pass cursorElement objects with scrollIntoView spies as needed.
+  // latter adjusts the fixed #osmdContainer scrollTop.
 
   it('calls cursor.reset', () => {
     const reset = vi.fn();
-    const cursor = createOsmdCursor({
-      getOsmd: () => makeOsmd({ reset, cursorElement: { offsetTop: 100 } }),
-    });
+    const ce = makeCursorElement(100);
+    const cursor = createOsmdCursor({ getOsmd: () => makeOsmd({ reset, cursorElement: ce }) });
     cursor.resetToStart();
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('calls scrollIntoView({ block: "start" }) on cursor element (first-scroll path)', () => {
+  it('scrolls the score panel directly on the first-scroll path', () => {
     // resetToStart is the "first-scroll" branch — _lastSysIdx is null
     // before this call, so ensureCursorVisible always fires here even
-    // though the system-boundary tracker would normally skip same-system
-    // onsets. Verifies the v4 behavior: block:'start' aligns cursor TOP
-    // to viewport top (offset by scroll-margin-top to stay in upper 25%).
+    // though the score-follow controller would normally skip same-system
+    // onsets. Verifies v9's safe-band reveal math.
     const reset = vi.fn();
-    const scrollIntoView = vi.fn();
+    const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 300, panelHeight: 200 });
     const cursor = createOsmdCursor({
       getOsmd: () =>
         makeOsmd({
           reset,
-          cursorElement: { offsetTop: 100, scrollIntoView },
+          cursorElement: cursorEl,
         }),
     });
     cursor.resetToStart();
-    expect(scrollIntoView).toHaveBeenCalledOnce();
-    const opts = scrollIntoView.mock.calls[0][0] as ScrollIntoViewOptions;
-    expect(opts.block).toBe('start');
-    // behavior is 'smooth' unless prefers-reduced-motion. Either is
-    // acceptable to the test — we only pin the standard fallback list.
-    expect(['smooth', 'instant']).toContain(opts.behavior);
+    expect(container.scrollTop).toBe(182);
   });
 
   it('no-op when osmd cursor missing', () => {
@@ -158,11 +198,12 @@ describe('resetToStart', () => {
   });
 
   it('swallows scrollIntoView throws (best-effort scroll)', () => {
-    const scrollIntoView = vi.fn(() => {
-      throw new Error('scroll boom');
+    const cursorEl = makeCursorElement(0);
+    vi.spyOn(cursorEl, 'getBoundingClientRect').mockImplementation(() => {
+      throw new Error('rect boom');
     });
     const cursor = createOsmdCursor({
-      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 0, scrollIntoView } }),
+      getOsmd: () => makeOsmd({ cursorElement: cursorEl }),
     });
     expect(() => cursor.resetToStart()).not.toThrow();
   });
@@ -171,56 +212,196 @@ describe('resetToStart', () => {
     // When the GraphicalMusicSheet path isn't populated (mid-load fixture),
     // computeSystemIdx returns null. The first-scroll branch (_lastSysIdx
     // === null) still fires so the cursor lands at score start.
-    const scrollIntoView = vi.fn();
+    const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 180, panelHeight: 200 });
     const cursor = createOsmdCursor({
-      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 0, scrollIntoView } }),
+      getOsmd: () => makeOsmd({ cursorElement: cursorEl }),
     });
     cursor.resetToStart();
-    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(container.scrollTop).toBe(62);
   });
-});
 
-// ─── v5 visibility recovery ───────────────────────────────────────
-//
-// On `visibilitychange → visible` the cursor module clears its
-// last-system tracker so the next ensureCursorVisible call fires the
-// first-scroll branch. This brings the cursor back into view after a
-// rAF pause (tab backgrounded → Tone Transport keeps playing → cursor
-// catches up to a system several pages ahead).
-describe('visibilitychange recovery (v5)', () => {
-  it('resets _lastSysIdx so the next setCursorToNote fires scroll', () => {
-    // Step 1: prime _lastSysIdx by doing a resetToStart with a tracked
-    // cursor. The fixture's cursor has no GraphicalMusicSheet path, so
-    // computeSystemIdx returns null — but the visibilitychange handler
-    // unconditionally sets _lastSysIdx to null. We can verify the
-    // handler installed by ensuring it doesn't throw + the cursor
-    // factory returns its 4-method shape.
-    const scrollIntoView = vi.fn();
+  it('uses current notehead bounds as the scroll target when available', () => {
+    const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 220, panelHeight: 400 });
+    container.scrollTop = 500;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path') as SVGPathElement;
+    p.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: 10,
+          bottom: 20,
+          left: 0,
+          right: 10,
+          width: 10,
+          height: 10,
+          x: 0,
+          y: 10,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    g.appendChild(p);
+    container.appendChild(g);
+
     const cursor = createOsmdCursor({
-      getOsmd: () => makeOsmd({ cursorElement: { offsetTop: 0, scrollIntoView } }),
+      getOsmd: () =>
+        makeOsmd({
+          cursorElement: cursorEl,
+          useGNotes: true,
+          notesUnderCursor: [{ getSVGGElement: () => g }],
+        }),
     });
     cursor.resetToStart();
-    scrollIntoView.mockClear();
-
-    // Dispatch visibilitychange → 'visible' on document. Even with
-    // happy-dom's defaulted visibilityState='visible' this exercises
-    // the listener path. The listener resets _lastSysIdx to null; the
-    // *next* resetToStart invocation should fire scroll again (it
-    // already does because resetScrollTracking is called there too,
-    // but this test pins the listener wiring against future regressions).
-    document.dispatchEvent(new Event('visibilitychange'));
-    cursor.resetToStart();
-    expect(scrollIntoView).toHaveBeenCalled();
+    expect(container.scrollTop).toBe(459);
   });
 
-  it('logs [CURSOR-VISIBILITY] when visibility changes', () => {
-    // Spy on the actual log target — beforeEach mocked it to no-op,
-    // but we restore + re-mock so we can read the args.
+  it('does not re-scroll inside the same system while the active region stays in the hysteresis band', () => {
+    const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 220, panelHeight: 400 });
+    const osmd = makeOsmd({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [],
+    }) as OsmdInstanceRef & {
+      GraphicalMusicSheet: {
+        MeasureList: Array<Array<{ parentMusicSystem: { Id: number } }>>;
+      };
+    };
+    osmd.GraphicalMusicSheet = {
+      MeasureList: [[{ parentMusicSystem: { Id: 1 } }]],
+    };
+    osmd.Sheet!.SourceMeasures![0].AbsoluteTimestamp = {
+      realValue: 0,
+      clone: () => ({ realValue: 0 }),
+    };
+    const fakeLib = {
+      Fraction: vi.fn(),
+      MusicPartManagerIterator: vi.fn(function (this: unknown) {
+        return this;
+      }),
+    };
+    const cursor = createOsmdCursor({
+      getOsmd: () => osmd,
+      getLib: () => fakeLib,
+    });
+
+    cursor.resetToStart();
+    const firstScroll = container.scrollTop;
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+
+    expect(container.scrollTop).toBe(firstScroll);
+  });
+
+  it('does not treat every call as first-scroll when system index is unavailable', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    createOsmdCursor({ getOsmd: () => makeOsmd({}) });
-    document.dispatchEvent(new Event('visibilitychange'));
-    const calls = logSpy.mock.calls.map((c) => String(c[0]));
-    expect(calls.some((s) => s.startsWith('[CURSOR-VISIBILITY]'))).toBe(true);
+    const { cursorEl } = makeScorePanelFixture({ cursorTop: 220, panelHeight: 400 });
+    const osmd = makeOsmd({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [],
+    });
+    osmd.Sheet!.SourceMeasures![0].AbsoluteTimestamp = {
+      realValue: 0,
+      clone: () => ({ realValue: 0 }),
+    };
+    const fakeLib = {
+      Fraction: vi.fn(),
+      MusicPartManagerIterator: vi.fn(function (this: unknown) {
+        return this;
+      }),
+    };
+    const cursor = createOsmdCursor({
+      getOsmd: () => osmd,
+      getLib: () => fakeLib,
+    });
+
+    cursor.resetToStart();
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+
+    const scrollLogs = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(scrollLogs.filter((s) => s.includes('"reason":"first-scroll"'))).toHaveLength(1);
+  });
+
+  it('guards same-system scroll direction reversals for tall active regions', () => {
+    vi.useFakeTimers();
+    const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 220, panelHeight: 400 });
+    container.scrollTop = 300;
+    const topPath = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    ) as SVGPathElement;
+    const bottomPath = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    ) as SVGPathElement;
+    topPath.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: -80,
+          bottom: 180,
+          left: 0,
+          right: 20,
+          width: 20,
+          height: 260,
+          x: 0,
+          y: -80,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    bottomPath.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: 320,
+          bottom: 580,
+          left: 0,
+          right: 20,
+          width: 20,
+          height: 260,
+          x: 0,
+          y: 320,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    const topG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const bottomG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    topG.appendChild(topPath);
+    bottomG.appendChild(bottomPath);
+    let activeG = topG;
+
+    const osmd = makeOsmd({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [{ getSVGGElement: () => activeG }],
+    }) as OsmdInstanceRef & {
+      GraphicalMusicSheet: {
+        MeasureList: Array<Array<{ parentMusicSystem: { Id: number } }>>;
+      };
+    };
+    osmd.GraphicalMusicSheet = {
+      MeasureList: [[{ parentMusicSystem: { Id: 1 } }]],
+    };
+    osmd.Sheet!.SourceMeasures![0].AbsoluteTimestamp = {
+      realValue: 0,
+      clone: () => ({ realValue: 0 }),
+    };
+    const fakeLib = {
+      Fraction: vi.fn(),
+      MusicPartManagerIterator: vi.fn(function (this: unknown) {
+        return this;
+      }),
+    };
+    const cursor = createOsmdCursor({
+      getOsmd: () => osmd,
+      getLib: () => fakeLib,
+    });
+
+    cursor.resetToStart();
+    const afterTop = container.scrollTop;
+    vi.advanceTimersByTime(200);
+    activeG = bottomG;
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+
+    expect(container.scrollTop).toBe(afterTop);
+    vi.useRealTimers();
   });
 });
 

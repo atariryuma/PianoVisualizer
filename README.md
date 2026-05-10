@@ -51,10 +51,11 @@ iPad needs `rootCA.cer` installed once as a trusted profile — see
 │   ├── core/               ← Pure-TS engine (35 modules, 680 tests)
 │   ├── web/                ← ★ Vite PWA shell — production entry
 │   │   ├── index.html
-│   │   ├── public/         ← app.css + manifest + icon + scores
+│   │   ├── public/         ← manifest + icon + bundled scores
 │   │   └── src/
-│   │       ├── main.ts     ← Module entry — seeds globals, imports legacy
-│   │       └── legacy-app.js  ← Vanilla shell (Phase 0c rewrite pending)
+│   │       ├── app.css     ← Vite-managed stylesheet
+│   │       ├── main.ts     ← Module entry — pins vendor globals, boots shell
+│   │       └── shell-*.ts  ← Typed web shell modules (Phase 0e complete)
 │   ├── mobile/             ← Capacitor 6 wrapper
 │   └── plugins/
 │       └── capacitor-piano-midi/  ← Native MIDI plugin (Swift + Kotlin)
@@ -72,8 +73,8 @@ iPad needs `rootCA.cer` installed once as a trusted profile — see
       modules, 680 tests — _2026-05-06_
 - [x] **Phase 0b.3**: dual-build wire-up — `packages/web` is the production
       entry, legacy 3-file shell retired — _2026-05-06_
-- [ ] **Phase 0c**: TypeScript migration of `legacy-app.js` (incremental,
-      JSDoc-first)
+- [x] **Phase 0c–0e**: TypeScript migration and retirement of `legacy-app.js` —
+      _2026-05-09_
 - [ ] **Phase 1**: `npx cap add ios && npx cap add android` + first installable
       build
 - [ ] **Phase 2a**: Validate `capacitor-piano-midi` against real iOS hardware

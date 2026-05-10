@@ -3,9 +3,8 @@
 //
 // Industry-standard architecture (mirrors musicxml-player +
 // osmd-audio-player), with one local choice: OSMD's built-in
-// `followCursor` is OFF and we drive scroll ourselves with the
-// browser-native `scrollIntoView({ block: 'nearest' })` idiom (see
-// `ensureCursorVisible` below for rationale).
+// `followCursor` is OFF and we drive the fixed OSMD panel's scrollTop
+// ourselves (see `ensureCursorVisible` below for rationale).
 //
 //   1. resetToStart() — reset cursor to score start, clear highlights,
 //      ensure visible.
@@ -33,6 +32,8 @@
 //
 // All side-effects flow through deps; the factory closes over the
 // highlighted-paths tracker.
+
+import { clamp } from '@piano/core';
 
 /** Subset of the OSMD instance we touch — narrow to keep the deps
  *  bag small + decouple from the lib's full surface. */
@@ -124,44 +125,34 @@ const DEFAULT_HIGHLIGHT_FILL = '#ff3b6b';
  *  reduce to clean integers. `1 quarter = 24/96 whole`. */
 const FRACTION_DENOM = 96;
 const FRACTION_NUM_PER_QUARTER = 24;
+const SCROLL_LOG_VERSION = 'v10';
+const OSMD_CONTAINER_ID = 'osmdContainer';
+const SAFE_MARGIN_RATIO = 0.14;
+const SAFE_MARGIN_MIN_PX = 32;
+const SCROLL_HYSTERESIS_PX = 48;
+const MIN_SCROLL_DELTA_PX = 8;
+const ACTIVE_SCROLL_COOLDOWN_MS = 120;
+const SAME_SYSTEM_REVERSAL_COOLDOWN_MS = 450;
+const MAX_ACTIVE_SCROLL_DELTA_PX = 120;
+
+type ScrollReason =
+  | 'first-scroll'
+  | 'system-change'
+  | 'active-outside-safe'
+  | 'inside-safe'
+  | 'throttled'
+  | 'reversal-guard';
 
 export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   const fill = deps.highlightFill ?? DEFAULT_HIGHLIGHT_FILL;
   const highlightedPaths: SVGPathElement[] = [];
-  /** Tracks the last music-system index the cursor was on. Used by
-   *  `ensureCursorVisible` to fire scroll only at system boundaries —
-   *  scrolling on every onset would race the smooth-scroll animation
-   *  and cause the visible cursor to lag behind its target position
-   *  (user-reported: "カーソルがだんだんずれていく"). */
-  let _lastSysIdx: number | null = null;
-
-  // [v5 — 2026-05-10] Tab visibility recovery.
-  //
-  // When the tab is backgrounded the rAF render-loop pauses but Tone's
-  // Web Audio Transport keeps playing (audio thread isn't throttled).
-  // When the tab returns to 'visible', practiceRealElapsedMs() jumps
-  // forward by however long the tab was hidden, the lane scanner walks
-  // _cursorScanIdx forward multiple notes in one tick, and cursorTo()
-  // is called for the new (much-later) note. _lastSysIdx still holds
-  // the system the cursor was on when the tab was last visible — so if
-  // the catch-up landed within the same system that scroll-skip would
-  // hide the cursor entirely (it's now scrolled out of the container's
-  // visible scroll area). Resetting _lastSysIdx to null on visibility
-  // resume forces the next ensureCursorVisible call to re-scroll the
-  // cursor into view (treats it as `isFirstScroll`). Diagnostic markers
-  // [CURSOR-VISIBILITY] hidden|visible let us confirm the rAF-pause
-  // hypothesis from production logs.
-  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-    document.addEventListener('visibilitychange', () => {
-      const state = document.visibilityState;
-      console.log(`[CURSOR-VISIBILITY] ${state}`);
-      if (state === 'visible') {
-        // Force the next scroll to fire so the cursor catches up to its
-        // (now-correct) iterator position after the rAF pause.
-        _lastSysIdx = null;
-      }
-    });
-  }
+  const scrollState = {
+    hasAnchor: false,
+    lastSysIdx: null as number | null,
+    lastScrollAtMs: 0,
+    lastScrollDirection: 0,
+  };
+  let _diagSkipTick = 0;
 
   function clearHighlights(): void {
     for (const p of highlightedPaths) {
@@ -179,20 +170,30 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     highlightedPaths.length = 0;
   }
 
+  /** Read the cursor's current notes via OSMD's `GNotesUnderCursor`,
+   *  falling back to `NotesUnderCursor` for older builds. Returns an
+   *  empty array on any throw — both call sites treat absence as
+   *  "skip this onset's painting/measurement" rather than an error. */
+  function getNotesUnderCursor(cursor: OsmdCursorRef | null | undefined): OsmdGraphicalNote[] {
+    if (!cursor) return [];
+    try {
+      if (typeof cursor.GNotesUnderCursor === 'function') {
+        return cursor.GNotesUnderCursor() || [];
+      }
+      if (typeof cursor.NotesUnderCursor === 'function') {
+        return cursor.NotesUnderCursor() || [];
+      }
+    } catch {
+      /* OSMD throws on partially-loaded sheets; treat as no notes. */
+    }
+    return [];
+  }
+
   function highlightCurrentNotes(): void {
     clearHighlights();
     const osmd = deps.getOsmd();
     if (!osmd?.cursor) return;
-    let list: OsmdGraphicalNote[] = [];
-    try {
-      if (typeof osmd.cursor.GNotesUnderCursor === 'function') {
-        list = osmd.cursor.GNotesUnderCursor() || [];
-      } else if (typeof osmd.cursor.NotesUnderCursor === 'function') {
-        list = osmd.cursor.NotesUnderCursor() || [];
-      }
-    } catch {
-      return;
-    }
+    const list = getNotesUnderCursor(osmd.cursor);
     for (const n of list) {
       if (!n || typeof n.getSVGGElement !== 'function') continue;
       let g: SVGGElement | null;
@@ -248,95 +249,282 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   }
 
   /**
-   * System-boundary scroll tracker (v4 — 2026-05-09).
+   * Score-follow controller (v10 — 2026-05-10).
    *
-   * Why this design after three failed iterations:
-   *
-   *   v1 (Type 1 + OSMD followCursor + block:'center'):
-   *      Center-anchor swung staff TOP 45px between systems with
-   *      varying heights. User: "段ごとにずれていく".
-   *
-   *   v2 (Type 1 + custom top-anchor every onset):
-   *      Fought OSMD's center-scroll. User: "上下に揺れる".
-   *
-   *   v3 (Type 1 + block:'nearest' + behavior:'smooth' every onset):
-   *      Smooth-scroll animation (~300ms) couldn't keep up with
-   *      rapid onsets (~125ms apart at tempoPct=60% on La Campanella).
-   *      The cursor's RENDERED position trailed the TARGET position
-   *      by 1-2 notes worth, accumulating into a visible drift.
-   *      User: "カーソルがだんだんずれていく / 描画の問題".
-   *
-   * v4 (this implementation): scroll ONLY when the cursor crosses a
-   *    music-system boundary. Within a system the cursor walks
-   *    horizontally and stays visible without scroll. At a boundary
-   *    we fire one `scrollIntoView({ block: 'start', behavior: 'auto' })`
-   *    to bring the new system into view. `block: 'start'` aligns the
-   *    cursor TOP to viewport top — combined with `scroll-margin-top`
-   *    on the cursor element, the cursor lands at ~25% of viewport
-   *    height, leaving the lower 75% for lookahead (like a kid reading
-   *    sheet music with eyes on the line being played + future lines
-   *    visible below). `behavior: 'auto'` defers to the user's CSS
-   *    `scroll-behavior` — usually 'smooth' OR 'instant' — but the
-   *    once-per-system cadence means animation has time to settle
-   *    before the next call.
-   *
-   * The system index comes from
-   * `GraphicalMusicSheet.MeasureList[m][0].parentMusicSystem`, the same
-   * path OSMD's own Cursor.update uses internally. `null` falls back
-   * to "always scroll" (safe degradation when the graphic-sheet path
-   * isn't yet populated — e.g. mid-load).
+   * This intentionally uses a small "reveal active region" policy:
+   * cursor.update() remains OSMD's job, while we only write the fixed
+   * panel's scrollTop when the current musical region leaves a safe
+   * reading band. That avoids anchoring every onset, which caused
+   * oscillation in dense passages, and matches the behavior of common
+   * score readers: scroll on system changes, otherwise minimally reveal
+   * the active note/staff region only when it is genuinely out of view.
    */
   function ensureCursorVisible(osmd: OsmdInstanceRef): void {
     try {
       const cursor = osmd.cursor as any;
       const ce = cursor?.cursorElement as HTMLElement | undefined;
-      if (!ce?.scrollIntoView) return;
+      const scroller = resolveScoreScroller(ce);
+      if (!ce || !scroller) return;
 
       const sysIdx = computeSystemIdx(osmd);
-      const sysChanged = _lastSysIdx !== null && sysIdx !== null && sysIdx !== _lastSysIdx;
-      const isFirstScroll = _lastSysIdx === null;
-      const prevSysIdx = _lastSysIdx;
-      if (sysIdx !== null) _lastSysIdx = sysIdx;
+      const prevSysIdx = scrollState.lastSysIdx;
+      const sysChanged = prevSysIdx !== null && sysIdx !== null && sysIdx !== prevSysIdx;
+      const isFirstScroll = !scrollState.hasAnchor;
+      if (sysIdx !== null) scrollState.lastSysIdx = sysIdx;
+      const activeRect = computeActiveCursorRect(cursor, ce);
+      const panelRect = safeRect(scroller);
+      if (!activeRect || !panelRect) return;
+      scrollState.hasAnchor = true;
 
-      // Only scroll on system change OR the first time (initial cursor
-      // visibility). Within-system onsets stay where they are.
-      if (!sysChanged && !isFirstScroll) {
-        // Diagnostic: log skip events (rate-limited 1/16 calls).
-        // [CURSOR-SCROLL v4] is the version marker — search console
-        // for this prefix to confirm v4 code is actually running.
-        if (++_diagSkipTick % 16 === 1) {
-          console.log(
-            `[CURSOR-SCROLL v4] skip same-system m=${cursor?.iterator?.CurrentMeasureIndex} sys=${sysIdx}`
-          );
-        }
+      const metrics = measureSafePanel(scroller, panelRect, activeRect);
+      const reason: ScrollReason = isFirstScroll
+        ? 'first-scroll'
+        : sysChanged
+          ? 'system-change'
+          : metrics.outside
+            ? 'active-outside-safe'
+            : 'inside-safe';
+      const plan = planPanelScroll(scroller, metrics, reason);
+
+      if (reason === 'inside-safe' || plan.absDelta < MIN_SCROLL_DELTA_PX) {
+        logScrollEvent('skip', cursor, sysIdx, prevSysIdx, reason, metrics, plan);
         return;
       }
 
-      // `scroll-margin-top` defines a "comfort zone" — when scrollIntoView
-      // with block:'start' lands the cursor, the cursor TOP is offset
-      // from viewport top by this amount. 25vh keeps the cursor in the
-      // upper portion of the viewport, with the rest of the viewport
-      // available for lookahead at upcoming systems.
-      if (ce.style) ce.style.scrollMarginTop = '25vh';
+      const now = Date.now();
+      const recentlyScrolled = now - scrollState.lastScrollAtMs < ACTIVE_SCROLL_COOLDOWN_MS;
+      if (reason === 'active-outside-safe' && recentlyScrolled) {
+        logScrollEvent('skip', cursor, sysIdx, prevSysIdx, 'throttled', metrics, plan);
+        return;
+      }
+      const direction = Math.sign(plan.delta);
+      const isReversal =
+        reason === 'active-outside-safe' &&
+        direction !== 0 &&
+        scrollState.lastScrollDirection !== 0 &&
+        direction !== scrollState.lastScrollDirection;
+      if (isReversal && now - scrollState.lastScrollAtMs < SAME_SYSTEM_REVERSAL_COOLDOWN_MS) {
+        logScrollEvent('skip', cursor, sysIdx, prevSysIdx, 'reversal-guard', metrics, plan);
+        return;
+      }
 
-      const reduceMotion =
-        typeof window !== 'undefined' &&
-        typeof window.matchMedia === 'function' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      ce.scrollIntoView({
-        behavior: reduceMotion ? 'instant' : 'smooth',
-        block: 'start',
-        inline: 'nearest',
-      });
+      // After rounding the delta can collapse to zero against the live
+      // scrollTop — skip the DOM write so the scroll event doesn't fire
+      // on a no-op.
+      if (scroller.scrollTop !== plan.nextScrollTop) {
+        scroller.scrollTop = plan.nextScrollTop;
+      }
+      scrollState.lastScrollAtMs = now;
+      scrollState.lastScrollDirection = direction;
 
-      console.log(
-        `[CURSOR-SCROLL v4] FIRE ${isFirstScroll ? 'first-scroll' : `sys ${prevSysIdx}→${sysIdx}`} m=${cursor?.iterator?.CurrentMeasureIndex} block=start margin=25vh`
-      );
+      logScrollEvent('fire', cursor, sysIdx, prevSysIdx, reason, metrics, plan);
     } catch (e) {
-      console.warn('[CURSOR-SCROLL v4] error:', e);
+      console.warn(`[CURSOR-SCROLL ${SCROLL_LOG_VERSION}] error:`, e);
     }
   }
-  let _diagSkipTick = 0;
+
+  function resolveScoreScroller(ce: HTMLElement | undefined): HTMLElement | null {
+    if (!ce) return null;
+    const byClosest =
+      typeof ce.closest === 'function'
+        ? (ce.closest(`#${OSMD_CONTAINER_ID}`) as HTMLElement | null)
+        : null;
+    if (byClosest) return byClosest;
+    if (typeof document !== 'undefined') {
+      const byId = document.getElementById(OSMD_CONTAINER_ID);
+      if (byId) return byId;
+    }
+    return null;
+  }
+
+  interface RectLike {
+    top: number;
+    bottom: number;
+    left?: number;
+    right?: number;
+  }
+
+  function computeActiveCursorRect(cursor: any, ce: HTMLElement): RectLike | null {
+    const cursorRect = safeRect(ce);
+    let notesRect: RectLike | null = null;
+    for (const note of getNotesUnderCursor(cursor)) {
+      const noteRect = noteToViewportRect(note);
+      if (!noteRect) continue;
+      notesRect = notesRect ? unionRects(notesRect, noteRect) : noteRect;
+    }
+    return notesRect ?? cursorRect;
+  }
+
+  function noteToViewportRect(note: OsmdGraphicalNote): RectLike | null {
+    let g: SVGGElement | null | undefined;
+    try {
+      g = typeof note?.getSVGGElement === 'function' ? note.getSVGGElement() : null;
+    } catch {
+      return null;
+    }
+    if (!g) return null;
+
+    const explicitHead = Array.from(
+      g.querySelectorAll<SVGGraphicsElement>(
+        '[class*="notehead" i], [id*="notehead" i], [data-name*="notehead" i], [class*="head" i], [id*="head" i]'
+      )
+    );
+    const headPaths =
+      explicitHead.length > 0 ? explicitHead : inferCompactNoteGlyphs(g.querySelectorAll('path'));
+    let rect: RectLike | null = null;
+    for (const path of headPaths) {
+      const pathRect = safeRect(path);
+      if (!pathRect) continue;
+      rect = rect ? unionRects(rect, pathRect) : pathRect;
+    }
+    return rect ?? safeRect(g);
+  }
+
+  function inferCompactNoteGlyphs(paths: NodeListOf<SVGGraphicsElement>): SVGGraphicsElement[] {
+    const candidates = Array.from(paths).filter((path) => {
+      const r = safeRect(path);
+      if (!r) return false;
+      const w = Math.max(0, (r.right ?? 0) - (r.left ?? 0));
+      const h = Math.max(0, r.bottom - r.top);
+      if (w < 3 || h < 3) return false;
+      if (w > 80 || h > 80) return false;
+      const aspect = Math.max(w / h, h / w);
+      return aspect <= 8;
+    });
+    return candidates.length > 0 ? candidates : Array.from(paths).slice(0, 1);
+  }
+
+  function safeRect(el: Element | undefined | null): RectLike | null {
+    try {
+      const r = el?.getBoundingClientRect?.();
+      if (!r || !Number.isFinite(r.top) || !Number.isFinite(r.bottom)) return null;
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+    } catch {
+      return null;
+    }
+  }
+
+  function unionRects(a: RectLike, b: RectLike): RectLike {
+    return {
+      top: Math.min(a.top, b.top),
+      bottom: Math.max(a.bottom, b.bottom),
+      left: Math.min(a.left ?? 0, b.left ?? 0),
+      right: Math.max(a.right ?? 0, b.right ?? 0),
+    };
+  }
+
+  function scorePanelMargins(scroller: HTMLElement): { top: number; bottom: number } {
+    const h = scroller.clientHeight || 0;
+    const margin = Math.max(SAFE_MARGIN_MIN_PX, Math.round(h * SAFE_MARGIN_RATIO));
+    return { top: margin, bottom: margin };
+  }
+
+  interface ScrollMetrics {
+    panelTop: number;
+    panelBottom: number;
+    safeTop: number;
+    safeBottom: number;
+    activeTop: number;
+    activeBottom: number;
+    focusY: number;
+    outside: boolean;
+  }
+
+  interface ScrollPlan {
+    delta: number;
+    absDelta: number;
+    nextScrollTop: number;
+  }
+
+  function measureSafePanel(
+    scroller: HTMLElement,
+    panelRect: RectLike,
+    activeRect: RectLike
+  ): ScrollMetrics {
+    const margin = scorePanelMargins(scroller);
+    const safeTop = panelRect.top + margin.top;
+    const safeBottom = panelRect.bottom - margin.bottom;
+    const focusY = activeFocusY(activeRect);
+    return {
+      panelTop: panelRect.top,
+      panelBottom: panelRect.bottom,
+      safeTop,
+      safeBottom,
+      activeTop: activeRect.top,
+      activeBottom: activeRect.bottom,
+      focusY,
+      outside:
+        focusY < safeTop - SCROLL_HYSTERESIS_PX || focusY > safeBottom + SCROLL_HYSTERESIS_PX,
+    };
+  }
+
+  function planPanelScroll(
+    scroller: HTMLElement,
+    metrics: ScrollMetrics,
+    reason: ScrollReason
+  ): ScrollPlan {
+    let delta = 0;
+    if (metrics.focusY < metrics.safeTop) {
+      delta = metrics.focusY - metrics.safeTop;
+    } else if (metrics.focusY > metrics.safeBottom) {
+      delta = metrics.focusY - metrics.safeBottom;
+    }
+    if (reason === 'active-outside-safe') {
+      delta = clamp(delta, -MAX_ACTIVE_SCROLL_DELTA_PX, MAX_ACTIVE_SCROLL_DELTA_PX);
+    }
+
+    const nextScrollTop = Math.round(Math.max(0, scroller.scrollTop + delta));
+    return {
+      delta,
+      absDelta: Math.abs(nextScrollTop - scroller.scrollTop),
+      nextScrollTop,
+    };
+  }
+
+  function activeFocusY(rect: RectLike): number {
+    const h = rect.bottom - rect.top;
+    if (h <= 0) return rect.top;
+    // For tall chords/beams/ledger groups, chase the reading point in
+    // the upper half instead of trying to fit the entire vertical span.
+    // That is how score readers avoid oscillating between top and bottom
+    // of wide-range passages.
+    return h > 96 ? rect.top + h * 0.42 : (rect.top + rect.bottom) / 2;
+  }
+
+  /** Single scroll-event logger for both fire + skip cases. Skip events
+   *  rate-limit to 1-in-16 to keep the console readable in dense
+   *  passages; fire events are rare (only on system change / safe-band
+   *  exit) so they always log. */
+  function logScrollEvent(
+    event: 'fire' | 'skip',
+    cursor: any,
+    sysIdx: number | null,
+    prevSysIdx: number | null,
+    reason: ScrollReason,
+    metrics: ScrollMetrics,
+    plan: ScrollPlan
+  ): void {
+    if (event === 'skip' && ++_diagSkipTick % 16 !== 1) return;
+    console.log(
+      `[CURSOR-SCROLL ${SCROLL_LOG_VERSION}] ` +
+        JSON.stringify({
+          event,
+          reason,
+          m: cursor?.iterator?.CurrentMeasureIndex ?? null,
+          sysIdx,
+          prevSysIdx,
+          panelTop: Math.round(metrics.panelTop),
+          panelBottom: Math.round(metrics.panelBottom),
+          safeTop: Math.round(metrics.safeTop),
+          safeBottom: Math.round(metrics.safeBottom),
+          activeTop: Math.round(metrics.activeTop),
+          activeBottom: Math.round(metrics.activeBottom),
+          focusY: Math.round(metrics.focusY),
+          delta: Math.round(plan.delta),
+          nextScrollTop: Math.round(plan.nextScrollTop),
+        })
+    );
+  }
 
   /** Resolve the music-system index of the cursor's current measure.
    *  Returns null when the GraphicalMusicSheet path is unpopulated
@@ -362,7 +550,10 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    *  the cursor is at the score's beginning; the next ensureCursorVisible
    *  call should fire the first-scroll branch. */
   function resetScrollTracking(): void {
-    _lastSysIdx = null;
+    scrollState.hasAnchor = false;
+    scrollState.lastSysIdx = null;
+    scrollState.lastScrollAtMs = 0;
+    scrollState.lastScrollDirection = 0;
   }
 
   let _diagCalls = 0;
@@ -405,26 +596,23 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
           : null;
 
       // Highlighted note: compare its measure + system to the cursor's.
-      // Note: the <g> bbox includes stems/ledgers/beams so it can extend
-      // far above the staff. We compare the *note-head path* bbox (the
-      // first <path> child) instead — that's the actual notehead glyph
-      // position and matches what the eye reads as "the note".
+      // The visual top uses the same active-note rectangle as the scroll
+      // controller, so diagnostics and behavior share one target.
       let noteHeadTop: number | null = null;
       let noteGTop: number | null = null;
       let noteM: number | null = null;
       let noteSysIdx: any = null;
       try {
-        const list =
-          (cursor.GNotesUnderCursor?.() as Array<{
-            getSVGGElement?(): SVGGElement | null;
-            sourceNote?: any;
-            parentVoiceEntry?: any;
-          }>) ?? [];
-        const n = list[0];
+        const n = getNotesUnderCursor(cursor)[0] as
+          | {
+              getSVGGElement?(): SVGGElement | null;
+              parentVoiceEntry?: any;
+            }
+          | undefined;
         const g = n?.getSVGGElement?.();
         if (g?.getBoundingClientRect) noteGTop = g.getBoundingClientRect().top;
-        const headPath = g?.querySelector?.('path');
-        if (headPath?.getBoundingClientRect) noteHeadTop = headPath.getBoundingClientRect().top;
+        const noteRect = n ? noteToViewportRect(n) : null;
+        noteHeadTop = noteRect ? noteRect.top : null;
         const noteMeasure = n?.parentVoiceEntry?.parentStaffEntry?.parentMeasure;
         noteM = noteMeasure?.MeasureNumber ?? noteMeasure?.measureListIndex ?? null;
         const noteSys = noteMeasure?.parentMusicSystem;
@@ -454,6 +642,21 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
             cursorScreenBot: Math.round(cr.bottom),
             expectedTopOp,
             expectedBotOp,
+            activeRect: (() => {
+              const active = computeActiveCursorRect(cursor, ce);
+              const panel = resolveScoreScroller(ce);
+              const panelRect = safeRect(panel);
+              if (!active || !panel || !panelRect) return null;
+              const metrics = measureSafePanel(panel, panelRect, active);
+              return {
+                top: Math.round(metrics.activeTop),
+                bottom: Math.round(metrics.activeBottom),
+                focusY: Math.round(metrics.focusY),
+                safeTop: Math.round(metrics.safeTop),
+                safeBottom: Math.round(metrics.safeBottom),
+                outside: metrics.outside,
+              };
+            })(),
             zoom,
           })
       );

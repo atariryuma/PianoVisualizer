@@ -3,7 +3,7 @@
 The long arc — phase-by-phase. Each phase has a Definition of Done. AI agents
 should pick up `NEXT.md` for immediate-next tasks; this file is for orientation.
 
-Last updated: **2026-05-06**.
+Last updated: **2026-05-10**.
 
 ## Phase 0a — 3-file split ✅ DONE (2026-05-05)
 
@@ -33,105 +33,50 @@ spectrum, center- glow, stage, midi-beams), and i18n + config.
 
 ### 0b.3 Dual-build wire-up ✅ (2026-05-06)
 
-`packages/web` is now the production entry. `packages/web/src/main.ts` imports
-Tone / OSMD / JSZip / `@piano/core` from npm, pins them to `globalThis`, and
-dynamically imports `legacy-app.js` (formerly the root `app.js`) for its
-IIFE-style side effects. Repo-root 3-file shell + `dist-legacy/core-bundle.js`
-IIFE retired in the same commit set; `https_server.ps1` defaults to serving
-`packages/web/dist/`.
+`packages/web` became the production entry. Repo-root 3-file shell +
+`dist-legacy/core-bundle.js` IIFE retired in the same commit set;
+`https_server.ps1` defaults to serving `packages/web/dist/`.
 
 **DoD met:** `pnpm verify` clean (lint + typecheck + 680/680 tests +
 `pnpm build:web`); Windows + iPad smoke test verified end-to-end (DIAG tick log
 shows OSMD cursor advance, Tone scheduler running, hit detection working). The
-legacy 3-file shell at the repo root no longer exists; the only remaining
-"vanilla shell" file is `packages/web/src/legacy-app.js`, which Phase 0c will
-rewrite to TS.
+legacy 3-file shell at the repo root no longer exists.
 
-## Phase 0c — TypeScript migration 🚧 IN PROGRESS (~91% done as of 2026-05-07)
+## Phase 0c — TypeScript migration ✅ DONE (2026-05-09)
 
-The legacy 7,600-line `packages/web/src/legacy-app.js` is being rewritten as
-typed TS. Current residual: **91 errors** (down from 1,041 baseline). Eight
-modules already extracted into `@piano/core` (score-timing, measure-timing,
-playback-order, merge-tied-notes, diag-load, practice-progress) and two into
-`@piano/web` (audio-scheduler, note-extractor).
+The remaining JavaScript shell was typed, split, and checked by the package
+typecheck. There is no active `legacy-app.js` migration queue.
 
-Sub-phases below split the remaining work along clean diff boundaries.
+## Phase 0d — Typed web-shell extraction ✅ DONE (2026-05-09)
 
-### Phase 0c.5 — Drive residual to 0, enable `// @ts-check` ratchet
+Focused modules under `packages/web/src/` now cover the former shell clusters:
+audio, MIDI, OSMD, user songs, practice mode, settings, render loop, UI, and
+dev-mode diagnostics.
 
-The remaining 91 errors are per-site boundary engineering (TS2345/TS2322 at
-`@piano/core` boundaries, scattered DOM-cast residuals, a handful of `let X`
-decls still needing `@type`). Once driven to zero, flip
-`packages/web/tsconfig.json: checkJs: true` and add `// @ts-check` to
-`legacy-app.js` so future regressions error at typecheck time.
+**DoD met:** `packages/web/src/legacy-app.js` no longer exists; web shell
+behavior is wired through typed modules and covered by web Vitest suites.
 
-- [ ] Per-site fix the 91 residuals (estimated ~3-4h focused work)
-- [ ] `// @ts-check` at top of `legacy-app.js`
-- [ ] `checkJs: true` in `packages/web/tsconfig.json`
-- [ ] DELETE `packages/web/tsconfig.probe.json` (no longer needed)
-- [ ] Audit + replace `/** @type {any} */` casts with proper types (10-20 sites)
+## Phase 0e — Retire `legacy-app.js` ✅ DONE (2026-05-09)
 
-**DoD:** `pnpm typecheck` clean across the whole repo with `legacy-app.js`
-included in the strict graph.
+`packages/web/src/main.ts` now imports vendors, keeps diagnostic globals, clears
+stale pre-Vite caches, and boots `ShellBootstrap.boot()`. The high-level shell
+composition lives in `packages/web/src/shell-bootstrap.ts`.
 
-### Phase 0d — Carve `legacy-app.js` into typed shell modules
-
-Each extraction reduces `legacy-app.js` and adds a focused `.ts` module under
-`packages/web/src/`. The shell becomes a thin glue layer that imports + wires
-typed modules. Rule: one extraction per PR, `pnpm verify` + iPad A/B between
-each.
-
-Target order (small / isolated first):
-
-- [ ] `web/wakelock.ts` + `web/visibility.ts` (~150 lines, low difficulty)
-- [ ] `web/section-editor.ts` (~300 lines, low difficulty)
-- [ ] `web/settings-panel.ts` (~500 lines, low difficulty)
-- [ ] `web/audio-init.ts` — getUserMedia + AudioContext seam (~200 lines, mid)
-- [ ] `web/user-songs-ui.ts` — Add/Manage Songs modal (~700 lines, mid)
-- [ ] `web/event-wiring.ts` — DOM event handlers (~1500 lines, mechanical)
-- [ ] `web/practice-tick.ts` — `updatePractice` hot path (~250 lines, mid-high)
-- [ ] `web/render-loop.ts` — `loop()` frame composer (~500 lines, hardest)
-
-**DoD:** `wc -l packages/web/src/legacy-app.js` ≤ 200 lines.
-
-### Phase 0e — Retire `legacy-app.js` entirely
-
-The remaining ≤200 lines move into `main.ts` (or focused new modules). The file
-gets deleted, `allowJs` gets flipped off, and every `legacy-app.js` mention in
-tooling / docs gets stripped.
-
-- [ ] Inline residual into `main.ts` / new modules
-- [ ] DELETE `packages/web/src/legacy-app.js`
-- [ ] `packages/web/tsconfig.json`: `allowJs: true` → `false`
-- [ ] DELETE `packages/web/dist-legacy/` (if any residue)
-- [ ] Strip `legacy-app.js` mentions from `.lintstagedrc.json`,
-      `.husky/pre-commit`, `CLAUDE.md`, `AGENTS.md`, `README.md`
-- [ ] `globalThis` pinning narrowed to Tone / OSMD / JSZip only (everything else
-      routes via static import)
-
-**DoD:** `git ls-files | grep -i legacy` returns 0 lines.
-`find packages -name "*.js" -not -path "*/node_modules/*" -not -path "*/dist/*"`
-returns 0 lines (config files like `eslint.config.mjs` excepted).
-
-**Tag at completion: `phase-0e-done`.**
-
-## Phase 0c (legacy DoD, retained for reference)
-
-**DoD:** `tsconfig.base.json` strict mode enabled, no `// @ts-ignore` at
-boundary points. (Strict mode + no `@ts-ignore` already met as of 2026-05-07;
-the ratchet for Phase 0c is now codified as 0c.5 above.)
+**Residual cleanup:** Some comments and historical docs still mention
+`legacy-app.js` as extraction provenance. These are not runtime dependencies;
+prefer removing or rewording them when touching the surrounding files.
 
 ## Phase 1 — Capacitor first install ⏸ BLOCKED ON HUMAN
 
 Requires Mac + Xcode + Android Studio. Pure setup work.
 
-**Cleanup task on landing**: drop the WMB-specific MIDI workarounds from
-`legacy-app.js`. They were added 2026-05-07 to keep iPad / Pages users
+**Cleanup task on landing**: reassess the WMB-specific MIDI workarounds in the
+typed MIDI modules. They were added 2026-05-07 to keep iPad / Pages users
 functional while the native build wasn't shipping yet, and are tagged for
 mechanical removal:
 
 ```bash
-grep -nE "@WMB-WORKAROUND" packages/web/src/legacy-app.js
+rg -n "@WMB-WORKAROUND" packages/web/src
 # 4 blocks bracketed by `// @WMB-WORKAROUND ...` and `// /@WMB-WORKAROUND`
 # headers. Once Capacitor + the CoreMIDI plugin land, native iOS/Android
 # uses the plugin and Web MIDI Browser becomes irrelevant — desktop users

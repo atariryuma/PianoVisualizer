@@ -8,7 +8,7 @@
 //     storage.getItem throws (private mode) → defaults to host check.
 //   • createRemoteLog: disabled → no-op send; enabled → POSTs to /log
 //     with text/plain body; serializes objects via JSON.stringify;
-//     backpressure cap drops messages once pending > maxPending.
+//     backpressure cap drops messages once pending reaches maxPending.
 //   • Sequential queue ordering — second send waits for first fetch
 //     to settle (assert via promise resolution order).
 //   • installConsoleForwarding: idempotent (second call no-ops),
@@ -201,33 +201,19 @@ describe('createRemoteLog — enabled path', () => {
     expect(fx.fetchSpy.mock.calls[0][0]).toBe('/api/diag');
   });
 
-  it('drops messages once pending exceeds maxPending', () => {
-    // Make fetch hang so pending never decrements.
-    const fetchSpy = vi.fn(() => new Promise<Response>(() => {}));
+  it('drops messages once pending reaches maxPending', async () => {
+    const fetchSpy = vi.fn(async () => new Response('ok'));
     const rl = createRemoteLog({
       forceEnabled: true,
       fetch: fetchSpy as unknown as typeof fetch,
       maxPending: 3,
     });
-    // Send 10 messages — only 4 should reach fetch (3 below cap +
-    // 1 at-cap before the > check kicks in on the 5th).
+    // Send 10 messages — only the first 3 should enter the queue.
     for (let i = 0; i < 10; i++) rl.send('m' + i);
-    // Synchronously after, exactly maxPending+1 fetch invocations
-    // are queued (the 5th send sees pending=4 > 3 and drops).
-    // Fetch starts at the next microtask flush; trigger it.
-    return new Promise<void>((resolve) =>
-      queueMicrotask(() => {
-        // The first fetch fires; once it does, additional queued
-        // chains fire one-by-one but they all hang too. The
-        // backpressure check kicks at the SEND site, not the fetch
-        // site, so the assertion is on the count of queued sends
-        // that bumped `pending` (= 4 first-cap + drops).
-        // We can't easily assert mid-state; just confirm fewer than
-        // 10 fetches were issued.
-        expect(fetchSpy.mock.calls.length).toBeLessThan(10);
-        resolve();
-      })
-    );
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls.map((call) => call[1].body)).toEqual(['m0', 'm1', 'm2']);
   });
 
   it('survives fetch rejection (catch swallows)', async () => {

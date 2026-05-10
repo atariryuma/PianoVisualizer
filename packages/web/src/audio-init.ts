@@ -360,6 +360,12 @@ export interface AudioLifecycleDeps {
   rescanMidi: (silent: boolean) => Promise<boolean>;
   startMidiAutoRescan: () => void;
 
+  /** Called immediately when the page is backgrounded. Used by the
+   *  practice shell to freeze clocks before rAF is throttled. */
+  onHidden?: () => void;
+  /** Called before audio/MIDI resume work when the page becomes visible. */
+  onVisible?: () => void;
+
   // ── targets / time hooks ──────────────────────────────────────
   /** Defaults to live `document`. */
   document?: Document;
@@ -419,7 +425,12 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
   // pick up exactly where they left off without seeing a phantom
   // "connection error".
   async function onVisibilityChange(): Promise<void> {
-    if (!doc || doc.visibilityState !== 'visible') return;
+    if (!doc) return;
+    if (doc.visibilityState !== 'visible') {
+      deps.onHidden?.();
+      return;
+    }
+    deps.onVisible?.();
     if (deps.isRunning()) deps.requestWakeLock();
 
     const ctx = deps.getAudioCtx();

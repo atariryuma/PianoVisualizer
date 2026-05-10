@@ -47,7 +47,8 @@ $blockedFiles = @("cert.pfx", "https_server.ps1", "gen_cert.ps1", "server.log")
 $clientHandler = {
     param(
         [System.Net.Sockets.TcpClient]$client,
-        [System.Security.Cryptography.X509Certificates.X509Certificate2]$cert,
+        [string]$certPath,
+        [string]$certPass,
         [string]$serverDir,
         [string[]]$blockedFiles,
         [string]$logPath
@@ -121,8 +122,14 @@ $clientHandler = {
 
     $sslStream = New-Object System.Net.Security.SslStream($client.GetStream(), $false)
     $reader = $null
+    $cert = $null
 
     try {
+        $certFlags =
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::MachineKeySet -bor
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+        $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certPath, $certPass, $certFlags)
         $sslStream.AuthenticateAsServer($cert, $false, [System.Security.Authentication.SslProtocols]::Tls12, $false)
         $reader = New-Object System.IO.StreamReader(
             $sslStream,
@@ -220,12 +227,19 @@ $clientHandler = {
     }
     catch {
         # Don't crash the worker — log and let `finally` close the streams.
-        Write-Log "Worker error: $($_.Exception.Message)"
+        $msg = $_.Exception.Message
+        $inner = $_.Exception.InnerException
+        while ($inner) {
+            $msg += " Inner: $($inner.Message)"
+            $inner = $inner.InnerException
+        }
+        Write-Log "Worker error: $msg"
     }
     finally {
         if ($reader)    { try { $reader.Close()    } catch { } }
         if ($sslStream) { try { $sslStream.Close() } catch { } }
         if ($client)    { try { $client.Close()    } catch { } }
+        if ($cert)      { try { $cert.Dispose()    } catch { } }
     }
 }
 
@@ -233,7 +247,6 @@ if (-not (Test-Path $certPath -PathType Leaf)) {
     throw "Certificate file not found: $certPath"
 }
 
-$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPass)
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $Port)
 
 # Bind+listen separately so a port-in-use failure is fatal with a useful hint
@@ -277,7 +290,8 @@ try {
         $ps.RunspacePool = $pool
         [void]$ps.AddScript($handlerText).
             AddArgument($client).
-            AddArgument($cert).
+            AddArgument($certPath).
+            AddArgument($certPass).
             AddArgument($serverDir).
             AddArgument($blockedFiles).
             AddArgument($logPath)
