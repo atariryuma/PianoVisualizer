@@ -463,11 +463,17 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     metrics: ScrollMetrics,
     reason: ScrollReason
   ): ScrollPlan {
+    // The active region extends belowFocus pixels below focusY (stem,
+    // ledger lines, lower staff). Shrink effectiveSafeBottom so that
+    // when focusY lands there, activeRect.bottom lands at safeBottom —
+    // keeping the entire staff visible instead of clipping the bottom.
+    const belowFocus = Math.max(0, metrics.activeBottom - metrics.focusY);
+    const effectiveSafeBottom = Math.max(metrics.safeTop + 1, metrics.safeBottom - belowFocus);
     let delta = 0;
     if (metrics.focusY < metrics.safeTop) {
       delta = metrics.focusY - metrics.safeTop;
-    } else if (metrics.focusY > metrics.safeBottom) {
-      delta = metrics.focusY - metrics.safeBottom;
+    } else if (metrics.focusY > effectiveSafeBottom) {
+      delta = metrics.focusY - effectiveSafeBottom;
     }
     if (reason === 'active-outside-safe') {
       delta = clamp(delta, -MAX_ACTIVE_SCROLL_DELTA_PX, MAX_ACTIVE_SCROLL_DELTA_PX);

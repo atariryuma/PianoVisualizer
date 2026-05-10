@@ -168,7 +168,12 @@ describe('resetToStart', () => {
     // resetToStart is the "first-scroll" branch — _lastSysIdx is null
     // before this call, so ensureCursorVisible always fires here even
     // though the score-follow controller would normally skip same-system
-    // onsets. Verifies v9's safe-band reveal math.
+    // onsets.
+    //
+    // cursorTop=300, panelHeight=200: cursor {top:300, bot:420, h:120}
+    // margin=32, safeBottom=168. focusY=300+120*0.42=350.4,
+    // belowFocus=420-350.4=69.6, effectiveSafeBottom=168-69.6≈98.
+    // delta=350.4-98=252 → cursor bottom lands at safeBottom (168).
     const reset = vi.fn();
     const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 300, panelHeight: 200 });
     const cursor = createOsmdCursor({
@@ -179,7 +184,7 @@ describe('resetToStart', () => {
         }),
     });
     cursor.resetToStart();
-    expect(container.scrollTop).toBe(182);
+    expect(container.scrollTop).toBe(252);
   });
 
   it('no-op when osmd cursor missing', () => {
@@ -212,12 +217,15 @@ describe('resetToStart', () => {
     // When the GraphicalMusicSheet path isn't populated (mid-load fixture),
     // computeSystemIdx returns null. The first-scroll branch (_lastSysIdx
     // === null) still fires so the cursor lands at score start.
+    // cursorTop=180, panelHeight=200: cursor {top:180, bot:300, h:120}
+    // focusY=180+120*0.42=230.4, belowFocus=69.6, effectiveSafeBottom=98.
+    // delta=230.4-98=132 → cursor bottom lands at safeBottom (168).
     const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 180, panelHeight: 200 });
     const cursor = createOsmdCursor({
       getOsmd: () => makeOsmd({ cursorElement: cursorEl }),
     });
     cursor.resetToStart();
-    expect(container.scrollTop).toBe(62);
+    expect(container.scrollTop).toBe(132);
   });
 
   it('uses current notehead bounds as the scroll target when available', () => {
