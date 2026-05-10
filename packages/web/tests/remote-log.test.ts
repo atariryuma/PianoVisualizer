@@ -233,6 +233,10 @@ describe('createRemoteLog — enabled path', () => {
   });
 
   it('preserves order across sends (sequential chain)', async () => {
+    // Fake timers make this deterministic under parallel test-worker CPU
+    // load — real 1ms setTimeout delays can exceed a fixed wait budget
+    // when 65 test files share worker threads.
+    vi.useFakeTimers();
     const order: string[] = [];
     const fetchSpy = vi.fn(async (_url, opts) => {
       // Simulate variable network delay so a parallel impl would
@@ -248,7 +252,8 @@ describe('createRemoteLog — enabled path', () => {
     rl.send('first');
     rl.send('second');
     rl.send('third');
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
     expect(order).toEqual(['first', 'second', 'third']);
   });
 
