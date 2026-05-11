@@ -10,8 +10,10 @@
 // closures over shell state) flow IN through deps; nothing flows out except
 // the public methods listed in `ShellMidi`.
 
+import type { InitialPracticeState } from './practice-state-init';
 import type { InitialGameState } from './game-state-init';
 import type { T } from '@piano/core';
+import type { MidiPortRef, BlePortMarker } from './midi-ports';
 import * as MidiDispatch from './midi-dispatch';
 import * as MidiIndicator from './midi-indicator';
 import * as MidiPorts from './midi-ports';
@@ -23,9 +25,36 @@ import * as BleMidiConnect from './ble-midi-connect';
 import * as AudioInit from './audio-init';
 import * as PracticeVisibility from './practice-visibility';
 
+/** Mutable per-session MIDI connection state. Shared across the MIDI
+ *  cluster (ports / dispatch / rescan / init / indicator) and read by
+ *  every shell that needs to know whether a piano is currently
+ *  connected. Each consumer (midi-ports, midi-dispatch, midi-indicator)
+ *  declares its own narrow view; this is the union that satisfies all
+ *  of them. */
+export interface MidiInputRef {
+  /** True once a MIDIInput port has been attached (port-side
+   *  `onmidimessage` is wired) — implies we should ignore mic input. */
+  enabled: boolean;
+  /** The attached MIDI port. A real MIDIInput on the Web MIDI path
+   *  (typed loosely via MidiPortRef); a name-only BlePortMarker on
+   *  the BLE-MIDI path; or null when idle. */
+  port: MidiPortRef | BlePortMarker | null;
+  /** Set when initWebMIDI has already kicked off a `requestMIDIAccess`
+   *  call this session — guards against re-prompting the user. */
+  _accessRequested: boolean;
+  /** True on iOS Safari / WKWebView: Web MIDI is not implemented in
+   *  WebKit (Bug 107250) so the rescan poller short-circuits and a
+   *  friendlier hint is shown. */
+  platformBlocked: boolean;
+  /** Timestamp of the most recent MIDI byte we processed (ms since
+   *  Tone start). Set by midi-dispatch's onMessage, read by mic-pipeline
+   *  to decide whether MIDI is actively driving right now. */
+  lastEventTime: number;
+}
+
 export interface ShellMidiDeps {
   state: InitialGameState;
-  practice: any;
+  practice: InitialPracticeState;
   getAudioCtx: () => any;
   dom: {
     midiBadge: HTMLElement;
@@ -54,7 +83,7 @@ export interface ShellMidiDeps {
 }
 
 export interface ShellMidi {
-  midiInput: any;
+  midiInput: MidiInputRef;
   bleMidi: any;
   initWebMIDI(): Promise<any>;
   /** @param silent if true, suppress the user-visible "scanning" hint. */
@@ -75,11 +104,12 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
 
   // platformBlocked: true on platforms that never expose Web MIDI (iOS Safari
   // / any iPadOS browser) — drives a friendlier hint in IntroHintUi.
-  const midiInput: any = {
+  const midiInput: MidiInputRef = {
     enabled: false,
     port: null,
     _accessRequested: false,
     platformBlocked: false,
+    lastEventTime: 0,
   };
 
   // ── Dispatch + indicator ──

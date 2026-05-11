@@ -74,6 +74,20 @@ Recent landings (2026-05-12):
   a 4th test that replays the `server.log` 2026-05-10 11:36:14 / 11:36:25
   hidden→visible cycle (elapsedMs=4858, leadMs=50, 11s background gap) so any
   future scaling/short-circuiting of the freeze window fails the test.
+- **shell-\*.ts mutable state types + low-hanging callback sweep** — landed
+  2026-05-12. `practice: any` → `InitialPracticeState` across 6 shells; new
+  `MidiInputRef` type (exported from `shell-midi.ts`) replaces `midiInput: any`
+  across 5 shells; `midiState: any` → `MidiState` (from `@piano/core`) in 3
+  shells. Also tightens `MidiRenderMidiState.activeNotes` to match `MidiState`'s
+  canonical `synColor: string | null`. Plus targeted narrowing:
+  `alertAudioInitError: (e: unknown)`, `selectSong: (id: string)`,
+  `setCurrentSong: (s: unknown)`, `setOsmd: (o: unknown)`,
+  `rescanMidi: (silent?: boolean) => Promise<boolean>`,
+  `dateKey: (d: Date) => string`, `particles: Particle[]`, `ripples: Ripple[]`
+  (typed against `@piano/core` exports),
+  `setLibrary: (entries: UiLibraryEntry[])`. Net **−40 `any`** this session
+  (shell-\*.ts: 275 → 235); combined with prior rounds, **shell-\*.ts went from
+  331 → 235** (−96, ~29%).
 
 The next 5–10 actionable items, in **execution order**. Pick the topmost
 unchecked item if no specific issue is assigned to you.

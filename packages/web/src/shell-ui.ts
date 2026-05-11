@@ -11,8 +11,10 @@
 // reads `songProg`; practice-flow exposes `returnToTitle` etc.).
 // Bundling lets us hide that orchestration behind the public surface.
 
+import type { MidiState } from '@piano/core';
+import type { MidiInputRef } from './shell-midi';
 import type { InitialGameState } from './game-state-init';
-import type { InitialPrefs } from './practice-state-init';
+import type { InitialPrefs, InitialPracticeState } from './practice-state-init';
 import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import type { T } from '@piano/core';
@@ -29,20 +31,20 @@ export interface ShellUiDeps {
   document: Document;
   songs: any;
   state: InitialGameState;
-  practice: any;
-  midiInput: any;
-  midiState: any;
+  practice: InitialPracticeState;
+  midiInput: MidiInputRef;
+  midiState: MidiState;
   prefs: InitialPrefs;
   config: PianoConfig;
   /** Mutable currentSong — getter/setter. */
   getCurrentSong: () => any;
-  setCurrentSong: (s: any) => void;
+  setCurrentSong: (s: unknown) => void;
   dom: DomBag.DomBag;
   t: T;
-  dateKey: any;
+  dateKey: (d: Date) => string;
   /** OSMD shell. */
   getOsmd: () => any;
-  setOsmd: (o: any) => void;
+  setOsmd: (o: unknown) => void;
   clearHighlights: () => void;
   loadCurrentScore: () => Promise<void>;
   /** Practice cluster forwarders. */
@@ -56,12 +58,12 @@ export interface ShellUiDeps {
   initAudio: () => Promise<void>;
   initBgStars: () => void;
   loop: (timeMs: number) => void;
-  alertAudioInitError: (e: any) => void;
+  alertAudioInitError: (e: unknown) => void;
   /** MIDI input forwarders. */
   initWebMIDI: () => Promise<any>;
   startMidiAutoRescan: () => void;
   stopMidiAutoRescan: () => void;
-  rescanMidi: (silent?: any) => any;
+  rescanMidi: (silent?: boolean) => Promise<boolean>;
   /** Misc shell forwarders. */
   releaseWakeLock: () => void;
   requestWakeLock: () => Promise<unknown>;
@@ -91,14 +93,14 @@ export interface ShellUi {
   refreshIntroHint: () => void;
   showRunningUI: () => void;
   hideIntroHint: () => void;
-  alertAudioInitError: (e: any) => void;
+  alertAudioInitError: (e: unknown) => void;
   /** Result-card forwarders — assigned by the shell into placeholders. */
   renderResultCard: () => void;
   completePracticeSection: () => void;
   /** Song-panel render thunk. */
   renderSongPanel: () => void;
   /** SelectSong + practice-song-btn listener installed via hook. */
-  selectSong: (songId: any) => void;
+  selectSong: (songId: string) => void;
   installPracticeSongButtons: () => void;
   /** PracticeFlow.returnToTitle — assigned to the shell placeholder. */
   returnToTitle: () => void;
@@ -123,7 +125,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     rescanMidi: deps.rescanMidi,
   } as any);
 
-  const showHitChip = (kind: any, text: any) => _introHintUi.showHitChip(kind, text);
+  const showHitChip = (kind: string, text: string) => _introHintUi.showHitChip(kind, text);
 
   // ── Result-card ──
   const SECTION_IDS = ['A1', 'B', 'A2'];
@@ -213,7 +215,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     showRunningUI: () => _introHintUi.showRunningUI(),
     initBgStars: deps.initBgStars,
     loop: deps.loop,
-    alertAudioInitError: (e: any) => _introHintUi.alertAudioInitError(e),
+    alertAudioInitError: (e: unknown) => _introHintUi.alertAudioInitError(e),
     startPracticeSection: deps.startPracticeSection,
     songPanel: dom.songPanel,
   } as any);
@@ -247,7 +249,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     loadCurrentScore: deps.loadCurrentScore,
     remoteLogEnabled: deps.remoteLogEnabled,
   } as any);
-  const selectSong = (songId: any) => _selectSong.selectSong(songId);
+  const selectSong = (songId: string) => _selectSong.selectSong(songId);
 
   // ── PracticeFlow — installed at construction time. returnToTitle is wired
   //   back into the song-panel-controls thunk via _returnToTitle assignment. ──
@@ -296,7 +298,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     refreshIntroHint: () => _introHintUi.refreshIntroHint(),
     showRunningUI: () => _introHintUi.showRunningUI(),
     hideIntroHint: () => _introHintUi.hideIntroHint(),
-    alertAudioInitError: (e: any) => _introHintUi.alertAudioInitError(e),
+    alertAudioInitError: (e: unknown) => _introHintUi.alertAudioInitError(e),
     renderResultCard: () => _resultCard.renderResultCard(),
     completePracticeSection: () => _resultCard.completePracticeSection(),
     renderSongPanel,
@@ -318,7 +320,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         showRunningUI: () => _introHintUi.showRunningUI(),
         initBgStars: deps.initBgStars,
         loop: deps.loop,
-        alertAudioInitError: (e: any) => _introHintUi.alertAudioInitError(e),
+        alertAudioInitError: (e: unknown) => _introHintUi.alertAudioInitError(e),
       } as any);
     },
   };

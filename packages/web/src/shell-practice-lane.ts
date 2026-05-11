@@ -10,6 +10,8 @@
 // legacy-app.js. PracticeLane has a setLabels() mutator so the
 // per-frame draw doesn't pay for translator calls.
 
+import type { MidiInputRef } from './shell-midi';
+import type { InitialPracticeState } from './practice-state-init';
 import type { InitialGameState } from './game-state-init';
 import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
@@ -17,9 +19,9 @@ import * as PracticeLane from './practice-lane';
 
 export interface ShellPracticeLaneDeps {
   ctx: CanvasRenderingContext2D;
-  practice: any;
+  practice: InitialPracticeState;
   state: InitialGameState;
-  midiInput: any;
+  midiInput: MidiInputRef;
   config: PianoConfig;
   /** Viewport accessors. */
   getScreen: () => { W: number; H: number };

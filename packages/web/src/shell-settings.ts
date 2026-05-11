@@ -9,8 +9,9 @@
 // Returns the open / close / refresh entry points so legacy-app.js
 // can assign them into its forward-decl placeholders.
 
+import type { MidiInputRef } from './shell-midi';
 import type { InitialGameState } from './game-state-init';
-import type { InitialPrefs } from './practice-state-init';
+import type { InitialPrefs, InitialPracticeState } from './practice-state-init';
 import type { DomBag } from './dom-bag';
 import * as SettingsPanel from './settings-panel';
 
@@ -19,9 +20,9 @@ export interface ShellSettingsDeps {
    *  remap (different prop names than DOM.*, so no pickDom shortcut). */
   dom: DomBag;
   prefs: InitialPrefs;
-  practice: any;
+  practice: InitialPracticeState;
   state: InitialGameState;
-  midiInput: any;
+  midiInput: MidiInputRef;
   defaultAudioOffsetMs: number;
   savePrefs: () => void;
   t: (key: string) => string;

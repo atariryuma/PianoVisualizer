@@ -22,9 +22,10 @@
 //     Returns null when there's nothing to highlight (skips the
 //     map allocation entirely on idle frames).
 
-/** MIDI runtime slice — shared with practice-tick + render-late. */
+/** MIDI runtime slice — shared with practice-tick + render-late.
+ *  Matches the canonical `MidiState` shape from `@piano/core/state/midi-state`. */
 export interface MidiRenderMidiState {
-  activeNotes: Map<number, { velocity: number; onTimeMs: number; synColor?: string }>;
+  activeNotes: Map<number, { velocity: number; onTimeMs: number; synColor: string | null }>;
   sustainOn: boolean;
   sustainedNotes: Set<number>;
   lastChordName: string;

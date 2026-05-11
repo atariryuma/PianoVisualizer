@@ -12,6 +12,7 @@
 
 import type { InitialGameState } from './game-state-init';
 import type { PianoConfig } from './piano-config';
+import type { Particle, Ripple } from '@piano/core';
 import * as RenderLoopWireup from './render-loop-wireup';
 import * as RenderLoop from './render-loop';
 import * as RenderFrame from './render-frame';
@@ -35,8 +36,8 @@ export interface ShellRenderLoopDeps {
   /** Audio bag — analyser / dataArray / freqArray / audioCtx. */
   audio: any;
   /** Particles / ripples shared pools + types. */
-  particles: any[];
-  ripples: any[];
+  particles: Particle[];
+  ripples: Ripple[];
   Particle: any;
   Ripple: any;
   /** Background drawers. */

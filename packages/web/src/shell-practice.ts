@@ -12,7 +12,7 @@
 // scoring's medianRecentPitch + matchNoteOnset.
 
 import type { InitialGameState } from './game-state-init';
-import type { InitialPrefs } from './practice-state-init';
+import type { InitialPrefs, InitialPracticeState } from './practice-state-init';
 import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import * as PracticeTimings from './practice-timings';
@@ -38,7 +38,7 @@ export interface ShellPracticeDeps {
   defaultAudioOffsetMs: number;
   remoteLogEnabled: boolean;
   remoteLog: (msg: string | object) => void;
-  t: (key: string, vars?: any) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   /** Shared shell helpers — wake-lock, layout, etc. */
   hideIntroHint: () => void;
   syncLayout: () => void;
@@ -66,7 +66,7 @@ export interface ShellPracticeDeps {
 
 export interface ShellPractice {
   /** Practice state object — mutable; passed into many other deps. */
-  practice: any;
+  practice: InitialPracticeState;
   /** COUNT_IN_MS / LANE_LOOKAHEAD_MS — read by PracticeLane + render-loop builders. */
   getCountInMs: () => number;
   getLaneLookaheadMs: () => number;
@@ -109,7 +109,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
    *  practice-timings.recomputePracticeTimings can refresh per-frame opts. */
   const practiceLaneRef: { current: any } = { current: null };
 
-  const practice: any = PracticeStateInit.createInitialPractice(
+  const practice = PracticeStateInit.createInitialPractice(
     prefs.audioOffsetMs != null ? prefs.audioOffsetMs : deps.defaultAudioOffsetMs
   );
 
@@ -202,7 +202,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     countInMs: () => COUNT_IN_MS,
     defaultAudioOffsetMs: deps.defaultAudioOffsetMs,
     remoteLogEnabled: deps.remoteLogEnabled,
-    alert: (msg: any) => alert(msg),
+    alert: (msg: string) => alert(msg),
     remoteLog: deps.remoteLog,
     t,
     hideIntroHint: deps.hideIntroHint,

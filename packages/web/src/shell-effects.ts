@@ -7,6 +7,7 @@
 
 import type { InitialGameState } from './game-state-init';
 import type { PianoConfig } from './piano-config';
+import type { Particle, Ripple } from '@piano/core';
 import * as ParticleEffects from './particle-effects';
 
 export interface ShellEffectsDeps {
@@ -17,20 +18,22 @@ export interface ShellEffectsDeps {
   /** practice forward-declared in shell — getter so the bg / particle
    *  effects can be built before the practice cluster. */
   getPractice: () => any;
-  perfTier: any;
+  perfTier: number;
   /** Live screen geometry — read at fire time. */
   getScreen: () => { W: number; H: number };
   /** Bg-stars are seeded by the canvas-resize pipeline; getter is null
    *  until initBgStars() runs. */
-  getBgStars: () => any;
+  getBgStars: () => unknown[] | null;
 }
 
 export interface ShellEffects {
   // Particle / ripple pools — exposed so render-loop / session-reset
   // can clear them.
-  particles: any[];
-  ripples: any[];
-  // ParticleEffects exposes (preserved verbatim for shell-locals).
+  particles: Particle[];
+  ripples: Ripple[];
+  // ParticleEffects exposes — typed loosely because particle-effects.ts
+  // monkey-patches the prototypes (proto.draw / proto.update) and the
+  // narrow `typeof Particle` doesn't reflect those mutations.
   Particle: any;
   Ripple: any;
   getNoteColor: (name: string) => string;
@@ -50,8 +53,8 @@ export interface ShellEffects {
 export function createShellEffects(deps: ShellEffectsDeps): ShellEffects {
   const { pianoCore, ctx, state, config } = deps;
 
-  const particles: any[] = [];
-  const ripples: any[] = [];
+  const particles: Particle[] = [];
+  const ripples: Ripple[] = [];
 
   const _particleEffects = ParticleEffects.createParticleEffects({
     pianoCore,

@@ -9,8 +9,10 @@
 // No return value — installDevMode wires its own listeners and runs
 // forever after install.
 
+import type { MidiState } from '@piano/core';
+import type { MidiInputRef } from './shell-midi';
 import type { InitialGameState } from './game-state-init';
-import type { InitialPrefs } from './practice-state-init';
+import type { InitialPrefs, InitialPracticeState } from './practice-state-init';
 import * as DevModeWireup from './dev-mode-wireup';
 import * as DomBag from './dom-bag';
 
@@ -24,10 +26,10 @@ export interface ShellDevModeDeps {
   /** Add-song modal — pulled from ShellAddSong.domAddSong. */
   domAddSong: { modal: HTMLElement | null };
   state: InitialGameState;
-  practice: any;
+  practice: InitialPracticeState;
   prefs: InitialPrefs;
-  midiInput: any;
-  midiState: any;
+  midiInput: MidiInputRef;
+  midiState: MidiState;
   ctx: CanvasRenderingContext2D;
   particles: any[];
   ripples: any[];

@@ -11,6 +11,7 @@
 
 import type { InitialGameState } from './game-state-init';
 import type { PianoConfig } from './piano-config';
+import type { MidiState } from '@piano/core';
 import * as PianoCore from '@piano/core';
 import * as MidiHandlers from './midi-handlers';
 import * as MidiRender from './midi-render';
@@ -45,7 +46,7 @@ export interface ShellMidiHandlersDeps {
 }
 
 export interface ShellMidiHandlers {
-  midiState: any;
+  midiState: MidiState;
   /** Pixel projection — used by particle effects + chord-cluster matcher. */
   midiToScreenX: (midi: number) => number;
   noteThemeColor: (midi: number) => string;
@@ -66,7 +67,7 @@ export interface ShellMidiHandlers {
 export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiHandlers {
   const { state, ctx, config, t } = deps;
 
-  const midiState: any = {
+  const midiState: MidiState = {
     activeNotes: new Map(), // midiNum → { velocity, onTimeMs, synColor }
     sustainOn: false,
     sustainedNotes: new Set(), // released keys held by pedal

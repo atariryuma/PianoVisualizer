@@ -17,6 +17,7 @@
 // without a page reload.
 
 import type { T } from '@piano/core';
+import type { UiLibraryEntry } from './user-songs-ui';
 import * as SectionEditor from './section-editor';
 import * as UserSongsUi from './user-songs-ui';
 import * as DomBag from './dom-bag';
@@ -29,7 +30,7 @@ export interface ShellAddSongDeps {
   getLang: () => any;
   /** Mutable online-library array — getter/setter. */
   getLibrary: () => any;
-  setLibrary: (entries: any) => void;
+  setLibrary: (entries: UiLibraryEntry[]) => void;
   /** Methods exposed by user-songs-store.ts. */
   userSongStore: {
     addFromBlob: any;
@@ -50,7 +51,7 @@ export interface ShellAddSongDeps {
   autoSectionDefs: any;
   /** Currently-loaded song; refreshSongPanelHeader uses titleKey/composerKey. */
   getCurrentSong: () => any;
-  selectSong: (id: any) => void;
+  selectSong: (id: string) => void;
   /** Song-panel header — re-rendered after rename. */
   songPanelHeaderDom: { songTitle: HTMLElement; songComposer: HTMLElement };
   /** i18n + modal focus trap. */
