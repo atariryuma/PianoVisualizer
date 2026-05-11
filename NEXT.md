@@ -57,6 +57,23 @@ Recent landings (2026-05-12):
   etc.) drop their inline `any` annotations and let TypeScript infer from each
   module's deps type — the inference flows through cleanly because the deps
   types are already correct upstream.
+- **shell-\*.ts callback signature sweep** — landed 2026-05-12.
+  `remoteLog`/`showHitChip`/`stageLabel`/`t`/`setLang`/`setTimeout`/`clearTimeout`
+  callbacks across 9 shell modules narrowed to their actual source signatures
+  (e.g. `t: T` from `@piano/core`, `showHitChip: (kind: string, text: string)`,
+  `stageLabel: (stage: Stage | undefined | null)`). Net 19 `any` removed.
+- **shell-\*.ts structural deps types** — landed 2026-05-12. `state: any` →
+  `InitialGameState`, `dom: any` → `DomBag` (or `Pick<DomBag, …>` for narrow
+  viewport access), `config: any` → `PianoConfig`, `prefs: any` → `InitialPrefs`
+  across 14 shell modules. Net 37 `any` removed (shell-\*.ts total 312 → 275; 56
+  reduction this session). Also narrows `InitialGameState.prevSpectrum` from
+  `Uint8Array | Float32Array | null` to `Float32Array | null` — only
+  Float32Array is ever assigned at runtime, and
+  `OnsetDetectStateRef.prevSpectrum` already required the narrow type.
+- **practice-visibility production-scenario test pin** — landed 2026-05-12. Adds
+  a 4th test that replays the `server.log` 2026-05-10 11:36:14 / 11:36:25
+  hidden→visible cycle (elapsedMs=4858, leadMs=50, 11s background gap) so any
+  future scaling/short-circuiting of the freeze window fails the test.
 
 The next 5–10 actionable items, in **execution order**. Pick the topmost
 unchecked item if no specific issue is assigned to you.

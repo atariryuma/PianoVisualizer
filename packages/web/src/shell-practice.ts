@@ -11,6 +11,9 @@
 // scoring + tone-audio + recomputeTimings; PracticeTick needs the
 // scoring's medianRecentPitch + matchNoteOnset.
 
+import type { InitialGameState } from './game-state-init';
+import type { InitialPrefs } from './practice-state-init';
+import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import * as PracticeTimings from './practice-timings';
 import * as PracticeScoring from './practice-scoring';
@@ -25,13 +28,13 @@ import * as CoreOpts from './core-opts';
 import * as PracticeStateInit from './practice-state-init';
 
 export interface ShellPracticeDeps {
-  state: any;
-  prefs: any;
-  config: any;
+  state: InitialGameState;
+  prefs: InitialPrefs;
+  config: PianoConfig;
   ctx: CanvasRenderingContext2D;
   /** Mutable in the shell — getter so renames mid-session pick up. */
   getCurrentSong: () => any;
-  dom: any;
+  dom: DomBag.DomBag;
   defaultAudioOffsetMs: number;
   remoteLogEnabled: boolean;
   remoteLog: (msg: string | object) => void;

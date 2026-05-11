@@ -12,11 +12,12 @@
 // WebKit Bugs 237878 / 261554 because suspend/resume alone is
 // unreliable on iOS WKWebView post-background.
 
+import type { InitialGameState } from './game-state-init';
 import * as AudioInit from './audio-init';
 import * as MicLifecycle from './mic-lifecycle';
 
 export interface ShellAudioDeps {
-  state: any;
+  state: InitialGameState;
   /** practice is forward-declared in the shell — getter so the after-recovery
    *  hook reads the live binding, not the placeholder. */
   getPractice: () => any;

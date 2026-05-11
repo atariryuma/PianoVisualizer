@@ -10,6 +10,8 @@
 // by getter thunk so the factory can be built before those are
 // declared in the shell IIFE.
 
+import type { InitialGameState } from './game-state-init';
+import type { PianoConfig } from './piano-config';
 import * as RenderLoopWireup from './render-loop-wireup';
 import * as RenderLoop from './render-loop';
 import * as RenderFrame from './render-frame';
@@ -20,9 +22,9 @@ import * as DomBag from './dom-bag';
 
 export interface ShellRenderLoopDeps {
   ctx: CanvasRenderingContext2D;
-  state: any;
-  config: any;
-  dom: any;
+  state: InitialGameState;
+  config: PianoConfig;
+  dom: DomBag.DomBag;
   /** practice / midiInput / updatePractice all forward-declared in
    *  the shell — getter thunks defer the read to fire-time. */
   getPractice: () => any;

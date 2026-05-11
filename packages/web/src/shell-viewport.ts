@@ -9,17 +9,19 @@
 // (window + orientationchange + 2 ResizeObservers on practiceTopBar
 // and osmdContainer).
 
+import type { InitialGameState } from './game-state-init';
+import type { DomBag } from './dom-bag';
 import * as ViewportLayout from './viewport-layout';
 
 export interface ShellViewportDeps {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
-  state: any;
+  state: InitialGameState;
   /** Resize-observed elements. */
   practiceTopBarEl: HTMLElement;
   osmdContainerEl: HTMLElement;
   /** Theme + osmd container — used by ViewportLayout deps. */
-  dom: any;
+  dom: Pick<DomBag, 'practiceTopBar' | 'themeBar' | 'osmdContainer'>;
   pianoCore: any;
 }
 

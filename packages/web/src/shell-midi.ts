@@ -10,6 +10,7 @@
 // closures over shell state) flow IN through deps; nothing flows out except
 // the public methods listed in `ShellMidi`.
 
+import type { InitialGameState } from './game-state-init';
 import type { T } from '@piano/core';
 import * as MidiDispatch from './midi-dispatch';
 import * as MidiIndicator from './midi-indicator';
@@ -23,7 +24,7 @@ import * as AudioInit from './audio-init';
 import * as PracticeVisibility from './practice-visibility';
 
 export interface ShellMidiDeps {
-  state: any;
+  state: InitialGameState;
   practice: any;
   getAudioCtx: () => any;
   dom: {

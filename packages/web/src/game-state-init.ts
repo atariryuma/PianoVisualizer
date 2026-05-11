@@ -52,7 +52,7 @@ export interface InitialGameState {
   noteShowTimeMs: number;
   currentTheme: number;
   lastFrameTimeMs: number;
-  prevSpectrum: Uint8Array | Float32Array | null;
+  prevSpectrum: Float32Array | null;
   spectralFluxHistory: number[];
   lastOnsetTimeMs: number;
 

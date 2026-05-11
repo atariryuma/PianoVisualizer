@@ -9,6 +9,8 @@
 // No return value — installDevMode wires its own listeners and runs
 // forever after install.
 
+import type { InitialGameState } from './game-state-init';
+import type { InitialPrefs } from './practice-state-init';
 import * as DevModeWireup from './dev-mode-wireup';
 import * as DomBag from './dom-bag';
 
@@ -18,12 +20,12 @@ export interface ShellDevModeDeps {
   appVersion: string | undefined;
   buildDate: string | undefined;
   /** Full DOM bag — pickDom selects settingsPanel + sectionResult. */
-  dom: any;
+  dom: DomBag.DomBag;
   /** Add-song modal — pulled from ShellAddSong.domAddSong. */
   domAddSong: { modal: HTMLElement | null };
-  state: any;
+  state: InitialGameState;
   practice: any;
-  prefs: any;
+  prefs: InitialPrefs;
   midiInput: any;
   midiState: any;
   ctx: CanvasRenderingContext2D;

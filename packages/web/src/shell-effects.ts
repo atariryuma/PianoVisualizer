@@ -5,13 +5,15 @@
 // at call time so the per-frame builders don't need to thread these
 // individually.
 
+import type { InitialGameState } from './game-state-init';
+import type { PianoConfig } from './piano-config';
 import * as ParticleEffects from './particle-effects';
 
 export interface ShellEffectsDeps {
   pianoCore: any;
   ctx: CanvasRenderingContext2D;
-  state: any;
-  config: any;
+  state: InitialGameState;
+  config: PianoConfig;
   /** practice forward-declared in shell — getter so the bg / particle
    *  effects can be built before the practice cluster. */
   getPractice: () => any;

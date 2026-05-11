@@ -17,6 +17,8 @@
 // here saves ~150 lines of shell glue. Returns the public update*
 // thunks the render loop calls each tick.
 
+import type { InitialGameState } from './game-state-init';
+import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import type { T, Stage } from '@piano/core';
 import * as OnsetDetect from './onset-detect';
@@ -30,11 +32,11 @@ import * as DomBag from './dom-bag';
 import * as CoreOpts from './core-opts';
 
 export interface ShellGameUpdateDeps {
-  state: any;
+  state: InitialGameState;
   /** practice / midiInput forward-declared in the shell — getter access. */
   getPractice: () => any;
   getMidiInput: () => any;
-  config: any;
+  config: PianoConfig;
   /** session-confidence ring buffer + cap. */
   sessionRing: Array<{ timeMs: number; isPiano: boolean }>;
   sessionRingCap: number;
@@ -51,7 +53,7 @@ export interface ShellGameUpdateDeps {
   /** _coreOpts wrapper — the four option bags the reducers consume. */
   coreOpts: { qhOptsMic: any; qhOptsMidi: any; psOpts: any; cwOpts: any; wufOpts: any };
   /** DOM bag — every @-i18n-driven element the reducers touch. */
-  dom: any;
+  dom: DomBag.DomBag;
   t: T;
   /** Effects + spawners. */
   spawnBurst: any;

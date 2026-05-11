@@ -9,22 +9,26 @@
 // intro diag) need explicit redraw on lang change. The handler here
 // dispatches the redraw calls through deps callbacks.
 
+import type { InitialGameState } from './game-state-init';
+import type { InitialPrefs } from './practice-state-init';
+import type { PianoConfig } from './piano-config';
+import type { DomBag } from './dom-bag';
 import * as PianoCore from '@piano/core';
 import type { Stage, Lang } from '@piano/core';
 import * as ThemeControls from './theme-controls';
 
 export interface ShellI18nDeps {
   document: Document;
-  prefs: any;
-  state: any;
-  config: any;
+  prefs: InitialPrefs;
+  state: InitialGameState;
+  config: PianoConfig;
   /** SONGS forward-declared in the shell — getter so userResolver only fires post-init. */
   getSongs: () => any;
   savePrefs: () => void;
   /** Settings panel refresh — assigned later via setRefreshSettingsPanel. */
   refreshSettingsPanel: () => void;
   /** DOM bag — many lang-change re-render targets. */
-  dom: any;
+  dom: DomBag;
   /** Re-renderers fired on lang change. */
   getCurrentSong: () => any;
   getPractice: () => any;

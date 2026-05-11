@@ -13,6 +13,8 @@
 // SessionReset reaches for `_questState` / `_encState` which the shell
 // owns directly (they're per-frame reducer state for ShellGameUpdate).
 
+import type { InitialGameState } from './game-state-init';
+import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import type { T } from '@piano/core';
 import * as SessionSummary from './session-summary';
@@ -20,9 +22,9 @@ import * as SessionReset from './session-reset';
 import * as DomBag from './dom-bag';
 
 export interface ShellSessionStateDeps {
-  state: any;
-  config: any;
-  dom: any;
+  state: InitialGameState;
+  config: PianoConfig;
+  dom: DomBag.DomBag;
   t: T;
   /** prefs JSON store — saveBestScores writes through. */
   loadJSON: any;

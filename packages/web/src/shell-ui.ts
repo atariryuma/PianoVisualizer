@@ -11,6 +11,9 @@
 // reads `songProg`; practice-flow exposes `returnToTitle` etc.).
 // Bundling lets us hide that orchestration behind the public surface.
 
+import type { InitialGameState } from './game-state-init';
+import type { InitialPrefs } from './practice-state-init';
+import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import type { T } from '@piano/core';
 import * as IntroHintUi from './intro-hint-ui';
@@ -25,16 +28,16 @@ import * as DomBag from './dom-bag';
 export interface ShellUiDeps {
   document: Document;
   songs: any;
-  state: any;
+  state: InitialGameState;
   practice: any;
   midiInput: any;
   midiState: any;
-  prefs: any;
-  config: any;
+  prefs: InitialPrefs;
+  config: PianoConfig;
   /** Mutable currentSong — getter/setter. */
   getCurrentSong: () => any;
   setCurrentSong: (s: any) => void;
-  dom: any;
+  dom: DomBag.DomBag;
   t: T;
   dateKey: any;
   /** OSMD shell. */

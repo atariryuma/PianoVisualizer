@@ -9,16 +9,18 @@
 //   ShellMidiHandlers → fires visuals + advances midiState
 //   ShellMidiHandlers (per-frame) → draws keyboard + beams + chord
 
+import type { InitialGameState } from './game-state-init';
+import type { PianoConfig } from './piano-config';
 import * as PianoCore from '@piano/core';
 import * as MidiHandlers from './midi-handlers';
 import * as MidiRender from './midi-render';
 
 export interface ShellMidiHandlersDeps {
-  state: any;
+  state: InitialGameState;
   /** practice forward-declared in shell — getter for hot-path read. */
   getPractice: () => any;
   ctx: CanvasRenderingContext2D;
-  config: any;
+  config: PianoConfig;
   /** noteDisplay receives the just-played note's name on detection. */
   noteDisplayEl: HTMLElement;
   /** spawnBurst / spawnStream / Ripple — particle pool + types. */
