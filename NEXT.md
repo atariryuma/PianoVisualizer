@@ -11,11 +11,9 @@ user request points at it.
 Immediate maintenance queue:
 
 1. Keep documentation synchronized with the Phase 0e runtime shape.
-2. Reduce remaining `any` casts in `shell-bootstrap.ts` and shell factory
-   boundaries where that can be done without widening diffs.
-3. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
+2. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
    with regression tests before each behavioral change.
-4. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
+3. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
    Vitest may need approval because Vite/esbuild spawns a child process.
 
 Recent landings (2026-05-12):
@@ -40,6 +38,25 @@ Recent landings (2026-05-12):
   `computeSystemIdx`, `_diagCursorPos`) and the iterator assignment in
   `seedIteratorFromTimestamp` now use the narrow type. Zero `as any` casts on
   `cursor` remain in the file.
+- **osmd-cursor.ts: zero `any` anywhere** — landed 2026-05-12. Follow-up that
+  also typed the OSMD layout-graph chain (`OsmdGraphicalSheetRef` →
+  `OsmdGraphicalMeasureRef.parentMusicSystem` → `OsmdMusicSystemRef` →
+  `OsmdStaffLineRef`) and
+  `OsmdGraphicalNote.parentVoiceEntry?...?.parentMeasure` walk used by
+  `_diagCursorPos`. Five remaining `osmd as any` casts dropped.
+- **shell-bootstrap.ts: zero `any` anywhere** — landed 2026-05-12. Was 30
+  `as any` / `: any` references across 627 lines; now zero. Drops the redundant
+  casts on `createPianoConfig`/`createInitialGameState`/
+  `createInitialPrefs`/`createDomBag().bag`, tightens `pickDom`'s generic to
+  `<T extends object, K extends keyof T & string>` (avoids the
+  `Record<string, HTMLElement>` widening), types the 10 forward-decl stubs to
+  their exact reassignment shapes (`() => void` and
+  `(animate: boolean) => void`), and adds a `DetectChordFn` alias in
+  `core-opts.ts` so `PianoCore.detectChord` no longer needs a cast. The
+  factory-callback closures (`showHitChip`, `finalizeNoteHold`, `selectSong`,
+  etc.) drop their inline `any` annotations and let TypeScript infer from each
+  module's deps type — the inference flows through cleanly because the deps
+  types are already correct upstream.
 
 The next 5–10 actionable items, in **execution order**. Pick the topmost
 unchecked item if no specific issue is assigned to you.

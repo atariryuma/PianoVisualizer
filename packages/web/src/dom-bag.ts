@@ -223,14 +223,14 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
 /** Project a subset of an existing DOM bag onto a new object. The
  *  shell uses this to hand factory `dom: {...}` deps without listing
  *  each `key: bag.key` line — `pickDom(bag, 'a', 'b', 'c')` returns
- *  `{ a: bag.a, b: bag.b, c: bag.c }`. Accepts any record-shaped bag
- *  so the legacy shell's `Record<string, HTMLElement>` cast works
- *  alongside the typed `DomBag`. */
-export function pickDom<T extends Record<string, HTMLElement>, K extends string>(
+ *  `{ a: bag.a, b: bag.b, c: bag.c }`. Generic over the bag's exact
+ *  type so the typed `DomBag` flows through without an index-signature
+ *  cast; each picked field retains its source type via `Pick<T, K>`. */
+export function pickDom<T extends object, K extends keyof T & string>(
   bag: T,
   ...keys: K[]
-): Record<K, HTMLElement> {
-  const out = {} as Record<K, HTMLElement>;
+): Pick<T, K> {
+  const out = {} as Pick<T, K>;
   for (const k of keys) {
     out[k] = bag[k];
   }

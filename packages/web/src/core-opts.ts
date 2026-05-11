@@ -47,8 +47,12 @@ export interface ChordWindowOpts {
   windowMs: number;
   minNotes: number;
   repeatCooldownMs: number;
-  detectChord: (...args: unknown[]) => unknown;
+  detectChord: DetectChordFn;
 }
+
+/** Signature of `@piano/core` `detectChord` — kept narrow so this
+ *  module doesn't need a value-level dependency on @piano/core. */
+export type DetectChordFn = (midis: readonly number[]) => string | null;
 
 /** Wake-up flash decay opts. Half-life ≈0.071s matches the legacy
  *  60Hz `*= 0.85`-per-frame feel (log(0.5)/log(0.85) ≈ 4.27 frames
@@ -75,7 +79,7 @@ export interface CoreOpts {
  *  re-init path can rebuild without poisoning prior consumers. */
 export function createCoreOpts(deps: {
   config: CoreOptsConfig;
-  detectChord: (...args: unknown[]) => unknown;
+  detectChord: DetectChordFn;
 }): CoreOpts {
   const qhOptsMic: QualityHistoryOpts = {
     debounceMs: 80,

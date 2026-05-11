@@ -46,15 +46,15 @@ declare const __BUILD_DATE__: string | undefined;
 export function boot(): void {
   const _remoteLog = RemoteLog.createRemoteLog();
   const REMOTE_LOG_ENABLED = _remoteLog.enabled;
-  const remoteLog = (msg: string | object) => _remoteLog.send(msg as any);
+  const remoteLog = (msg: string | object): void => _remoteLog.send(msg);
   RemoteLog.installConsoleForwarding(_remoteLog);
 
   console.log('App Started: Piano Visualizer');
 
-  const CONFIG = PianoConfig.createPianoConfig() as any;
-  const DOM = DomBag.createDomBag(document).bag as any as Record<string, HTMLElement>;
+  const CONFIG = PianoConfig.createPianoConfig();
+  const DOM = DomBag.createDomBag(document).bag;
   const ctx = (DOM.canvas as HTMLCanvasElement).getContext('2d') as CanvasRenderingContext2D;
-  const state = GameStateInit.createInitialGameState() as any;
+  const state = GameStateInit.createInitialGameState();
 
   // Session-confidence ring buffer — pre-allocated, zero-alloc at runtime.
   const SESSION_RING_CAP = 100;
@@ -89,10 +89,10 @@ export function boot(): void {
   });
 
   // ── Theme switching + persisted user preferences ──
-  const prefs = PracticeStateInit.createInitialPrefs() as any;
+  const prefs = PracticeStateInit.createInitialPrefs();
   const _prefsStore = PrefsStorage.createJSONStore();
   const { loadJSON, saveJSON } = _prefsStore;
-  Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {}) as any));
+  Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
   const savePrefs = (): void => saveJSON('pianoViz_prefs', prefs);
 
   const modalFocus = ModalFocus.createModalFocus({
@@ -102,22 +102,24 @@ export function boot(): void {
 
   // Forward-decl placeholders — reassigned by createXxx wire-ups further
   // down. Avoids TDZ in ESC handler / langchange / settings-panel deps.
-  const _stub: any = () => {};
   // openSectionEditor: assigned from _addSong but never read; the user
   // path triggers via the section-editor modal's own button, not from
   // legacy/bootstrap code. Skipped here.
-  let openSettings: any = _stub,
-    closeSettings: any = _stub,
-    refreshSettingsPanel: any = _stub,
-    closeSectionEditor: any = _stub,
-    openAddSongModal: any = _stub,
-    closeAddSongModal: any = _stub,
-    completePracticeSection: any = _stub,
-    renderResultCard: any = _stub,
-    showSessionSummary: any = _stub,
-    renderSessionSummaryText: any = _stub;
+  const _voidStub = (): void => {};
+  const _summaryStub = (_animate: boolean): void => {};
+  let openSettings: () => void = _voidStub;
+  let closeSettings: () => void = _voidStub;
+  let refreshSettingsPanel: () => void = _voidStub;
+  let closeSectionEditor: () => void = _voidStub;
+  let openAddSongModal: () => void = _voidStub;
+  let closeAddSongModal: () => void = _voidStub;
+  let completePracticeSection: () => void = _voidStub;
+  let renderResultCard: () => void = _voidStub;
+  let showSessionSummary: () => void = _voidStub;
+  let renderSessionSummaryText: (animate: boolean) => void = _summaryStub;
   // ESC modal router — higher priority = topmost-z modal.
-  const _isOpen = (x: any) => !!x?.modal?.classList.contains('visible');
+  const _isOpen = (x: { modal?: { classList: DOMTokenList } } | null | undefined): boolean =>
+    !!x?.modal?.classList.contains('visible');
   const _isVisible = (el: HTMLElement) => !!el?.classList.contains('visible');
   ModalFocus.createEscRouter({
     document,
@@ -153,7 +155,7 @@ export function boot(): void {
     refreshLangCaches: () => _practice.refreshLangCaches(),
     renderSongPanel: () => renderSongPanel(),
     renderResultCard: () => renderResultCard(),
-    renderSessionSummaryText: (a: any) => renderSessionSummaryText(a),
+    renderSessionSummaryText: (a) => renderSessionSummaryText(a),
   });
   const { t, stageLabel, applyTheme, setLang } = _i18n;
 
@@ -190,7 +192,7 @@ export function boot(): void {
   const clamp01 = PianoCore.clamp01;
   const _coreOpts = CoreOpts.createCoreOpts({
     config: CONFIG,
-    detectChord: PianoCore.detectChord as any,
+    detectChord: PianoCore.detectChord,
   });
   const {
     qhOptsMidi: QH_OPTS_MIDI,
@@ -306,8 +308,11 @@ export function boot(): void {
   const resetSession = (): void => _sess.resetSession();
 
   // ── Practice mode catalog — built-in-songs.ts. User-imported scores merge in by id.
-  const SONGS = BuiltInSongs.createBuiltInSongs() as any;
-  let currentSong: any = SONGS.fur_elise;
+  // SONGS is the lazy-load song registry; per-record fields are populated
+  // by _scoreLoader.loadCurrentScore() on demand, so the value type stays
+  // loose (Record<string, any>) — see built-in-songs.ts for the shape.
+  const SONGS = BuiltInSongs.createBuiltInSongs();
+  let currentSong = SONGS.fur_elise;
 
   // ── User library — moved to packages/web/src/shell-user-library.ts (batch 109).
   const _lib = ShellUserLibrary.createShellUserLibrary({
@@ -365,7 +370,7 @@ export function boot(): void {
     hideIntroHint: () => hideIntroHint(),
     setInputIndicator: () => _midi.setInputIndicator(),
     loadCurrentScore: () => _osmd.loadCurrentScore(),
-    showHitChip: (kind: any, text: any) => showHitChip(kind, text),
+    showHitChip: (kind, text) => showHitChip(kind, text),
     getCompletePracticeSection: () => completePracticeSection,
   });
   const {
@@ -395,7 +400,7 @@ export function boot(): void {
     resumeMic: _audio.resumeMic,
     recover: _audio.recover,
     refreshIntroHint: () => refreshIntroHint(),
-    showHitChip: (kind: any, msg: any) => showHitChip(kind, msg),
+    showHitChip: (kind, msg) => showHitChip(kind, msg),
     getOnMidiNoteOn: () => onMidiNoteOn,
     getOnMidiNoteOff: () => onMidiNoteOff,
     getOnMidiCC: () => onMidiCC,
@@ -451,7 +456,7 @@ export function boot(): void {
     shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
     getPractice: () => practice,
     hideIntroHint: () => hideIntroHint(),
-    finalizeNoteHold: (midi: any) => finalizeNoteHold(midi),
+    finalizeNoteHold: (midi) => finalizeNoteHold(midi),
     getScreen: _vp.getScreen,
     getKbHeight: _vp.getKbHeight,
     getKbSafeBottom: _vp.getKbSafeBottom,
@@ -515,9 +520,9 @@ export function boot(): void {
     autoSectionDefs: PianoCore.autoSectionDefs,
     getLang: () => prefs.lang,
     getLibrary: () => _lib.getOnlineLibrary(),
-    setLibrary: (entries: any) => _lib.setOnlineLibrary(entries),
+    setLibrary: (entries) => _lib.setOnlineLibrary(entries),
     getCurrentSong: () => currentSong,
-    selectSong: (id: any) => _ui.selectSong(id),
+    selectSong: (id) => _ui.selectSong(id),
     songPanelHeaderDom: DomBag.pickDom(DOM, 'songTitle', 'songComposer'),
   });
   const { byId, domAddSong: DOM_ADDSONG, domSecEdit: DOM_SECEDIT } = _addSong;
@@ -538,10 +543,10 @@ export function boot(): void {
     config: CONFIG,
     dateKey: PianoCore.formatDateKey,
     getCurrentSong: () => currentSong,
-    setCurrentSong: (s: any) => {
+    setCurrentSong: (s) => {
       currentSong = s;
     },
-    setOsmd: (o: any) => _osmd.setOsmd(o),
+    setOsmd: (o) => _osmd.setOsmd(o),
     clearHighlights: () => _osmd.cursor.clearHighlights(),
     loadCurrentScore: () => _osmd.loadCurrentScore(),
     songProg,
@@ -553,7 +558,7 @@ export function boot(): void {
     initAudio: _audio.initAudio,
     initBgStars: _vp.initBgStars,
     loop,
-    alertAudioInitError: (e: any) => _ui.alertAudioInitError(e),
+    alertAudioInitError: (e) => _ui.alertAudioInitError(e),
     initWebMIDI,
     startMidiAutoRescan,
     stopMidiAutoRescan,
