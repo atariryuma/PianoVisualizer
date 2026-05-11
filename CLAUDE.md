@@ -19,10 +19,18 @@ The repo is a pnpm workspace; **`packages/web` is the production entry**. Phase
 boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 [`packages/web/src/shell-bootstrap.ts`](packages/web/src/shell-bootstrap.ts).
 
-**Engine + shell extraction status (2026-05-09)**: `@piano/core` holds the
+**Engine + shell extraction status (2026-05-12)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 786 core
-tests, 1364 web tests, and the Vite web build.
+tests, 1375 web tests, and the Vite web build.
+
+**Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
+`shell-bootstrap.ts` are zero `any` references. Across
+`packages/web/src/shell-*.ts` the count is 235 (down from 331 — ~29% reduction).
+The remaining `any`s are mostly factory result pass-throughs (`Tone: any`,
+`osmdAdapter: any`, `audioScheduler: any`) and the `} as any);` escape hatches
+at ~25 createXxx() call sites; tightening those requires coordinated edits
+across each upstream factory's deps interface.
 
 ```text
 piano-visualizer/
@@ -242,6 +250,49 @@ Canvas-based with `requestAnimationFrame`. Layers drawn back-to-front:
 7. Frequency spectrum bars (64 bars, piano range)
 8. Ripples (expanding circles at note positions)
 9. Particles (circle, ring, star, note, flower types; cap from `PERF_PROFILE`)
+
+### Score-follow controller (OSMD cursor)
+
+OSMD's built-in `followCursor` is **OFF**;
+[`packages/web/src/osmd-cursor.ts`](packages/web/src/osmd-cursor.ts) drives the
+fixed `#osmdContainer` scrollTop directly. The controller (`v10`, 2026-05-12)
+uses a small **"reveal active region"** policy — scroll only when the active
+note region leaves a safe reading band, with guards to avoid the oscillation
+that earlier scrollIntoView-based attempts (v1-v4) hit on dense passages:
+
+- **Safe band**: top/bottom margin ≈ 14% of panel height (≥32px), so a cursor
+  that's already comfortably visible doesn't trigger scroll.
+- **Hysteresis 48px**: focusY must leave the band by this much before an
+  `active-outside-safe` scroll fires.
+- **Active-scroll cooldown 120ms**: within-system reveal scrolls throttle to
+  prevent micro-thrashing.
+- **Same-system reversal guard 450ms**: tall chords/beams whose active region
+  toggles top/bottom can otherwise yank the panel up-down-up.
+- **`belowFocus` correction**: `planPanelScroll` subtracts the active-region's
+  extent below focusY from `safeBottom` so the staff bottom always lands inside
+  the viewport, not 28px below.
+- **`stretchCursorToNotes`**: after every `cursor.update()`, the cursor
+  element's `style.top`/`style.height` are extended to cover any noteheads
+  outside the staff lines (e.g. Eb7 on multiple ledger lines above the treble)
+  so the blue bar visually encloses the highlight rather than floating below it.
+- **Layout-graph chain**: system-change detection walks
+  `GraphicalMusicSheet.MeasureList[m][0].parentMusicSystem.Id` — the same path
+  OSMD's own `Cursor.update` uses internally.
+- **`[CURSOR-SCROLL v10]` + `[DIAG-CURSORPOS]` diag logs**: forwarded to
+  `server.log` via the remote-log gate so the in-the-wild scroll cadence stays
+  inspectable (event / reason / panel + safe band + focusY / delta).
+
+### Tab visibility + clock freeze
+
+[`packages/web/src/practice-visibility.ts`](packages/web/src/practice-visibility.ts)
+freezes the practice clock and pauses `Tone.Transport` on
+`visibilitychange→hidden`, then rebases `startAudioTime` on
+`visibilitychange→visible` so the cursor doesn't jump forward when the tab
+returns. Without it, Tone's Web Audio Transport keeps advancing while the rAF
+loop is throttled and the cursor catches up multiple pages at once (production
+log showed a 20,837px first-scroll after ~10min of background). Verified working
+in `server.log`: `[PRACTICE-VISIBILITY] hidden freeze {"elapsedMs":4858,...}`
+followed by a matching resume after the user came back.
 
 ### Key Configuration
 
