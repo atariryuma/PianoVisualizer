@@ -10,6 +10,7 @@
 // closures over shell state) flow IN through deps; nothing flows out except
 // the public methods listed in `ShellMidi`.
 
+import type { T } from '@piano/core';
 import * as MidiDispatch from './midi-dispatch';
 import * as MidiIndicator from './midi-indicator';
 import * as MidiPorts from './midi-ports';
@@ -31,12 +32,12 @@ export interface ShellMidiDeps {
     introHint: HTMLElement;
     micMeter: HTMLElement;
   };
-  t: any;
+  t: T;
   navigator: Navigator;
   suspendMic: () => void;
   resumeMic: () => Promise<unknown>;
   refreshIntroHint: () => void;
-  showHitChip: (kind: any, msg: any) => void;
+  showHitChip: (kind: string, msg: string) => void;
   /** Per-note callbacks defined in the shell (close over midiState etc).
    *  Passed as thunks so the shell can build ShellMidi before the handlers
    *  cluster — the actual fns are read lazily at dispatch time. */

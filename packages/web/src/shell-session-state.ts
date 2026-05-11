@@ -14,6 +14,7 @@
 // owns directly (they're per-frame reducer state for ShellGameUpdate).
 
 import * as PianoCore from '@piano/core';
+import type { T } from '@piano/core';
 import * as SessionSummary from './session-summary';
 import * as SessionReset from './session-reset';
 import * as DomBag from './dom-bag';
@@ -22,7 +23,7 @@ export interface ShellSessionStateDeps {
   state: any;
   config: any;
   dom: any;
-  t: any;
+  t: T;
   /** prefs JSON store — saveBestScores writes through. */
   loadJSON: any;
   saveJSON: any;
@@ -45,7 +46,7 @@ export interface ShellSessionStateDeps {
   invalidateFlowCache: () => void;
   /** MIDI dispatch dedupe drain. */
   resetMidiDispatch: () => void;
-  remoteLog: (msg: any) => void;
+  remoteLog: (msg: string | object) => void;
 }
 
 export interface ShellSessionState {

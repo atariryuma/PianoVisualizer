@@ -12,6 +12,7 @@
 // Bundling lets us hide that orchestration behind the public surface.
 
 import * as PianoCore from '@piano/core';
+import type { T } from '@piano/core';
 import * as IntroHintUi from './intro-hint-ui';
 import * as ResultCard from './result-card';
 import * as SongPanelRender from './song-panel-render';
@@ -34,7 +35,7 @@ export interface ShellUiDeps {
   getCurrentSong: () => any;
   setCurrentSong: (s: any) => void;
   dom: any;
-  t: any;
+  t: T;
   dateKey: any;
   /** OSMD shell. */
   getOsmd: () => any;
@@ -82,7 +83,7 @@ export interface ShellUiDeps {
 
 export interface ShellUi {
   /** showHitChip — invoked from MIDI handlers + score-loader after-load. */
-  showHitChip: (kind: any, text: any) => void;
+  showHitChip: (kind: string, text: string) => void;
   /** intro-hint-ui forwarders. */
   refreshIntroHint: () => void;
   showRunningUI: () => void;

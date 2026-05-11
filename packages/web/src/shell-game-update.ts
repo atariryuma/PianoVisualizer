@@ -18,6 +18,7 @@
 // thunks the render loop calls each tick.
 
 import * as PianoCore from '@piano/core';
+import type { T, Stage } from '@piano/core';
 import * as OnsetDetect from './onset-detect';
 import * as SessionConfidenceUi from './session-confidence-ui';
 import * as QuestStateUpdate from './quest-state-update';
@@ -51,7 +52,7 @@ export interface ShellGameUpdateDeps {
   coreOpts: { qhOptsMic: any; qhOptsMidi: any; psOpts: any; cwOpts: any; wufOpts: any };
   /** DOM bag — every @-i18n-driven element the reducers touch. */
   dom: any;
-  t: any;
+  t: T;
   /** Effects + spawners. */
   spawnBurst: any;
   effectGoldenBurst: any;
@@ -59,9 +60,9 @@ export interface ShellGameUpdateDeps {
   triggerEffect: any;
   /** Geometry + i18n thunks. */
   getScreen: () => { W: number; H: number };
-  stageLabel: (stage: any) => string;
+  stageLabel: (stage: Stage | undefined | null) => string;
   remoteLogEnabled: boolean;
-  remoteLog: (msg: any) => void;
+  remoteLog: (msg: string | object) => void;
 }
 
 export interface ShellGameUpdate {
@@ -172,7 +173,7 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
     spawnBurst: deps.spawnBurst,
     effectGoldenBurst: deps.effectGoldenBurst,
     getScreen: deps.getScreen,
-    setTimeout: (fn: any, ms: any) => setTimeout(fn, ms),
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     toastHideMs: 2600,
   } as any);
   const updateQuestState = (timeMs: number) => _questStateUpdate.tick(timeMs);

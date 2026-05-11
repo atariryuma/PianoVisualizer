@@ -16,6 +16,7 @@
 // registry so a subsequent selectSong() picks up the new boundaries
 // without a page reload.
 
+import type { T } from '@piano/core';
 import * as SectionEditor from './section-editor';
 import * as UserSongsUi from './user-songs-ui';
 import * as DomBag from './dom-bag';
@@ -53,7 +54,7 @@ export interface ShellAddSongDeps {
   /** Song-panel header — re-rendered after rename. */
   songPanelHeaderDom: { songTitle: HTMLElement; songComposer: HTMLElement };
   /** i18n + modal focus trap. */
-  t: any;
+  t: T;
   modalFocus: any;
 }
 

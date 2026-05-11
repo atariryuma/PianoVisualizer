@@ -19,7 +19,7 @@ export interface ShellOsmdDeps {
   osmdContainer: HTMLElement;
   /** Score-load logging gate (REMOTE_LOG_ENABLED). */
   remoteLogEnabled: boolean;
-  remoteLog: (msg: any) => void;
+  remoteLog: (msg: string | object) => void;
   /** From PianoCore — re-exposed for the score-loader deps. */
   buildSectionsFromDefs: any;
 }

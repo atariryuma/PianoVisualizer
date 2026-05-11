@@ -10,6 +10,7 @@
 // dispatches the redraw calls through deps callbacks.
 
 import * as PianoCore from '@piano/core';
+import type { Stage, Lang } from '@piano/core';
 import * as ThemeControls from './theme-controls';
 
 export interface ShellI18nDeps {
@@ -35,15 +36,15 @@ export interface ShellI18nDeps {
 
 export interface ShellI18n {
   /** The single t() function — every shell module reads from this one. */
-  t: (key: string, vars?: any) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
   /** stageLabel — given a STAGE def, returns its localized name. */
-  stageLabel: (stage: any) => string;
+  stageLabel: (stage: Stage | undefined | null) => string;
   /** Re-walks [data-i18n*]. Boot-time + theme-controls.setLang() also call this. */
   applyI18n: () => void;
   /** ThemeControls forwarders. */
   applyTheme: (themeIdx: number) => void;
   applySynesthesia: (on: boolean) => void;
-  setLang: (lang: 'en' | 'jp') => void;
+  setLang: (lang: Lang) => void;
 }
 
 export function createShellI18n(deps: ShellI18nDeps): ShellI18n {
@@ -61,7 +62,7 @@ export function createShellI18n(deps: ShellI18nDeps): ShellI18n {
     },
   });
 
-  const stageLabel = (stage: any) => PianoCore.stageLabel(stage, t);
+  const stageLabel = (stage: Stage | undefined | null) => PianoCore.stageLabel(stage, t);
 
   const _themeControls = ThemeControls.createThemeControls({
     prefs,

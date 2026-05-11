@@ -34,7 +34,7 @@ export interface ShellPracticeDeps {
   dom: any;
   defaultAudioOffsetMs: number;
   remoteLogEnabled: boolean;
-  remoteLog: (msg: any) => void;
+  remoteLog: (msg: string | object) => void;
   t: (key: string, vars?: any) => string;
   /** Shared shell helpers — wake-lock, layout, etc. */
   hideIntroHint: () => void;
@@ -52,7 +52,7 @@ export interface ShellPracticeDeps {
   getOsmd: () => any;
   getMidiInput: () => any;
   /** Hit-feedback + visual spawners. */
-  showHitChip: (kind: any, text: any) => void;
+  showHitChip: (kind: string, text: string) => void;
   spawnBurst: any;
   getScreen: () => { W: number; H: number };
   /** Prefs persistence — practiceProgress writes through this. */
