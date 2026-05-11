@@ -240,6 +240,12 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       /* cursor.update math can throw on grace notes / unformatted
        * notes; the visual stays at the last successful place. */
     }
+    // Stretch cursor element to cover any noteheads outside the staff
+    // lines (ledger lines above/below). OSMD sizes the cursor to span
+    // only the staff, so high notes like Eb7 render above the bar —
+    // visually disconnected from the highlight.
+    const cursorEl = (osmd.cursor as any)?.cursorElement as HTMLElement | undefined;
+    if (cursorEl) stretchCursorToNotes(osmd.cursor, cursorEl);
     ensureCursorVisible(osmd);
     highlightCurrentNotes();
     // [DIAG-CURSORPOS] Verify cursor visual lines up with the staff.
@@ -485,6 +491,39 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       absDelta: Math.abs(nextScrollTop - scroller.scrollTop),
       nextScrollTop,
     };
+  }
+
+  /** Extend cursor element's top/height to cover noteheads that lie
+   *  outside the staff-line bounds. Called after every cursor.update()
+   *  so high ledger-line notes (e.g. Eb7) don't float above the blue
+   *  bar. OSMD resets style.top/height on the next update, so we
+   *  reapply every setCursorToNote call. */
+  function stretchCursorToNotes(cursor: any, ce: HTMLElement): void {
+    if (!ce.style) return;
+    const notes = getNotesUnderCursor(cursor);
+    if (!notes.length) return;
+
+    let noteTop = Infinity;
+    let noteBottom = -Infinity;
+    for (const note of notes) {
+      const r = noteToViewportRect(note);
+      if (!r) continue;
+      noteTop = Math.min(noteTop, r.top);
+      noteBottom = Math.max(noteBottom, r.bottom);
+    }
+    if (!Number.isFinite(noteTop)) return;
+
+    const ceRect = safeRect(ce);
+    if (!ceRect) return;
+
+    const extendUp = Math.max(0, Math.round(ceRect.top - noteTop));
+    const extendDown = Math.max(0, Math.round(noteBottom - ceRect.bottom));
+    if (extendUp < 1 && extendDown < 1) return;
+
+    const cssTopPx = parseFloat(ce.style.top) || 0;
+    const cssHeightPx = parseFloat(ce.style.height) || ce.offsetHeight || 0;
+    if (extendUp >= 1) ce.style.top = `${cssTopPx - extendUp}px`;
+    ce.style.height = `${cssHeightPx + extendUp + extendDown}px`;
   }
 
   function activeFocusY(rect: RectLike): number {

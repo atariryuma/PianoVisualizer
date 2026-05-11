@@ -721,4 +721,135 @@ describe('setCursorToNote', () => {
     });
     expect(() => cursor.setCursorToNote({ measureIdx: 1, inBarQuarters: 0 })).not.toThrow();
   });
+
+  it('stretches cursor element upward when a notehead lies above the staff bar', () => {
+    // OSMD sizes the cursor to span only the staff lines. Very high notes
+    // (e.g. Eb7 with ledger lines) render above the cursor top and appear
+    // visually disconnected from the blue bar. stretchCursorToNotes fixes
+    // this by adjusting style.top / style.height after cursor.update().
+    const { cursorEl } = makeScorePanelFixture({ cursorTop: 300, panelHeight: 400 });
+    cursorEl.style.top = '300px';
+    cursorEl.style.height = '120px'; // cursor spans 300-420 viewport
+
+    const noteG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const notePath = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    ) as SVGPathElement;
+    // Notehead 50px above cursor top (viewport 250) and well within cursor bottom.
+    notePath.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: 250,
+          bottom: 270,
+          left: 50,
+          right: 60,
+          width: 10,
+          height: 20,
+          x: 50,
+          y: 250,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    noteG.appendChild(notePath);
+
+    const fake = makeFakeLib();
+    const osmd = makeOsmdWithCloneable({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [{ getSVGGElement: () => noteG }],
+    });
+    const cursor = createOsmdCursor({ getOsmd: () => osmd, getLib: () => fake.Lib });
+
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+
+    // Cursor top should have moved up by 50px (300→250), height extended by 50px.
+    expect(parseFloat(cursorEl.style.top)).toBeCloseTo(250, 0);
+    expect(parseFloat(cursorEl.style.height)).toBeCloseTo(170, 0);
+  });
+
+  it('stretches cursor element downward when a notehead lies below the staff bar', () => {
+    // makeScorePanelFixture mocks getBoundingClientRect to {top:200, bot:320}
+    // (cursorTop + fixed 120px). Note at bottom=360 → extendDown=40.
+    const { cursorEl } = makeScorePanelFixture({ cursorTop: 200, panelHeight: 400 });
+    cursorEl.style.top = '200px';
+    cursorEl.style.height = '120px'; // matches mocked getBCR height
+
+    const noteG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const notePath = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    ) as SVGPathElement;
+    // Notehead bottom 40px below cursor bottom (320 → 360).
+    notePath.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: 340,
+          bottom: 360,
+          left: 50,
+          right: 60,
+          width: 10,
+          height: 20,
+          x: 50,
+          y: 340,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    noteG.appendChild(notePath);
+
+    const fake = makeFakeLib();
+    const osmd = makeOsmdWithCloneable({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [{ getSVGGElement: () => noteG }],
+    });
+    const cursor = createOsmdCursor({ getOsmd: () => osmd, getLib: () => fake.Lib });
+
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+
+    // Top unchanged, height extended by 40px (120→160).
+    expect(parseFloat(cursorEl.style.top)).toBeCloseTo(200, 0);
+    expect(parseFloat(cursorEl.style.height)).toBeCloseTo(160, 0);
+  });
+
+  it('does not modify cursor element when all noteheads are within bounds', () => {
+    const { cursorEl } = makeScorePanelFixture({ cursorTop: 200, panelHeight: 400 });
+    cursorEl.style.top = '200px';
+    cursorEl.style.height = '100px';
+
+    const noteG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const notePath = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    ) as SVGPathElement;
+    // Notehead within cursor bounds (220-240 is inside 200-300).
+    notePath.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: 220,
+          bottom: 240,
+          left: 50,
+          right: 60,
+          width: 10,
+          height: 20,
+          x: 50,
+          y: 220,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    noteG.appendChild(notePath);
+
+    const fake = makeFakeLib();
+    const osmd = makeOsmdWithCloneable({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [{ getSVGGElement: () => noteG }],
+    });
+    const cursor = createOsmdCursor({ getOsmd: () => osmd, getLib: () => fake.Lib });
+
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+
+    expect(cursorEl.style.top).toBe('200px');
+    expect(cursorEl.style.height).toBe('100px');
+  });
 });
