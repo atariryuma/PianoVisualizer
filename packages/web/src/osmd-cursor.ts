@@ -44,6 +44,41 @@ export interface OsmdInstanceRef {
       AbsoluteTimestamp?: { realValue?: number; clone?: () => unknown };
     }>;
   } | null;
+  /** OSMD zoom factor (1 = 100%). Diagnostics multiply OSMD's internal
+   *  10-units coordinates by this to map to screen pixels. */
+  zoom?: number;
+  /** Layout-graph view of the score. `computeSystemIdx` walks
+   *  `MeasureList[m][0].parentMusicSystem.Id` to identify the music
+   *  system the cursor is currently on (the same chain OSMD's own
+   *  `Cursor.update` uses for positioning). */
+  GraphicalMusicSheet?: OsmdGraphicalSheetRef;
+  /** Legacy alias of `GraphicalMusicSheet` — some OSMD builds expose
+   *  the layout graph under `.graphic` instead. */
+  graphic?: OsmdGraphicalSheetRef;
+}
+
+/** Minimal layout-graph shape: a matrix of staves indexed by
+ *  source-measure → staff. */
+export interface OsmdGraphicalSheetRef {
+  MeasureList?: Array<Array<OsmdGraphicalMeasureRef | undefined> | undefined>;
+}
+
+export interface OsmdGraphicalMeasureRef {
+  parentMusicSystem?: OsmdMusicSystemRef;
+}
+
+/** A music system = one row of staves laid out at the same vertical
+ *  position. `Id` / `id` differ across OSMD versions; both are read. */
+export interface OsmdMusicSystemRef {
+  Id?: number;
+  id?: number;
+  PositionAndShape?: { AbsolutePosition?: { y?: number } };
+  StaffLines?: Array<OsmdStaffLineRef | undefined>;
+}
+
+export interface OsmdStaffLineRef {
+  PositionAndShape?: { RelativePosition?: { y?: number } };
+  StaffHeight?: number;
 }
 
 /** OSMD cursor surface — only the bits we read/call. */
@@ -81,9 +116,22 @@ export interface OsmdIteratorRef {
 }
 
 /** Minimal graphical-note shape we touch — `getSVGGElement` returns
- *  the <g> wrapping the notehead + stem + accidentals + ledger lines. */
+ *  the <g> wrapping the notehead + stem + accidentals + ledger lines.
+ *  The parent chain (voice entry → staff entry → measure) is walked
+ *  by `_diagCursorPos` to compare the highlighted note's measure +
+ *  system against the cursor's. All optional — older builds may not
+ *  expose every link. */
 export interface OsmdGraphicalNote {
   getSVGGElement?(): SVGGElement | null;
+  parentVoiceEntry?: {
+    parentStaffEntry?: {
+      parentMeasure?: {
+        MeasureNumber?: number;
+        measureListIndex?: number;
+        parentMusicSystem?: OsmdMusicSystemRef;
+      };
+    };
+  };
 }
 
 /** Coordinates the cursor walks toward. */
@@ -595,7 +643,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     try {
       const m = osmd.cursor?.iterator?.CurrentMeasureIndex;
       if (typeof m !== 'number') return null;
-      const gms = (osmd as any).GraphicalMusicSheet ?? (osmd as any).graphic;
+      const gms = osmd.GraphicalMusicSheet ?? osmd.graphic;
       const sys = gms?.MeasureList?.[m]?.[0]?.parentMusicSystem;
       const idRaw = sys?.Id ?? sys?.id;
       return typeof idRaw === 'number' ? idRaw : null;
@@ -628,19 +676,19 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       const it = cursor.iterator;
       const cursorM = it?.CurrentMeasureIndex;
       const cursorRep = it?.currentRepetitionIndex ?? it?.CurrentRepetitionIndex ?? null;
-      const zoom = (osmd as any).zoom ?? 1;
+      const zoom = osmd.zoom ?? 1;
 
       // [Cursor expected-top via GraphicalMusicSheet] Walk
       // GraphicalMusicSheet.MeasureList[m][0] → parentMusicSystem →
       // StaffLines[0]. This is the path OSMD's own Cursor.update uses.
-      const gms = (osmd as any).GraphicalMusicSheet ?? (osmd as any).graphic;
+      const gms = osmd.GraphicalMusicSheet ?? osmd.graphic;
       const gMeasureRow = typeof cursorM === 'number' ? gms?.MeasureList?.[cursorM] : null;
       const gMeasure = gMeasureRow?.[0];
       const cursorSys = gMeasure?.parentMusicSystem;
       const cursorSysIdx = cursorSys?.Id ?? cursorSys?.id ?? null;
       const sysY = cursorSys?.PositionAndShape?.AbsolutePosition?.y;
       const sl0 = cursorSys?.StaffLines?.[0];
-      const slLast = cursorSys?.StaffLines?.[cursorSys?.StaffLines?.length - 1];
+      const slLast = cursorSys?.StaffLines?.[(cursorSys?.StaffLines?.length ?? 0) - 1];
       const expectedTopOp =
         typeof sysY === 'number' && typeof sl0?.PositionAndShape?.RelativePosition?.y === 'number'
           ? Math.round(10 * (sysY + sl0.PositionAndShape.RelativePosition.y) * zoom)
@@ -660,14 +708,9 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       let noteHeadTop: number | null = null;
       let noteGTop: number | null = null;
       let noteM: number | null = null;
-      let noteSysIdx: any = null;
+      let noteSysIdx: number | null = null;
       try {
-        const n = getNotesUnderCursor(cursor)[0] as
-          | {
-              getSVGGElement?(): SVGGElement | null;
-              parentVoiceEntry?: any;
-            }
-          | undefined;
+        const n = getNotesUnderCursor(cursor)[0];
         const g = n?.getSVGGElement?.();
         if (g?.getBoundingClientRect) noteGTop = g.getBoundingClientRect().top;
         const noteRect = n ? noteToViewportRect(n) : null;
@@ -675,7 +718,8 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
         const noteMeasure = n?.parentVoiceEntry?.parentStaffEntry?.parentMeasure;
         noteM = noteMeasure?.MeasureNumber ?? noteMeasure?.measureListIndex ?? null;
         const noteSys = noteMeasure?.parentMusicSystem;
-        noteSysIdx = noteSys?.Id ?? noteSys?.id ?? null;
+        const rawNoteSysIdx = noteSys?.Id ?? noteSys?.id;
+        noteSysIdx = typeof rawNoteSysIdx === 'number' ? rawNoteSysIdx : null;
       } catch {
         /* noop */
       }
