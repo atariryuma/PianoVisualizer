@@ -13,20 +13,33 @@ Immediate maintenance queue:
 1. Keep documentation synchronized with the Phase 0e runtime shape.
 2. Reduce remaining `any` casts in `shell-bootstrap.ts` and shell factory
    boundaries where that can be done without widening diffs.
-3. Narrow `cursor: any` in `packages/web/src/osmd-cursor.ts` (deferred from the
-   2026-05-10 /simplify pass). The scroll-controller helpers
-   (`ensureCursorVisible`, `computeActiveCursorRect`, `logScrollEvent`,
-   `_diagCursorPos`) read `cursor.cursorElement`,
-   `cursor.iterator.CurrentMeasureIndex`, and the GNotes/NotesUnderCursor
-   fallback. Extend `OsmdCursorRef` to carry these members (or add a
-   `ScrollCursorRef = OsmdCursorRef & { cursorElement: HTMLElement }`) and drop
-   the `as any` casts at the four call sites. Pre-existing pattern, not
-   introduced by the v10 refactor — kept out of the simplify pass to avoid
-   widening the diff.
-4. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
+3. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
    with regression tests before each behavioral change.
-5. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
+4. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
    Vitest may need approval because Vite/esbuild spawns a child process.
+
+Recent landings (2026-05-12):
+
+- **cursor v10 + practice-visibility + bottom-fit + stretch** — the score-follow
+  controller drives `#osmdContainer.scrollTop` directly with a safe-band reveal
+  policy (hysteresis 48px, active-scroll cooldown 120ms, same-system reversal
+  guard 450ms). `practice-visibility.ts` freezes the practice clock and pauses
+  Tone.Transport on `visibilitychange→hidden` so the cursor doesn't jump forward
+  when the tab returns. `planPanelScroll` subtracts `belowFocus` from
+  `safeBottom` so the staff bottom always lands inside the panel.
+  `stretchCursorToNotes` extends the cursor element's `style.top` /
+  `style.height` after each `cursor.update()` so very high ledger-line notes
+  (Eb7 etc.) stay inside the bar visually. **Verified by production log**
+  (`[PRACTICE-VISIBILITY] hidden/visible` pair in server.log shows the freeze
+  working in the wild).
+- **`cursor: any` narrowing in osmd-cursor.ts** — landed 2026-05-12.
+  `OsmdCursorRef` now carries `cursorElement?: HTMLElement` + `next?()`,
+  `OsmdIteratorRef` carries the two repetition-index name variants. All four
+  scroll-controller helpers (`computeActiveCursorRect`, `stretchCursorToNotes`,
+  `logScrollEvent`, plus the three call sites in `ensureCursorVisible`,
+  `computeSystemIdx`, `_diagCursorPos`) and the iterator assignment in
+  `seedIteratorFromTimestamp` now use the narrow type. Zero `as any` casts on
+  `cursor` remain in the file.
 
 The next 5–10 actionable items, in **execution order**. Pick the topmost
 unchecked item if no specific issue is assigned to you.

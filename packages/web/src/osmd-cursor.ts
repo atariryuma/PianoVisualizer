@@ -49,6 +49,11 @@ export interface OsmdInstanceRef {
 /** OSMD cursor surface — only the bits we read/call. */
 export interface OsmdCursorRef {
   iterator?: OsmdIteratorRef;
+  /** OSMD positions a bare `<img>` / overlay element as the visible
+   *  cursor bar; we read its viewport rect for scroll math and patch
+   *  its `style.top` / `style.height` to cover noteheads outside the
+   *  staff lines (see `stretchCursorToNotes`). */
+  cursorElement?: HTMLElement;
   reset?(): void;
   show?(): void;
   hide?(): void;
@@ -59,12 +64,20 @@ export interface OsmdCursorRef {
   update?(): void;
   GNotesUnderCursor?(): OsmdGraphicalNote[];
   NotesUnderCursor?(): OsmdGraphicalNote[];
+  /** OSMD's per-version `next()` — advances the iterator a single
+   *  voice-entry. Used by the test fixture's default `next` builder. */
+  next?(): void;
 }
 
 export interface OsmdIteratorRef {
   endReached: boolean;
   CurrentMeasureIndex: number;
   currentTimeStamp: { realValue: number };
+  /** Repetition index (which iteration of a repeat block). OSMD names
+   *  this `currentRepetitionIndex` in some versions and
+   *  `CurrentRepetitionIndex` in others — both optional. */
+  currentRepetitionIndex?: number;
+  CurrentRepetitionIndex?: number;
 }
 
 /** Minimal graphical-note shape we touch — `getSVGGElement` returns
@@ -244,7 +257,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     // lines (ledger lines above/below). OSMD sizes the cursor to span
     // only the staff, so high notes like Eb7 render above the bar —
     // visually disconnected from the highlight.
-    const cursorEl = (osmd.cursor as any)?.cursorElement as HTMLElement | undefined;
+    const cursorEl = osmd.cursor.cursorElement;
     if (cursorEl) stretchCursorToNotes(osmd.cursor, cursorEl);
     ensureCursorVisible(osmd);
     highlightCurrentNotes();
@@ -267,8 +280,9 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    */
   function ensureCursorVisible(osmd: OsmdInstanceRef): void {
     try {
-      const cursor = osmd.cursor as any;
-      const ce = cursor?.cursorElement as HTMLElement | undefined;
+      const cursor = osmd.cursor;
+      if (!cursor) return;
+      const ce = cursor.cursorElement;
       const scroller = resolveScoreScroller(ce);
       if (!ce || !scroller) return;
 
@@ -350,7 +364,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     right?: number;
   }
 
-  function computeActiveCursorRect(cursor: any, ce: HTMLElement): RectLike | null {
+  function computeActiveCursorRect(cursor: OsmdCursorRef, ce: HTMLElement): RectLike | null {
     const cursorRect = safeRect(ce);
     let notesRect: RectLike | null = null;
     for (const note of getNotesUnderCursor(cursor)) {
@@ -498,7 +512,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    *  so high ledger-line notes (e.g. Eb7) don't float above the blue
    *  bar. OSMD resets style.top/height on the next update, so we
    *  reapply every setCursorToNote call. */
-  function stretchCursorToNotes(cursor: any, ce: HTMLElement): void {
+  function stretchCursorToNotes(cursor: OsmdCursorRef, ce: HTMLElement): void {
     if (!ce.style) return;
     const notes = getNotesUnderCursor(cursor);
     if (!notes.length) return;
@@ -542,7 +556,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    *  exit) so they always log. */
   function logScrollEvent(
     event: 'fire' | 'skip',
-    cursor: any,
+    cursor: OsmdCursorRef,
     sysIdx: number | null,
     prevSysIdx: number | null,
     reason: ScrollReason,
@@ -579,8 +593,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    *  what OSMD's own Cursor.update uses to position the cursor. */
   function computeSystemIdx(osmd: OsmdInstanceRef): number | null {
     try {
-      const cursor = osmd.cursor as any;
-      const m = cursor?.iterator?.CurrentMeasureIndex;
+      const m = osmd.cursor?.iterator?.CurrentMeasureIndex;
       if (typeof m !== 'number') return null;
       const gms = (osmd as any).GraphicalMusicSheet ?? (osmd as any).graphic;
       const sys = gms?.MeasureList?.[m]?.[0]?.parentMusicSystem;
@@ -607,11 +620,12 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     if (_diagCalls % 16 !== 1) return;
 
     try {
-      const cursor = osmd.cursor as any;
-      const ce = cursor?.cursorElement as HTMLElement | undefined;
+      const cursor = osmd.cursor;
+      if (!cursor) return;
+      const ce = cursor.cursorElement;
       if (!ce?.getBoundingClientRect) return;
       const cr = ce.getBoundingClientRect();
-      const it = cursor?.iterator;
+      const it = cursor.iterator;
       const cursorM = it?.CurrentMeasureIndex;
       const cursorRep = it?.currentRepetitionIndex ?? it?.CurrentRepetitionIndex ?? null;
       const zoom = (osmd as any).zoom ?? 1;
@@ -620,7 +634,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       // GraphicalMusicSheet.MeasureList[m][0] → parentMusicSystem →
       // StaffLines[0]. This is the path OSMD's own Cursor.update uses.
       const gms = (osmd as any).GraphicalMusicSheet ?? (osmd as any).graphic;
-      const gMeasureRow = gms?.MeasureList?.[cursorM];
+      const gMeasureRow = typeof cursorM === 'number' ? gms?.MeasureList?.[cursorM] : null;
       const gMeasure = gMeasureRow?.[0];
       const cursorSys = gMeasure?.parentMusicSystem;
       const cursorSysIdx = cursorSys?.Id ?? cursorSys?.id ?? null;
@@ -740,11 +754,16 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     }
 
     try {
-      (osmd.cursor as any).iterator = new Lib.MusicPartManagerIterator!(
+      if (!osmd.cursor) return false;
+      // OSMD's MusicPartManagerIterator constructor returns `unknown` in
+      // our narrow lib type; we trust the lib's shape lines up with
+      // OsmdIteratorRef well enough for the cursor.update() that runs
+      // next to read its CurrentMeasureIndex / currentTimeStamp.
+      osmd.cursor.iterator = new Lib.MusicPartManagerIterator!(
         osmd.Sheet,
         startTs,
         undefined
-      );
+      ) as OsmdIteratorRef;
       return true;
     } catch {
       return false;
