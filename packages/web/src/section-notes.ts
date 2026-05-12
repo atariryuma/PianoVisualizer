@@ -41,7 +41,32 @@ export interface OsmdLikeNote {
   hit?: boolean;
   missed?: boolean;
   _filtered?: boolean;
+  /** Number of consecutive same-pitch, same-hand attacks merged into
+   *  this note by the lane-cluster step. Default 1 (no merge). The
+   *  lane renderer paints a `×N` badge + chevron when this is > 1
+   *  so a trill / tremolo / grace-burst that would otherwise stack
+   *  multiple tiles on top of each other reads as one event. */
+  replayCount?: number;
+  /** Internal — wall-clock ms of the most recent attack folded into
+   *  this cluster. Used by clusterAdjacentNotes to extend the cluster
+   *  with a rolling window (each new attack is compared to the
+   *  PREVIOUS attack, not to the cluster's first attack). Without
+   *  this, a long even trill (e.g. 10 ms × 8 attacks) splits into
+   *  multiple clusters because the cumulative time from the head
+   *  exceeds CLUSTER_WINDOW_MS while each adjacent pair is well
+   *  inside it. */
+  _lastClusterAttackMs?: number;
 }
+
+/** Same-pitch + same-hand attacks within this window collapse into a
+ *  single visual note. 30 ms is wider than the human ear can
+ *  distinguish as separate attacks (≈ 50 ms is the gestalt fusion
+ *  threshold) but narrow enough that legitimate fast-but-distinct
+ *  16th notes at 120 bpm (125 ms each) stay individual. Liszt
+ *  La Campanella's super-high-speed trills generate same-pitch
+ *  attacks at < 20 ms intervals — those collapse cleanly into one
+ *  tile with a `×N` badge. */
+export const CLUSTER_WINDOW_MS = 30;
 
 /** Section bounds (startSec, endSec) the slice walks. */
 export interface SongSection {
@@ -72,6 +97,65 @@ export interface HandRanges {
 }
 
 // ─── pure helpers (also exported for tests) ────────────────────────
+
+/** Collapse consecutive same-pitch + same-hand notes whose attack
+ *  times are within CLUSTER_WINDOW_MS. The merged note's `durMs`
+ *  extends to cover the last attack's tail; `replayCount` carries
+ *  the number of folded attacks so the lane renderer can show a
+ *  `×N` badge. Stable: the input ordering is preserved.
+ *
+ *  This handles the OSMD-expanded trill / tremolo / grace-burst
+ *  case where a single sheet-music ornament generates dozens of
+ *  same-pitch attacks within a few ms each. Without this, the lane
+ *  renders dozens of tiles stacked on the same (x, y) coordinates
+ *  — La Campanella's RH 9th-trill turned the lane into an
+ *  unreadable column of overlapping "L#" badges (server screenshot
+ *  2026-05-12).
+ *
+ *  Notes whose `_filtered` flag is set are skipped (the off-hand
+ *  pass), so cluster boundaries are also restricted to a single
+ *  hand by construction. */
+export function clusterAdjacentNotes(notes: OsmdLikeNote[]): OsmdLikeNote[] {
+  if (notes.length < 2) {
+    return notes.map((n) => ({ ...n, replayCount: 1 }));
+  }
+  const out: OsmdLikeNote[] = [];
+  for (const n of notes) {
+    const last = out.length > 0 ? out[out.length - 1] : null;
+    const tNow = n.timeMs ?? 0;
+    // Compare to the PREVIOUS attack in the cluster, not to the
+    // cluster's head — a long even trill (10 ms × 8 attacks) must
+    // collapse into one tile even though tail-to-head is 70 ms.
+    const tPrev = last ? (last._lastClusterAttackMs ?? last.timeMs ?? 0) : -Infinity;
+    if (
+      last &&
+      last.midi === n.midi &&
+      last.hand === n.hand &&
+      !last._filtered &&
+      !n._filtered &&
+      tNow - tPrev <= CLUSTER_WINDOW_MS
+    ) {
+      // Merge: extend the existing tile's duration so it covers the
+      // full burst, bump replayCount, record the new last-attack time.
+      const lastDur = last.durMs ?? 0;
+      const nDur = n.durMs ?? 0;
+      const tHead = last.timeMs ?? 0;
+      last.durMs = Math.max(lastDur, tNow + nDur - tHead);
+      last.replayCount = (last.replayCount ?? 1) + 1;
+      last._lastClusterAttackMs = tNow;
+    } else {
+      out.push({ ...n, replayCount: 1, _lastClusterAttackMs: tNow });
+    }
+  }
+  // Strip the internal `_lastClusterAttackMs` field — the lane
+  // renderer + practice scoring never read it; keeping it on the
+  // public note shape would leak an implementation detail.
+  return out.map((n) => {
+    const { _lastClusterAttackMs: _unused, ...clean } = n;
+    void _unused;
+    return clean as OsmdLikeNote;
+  });
+}
 
 /** Pure: pick the bigger MIDI from two notes, treating "no note" as
  *  the sentinel. Used by computeHandRanges. */
@@ -146,7 +230,10 @@ export function buildSectionNotes(sectionIdx: number, deps: SectionNotesDeps): O
     }
   }
   out.sort((a, b) => (a.timeMs ?? 0) - (b.timeMs ?? 0));
-  return out;
+  // Collapse same-pitch + same-hand bursts (trill / tremolo / OSMD
+  // grace expansion) so the lane shows a single tile with a ×N badge
+  // instead of dozens overlapping at identical (x, y) coordinates.
+  return clusterAdjacentNotes(out);
 }
 
 /** Build the full-song "全曲再生" timeline for listen mode. Tempo
@@ -182,5 +269,7 @@ export function buildFullSongNotes(deps: SectionNotesDeps): OsmdLikeNote[] {
     });
   }
   out.sort((a, b) => (a.timeMs ?? 0) - (b.timeMs ?? 0));
-  return out;
+  // Same cluster step as buildSectionNotes — collapses the dense
+  // trill bursts that fullSong listen would otherwise stack.
+  return clusterAdjacentNotes(out);
 }

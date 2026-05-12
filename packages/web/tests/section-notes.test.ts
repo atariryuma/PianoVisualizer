@@ -15,6 +15,7 @@ import {
   buildSectionNotes,
   buildFullSongNotes,
   computeHandRanges,
+  clusterAdjacentNotes,
   type OsmdLikeNote,
   type SectionNotesDeps,
   type SongSection,
@@ -282,5 +283,119 @@ describe('computeHandRanges', () => {
     const r = computeHandRanges([note({ hand: '', midi: 65 })]);
     expect(r.rhMin).toBe(65);
     expect(r.lhMin).toBe(48); // fallback
+  });
+});
+
+// ─── clusterAdjacentNotes (trill / tremolo collapse) ───────────────
+
+describe('clusterAdjacentNotes', () => {
+  it('passes through a single note with replayCount=1', () => {
+    // Single notes always get replayCount=1 even though no merging
+    // happened — the renderer reads it to decide whether to paint a
+    // badge.
+    const n = note({ midi: 60, timeMs: 100, durMs: 200, hand: 'R' });
+    const out = clusterAdjacentNotes([n]);
+    expect(out).toHaveLength(1);
+    expect(out[0].replayCount).toBe(1);
+  });
+
+  it('merges 4 same-pitch + same-hand attacks within 30 ms each', () => {
+    // Liszt La Campanella trill case: dense RH same-pitch attacks at
+    // ~10 ms intervals. All four collapse into one tile with ×4.
+    const burst = [0, 10, 20, 30].map((t) => note({ midi: 75, timeMs: t, durMs: 8, hand: 'R' }));
+    const out = clusterAdjacentNotes(burst);
+    expect(out).toHaveLength(1);
+    expect(out[0].replayCount).toBe(4);
+    expect(out[0].timeMs).toBe(0); // earliest attack survives
+  });
+
+  it('extends durMs to cover the last attack in the cluster', () => {
+    const burst = [
+      note({ midi: 75, timeMs: 0, durMs: 50, hand: 'R' }),
+      note({ midi: 75, timeMs: 20, durMs: 50, hand: 'R' }),
+    ];
+    const out = clusterAdjacentNotes(burst);
+    expect(out).toHaveLength(1);
+    // durMs must reach at least (20 + 50) - 0 = 70 so the visual tile
+    // covers the full burst region.
+    expect(out[0].durMs).toBeGreaterThanOrEqual(70);
+  });
+
+  it('does NOT merge across hand boundaries', () => {
+    const seq = [
+      note({ midi: 60, timeMs: 0, hand: 'R' }),
+      note({ midi: 60, timeMs: 10, hand: 'L' }),
+    ];
+    const out = clusterAdjacentNotes(seq);
+    expect(out).toHaveLength(2);
+    expect(out[0].hand).toBe('R');
+    expect(out[1].hand).toBe('L');
+  });
+
+  it('does NOT merge different pitches', () => {
+    const seq = [
+      note({ midi: 60, timeMs: 0, hand: 'R' }),
+      note({ midi: 62, timeMs: 10, hand: 'R' }),
+    ];
+    const out = clusterAdjacentNotes(seq);
+    expect(out).toHaveLength(2);
+  });
+
+  it('does NOT merge when gap exceeds CLUSTER_WINDOW_MS (30)', () => {
+    // 100 ms gap = a legitimate fast 16th at slow tempo; must stay
+    // individual.
+    const seq = [
+      note({ midi: 60, timeMs: 0, hand: 'R' }),
+      note({ midi: 60, timeMs: 100, hand: 'R' }),
+    ];
+    const out = clusterAdjacentNotes(seq);
+    expect(out).toHaveLength(2);
+    expect(out[0].replayCount).toBe(1);
+    expect(out[1].replayCount).toBe(1);
+  });
+
+  it('does NOT merge filtered (off-hand) notes (keeps them visible to the cursor)', () => {
+    // Both have _filtered:true (one-hand practice, off hand). Merging
+    // would change cursor advance semantics; keep them separate.
+    const seq = [
+      note({ midi: 60, timeMs: 0, hand: 'R', _filtered: true }),
+      note({ midi: 60, timeMs: 10, hand: 'R', _filtered: true }),
+    ];
+    const out = clusterAdjacentNotes(seq);
+    expect(out).toHaveLength(2);
+  });
+
+  it('handles mixed clusters + isolated notes in one pass', () => {
+    const seq = [
+      // Cluster A: midi=60 ×3 at 0/10/20
+      note({ midi: 60, timeMs: 0, hand: 'R' }),
+      note({ midi: 60, timeMs: 10, hand: 'R' }),
+      note({ midi: 60, timeMs: 20, hand: 'R' }),
+      // Singleton between
+      note({ midi: 64, timeMs: 100, hand: 'R' }),
+      // Cluster B: midi=67 ×2 at 200/220
+      note({ midi: 67, timeMs: 200, hand: 'R' }),
+      note({ midi: 67, timeMs: 220, hand: 'R' }),
+    ];
+    const out = clusterAdjacentNotes(seq);
+    expect(out).toHaveLength(3);
+    expect(out[0].replayCount).toBe(3);
+    expect(out[1].replayCount).toBe(1);
+    expect(out[2].replayCount).toBe(2);
+  });
+
+  it('buildSectionNotes integration: trill burst collapses in produced section', () => {
+    // 8 same-pitch attacks within 60ms span (every 10 ms) → 1 tile ×8
+    const notes: OsmdLikeNote[] = [];
+    for (let i = 0; i < 8; i++) {
+      notes.push(note({ midi: 75, timeSec: 0.5 + i * 0.01, hand: 'R' }));
+    }
+    const deps = makeDeps({
+      song: { notes, sections: [sec(0, 1)] },
+      practice: { tempoPct: 100, handFilter: null },
+    });
+    const out = buildSectionNotes(0, deps);
+    expect(out).toHaveLength(1);
+    expect(out[0].replayCount).toBe(8);
   });
 });
