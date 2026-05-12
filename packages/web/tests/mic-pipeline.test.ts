@@ -176,6 +176,105 @@ describe('tickMicPipeline — mic-suspended branch', () => {
   });
 });
 
+// ─── mic → midiState bridge (Opt-2/3) ───────────────────────────────
+
+describe('tickMicPipeline — mic → midiState bridge', () => {
+  function makeMidiState(): MicPipelineDeps['midiState'] & {} {
+    return {
+      activeNotes: new Map<
+        number,
+        { velocity: number; onTimeMs: number; synColor?: string | null; source?: 'mic' | 'midi' }
+      >(),
+      recentOnsets: [] as Array<{ midi: number; timeMs: number }>,
+      lastChordName: '',
+      lastChordTimeMs: 0,
+    };
+  }
+
+  it('writes detected mic note into midiState.activeNotes with source="mic"', () => {
+    const midiState = makeMidiState();
+    const { deps } = makeDeps({ midiState });
+    deps.state.yinSkipCounter = 2; // force full YIN this tick
+    tickMicPipeline(1000, 16, deps);
+    expect(midiState.activeNotes.has(69)).toBe(true);
+    const entry = midiState.activeNotes.get(69)!;
+    expect(entry.source).toBe('mic');
+    expect(entry.onTimeMs).toBe(1000);
+    expect(entry.velocity).toBeGreaterThanOrEqual(1);
+    expect(entry.velocity).toBeLessThanOrEqual(127);
+  });
+
+  it('feeds applyOnsetToWindow when mic detects a pitch', () => {
+    const midiState = makeMidiState();
+    const applyOnsetToWindow = vi.fn().mockReturnValue({ emitted: null });
+    const cwOpts = { windowMs: 80, minNotes: 3, repeatCooldownMs: 600, detectChord: () => null };
+    const { deps } = makeDeps({ midiState, applyOnsetToWindow, cwOpts });
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps);
+    expect(applyOnsetToWindow).toHaveBeenCalledWith(midiState, 69, 1000, cwOpts);
+  });
+
+  it('refreshes the existing entry on the next tick (no second insert)', () => {
+    const midiState = makeMidiState();
+    const { deps } = makeDeps({ midiState });
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps);
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1100, 16, deps);
+    expect(midiState.activeNotes.size).toBe(1);
+    expect(midiState.activeNotes.get(69)!.onTimeMs).toBe(1100);
+  });
+
+  it('prunes mic-derived activeNotes older than MIC_NOTE_TTL_MS (300 ms)', () => {
+    const midiState = makeMidiState();
+    midiState.activeNotes.set(60, {
+      velocity: 80,
+      onTimeMs: 0,
+      source: 'mic',
+    });
+    const { deps, hooks } = makeDeps({ midiState });
+    // No fresh note this tick.
+    hooks.updateGameState.mockReturnValue(false);
+    tickMicPipeline(500, 16, deps); // 500 ms after entry → expired
+    expect(midiState.activeNotes.has(60)).toBe(false);
+  });
+
+  it('does NOT prune MIDI-source entries (only mic-source ones expire)', () => {
+    const midiState = makeMidiState();
+    midiState.activeNotes.set(60, {
+      velocity: 100,
+      onTimeMs: 0,
+      source: 'midi',
+    });
+    const { deps, hooks } = makeDeps({ midiState });
+    hooks.updateGameState.mockReturnValue(false);
+    // No fresh note; if pruner mis-targets MIDI entries it'd evict
+    // this even though source !== 'mic'.
+    tickMicPipeline(60_000, 16, deps);
+    expect(midiState.activeNotes.has(60)).toBe(true);
+  });
+
+  it('does NOT write to midiState when MIDI is enabled (midi owns the visual lane)', () => {
+    const midiState = makeMidiState();
+    const { deps } = makeDeps({
+      midiState,
+      midiInput: { enabled: true, lastEventTime: 0 },
+    });
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps);
+    expect(midiState.activeNotes.size).toBe(0);
+  });
+
+  it('skips mic→midiState bridge entirely when midiState is not provided', () => {
+    // Old callsites that don't care about the bridge can omit
+    // midiState; nothing should throw.
+    const { deps } = makeDeps();
+    expect(deps.midiState).toBeUndefined();
+    deps.state.yinSkipCounter = 2;
+    expect(() => tickMicPipeline(1000, 16, deps)).not.toThrow();
+  });
+});
+
 // ─── mic-active branch ─────────────────────────────────────────────
 
 describe('tickMicPipeline — mic-active branch', () => {

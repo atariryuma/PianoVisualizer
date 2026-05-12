@@ -404,15 +404,45 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
   let visibilityHandler: (() => void) | null = null;
   let deviceHandler: (() => void) | null = null;
 
-  // AirPods / headphone unplug switches sample rate (24/48 flip).
-  // The cleanest recovery is to recreate the context — same as the
-  // visibility recovery path. devicechange fires multiple times for
-  // one event, hence the debounce.
+  // devicechange fires for *any* media-device-list mutation:
+  //   - AirPods / headphones plug/unplug (the original target of this
+  //     handler — AirPods flip output between 24/48 kHz; our locked
+  //     48 kHz AudioContext rides that out, but pre-lock builds saw
+  //     stutter)
+  //   - USB MIDI controllers' audio-class endpoint appearing/leaving
+  //   - Bluetooth headset name changes
+  //   - macOS/Win desktop default-output switches
+  //
+  // Previously we recovered (close + recreate AudioContext + re-acquire
+  // mic) on every fire. That was wasteful — most events leave the
+  // context healthy — and on iOS it also aborted practice via
+  // onAfterRecovery. The smart path: debounce, then check ctx.state.
+  // If 'running', the event was benign and we no-op. If 'suspended'
+  // or 'closed' (rare), we try resume() first and only fall back to
+  // full recover() when resume can't bring it back.
+  //
+  // The 250 ms debounce is unchanged — devicechange fires multiple
+  // times for one user action (a single AirPods unplug usually emits
+  // 2-3 events).
   function onDeviceChange(): void {
     if (!deps.isRunning() || !deps.getAudioCtx()) return;
     if (deviceTimer !== null) clearT(deviceTimer);
-    deviceTimer = setT(() => {
+    deviceTimer = setT(async () => {
       deviceTimer = null;
+      const ctx = deps.getAudioCtx();
+      if (!ctx) return;
+
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          // Race with another resume / OS denial — fall through.
+        }
+      }
+      if (ctx.state === 'running') return; // benign event, no work needed
+
+      // Still not running (state stays 'suspended' after resume, or
+      // 'closed'). Heavy recovery.
       deps.recover().catch((e: unknown) => {
         warn('[AUDIO] devicechange recovery: ' + (e instanceof Error ? e.message : String(e)));
       });

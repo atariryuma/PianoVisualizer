@@ -101,7 +101,12 @@ export interface RenderLateDeps {
 export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
   // 1. MIDI sustained beams — between background and particles.
   //    Skipped during practice (the lane takes over visual priority).
-  if (deps.midiInput.enabled && !deps.practice.enabled) {
+  //    No longer gated on `midiInput.enabled` because mic-pipeline now
+  //    populates `midiState.activeNotes` for detected pitches too; the
+  //    drawMidiBeams renderer self-exits when activeNotes +
+  //    sustainedNotes are both empty (the common pre-input frame), so
+  //    this call stays cheap when nothing's playing.
+  if (!deps.practice.enabled) {
     deps.drawMidiBeams(timeMs);
   }
 
@@ -130,20 +135,20 @@ export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
 
   // 4. Chord-name display — the helper picks the layout per mode
   //    (big-centered for free play, small-above-keyboard for
-  //    practice).
-  if (deps.midiInput.enabled) {
-    deps.drawMidiChordDisplay(timeMs);
-  }
+  //    practice). No `midiInput.enabled` gate: mic-pipeline now also
+  //    feeds the chord-window detector via applyOnsetToWindow, so
+  //    arpeggiated chords on an acoustic piano can also surface a
+  //    chord name. The renderer self-exits when `lastChordName` is
+  //    empty or aged past CHORD_LIFE_MS.
+  deps.drawMidiChordDisplay(timeMs);
 
-  // 5. Virtual keyboard at the bottom — visible whenever MIDI is in
-  //    use OR during practice (the keyboard provides the next-key
-  //    "▼" hint marker that tells the kid which key to press, which
-  //    matters even when they're playing on an acoustic piano in
-  //    mic-only mode). Without the practice gate, mic-only practice
-  //    saw a lane with no key reference at all.
-  if (deps.midiInput.enabled || deps.practice.enabled) {
-    deps.drawMidiKeyboard();
-  }
+  // 5. Virtual keyboard at the bottom — always drawn during an active
+  //    session. MIDI presses light up keys, mic-detected notes light
+  //    up keys (via mic-pipeline → midiState.activeNotes with TTL),
+  //    and practice overlays the ▼ next-key hint marker. The runtime
+  //    loop only ticks while state.running is true (gate in
+  //    render-loop.ts), so `runRenderLate` always implies a session.
+  deps.drawMidiKeyboard();
 
   // 6. Practice mode lane — drawn on top of background, under HUD.
   if (deps.practice.enabled) {

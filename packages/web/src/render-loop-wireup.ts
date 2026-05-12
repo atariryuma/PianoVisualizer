@@ -39,6 +39,14 @@ export interface RenderLoopWireupDeps {
    *  the wireup site — read fresh per builder call via getter. */
   getPractice: () => any;
   getMidiInput: () => any;
+  /** midiState — built by ShellMidiHandlers (after the wireup site
+   *  in shell-bootstrap), so deferred via getter. mic-pipeline writes
+   *  TTL-managed `activeNotes` entries here so mic-only sessions get
+   *  keyboard highlights + chord detection. Optional so the wireup
+   *  tests that don't care about midi visuals can omit it. */
+  getMidiState?: () => any;
+  /** Chord-window options bag — paired with applyOnsetToWindow below. */
+  cwOpts?: any;
   config: any;
   /** Per-frame fresh dimensions. */
   getScreen: () => { W: number; H: number };
@@ -149,6 +157,12 @@ export function wireRenderLoop(deps: RenderLoopWireupDeps): { tick: (timeMs: num
           state: deps.state,
           practice: deps.getPractice(),
           midiInput: deps.getMidiInput(),
+          // Mic → midiState bridge (Opt-2 + Opt-3, 2026-05-12). Lets
+          // mic-only sessions light up the keyboard for detected
+          // pitches + drive chord detection on arpeggios.
+          midiState: deps.getMidiState?.(),
+          applyOnsetToWindow: deps.pianoCore.applyOnsetToWindow,
+          cwOpts: deps.cwOpts,
           micMeter: deps.dom.micMeter,
           micMeterFill: deps.dom.micMeterFill,
           introHint: deps.dom.introHint,

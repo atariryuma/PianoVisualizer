@@ -30,6 +30,13 @@ export interface ShellRenderLoopDeps {
    *  the shell — getter thunks defer the read to fire-time. */
   getPractice: () => any;
   getMidiInput: () => any;
+  /** midiState getter — built downstream by ShellMidiHandlers, so
+   *  flows in via a thunk like the draw helpers. mic-pipeline uses
+   *  this to light up the keyboard + drive chord detection for
+   *  mic-only sessions. */
+  getMidiState?: () => any;
+  /** Chord-window options bag for mic-driven chord detection. */
+  cwOpts?: any;
   getUpdatePractice: () => (...args: any[]) => any;
   /** Live screen geometry. */
   getScreen: () => { W: number; H: number };
@@ -86,6 +93,8 @@ export function createShellRenderLoop(deps: ShellRenderLoopDeps): ShellRenderLoo
     state: deps.state,
     getPractice: deps.getPractice,
     getMidiInput: deps.getMidiInput,
+    getMidiState: deps.getMidiState,
+    cwOpts: deps.cwOpts,
     config: deps.config,
     getScreen: deps.getScreen,
     getAudioCtx: deps.audio.getAudioCtx,

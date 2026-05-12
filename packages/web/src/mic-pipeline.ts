@@ -68,6 +68,36 @@ export interface MicPipelineMidiRef {
   lastEventTime: number;
 }
 
+/** Note record the renderer reads via `midiState.activeNotes`. Mic-
+ *  pipeline tags its entries `source: 'mic'` so the per-frame prune
+ *  below can expire them after MIC_NOTE_TTL_MS (mic doesn't emit
+ *  note-off events). MIDI-driven entries either omit the field or
+ *  set it to 'midi'; they live until midi-handlers.ts removes them
+ *  via the MIDI note-off / sustain-release path. */
+export interface MicPipelineActiveNote {
+  velocity: number;
+  onTimeMs: number;
+  synColor?: string | null;
+  source?: 'mic' | 'midi';
+}
+
+/** Subset of midiState the mic-pipeline writes when it owns visuals.
+ *  Same shape as the chord-window state — `applyOnsetToWindow`
+ *  accepts it directly. */
+export interface MicPipelineMidiState {
+  activeNotes: Map<number, MicPipelineActiveNote>;
+  recentOnsets: Array<{ midi: number; timeMs: number }>;
+  lastChordName: string;
+  lastChordTimeMs: number;
+}
+
+/** How long a mic-detected note stays in `activeNotes` after its last
+ *  refresh. YIN runs every 3rd frame, so at 60 fps a sustained note
+ *  refreshes ~20× per second. 300 ms is comfortably longer than a
+ *  single YIN gap, and short enough that a released note clears the
+ *  keyboard highlight within a few hundred ms of silence. */
+export const MIC_NOTE_TTL_MS = 300;
+
 /** Note descriptor returned by `freqToNote`. */
 export interface NoteDescriptor {
   name: string;
@@ -108,6 +138,23 @@ export interface MicPipelineDeps {
   state: MicPipelineState;
   practice: MicPipelinePracticeRef;
   midiInput: MicPipelineMidiRef;
+  /** Shared midiState — mic-pipeline writes `activeNotes` entries
+   *  (with TTL) + drives the chord-window detector when MIDI is
+   *  off. Optional so existing test fixtures that don't care about
+   *  the keyboard/beam/chord side effects can omit it. */
+  midiState?: MicPipelineMidiState;
+  /** PianoCore `applyOnsetToWindow`. Pure reducer over the same
+   *  `recentOnsets / lastChordName / lastChordTimeMs` fields the
+   *  MIDI handlers feed. When set together with midiState, the mic
+   *  contributes onsets to chord detection too. Optional in tests. */
+  applyOnsetToWindow?: (
+    state: MicPipelineMidiState,
+    midi: number,
+    timeMs: number,
+    opts: unknown
+  ) => { emitted: string | null };
+  /** Chord-window options bag (CONFIG.cwOpts). Opaque pass-through. */
+  cwOpts?: unknown;
 
   // ─── DOM (mic meter, intro hint) ──────────────────────────────────
   micMeter: HTMLElement | null;
@@ -165,6 +212,19 @@ export function tickMicPipeline(
   deps: MicPipelineDeps
 ): { isGoodNote: boolean } {
   let isGoodNote = false;
+
+  // Per-frame prune of mic-derived `activeNotes` entries. Mic doesn't
+  // emit note-off, so each entry auto-expires after MIC_NOTE_TTL_MS
+  // since its last refresh. Runs regardless of mic-suspended state so
+  // a fresh MIDI attach (which suspends the mic) clears lingering mic
+  // entries within one TTL window.
+  if (deps.midiState) {
+    deps.midiState.activeNotes.forEach((note, midi) => {
+      if (note.source === 'mic' && timeMs - note.onTimeMs > MIC_NOTE_TTL_MS) {
+        deps.midiState!.activeNotes.delete(midi);
+      }
+    });
+  }
 
   // v13: Skip the entire mic processing pipeline when the mic is
   // suspended (MIDI is the active input). YIN, FFT consumption, AGC
@@ -270,6 +330,28 @@ export function tickMicPipeline(
         );
 
         deps.showNoteDisplay(note.name, note.name + note.octave, noteColor, timeMs);
+
+        // Light up the virtual keyboard for the detected pitch + feed
+        // the chord-window detector. Both used to only run for MIDI
+        // input — leaving mic-only users with no key highlight and no
+        // chord readout when they played arpeggios. The refresh of an
+        // existing entry simply pushes `onTimeMs` forward, keeping the
+        // TTL prune from expiring it during sustained playing.
+        if (deps.midiState) {
+          deps.midiState.activeNotes.set(note.noteNum, {
+            // Mic doesn't expose true velocity. Map smoothEnergy
+            // (already AGC-normalized to ~[0..1]) to a 1..127 range so
+            // the beam width / keyboard highlight intensity reflects
+            // loudness instead of always pegging to max.
+            velocity: Math.max(1, Math.min(127, Math.round(deps.state.smoothEnergy * 127))),
+            onTimeMs: timeMs,
+            synColor: noteColor,
+            source: 'mic',
+          });
+          if (deps.applyOnsetToWindow && deps.cwOpts !== undefined) {
+            deps.applyOnsetToWindow(deps.midiState, note.noteNum, timeMs, deps.cwOpts);
+          }
+        }
       }
     }
   } else if (deps.practice.enabled) {

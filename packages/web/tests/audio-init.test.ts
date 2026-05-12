@@ -522,15 +522,18 @@ function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): Lifecycle
 }
 
 describe('createAudioLifecycle — install / uninstall', () => {
-  it('install() registers both listeners; second install is a no-op', () => {
+  it('install() registers both listeners; second install is a no-op', async () => {
     const fx = makeLifecycleFixture();
-    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    // 'closed' so the devicechange handler reaches recover() — that's
+    // what we're observing here (single call, not double-registered).
+    fx.setAudioCtx({ state: 'closed', resume: async () => {} });
     fx.install();
     fx.install();
     // Second install must not double-register.
     // (Implementation detail: our stubs record once.)
     fx.fireDeviceChange();
     fx.flushTimers(300);
+    await Promise.resolve();
     expect(fx.recover).toHaveBeenCalledTimes(1);
   });
 
@@ -545,9 +548,12 @@ describe('createAudioLifecycle — install / uninstall', () => {
 });
 
 describe('createAudioLifecycle — devicechange', () => {
-  it('debounces with 250ms default; calls recover() exactly once for a burst', () => {
+  it('debounces with 250ms default; collapses bursts into a single debounced check', async () => {
+    // ctx.state = 'closed' → forces the heavy recover() path, so we
+    // can observe debouncing by counting recover() calls. (When ctx
+    // stays 'running' the smart path no-ops — covered separately.)
     const fx = makeLifecycleFixture();
-    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.setAudioCtx({ state: 'closed', resume: async () => {} });
     fx.install();
     fx.fireDeviceChange();
     fx.fireDeviceChange();
@@ -555,15 +561,17 @@ describe('createAudioLifecycle — devicechange', () => {
     fx.flushTimers(249);
     expect(fx.recover).not.toHaveBeenCalled();
     fx.flushTimers(2);
+    await Promise.resolve();
     expect(fx.recover).toHaveBeenCalledTimes(1);
   });
 
-  it('honors custom deviceChangeDebounceMs', () => {
+  it('honors custom deviceChangeDebounceMs', async () => {
     const fx = makeLifecycleFixture({ deviceChangeDebounceMs: 50 });
-    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.setAudioCtx({ state: 'closed', resume: async () => {} });
     fx.install();
     fx.fireDeviceChange();
     fx.flushTimers(60);
+    await Promise.resolve();
     expect(fx.recover).toHaveBeenCalledTimes(1);
   });
 
@@ -586,11 +594,77 @@ describe('createAudioLifecycle — devicechange', () => {
     expect(fx.recover).not.toHaveBeenCalled();
   });
 
+  // ─── smart-skip behaviour (2026-05-12 refactor) ─────────────────
+  it('healthy ctx (state="running") → skip recover entirely (benign event)', async () => {
+    // The common case after the refactor: a USB MIDI controller
+    // plug/unplug or a Bluetooth name change fires devicechange but
+    // the AudioContext is still happily running. We must NOT recover
+    // — that path used to rebuild the audio graph + re-acquire the
+    // mic, killed practice on iOS, and dropped a frame on desktop.
+    const ctx = { state: 'running' as const, resume: vi.fn(async () => {}) };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx);
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    expect(fx.recover).not.toHaveBeenCalled();
+    expect(ctx.resume).not.toHaveBeenCalled();
+  });
+
+  it('suspended ctx that resumes cleanly → resume() only, no recover', async () => {
+    let st: 'suspended' | 'running' = 'suspended';
+    const ctx = {
+      get state() {
+        return st;
+      },
+      resume: vi.fn(async () => {
+        st = 'running';
+      }),
+    };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx);
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    expect(ctx.resume).toHaveBeenCalledOnce();
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+
+  it('suspended ctx that stays suspended after resume → falls through to recover()', async () => {
+    const ctx = {
+      state: 'suspended' as 'suspended' | 'running',
+      resume: vi.fn(async () => {}), // doesn't change state
+    };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx);
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ctx.resume).toHaveBeenCalledOnce();
+    expect(fx.recover).toHaveBeenCalledTimes(1);
+  });
+
+  it('closed ctx → recover() without an intermediate resume()', async () => {
+    const ctx = { state: 'closed' as const, resume: vi.fn(async () => {}) };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx);
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    expect(ctx.resume).not.toHaveBeenCalled();
+    expect(fx.recover).toHaveBeenCalledTimes(1);
+  });
+
   it('warn-logs when recover() rejects (must not propagate)', async () => {
     const fx = makeLifecycleFixture({
       recover: vi.fn().mockRejectedValue(new Error('node closed')),
     });
-    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.setAudioCtx({ state: 'closed', resume: async () => {} });
     fx.install();
     fx.fireDeviceChange();
     fx.flushTimers(300);

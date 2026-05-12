@@ -64,10 +64,15 @@ describe('runRenderLate — MIDI beams', () => {
     expect(deps.drawMidiBeams).not.toHaveBeenCalled();
   });
 
-  it('skips beams when MIDI is disabled', () => {
-    const deps = makeDeps({ midiInput: { enabled: false } });
+  it('draws beams in free-play even when MIDI is off (mic-pipeline feeds activeNotes)', () => {
+    // Beams are no longer gated on midiInput.enabled — mic-pipeline
+    // populates midiState.activeNotes for detected pitches too, and
+    // the drawMidiBeams renderer self-exits when activeNotes is
+    // empty. So calling it unconditionally outside practice is safe
+    // + cheap and unlocks mic-only beam rendering.
+    const deps = makeDeps({ midiInput: { enabled: false }, practice: { enabled: false } });
     runRenderLate(100, deps);
-    expect(deps.drawMidiBeams).not.toHaveBeenCalled();
+    expect(deps.drawMidiBeams).toHaveBeenCalledWith(100);
   });
 });
 
@@ -135,41 +140,38 @@ describe('runRenderLate — particles', () => {
 // ─── MIDI chord + keyboard ──────────────────────────────────────────
 
 describe('runRenderLate — MIDI chord + keyboard', () => {
-  it('draws chord display when MIDI is enabled (regardless of practice)', () => {
+  it('always invokes the chord-display renderer (renderer self-exits when empty)', () => {
+    // Chord display is no longer gated on midiInput.enabled — mic
+    // arpeggios now feed the chord-window detector too. The
+    // drawMidiChordDisplay renderer checks lastChordName itself and
+    // returns immediately when there's nothing to show, so calling
+    // it on every frame is cheap and unifies the gating logic.
     const a = makeDeps({ midiInput: { enabled: true }, practice: { enabled: true } });
     runRenderLate(100, a);
     expect(a.drawMidiChordDisplay).toHaveBeenCalledWith(100);
 
-    const b = makeDeps({ midiInput: { enabled: true }, practice: { enabled: false } });
+    const b = makeDeps({ midiInput: { enabled: false }, practice: { enabled: false } });
     runRenderLate(100, b);
     expect(b.drawMidiChordDisplay).toHaveBeenCalledWith(100);
   });
 
-  it('skips chord display when MIDI is off', () => {
-    const deps = makeDeps({ midiInput: { enabled: false } });
-    runRenderLate(100, deps);
-    expect(deps.drawMidiChordDisplay).not.toHaveBeenCalled();
-  });
+  it('always invokes the virtual-keyboard renderer (loop only ticks during a session)', () => {
+    // Same rationale: render-loop.tick() returns early when
+    // state.running is false, so reaching runRenderLate already
+    // implies an active session. Keyboard renders unconditionally;
+    // mic-detected pitches, MIDI presses, and the practice ▼ hint
+    // all show on the same surface.
+    const off = makeDeps({ midiInput: { enabled: false }, practice: { enabled: false } });
+    runRenderLate(100, off);
+    expect(off.drawMidiKeyboard).toHaveBeenCalled();
 
-  it('draws virtual keyboard when MIDI is on', () => {
-    const deps = makeDeps({ midiInput: { enabled: true } });
-    runRenderLate(100, deps);
-    expect(deps.drawMidiKeyboard).toHaveBeenCalled();
-  });
+    const midi = makeDeps({ midiInput: { enabled: true } });
+    runRenderLate(100, midi);
+    expect(midi.drawMidiKeyboard).toHaveBeenCalled();
 
-  it('draws virtual keyboard during practice even when MIDI is off (▼ next-key marker)', () => {
-    // Mic-only practice used to lose the keyboard + ▼ marker; the
-    // kid had no visual reference for which key to press. Practice
-    // mode now forces the keyboard on regardless of MIDI state.
-    const deps = makeDeps({ midiInput: { enabled: false }, practice: { enabled: true } });
-    runRenderLate(100, deps);
-    expect(deps.drawMidiKeyboard).toHaveBeenCalled();
-  });
-
-  it('skips virtual keyboard outside practice when MIDI is off', () => {
-    const deps = makeDeps({ midiInput: { enabled: false }, practice: { enabled: false } });
-    runRenderLate(100, deps);
-    expect(deps.drawMidiKeyboard).not.toHaveBeenCalled();
+    const prac = makeDeps({ midiInput: { enabled: false }, practice: { enabled: true } });
+    runRenderLate(100, prac);
+    expect(prac.drawMidiKeyboard).toHaveBeenCalled();
   });
 });
 

@@ -254,6 +254,8 @@ export function boot(): void {
     remoteLogEnabled: REMOTE_LOG_ENABLED,
     getPractice: () => practice,
     getMidiInput: () => midiInput,
+    getMidiState: () => midiState,
+    cwOpts: CW_OPTS,
     getUpdatePractice: () => updatePractice,
     getScreen: _vp.getScreen,
     getDrawMidiBeams: () => drawMidiBeams,
