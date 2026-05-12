@@ -213,6 +213,13 @@ function makeFixture(
       showCursor: spies.showCursor,
       resetCursor: spies.resetCursor,
     },
+    midiState: {
+      activeNotes: new Map(),
+      sustainedNotes: new Set(),
+      recentOnsets: [] as Array<{ midi: number; timeMs: number }>,
+      lastChordName: '',
+      lastChordTimeMs: 0,
+    },
     Tone: tone,
     ensureToneInstruments: spies.ensureToneInstruments,
     scheduleCountInBeeps: spies.scheduleCountInBeeps,
@@ -416,6 +423,32 @@ describe('startPracticeSection — cursor + scroll', () => {
     // showCursor is called twice — once in the main flow, once inside
     // the audio-setup branch (guided/rhythm/listen all path through it).
     expect(fx.spies.showCursor.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('clears midiState residue (activeNotes / sustainedNotes / chord / recentOnsets)', async () => {
+    // Section-to-section transitions (Next button, Retry, song-panel
+    // re-select) used to keep prior keyboard state, so the virtual
+    // keyboard lit up keys from the previous run until the kid
+    // touched them. Parity with practice-flow.ts:204-205 (ptbQuit).
+    const fx = makeFixture();
+    const ms = fx.deps.midiState as unknown as {
+      activeNotes: Map<number, unknown>;
+      sustainedNotes: Set<number>;
+      recentOnsets: Array<{ midi: number; timeMs: number }>;
+      lastChordName: string;
+      lastChordTimeMs: number;
+    };
+    ms.activeNotes.set(60, { velocity: 100, onTimeMs: 0 });
+    ms.sustainedNotes.add(64);
+    ms.recentOnsets.push({ midi: 60, timeMs: 1 });
+    ms.lastChordName = 'Cmaj7';
+    ms.lastChordTimeMs = 1234;
+    await fx.start(0);
+    expect(ms.activeNotes.size).toBe(0);
+    expect(ms.sustainedNotes.size).toBe(0);
+    expect(ms.recentOnsets.length).toBe(0);
+    expect(ms.lastChordName).toBe('');
+    expect(ms.lastChordTimeMs).toBe(0);
   });
 
   it('resets the cursor BEFORE seeding to first note (clears prior scroll/iterator state)', async () => {

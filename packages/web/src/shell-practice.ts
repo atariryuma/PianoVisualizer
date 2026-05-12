@@ -54,6 +54,11 @@ export interface ShellPracticeDeps {
    *  has back-references the other way). */
   getOsmd: () => any;
   getMidiInput: () => any;
+  /** Live midiState — cleared at section start so a prior session's
+   *  keyboard residue (held keys, sustain, recent chord) doesn't bleed
+   *  into the new section. Getter thunk so the practice cluster can
+   *  be built before ShellMidiHandlers (which owns midiState). */
+  getMidiState: () => any;
   /** Hit-feedback + visual spawners. */
   showHitChip: (kind: string, text: string) => void;
   spawnBurst: any;
@@ -199,6 +204,32 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     practice,
     prefs,
     getCurrentSong: deps.getCurrentSong,
+    // Live midiState proxy — forward the four mutable refs +
+    // recentOnsets so start-practice-section can clear them at
+    // section-start parity with ptbQuit.
+    midiState: {
+      get activeNotes() {
+        return deps.getMidiState().activeNotes;
+      },
+      get sustainedNotes() {
+        return deps.getMidiState().sustainedNotes;
+      },
+      get recentOnsets() {
+        return deps.getMidiState().recentOnsets;
+      },
+      get lastChordName() {
+        return deps.getMidiState().lastChordName;
+      },
+      set lastChordName(v: string) {
+        deps.getMidiState().lastChordName = v;
+      },
+      get lastChordTimeMs() {
+        return deps.getMidiState().lastChordTimeMs;
+      },
+      set lastChordTimeMs(v: number) {
+        deps.getMidiState().lastChordTimeMs = v;
+      },
+    } as any,
     countInMs: () => COUNT_IN_MS,
     defaultAudioOffsetMs: deps.defaultAudioOffsetMs,
     remoteLogEnabled: deps.remoteLogEnabled,

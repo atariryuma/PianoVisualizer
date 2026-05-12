@@ -168,11 +168,26 @@ export interface StartSectionDom {
   osmdContainer: { classList: { add(c: string): void } };
 }
 
+/** Subset of midiState we clear at section start so a previous
+ *  session's keyboard residue (held keys, sustained-by-pedal keys,
+ *  cached chord name) doesn't bleed into the new section's visuals. */
+export interface StartSectionMidiState {
+  activeNotes: { clear(): void };
+  sustainedNotes: { clear(): void };
+  lastChordName: string;
+  lastChordTimeMs: number;
+  recentOnsets: { length: number };
+}
+
 export interface StartPracticeSectionDeps {
   state: StatePartial;
   practice: PracticePartial;
   prefs: PrefsPartial;
   getCurrentSong: () => CurrentSongRef | null;
+  /** Shared midiState — cleared at section start (parity with the
+   *  ptbQuit handler in practice-flow.ts:204-205) so a song switch
+   *  or section retry doesn't leave keys lit up from the prior run. */
+  midiState: StartSectionMidiState;
 
   // Tunables
   countInMs: () => number;
@@ -309,6 +324,17 @@ export function createStartPracticeSection(
     deps.practice.durationScoredCount = 0;
     deps.practice.pendingHolds = new Map();
     deps.practice.sectionCombo = 0;
+    // Clear midiState residue from the prior session. The ptbQuit
+    // handler in practice-flow.ts:204-205 does this on quit, but a
+    // direct section-to-section transition (Next button, Retry from
+    // result card, song switch from song panel) used to skip the
+    // clear — leaving the virtual keyboard showing keys lit from
+    // the previous session until the kid touched them.
+    deps.midiState.activeNotes.clear();
+    deps.midiState.sustainedNotes.clear();
+    deps.midiState.lastChordName = '';
+    deps.midiState.lastChordTimeMs = 0;
+    deps.midiState.recentOnsets.length = 0;
     deps.practice.sectionBestCombo = 0;
     deps.practice._completing = false;
     deps.practice._lastProgUpdate = 0;

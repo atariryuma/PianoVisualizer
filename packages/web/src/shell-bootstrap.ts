@@ -368,6 +368,7 @@ export function boot(): void {
     syncLayout: _vp.syncLayout,
     getScreen: _vp.getScreen,
     getMidiInput: () => midiInput,
+    getMidiState: () => midiState,
     getCurrentSong: () => currentSong,
     hideIntroHint: () => hideIntroHint(),
     setInputIndicator: () => _midi.setInputIndicator(),
