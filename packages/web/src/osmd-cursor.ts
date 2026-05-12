@@ -195,13 +195,16 @@ const MIN_SCROLL_DELTA_PX = 8;
 const ACTIVE_SCROLL_COOLDOWN_MS = 120;
 const SAME_SYSTEM_REVERSAL_COOLDOWN_MS = 450;
 const MAX_ACTIVE_SCROLL_DELTA_PX = 120;
-/** Where to land focusY on a "fire" event (first-scroll / system-change).
- *  0.33 ≈ upper-third of the panel — leaves context above (~33% of the
- *  panel for the previous system / measures) and lookahead below (~67%
- *  for the upcoming staff). Pure "edge-of-safe-band" landing (the
- *  default for within-system reveals) feels too top-pinned for the big
- *  events; centering at this ratio matches how human readers track. */
-const FIRE_LANDING_RATIO = 0.33;
+/** Where to anchor the active region's vertical center on a "fire"
+ *  event (first-scroll / system-change). 0.5 = exact panel center —
+ *  whatever-sized active region (short notehead, tall grand staff,
+ *  chord cluster with ledger lines) lands centered in the panel. This
+ *  is more flexible than a fixed-ratio focusY landing because it
+ *  adapts to the actual height of what's being shown: a single staff
+ *  system gets equal breathing room above and below; a tall grand
+ *  staff naturally uses more of the panel without clipping top or
+ *  bottom. */
+const FIRE_TARGET_RATIO = 0.5;
 
 type ScrollReason =
   | 'first-scroll'
@@ -549,15 +552,29 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   ): ScrollPlan {
     let delta = 0;
     if (reason === 'first-scroll' || reason === 'system-change') {
-      // Fire events deserve a centered landing: aim for focusY at the
-      // upper third of the panel so the user sees context above and
-      // lookahead below. Edge-of-safe-band lands cursor too close to the
-      // panel top, especially after big back-jumps (repeat / D.C.) where
-      // the user reports the score \"sticks to the top\". See
-      // FIRE_LANDING_RATIO.
+      // Center the active region in the panel. Works whether the active
+      // region is a single notehead, the cursor element spanning a staff,
+      // or a tall chord with ledger lines on both sides. Pure
+      // edge-of-safe-band landing (the within-system rule) sticks the
+      // cursor too close to the panel top after big jumps (first-scroll
+      // / repeat back-jumps); centering instead leaves breathing room
+      // above (context: previous system or empty start padding) and
+      // below (lookahead).
+      //
+      // If the active region is taller than the panel's safe band we
+      // could clip, so fall back to pinning activeTop to safeTop in that
+      // overflow case (preserves the top of the system, which is
+      // typically more important than the bottom for reading).
       const panelHeight = metrics.panelBottom - metrics.panelTop;
-      const targetY = metrics.panelTop + panelHeight * FIRE_LANDING_RATIO;
-      delta = metrics.focusY - targetY;
+      const safeHeight = metrics.safeBottom - metrics.safeTop;
+      const activeHeight = metrics.activeBottom - metrics.activeTop;
+      if (activeHeight > safeHeight) {
+        delta = metrics.activeTop - metrics.safeTop;
+      } else {
+        const targetMid = metrics.panelTop + panelHeight * FIRE_TARGET_RATIO;
+        const activeMid = (metrics.activeTop + metrics.activeBottom) / 2;
+        delta = activeMid - targetMid;
+      }
     } else {
       // Within-system reveals: minimum scroll to bring focusY back into
       // the safe band. The active region extends belowFocus pixels below
