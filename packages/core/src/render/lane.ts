@@ -321,49 +321,14 @@ export function drawPracticeLane(
       ctx.textBaseline = 'alphabetic';
     }
 
-    // Trill / tremolo / grace-burst badge — a `×N` chip in the
-    // top-right corner of the tile + faint chevron lines through the
-    // middle so the player reads the cluster as "trill, hit the same
-    // key N times" instead of seeing dozens of overlapping tiles
-    // stacked on identical (x, y) coordinates. The cluster step runs
-    // in section-notes.ts; this is the visual end.
-    const rc = n.replayCount ?? 1;
-    if (rc > 1 && !n.hit && !n.missed && noteH >= 14 && noteW >= 22) {
-      // Faint chevron strokes through the tile body — three small >>>
-      // shapes evenly spaced vertically. Skip when the tile is too
-      // small to show them legibly.
-      if (noteH >= 30) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-        ctx.lineWidth = 1.25;
-        const chevronCount = Math.min(3, Math.floor(noteH / 14));
-        const chevronStep = noteH / (chevronCount + 1);
-        const chevronW = Math.min(8, noteW * 0.35);
-        for (let c = 0; c < chevronCount; c++) {
-          const cy = tileY + chevronStep * (c + 1);
-          ctx.beginPath();
-          ctx.moveTo(x - chevronW / 2, cy - 2);
-          ctx.lineTo(x, cy);
-          ctx.lineTo(x - chevronW / 2, cy + 2);
-          ctx.stroke();
-        }
-      }
-      // ×N badge — top-right corner of the tile, rounded chip.
-      const badgeText = '×' + rc;
-      ctx.font = 'bold 10px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
-      const badgeW = ctx.measureText(badgeText).width + 8;
-      const badgeH = 13;
-      const badgeX = tileX + noteW - badgeW - 2;
-      const badgeY = tileY + 2;
-      ctx.fillStyle = 'rgba(255, 240, 130, 0.95)';
-      roundRect(ctx, badgeX, badgeY, badgeW, badgeH, badgeH / 2);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(60, 30, 0, 1)';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + badgeH / 2);
-      ctx.textBaseline = 'alphabetic';
-      ctx.textAlign = 'left';
-    }
+    // Trill / tremolo collapse — data-layer clustering in
+    // section-notes.ts already extended this tile's durMs to cover
+    // the full burst, so the tile renders as a slightly longer note
+    // and reads naturally as "hold/trill this key" without any
+    // explicit ×N badge. Earlier iterations painted a yellow chip
+    // + chevrons, but for a kids' app that's visual noise — the
+    // longer tile speaks for itself, and the practice cursor only
+    // requires one hit per cluster (forgiving for young learners).
   }
 
   // Current expected note ▼ indicator at the hit line

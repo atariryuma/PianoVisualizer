@@ -89,6 +89,7 @@ interface Fixture {
     showSectionBanner: ReturnType<typeof vi.fn>;
     cursorTo: ReturnType<typeof vi.fn>;
     showCursor: ReturnType<typeof vi.fn>;
+    resetCursor: ReturnType<typeof vi.fn>;
     ensureToneInstruments: ReturnType<typeof vi.fn>;
     scheduleCountInBeeps: ReturnType<typeof vi.fn>;
     scheduleSectionPlayback: ReturnType<typeof vi.fn>;
@@ -172,6 +173,7 @@ function makeFixture(
     showSectionBanner: vi.fn(),
     cursorTo: vi.fn(),
     showCursor: vi.fn(),
+    resetCursor: vi.fn(),
     ensureToneInstruments: vi.fn(),
     scheduleCountInBeeps: vi.fn(),
     scheduleSectionPlayback: vi.fn(),
@@ -206,7 +208,11 @@ function makeFixture(
     buildSectionNotes: spies.buildSectionNotes,
     buildFullSongNotes: spies.buildFullSongNotes,
     computeHandRanges: () => ({ lhMin: 36, lhMax: 60, rhMin: 60, rhMax: 84 }),
-    osmdAdapter: { cursorTo: spies.cursorTo, showCursor: spies.showCursor },
+    osmdAdapter: {
+      cursorTo: spies.cursorTo,
+      showCursor: spies.showCursor,
+      resetCursor: spies.resetCursor,
+    },
     Tone: tone,
     ensureToneInstruments: spies.ensureToneInstruments,
     scheduleCountInBeeps: spies.scheduleCountInBeeps,
@@ -410,6 +416,25 @@ describe('startPracticeSection — cursor + scroll', () => {
     // showCursor is called twice — once in the main flow, once inside
     // the audio-setup branch (guided/rhythm/listen all path through it).
     expect(fx.spies.showCursor.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('resets the cursor BEFORE seeding to first note (clears prior scroll/iterator state)', async () => {
+    // Regression: screenshot 2026-05-13 showed La Campanella's count-in
+    // ticking down while the OSMD panel was still scrolled mid-score
+    // (visible "ma sempre ben marcato il tema" annotation at the top
+    // staff system) — leftover from a previous section/song. The
+    // production code now calls osmdAdapter.resetCursor() before
+    // cursorTo() so the iterator + the scroll tracker both start
+    // from a known position.
+    const notes = [makeNote({ measureIdx: 3, inBarQuarters: 0 })];
+    const fx = makeFixture({ notes });
+    await fx.start(0);
+    expect(fx.spies.resetCursor).toHaveBeenCalledOnce();
+    // Order check: resetCursor must run before cursorTo so cursorTo
+    // doesn't get overwritten by a subsequent reset.
+    const resetOrder = fx.spies.resetCursor.mock.invocationCallOrder[0];
+    const cursorToOrder = fx.spies.cursorTo.mock.invocationCallOrder[0];
+    expect(resetOrder).toBeLessThan(cursorToOrder);
   });
 });
 

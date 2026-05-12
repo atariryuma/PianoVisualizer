@@ -114,6 +114,11 @@ export interface PrefsPartial {
 export interface StartSectionOsmdAdapter {
   cursorTo: (measureIdx: number, inBarQuarters: number) => void;
   showCursor: () => void;
+  /** Drop the iterator + scroll-tracker state so the section starts
+   *  from a clean position. Without this, a song switch / section
+   *  retry leaves the OSMD panel scrolled wherever the previous run
+   *  ended. */
+  resetCursor: () => void;
 }
 
 /** Subset of Tone surface we touch. */
@@ -340,6 +345,16 @@ export function createStartPracticeSection(
     }
 
     // ── OSMD cursor (auto-scrolls via cursorOptions.follow:true) ──
+    // Reset the iterator + scroll tracker FIRST so the cursor lands
+    // on the section's first note from a clean state. Without this,
+    // OSMD keeps `cursor.iterator` + the scroller's `scrollTop`
+    // wherever the previous section / song ended — so a song switch
+    // or "Try playing again" from mid-track would show the score
+    // page from the previous run while the count-in is ticking down
+    // for the new song's start. Reproduced in screenshot 2026-05-13
+    // (La Campanella starting at count-in "2" but panel showing
+    // measure 6+ with "ma sempre ben marcato il tema" dynamic).
+    deps.osmdAdapter.resetCursor();
     const firstNote = deps.practice.sectionNotes[0];
     if (firstNote) {
       deps.osmdAdapter.cursorTo(firstNote.measureIdx ?? 0, firstNote.inBarQuarters ?? 0);
