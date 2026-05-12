@@ -215,7 +215,11 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     if (!deps.practice.enabled) return;
     const layout = deps.getLayout();
     const osmdVisible = layout.osmdContainerVisible;
-    const kbReserve = deps.midiInput.enabled ? layout.kbHeight + layout.kbSafeBottom + 16 : 60;
+    // In practice the virtual keyboard is always drawn (it carries the
+    // ▼ next-key hint), so the lane must always reserve the keyboard's
+    // bottom strip regardless of midiInput.enabled. Without this the
+    // mic-only-practice lane drew over the bottom of the keyboard.
+    const kbReserve = layout.kbHeight + layout.kbSafeBottom + 16;
 
     // === Per-frame cursor sync ===
     if (osmdVisible && deps.practice.sectionNotes.length > 0) {

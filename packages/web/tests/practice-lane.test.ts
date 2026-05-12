@@ -296,11 +296,16 @@ describe('createPracticeLane — view + opts population', () => {
     expect(view.isBoss).toBe(true);
   });
 
-  it('forwards kbReserve based on midiInput state (60 vs 80+8+16)', () => {
+  it('forwards a constant kbReserve in practice (keyboard is always drawn during practice)', () => {
+    // Old policy: kbReserve switched between 60 (mic-only) and
+    // kbHeight+safeBottom+16 (MIDI-on). That left mic-only practice
+    // without a keyboard + ▼ next-key marker, so render-late now
+    // always draws the keyboard during practice. The lane must
+    // reserve the full keyboard strip regardless of midi state.
     const noMidi = makeDeps();
     createPracticeLane(noMidi).draw(100);
     const noMidiOpts = (noMidi.drawPracticeLane as ReturnType<typeof vi.fn>).mock.calls[0][3];
-    expect(noMidiOpts.kbReserve).toBe(60);
+    expect(noMidiOpts.kbReserve).toBe(80 + 8 + 16);
 
     const withMidi = makeDeps();
     withMidi.midiInput.enabled = true;

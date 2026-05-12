@@ -156,6 +156,21 @@ describe('runRenderLate — MIDI chord + keyboard', () => {
     runRenderLate(100, deps);
     expect(deps.drawMidiKeyboard).toHaveBeenCalled();
   });
+
+  it('draws virtual keyboard during practice even when MIDI is off (▼ next-key marker)', () => {
+    // Mic-only practice used to lose the keyboard + ▼ marker; the
+    // kid had no visual reference for which key to press. Practice
+    // mode now forces the keyboard on regardless of MIDI state.
+    const deps = makeDeps({ midiInput: { enabled: false }, practice: { enabled: true } });
+    runRenderLate(100, deps);
+    expect(deps.drawMidiKeyboard).toHaveBeenCalled();
+  });
+
+  it('skips virtual keyboard outside practice when MIDI is off', () => {
+    const deps = makeDeps({ midiInput: { enabled: false }, practice: { enabled: false } });
+    runRenderLate(100, deps);
+    expect(deps.drawMidiKeyboard).not.toHaveBeenCalled();
+  });
 });
 
 // ─── practice lane ──────────────────────────────────────────────────

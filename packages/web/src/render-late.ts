@@ -136,9 +136,12 @@ export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
   }
 
   // 5. Virtual keyboard at the bottom — visible whenever MIDI is in
-  //    use. In practice mode it provides a key-finding reference for
-  //    kids; the lane sizing reserves the bottom strip for it.
-  if (deps.midiInput.enabled) {
+  //    use OR during practice (the keyboard provides the next-key
+  //    "▼" hint marker that tells the kid which key to press, which
+  //    matters even when they're playing on an acoustic piano in
+  //    mic-only mode). Without the practice gate, mic-only practice
+  //    saw a lane with no key reference at all.
+  if (deps.midiInput.enabled || deps.practice.enabled) {
     deps.drawMidiKeyboard();
   }
 
