@@ -75,6 +75,41 @@ describe('buildKeyboardHintNotes', () => {
     expect(buildKeyboardHintNotes(makePractice({ enabled: true, mode: 'listen' }), 50)).toBeNull();
   });
 
+  it('returns null when sectionNotes is undefined (defensive — partially-wired proxy)', () => {
+    // Regression: the shell-midi-handlers proxy used to forward only
+    // `enabled`, leaving `mode` / `sectionNotes` / `currentNoteIdx`
+    // undefined. After Fix-2 widened drawMidiKeyboard's gate to fire
+    // during practice, this hit `undefined.length` every frame and
+    // flooded the console with FATAL TypeErrors (see server.log
+    // 2026-05-12 22:48 fullSong listen session). The function now
+    // guards against undefined sectionNotes.
+    const p = {
+      enabled: true,
+      mode: 'guided' as const,
+      currentNoteIdx: 0,
+      // sectionNotes intentionally undefined — mimics the bug condition.
+    } as unknown as Parameters<typeof buildKeyboardHintNotes>[0];
+    expect(buildKeyboardHintNotes(p, 50)).toBeNull();
+  });
+
+  it('returns null when sectionNotes is an empty array (no notes yet)', () => {
+    const p = makePractice({ enabled: true, mode: 'guided', sectionNotes: [] });
+    expect(buildKeyboardHintNotes(p, 50)).toBeNull();
+  });
+
+  it('treats undefined currentNoteIdx as 0 (defensive)', () => {
+    const p = {
+      enabled: true,
+      mode: 'guided' as const,
+      sectionNotes: [{ timeMs: 0, midi: 60, hand: 'R' }],
+      // currentNoteIdx intentionally undefined
+    } as unknown as Parameters<typeof buildKeyboardHintNotes>[0];
+    const m = buildKeyboardHintNotes(p, 50)!;
+    expect(m).not.toBeNull();
+    expect(m.size).toBe(1);
+    expect(m.get(60)?.primary).toBe(true);
+  });
+
   it('returns null when all upcoming notes are resolved', () => {
     const p = makePractice({
       enabled: true,

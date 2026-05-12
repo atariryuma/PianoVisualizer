@@ -43,8 +43,11 @@ export interface MidiBeamsDrawOptions {
 }
 
 /**
- * Paint the held-note beams. No-ops when no notes are held. Uses 'screen'
- * composite mode so overlapping beams brighten additively.
+ * Paint the held-note beams. No-ops when no notes are held or when
+ * either set ref is null/undefined (defensive against partially-wired
+ * shell proxies — Phase 0d shell layers occasionally hand in a thin
+ * read-only view that omits one of the sets). Uses 'screen' composite
+ * mode so overlapping beams brighten additively.
  */
 export function drawMidiBeams(
   ctx: CanvasRenderingContext2D,

@@ -69,7 +69,17 @@ export function buildKeyboardHintNotes(
 ): Map<number, KeyboardHint> | null {
   if (!practice.enabled || practice.mode === 'listen') return null;
   const notes = practice.sectionNotes;
-  let idx = practice.currentNoteIdx;
+  // Defensive: a partially-wired shell proxy that omits sectionNotes
+  // (or hands in an undefined value) would otherwise throw
+  // `Cannot read properties of undefined (reading 'length')` on every
+  // frame. The crash was observed in server.log 2026-05-12 22:48
+  // during fullSong listen mode — the shell-midi-handlers proxy
+  // forwarded only `enabled`, so `practice.mode` returned undefined,
+  // the 'listen' short-circuit above missed, and the code below blew
+  // up on `notes.length`. The proxy is fixed but this guard keeps the
+  // contract robust against future wireup regressions.
+  if (!notes || typeof (notes as { length?: number }).length !== 'number') return null;
+  let idx = practice.currentNoteIdx | 0;
   while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
   if (idx >= notes.length) return null;
   const cur = notes[idx];

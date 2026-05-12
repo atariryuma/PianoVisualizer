@@ -149,9 +149,30 @@ export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiH
   const _midiRender = MidiRender.createMidiRender({
     ctx,
     midiState,
+    // Proxy that forwards ALL fields MidiRenderPracticeRef declares —
+    // not just `enabled`. buildKeyboardHintNotes reads `mode`,
+    // `sectionNotes`, and `currentNoteIdx` too. The old enabled-only
+    // proxy used to be safe because drawMidiKeyboard was gated on
+    // `midiInput.enabled`; Fix-2 (commit 6a755da) widened the gate to
+    // include `practice.enabled`, which surfaced the latent crash —
+    // listen-mode fullSong sessions read `practice.mode` as undefined
+    // (proxy didn't forward it), bypassed the 'listen' short-circuit
+    // in buildKeyboardHintNotes, then crashed on the next
+    // `notes.length` access with `Cannot read properties of undefined
+    // (reading 'length')` once per frame. Live server.log 2026-05-12
+    // 22:48 captured the flood.
     practice: {
       get enabled() {
         return deps.getPractice().enabled;
+      },
+      get mode() {
+        return deps.getPractice().mode;
+      },
+      get sectionNotes() {
+        return deps.getPractice().sectionNotes;
+      },
+      get currentNoteIdx() {
+        return deps.getPractice().currentNoteIdx;
       },
     } as any,
     getLayout: () => ({
