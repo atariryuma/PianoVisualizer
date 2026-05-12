@@ -62,6 +62,11 @@ packages/web/.last-bench-report.md
 # Claude Code internal scheduled-task lock
 .claude/scheduled_tasks.lock
 
+# Per-machine Claude Code permissions / secrets — checked-in template
+# is `.claude/settings.local.json.example`; copy + edit on each dev
+# machine. Project-shared baseline lives in `.claude/settings.json`.
+.claude/settings.local.json
+
 # Ad-hoc PowerShell helpers from agent diagnostics (server.log greps,
 # .mxl inspectors, etc.). Created on the fly when triaging bugs.
 .claude_*.ps1

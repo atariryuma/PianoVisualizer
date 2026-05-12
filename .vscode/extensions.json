@@ -1,0 +1,10 @@
+{
+  "// purpose": "VSCode recommended extensions for Piano Visualizer. VSCode prompts each contributor to install these on first open; `.vscode/settings.json` is gitignored so personal preferences (font, theme) stay local. Keep this list minimal — only the extensions every dev needs to work productively on the typed TS + Vitest + lint stack.",
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "vitest.explorer",
+    "editorconfig.editorconfig",
+    "anthropic.claude-code"
+  ]
+}

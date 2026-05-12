@@ -49,9 +49,11 @@ piano-visualizer/
 │   └── plugins/
 │       └── capacitor-piano-midi/   # Native MIDI plugin (Swift + Kotlin)
 │
-├── gen_cert.ps1            # mkcert wrapper: cert.pfx (server) + rootCA.cer (iPad)
-├── https_server.ps1        # PowerShell HTTPS server (port 8443) — serves
-│                           # packages/web/dist by default
+├── gen_cert.ps1            # Windows mkcert wrapper → cert.pfx + rootCA.cer
+├── gen_cert.sh             # Mac / Linux mkcert wrapper (same outputs)
+├── https_server.ps1        # PowerShell HTTPS server (port 8443) — legacy
+├── https_server.mjs        # Node HTTPS server (port 8443) — cross-platform,
+│                           # used by `pnpm serve`
 │
 ├── docs/
 │   ├── PRIVACY.md          # Privacy policy (App Store + Play Store)
@@ -94,28 +96,49 @@ The 9000-line `piano-visualizer.html` monolith was split into a 3-file shell on
 ## Running the Application
 
 The app requires HTTPS for microphone access (especially on iPad/Safari) and for
-Service Worker registration. A PowerShell HTTPS server is provided. Cert
-generation is delegated to [mkcert](https://github.com/FiloSottile/mkcert) so
-Chrome accepts the cert for SW registration over both `localhost` and the LAN IP
-— the previous self-signed-leaf-with-`CA:TRUE` approach passed page navigation
-but failed Chrome's stricter SW SSL validator
+Service Worker registration. Cert generation is delegated to
+[mkcert](https://github.com/FiloSottile/mkcert) so Chrome accepts the cert for
+SW registration over both `localhost` and the LAN IP — the previous
+self-signed-leaf-with-`CA:TRUE` approach passed page navigation but failed
+Chrome's stricter SW SSL validator
 (`Failed to register a ServiceWorker ... An SSL certificate error occurred when fetching the script`).
 
-1. **One-time mkcert install**: `scoop install mkcert` (or
-   `choco install mkcert`, or download `mkcert.exe` from
-   [releases](https://github.com/FiloSottile/mkcert/releases) and put it on
-   PATH). Only needed once per dev machine.
-2. **Generate certs** with `powershell -File gen_cert.ps1` — auto-detects LAN
-   IP, runs `mkcert -install` (idempotent), outputs `cert.pfx` (server leaf,
-   password `piano123`) + `rootCA.cer` (mkcert root CA in DER, for iPad /
-   Android trust install). Re-run any time the LAN IP changes; the root stays
-   the same so devices that already trust `rootCA.cer` keep working.
-3. **Build** with `pnpm build:web` — produces `packages/web/dist/`.
-4. **Run server**: `powershell -File https_server.ps1` — serves
-   `packages/web/dist` on port 8443. (Or `pnpm serve` to do step 3 + 4.)
-5. **Access** at `https://localhost:8443/` (same machine — just works) or
-   `https://<host-ip>:8443/` (LAN — also works because mkcert's root is in the
-   OS trust store).
+Two interchangeable HTTPS servers ship in the repo. They read the same
+`cert.pfx` (password `piano123` or `$PIANO_CERT_PASS`), serve
+`packages/web/dist/` on port 8443, write to `server.log`, and block the same
+files (cert.pfx, gen_cert scripts, server.log) from the file tree:
+
+- `https_server.mjs` — Node.js / cross-platform. `pnpm serve` uses this.
+- `https_server.ps1` — PowerShell on Windows (legacy). `pnpm serve:ps`.
+
+### Setup (one-time per dev machine)
+
+#### Windows
+
+1. `scoop install mkcert` (or `choco install mkcert`, or download `mkcert.exe`
+   from [releases](https://github.com/FiloSottile/mkcert/releases) and put it on
+   PATH).
+2. `powershell -File gen_cert.ps1` — auto-detects LAN IP, runs `mkcert -install`
+   (idempotent), outputs `cert.pfx` + `rootCA.cer`.
+3. `pnpm serve` — runs `pnpm build:web` then `node https_server.mjs`.
+
+#### Mac / Linux
+
+1. `brew install mkcert nss` (the `nss` package covers Firefox / NSS trust
+   stores). On Linux: `brew install mkcert` + `sudo apt install libnss3-tools`.
+2. `./gen_cert.sh` — mirrors `gen_cert.ps1` (mkcert root install, LAN-IP
+   auto-detect, leaf cert + `rootCA.cer` export). Set `PIANO_CERT_PASS` to
+   override the default `piano123`.
+3. `pnpm serve` — same as Windows.
+
+Both flows produce `cert.pfx` (server leaf, gitignored) and `rootCA.cer` (mkcert
+root CA in DER, for iPad / Android trust install). Re-run the cert generator any
+time the LAN IP changes; the root stays the same so devices that already trust
+`rootCA.cer` keep working.
+
+Access at `https://localhost:8443/` (same machine — just works) or
+`https://<host-ip>:8443/` (LAN — also works because mkcert's root is in the OS
+trust store).
 
 ### iPad / strict-cert browser (Web MIDI Browser etc.) setup
 
@@ -134,13 +157,28 @@ automatically — no per-cert reinstall.
 For local development, any HTTPS-capable static server works once
 `packages/web/dist/` is built.
 
+### Agent / VSCode environment
+
+- **Node + pnpm**: pinned via `.nvmrc` (Node 22.20.0) and
+  `package.json#packageManager` (pnpm 9.12.3). `nvm use && corepack enable` on a
+  fresh machine.
+- **VSCode**: `.vscode/extensions.json` recommends ESLint, Prettier, Vitest
+  Explorer, EditorConfig, and Claude Code. VSCode prompts on first open;
+  `.vscode/settings.json` is gitignored so personal preferences stay local.
+- **Claude Code permissions**: the project-shared baseline is
+  `.claude/settings.json` (pnpm / node / git wildcards — safe). Per-machine
+  permissions live in `.claude/settings.local.json` which is **gitignored**;
+  Claude Code adds entries to it interactively on first use of a new tool.
+  Skills live in `.claude/skills/` (markdown, cross-platform).
+
 ## Building
 
 ```bash
 pnpm install
 pnpm build:web                 # → packages/web/dist/
 pnpm --filter @piano/web dev   # vite dev server (port 8443) for HMR
-pnpm serve                     # build:web + https_server.ps1 in one step
+pnpm serve                     # build:web + node https_server.mjs (any OS)
+pnpm serve:ps                  # build:web + PowerShell server (Windows legacy)
 
 pnpm build:mobile              # → packages/mobile/dist/ + cap sync
 pnpm cap:ios                   # opens iOS simulator
