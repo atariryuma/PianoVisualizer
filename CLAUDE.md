@@ -22,7 +22,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 **Engine + shell extraction status (2026-05-12)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 786 core
-tests, 1375 web tests, and the Vite web build.
+tests, 1464 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
