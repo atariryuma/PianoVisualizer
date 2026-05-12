@@ -852,4 +852,67 @@ describe('setCursorToNote', () => {
     expect(cursorEl.style.top).toBe('200px');
     expect(cursorEl.style.height).toBe('100px');
   });
+
+  // Regression-blocks the 2026-05-12 unbounded-height bug: OSMD doesn't
+  // reset style.height between cursor.update() calls, and the original
+  // stretchCursorToNotes added (extendUp + extendDown) to the
+  // previously-stretched height every call. Production log showed the
+  // cursor element growing from 130px to 12000+ over a 2-minute session.
+  // The fix stashes prev stretch deltas on dataset and undoes them
+  // before each new stretch.
+  it('does not accumulate stretch across repeated cursor.update() calls', () => {
+    const { cursorEl } = makeScorePanelFixture({ cursorTop: 300, panelHeight: 400 });
+    cursorEl.style.top = '300px';
+    cursorEl.style.height = '120px';
+
+    const noteG = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+    const notePath = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    ) as SVGPathElement;
+    // Notehead 50px above the cursor — extendUp=50 every call.
+    notePath.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: 250,
+          bottom: 270,
+          left: 50,
+          right: 60,
+          width: 10,
+          height: 20,
+          x: 50,
+          y: 250,
+          toJSON: () => ({}),
+        }) as DOMRect
+    );
+    noteG.appendChild(notePath);
+
+    const fake = makeFakeLib();
+    const osmd = makeOsmdWithCloneable({
+      cursorElement: cursorEl,
+      useGNotes: true,
+      notesUnderCursor: [{ getSVGGElement: () => noteG }],
+    });
+    const cursor = createOsmdCursor({ getOsmd: () => osmd, getLib: () => fake.Lib });
+
+    // First call: extendUp=50, height should be 120+50=170, top should be
+    // 300-50=250.
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+    expect(parseFloat(cursorEl.style.top)).toBeCloseTo(250, 0);
+    expect(parseFloat(cursorEl.style.height)).toBeCloseTo(170, 0);
+
+    // Second call with same notehead position: undo the previous 50px
+    // stretch first, then re-apply. Result should stay at the same 170px
+    // — NOT grow to 220, 270, … as the buggy version did.
+    cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+    expect(parseFloat(cursorEl.style.top)).toBeCloseTo(250, 0);
+    expect(parseFloat(cursorEl.style.height)).toBeCloseTo(170, 0);
+
+    // Many more calls — stretch must remain stable.
+    for (let i = 0; i < 50; i++) {
+      cursor.setCursorToNote({ measureIdx: 0, inBarQuarters: 0 });
+    }
+    expect(parseFloat(cursorEl.style.top)).toBeCloseTo(250, 0);
+    expect(parseFloat(cursorEl.style.height)).toBeCloseTo(170, 0);
+  });
 });

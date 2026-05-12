@@ -558,10 +558,32 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   /** Extend cursor element's top/height to cover noteheads that lie
    *  outside the staff-line bounds. Called after every cursor.update()
    *  so high ledger-line notes (e.g. Eb7) don't float above the blue
-   *  bar. OSMD resets style.top/height on the next update, so we
-   *  reapply every setCursorToNote call. */
+   *  bar.
+   *
+   *  Bug fix 2026-05-12: OSMD does NOT reset style.height between
+   *  updates (only style.top moves). The earlier version of this
+   *  function added (extendUp + extendDown) to the previously-stretched
+   *  height every call, so the cursor element grew unboundedly (130 →
+   *  12000+ px observed in server.log over a 2-minute practice). We now
+   *  stash the previous stretch deltas on dataset and undo them before
+   *  reading the "natural" height OSMD set. */
   function stretchCursorToNotes(cursor: OsmdCursorRef, ce: HTMLElement): void {
     if (!ce.style) return;
+
+    // Undo the previous stretch first so we read OSMD's untouched height.
+    const prevUp = parseFloat(ce.dataset?._stretchUp ?? '') || 0;
+    const prevDown = parseFloat(ce.dataset?._stretchDown ?? '') || 0;
+    if (prevUp > 0 || prevDown > 0) {
+      const curTopPx = parseFloat(ce.style.top) || 0;
+      const curHeightPx = parseFloat(ce.style.height) || 0;
+      if (prevUp > 0) ce.style.top = `${curTopPx + prevUp}px`;
+      ce.style.height = `${Math.max(0, curHeightPx - prevUp - prevDown)}px`;
+      if (ce.dataset) {
+        delete ce.dataset._stretchUp;
+        delete ce.dataset._stretchDown;
+      }
+    }
+
     const notes = getNotesUnderCursor(cursor);
     if (!notes.length) return;
 
@@ -586,6 +608,10 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     const cssHeightPx = parseFloat(ce.style.height) || ce.offsetHeight || 0;
     if (extendUp >= 1) ce.style.top = `${cssTopPx - extendUp}px`;
     ce.style.height = `${cssHeightPx + extendUp + extendDown}px`;
+    if (ce.dataset) {
+      if (extendUp >= 1) ce.dataset._stretchUp = String(extendUp);
+      if (extendDown >= 1) ce.dataset._stretchDown = String(extendDown);
+    }
   }
 
   function activeFocusY(rect: RectLike): number {
