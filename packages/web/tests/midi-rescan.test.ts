@@ -459,12 +459,24 @@ describe('startAutoRescan + ramped cadence', () => {
     expect(fx.rescan.isRescanRunning()).toBe(false);
   });
 
-  // [Bug fix 2026-05-09 — Issue 2 final polish] When isPaused()
-  // returns true the tick body must not run requestMIDIAccess
-  // (or any port enumeration); it should just reschedule itself.
-  it('isPaused=true makes the tick a no-op (no requestMIDIAccess) and reschedules', async () => {
+  // [Bug fix 2026-05-09 → revised 2026-05-12] isPaused()=true now
+  // means "still enumerate ports (so a mid-practice hot-plug is
+  // recoverable) but skip the periodic force-fresh MIDIAccess
+  // re-request because the heavy step is what caused dt=50 ms
+  // frame spikes during playback."
+  it('isPaused=true: tick still enumerates ports (cached MIDIAccess) and reschedules', async () => {
     let paused = true;
-    const requestSpy = vi.fn().mockResolvedValue({ inputs: new Map() });
+    const access: AccessHandle = { inputs: new Map() };
+    Object.defineProperty(access, 'onstatechange', {
+      set(v) {
+        access.fireStateChange = v;
+      },
+      get() {
+        return access.fireStateChange;
+      },
+      configurable: true,
+    });
+    const requestSpy = vi.fn().mockResolvedValue(access);
     const fx = makeFixture({
       isPaused: () => paused,
       navigator: {
@@ -474,20 +486,36 @@ describe('startAutoRescan + ramped cadence', () => {
       } as MidiRescanDeps['navigator'],
     });
     fx.rescan.startAutoRescan();
-    // First tick: paused → no-op + reschedule.
+    // First tick: paused → rescan(silent=true) still runs (so a
+    // mid-practice hot-plug attaches); the requestMIDIAccess call
+    // happens once via the cached ensureAccess.
     fx.flushTimer();
     await Promise.resolve();
-    expect(requestSpy).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(fx.rescan.isRescanRunning()).toBe(true);
 
-    // Unpause — next tick should resume normal behavior (and exit
-    // because midiInput is still empty/disabled, so the rescan
-    // returns false but we don't care; the point is requestMIDIAccess
-    // was now called).
+    // Hit the next force-tick window while still paused — the force
+    // would normally trigger ensureAccess(true) and re-request a
+    // fresh MIDIAccess. Under pause, that re-request should be
+    // skipped.
+    for (let i = 0; i < 6; i++) {
+      fx.flushTimer();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    // Only the initial cached request — never a forced re-request.
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+
     paused = false;
-    fx.flushTimer();
-    await Promise.resolve();
-    expect(requestSpy).toHaveBeenCalled();
+    // Drive enough ticks to hit the force window (every 5 ticks on
+    // non-Apple). At least one force-fresh re-request fires.
+    for (let i = 0; i < 6; i++) {
+      fx.flushTimer();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    expect(requestSpy.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('omitting isPaused (undefined) keeps the original behavior', async () => {

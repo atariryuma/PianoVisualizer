@@ -81,17 +81,17 @@ export interface MidiRescanDeps {
   setTimeout?: (cb: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
 
-  /** [Bug fix 2026-05-09 — Issue 2 final polish]
-   *  When this returns true, the auto-rescan tick is a no-op (no
-   *  force-fresh MIDIAccess, no port enumeration). Used to suppress
-   *  the rescan during active practice playback — the
-   *  `requestMIDIAccess({force: true})` call is synchronous-ish
-   *  inside Chrome and was the residual cause of dt=50 ms frame
-   *  spikes after the particle/shadowBlur fixes landed (server.log
-   *  03:52 window: 5 in-playback drops, all with particles=0-5,
-   *  coinciding with `[MIDI] auto-rescan tick=...` lines). The kid
-   *  is unlikely to plug in a MIDI keyboard mid-song; we resume
-   *  rescan when they're back on the song panel / title screen. */
+  /** [Bug fix 2026-05-09 → revised 2026-05-12]
+   *  When this returns true the auto-rescan tick STILL enumerates
+   *  ports (so a mid-practice hot-plug is recoverable) but skips the
+   *  periodic `ensureAccess(force=true)` call. The forced re-request
+   *  is the heavy step — it's synchronous-ish in Chrome and caused
+   *  dt=50 ms frame spikes during playback (server.log 03:52
+   *  window). The cheaper enumeration alone is enough for the
+   *  typical hot-plug case; we only lose the WMB
+   *  stale-enumeration-cache workaround during practice, which is
+   *  acceptable since the kid is unlikely to be re-pairing in WMB
+   *  mid-song. */
   isPaused?: () => boolean;
 }
 
@@ -283,24 +283,18 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
         stopAutoRescan();
         return;
       }
-      // [Bug fix 2026-05-09 — Issue 2 final polish] Skip the tick
-      // when the caller says we're paused (= practice.enabled in
-      // the legacy shell). Reschedule for the same cadence so we
-      // pick right back up when practice ends.
-      if (deps.isPaused?.()) {
-        scheduleNext();
-        return;
-      }
+      tickCount++;
       // Periodically force a fresh MIDIAccess. WMB caches port
       // enumeration and re-pairing doesn't always re-fire statechange.
       // @WMB-WORKAROUND: the fast-window 2-tick force is tuned for
       // WMB's stale-cache; on desktop browsers a 5-tick force is
-      // plenty.
-      tickCount++;
+      // plenty. Skipped entirely during practice playback because the
+      // synchronous-ish requestMIDIAccess re-request triggered
+      // dt=50 ms frame spikes (see isPaused JSDoc).
       const elapsedNow = now() - startedAt;
       const forceEvery = deps.isAppleMobile() && elapsedNow < 30_000 ? 2 : 5;
       // /@WMB-WORKAROUND
-      const force = tickCount % forceEvery === 0;
+      const force = !deps.isPaused?.() && tickCount % forceEvery === 0;
       if (force) {
         console.log('[MIDI] auto-rescan: forcing fresh MIDIAccess (tick=' + tickCount + ')');
         ensureAccess(true).catch(() => {});

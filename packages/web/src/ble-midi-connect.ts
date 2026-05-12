@@ -98,6 +98,11 @@ export interface BleMidiConnectDeps {
    *  `.value.buffer` straight to this. */
   parsePacket: (buf: ArrayBuffer) => void;
 
+  /** Web MIDI auto-rescan poller — kicked on GATT disconnect so a
+   *  USB MIDI keyboard plugged in after the BLE drop auto-attaches.
+   *  Stops itself once anything re-attaches. */
+  startMidiAutoRescan: () => void;
+
   /** Bilingual translator. Reads three keys: alertWebBluetoothUnsupported,
    *  alertBleConnectFailedFmt, midiConnectedFmt. */
   t: (key: string, vars?: Record<string, string>) => string;
@@ -195,6 +200,10 @@ export function createBleMidiConnect(deps: BleMidiConnectDeps): BleMidiConnect {
         }
         deps.bleMidi._disconnectHandler = null;
         console.log('[BLE-MIDI] disconnected');
+        // Restart Web MIDI auto-rescan so a fallback USB keyboard
+        // (or a Web MIDI Browser BLE pair re-established outside this
+        // page) auto-attaches without the user touching the settings.
+        deps.startMidiAutoRescan();
       };
       deps.bleMidi._disconnectHandler = onGattDisconnect;
       device.addEventListener('gattserverdisconnected', onGattDisconnect);

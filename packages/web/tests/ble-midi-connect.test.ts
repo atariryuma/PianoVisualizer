@@ -116,6 +116,7 @@ interface Fixture {
   refreshIntroHint: ReturnType<typeof vi.fn>;
   suspendMic: ReturnType<typeof vi.fn>;
   resumeMic: ReturnType<typeof vi.fn>;
+  startMidiAutoRescan: ReturnType<typeof vi.fn>;
   bleMidi: BleMidiConnectDeps['bleMidi'];
   midiInput: BleMidiConnectDeps['midiInput'];
   state: BleMidiConnectDeps['state'];
@@ -130,6 +131,7 @@ function makeFixture(over: Partial<BleMidiConnectDeps> = {}): Fixture {
   const refreshIntroHint = vi.fn();
   const suspendMic = vi.fn();
   const resumeMic = vi.fn();
+  const startMidiAutoRescan = vi.fn();
   const bleMidi: BleMidiConnectDeps['bleMidi'] = {
     device: null,
     characteristic: null,
@@ -155,6 +157,7 @@ function makeFixture(over: Partial<BleMidiConnectDeps> = {}): Fixture {
     showHitChip,
     micMeter: null,
     parsePacket,
+    startMidiAutoRescan,
     t: vi.fn((key, vars) => (vars ? `T(${key},${vars.v})` : `T(${key})`)),
     alert,
     navigator: {
@@ -176,6 +179,7 @@ function makeFixture(over: Partial<BleMidiConnectDeps> = {}): Fixture {
     refreshIntroHint,
     suspendMic,
     resumeMic,
+    startMidiAutoRescan,
     bleMidi,
     midiInput,
     state,
@@ -313,9 +317,12 @@ describe('GATT disconnect handler', () => {
     expect(fx.resumeMic).toHaveBeenCalledOnce();
     expect(device.removeEventListener).toHaveBeenCalled();
     expect(fx.bleMidi._disconnectHandler).toBeNull();
+    // GATT drop also kicks the Web MIDI rescan poller so a USB
+    // fallback (or a WMB BLE re-pair) auto-attaches.
+    expect(fx.startMidiAutoRescan).toHaveBeenCalledOnce();
   });
 
-  it('does NOT resume mic when audio is gone', async () => {
+  it('does NOT resume mic when audio is gone (but still kicks rescan)', async () => {
     const fx = makeFixture();
     fx.deps.hasAudioCtx = () => false;
     const { device, disconnectListeners } = makeFakeDevice();
@@ -324,9 +331,10 @@ describe('GATT disconnect handler', () => {
     fx.state.micSuspended = true;
     disconnectListeners[0]();
     expect(fx.resumeMic).not.toHaveBeenCalled();
+    expect(fx.startMidiAutoRescan).toHaveBeenCalledOnce();
   });
 
-  it('does NOT resume mic when mic was never suspended', async () => {
+  it('does NOT resume mic when mic was never suspended (but still kicks rescan)', async () => {
     const fx = makeFixture();
     const { device, disconnectListeners } = makeFakeDevice();
     fx.setRequestDevice(vi.fn().mockResolvedValue(device));
@@ -334,6 +342,7 @@ describe('GATT disconnect handler', () => {
     // Don't flip state.micSuspended.
     disconnectListeners[0]();
     expect(fx.resumeMic).not.toHaveBeenCalled();
+    expect(fx.startMidiAutoRescan).toHaveBeenCalledOnce();
   });
 });
 

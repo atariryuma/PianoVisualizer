@@ -251,13 +251,14 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     if (deps.hasAudioCtx() && deps.state.micSuspended) {
       deps.resumeMic();
     }
-    // Restart silent polling so a hot-replug picks up automatically.
-    // Handles "browser sees keyboard but app dropped it" — the user
-    // doesn't need to know what happened, the next 2.5 s tick
-    // reconnects.
-    if (deps.state.micPermissionFailed || deps.state.micIntentionallySkipped) {
-      deps.startMidiAutoRescan();
-    }
+    // Always restart silent polling — the previous policy only kicked
+    // it back on when the mic was unavailable, but that left the
+    // happy-mic case dependent on the cached MIDIAccess's
+    // onstatechange, which is unreliable on Web MIDI Browser /
+    // WKWebView and occasionally on USB hub re-enumeration. The
+    // poller stops itself the moment anything re-attaches (or when
+    // navigator.requestMIDIAccess vanishes), so the cost is bounded.
+    deps.startMidiAutoRescan();
   }
 
   async function verifyAlive(access: MidiAccessRef | null): Promise<boolean> {

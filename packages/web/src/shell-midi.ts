@@ -264,6 +264,7 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     // then groups of (timestamp, status?, data...). Timestamps ignored.
     parsePacket: (buf: any) =>
       BleMidiParser.parseBleMidiPacket(buf, (s, a, b) => _dispatch.dispatch(s, a, b)),
+    startMidiAutoRescan: () => _rescan.startAutoRescan(),
     t,
     alert: (msg: any) => alert(msg),
     navigator: nav,

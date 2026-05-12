@@ -340,7 +340,12 @@ describe('detach', () => {
     expect(mocks.resumeMic).not.toHaveBeenCalled();
   });
 
-  it('restarts auto-rescan when mic permission was previously skipped', () => {
+  it('always restarts auto-rescan on detach (regardless of mic state)', () => {
+    // Previous policy only kicked the poller back on when the mic
+    // had failed or been skipped; happy-mic detaches relied on the
+    // cached MIDIAccess's onstatechange, which is unreliable on
+    // Web MIDI Browser / WKWebView. New policy: always poll, the
+    // poller self-stops on re-attach.
     const port: MidiPortRef = { name: 'r' };
     const { ports, midiInput, state, mocks } = makePorts();
     midiInput.port = port;
@@ -349,12 +354,12 @@ describe('detach', () => {
     expect(mocks.startMidiAutoRescan).toHaveBeenCalledOnce();
   });
 
-  it('does NOT restart auto-rescan when mic is the active fallback', () => {
+  it('restarts auto-rescan on detach even when mic is the healthy fallback', () => {
     const port: MidiPortRef = { name: 'r' };
     const { ports, midiInput, mocks } = makePorts();
     midiInput.port = port;
     ports.detach(port);
-    expect(mocks.startMidiAutoRescan).not.toHaveBeenCalled();
+    expect(mocks.startMidiAutoRescan).toHaveBeenCalledOnce();
   });
 
   it('handles a BLE marker (port without onmidimessage) gracefully', () => {
