@@ -338,8 +338,14 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     const { unlockedTempo, unlockedSecKey, streakDays } = unlocks;
     if (unlockedTempo != null) sp.unlockedTempos[unlockedTempo] = true;
     if (unlockedSecKey != null) {
-      const nextSec = deps.sectionIds[deps.sectionIds.indexOf(sec.id) + 1];
-      sp.unlockedSections[nextSec] = true;
+      // Defensive: sec.id might not be in sectionIds when the song has
+      // been imported with non-standard section IDs (auto-section may
+      // emit names outside the A1/B/A2 default). indexOf returns -1,
+      // -1 + 1 = 0, and we'd silently flip sectionIds[0] ('A1') instead
+      // of the truly-next section. Verify the lookup before writing.
+      const curIdx = deps.sectionIds.indexOf(sec.id);
+      const nextSec = curIdx >= 0 ? deps.sectionIds[curIdx + 1] : undefined;
+      if (nextSec) sp.unlockedSections[nextSec] = true;
     }
 
     if (!sp.history[sec.id]) sp.history[sec.id] = [];
