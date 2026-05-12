@@ -301,12 +301,21 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       /* cursor.update math can throw on grace notes / unformatted
        * notes; the visual stays at the last successful place. */
     }
-    // Stretch cursor element to cover any noteheads outside the staff
-    // lines (ledger lines above/below). OSMD sizes the cursor to span
-    // only the staff, so high notes like Eb7 render above the bar —
-    // visually disconnected from the highlight.
-    const cursorEl = osmd.cursor.cursorElement;
-    if (cursorEl) stretchCursorToNotes(osmd.cursor, cursorEl);
+    // NOTE 2026-05-12: a previous revision had a `stretchCursorToNotes`
+    // call here that extended cursorElement.style.{top,height} to cover
+    // ledger-line notes (e.g. Eb7) that fall outside the staff. Two
+    // failed iterations both leaked: OSMD resets style.top on each
+    // cursor.update() but NOT style.height, so any undo strategy that
+    // touched both ended up either over-correcting top (slow drift) or
+    // under-correcting height (unbounded growth — production log showed
+    // cssH climbing 130 → 12061px over a 2-minute session, after which
+    // the huge cursor element visually pushed scroll math out of band).
+    // The visual disconnect for ledger notes is mild (the highlight
+    // remains clearly visible — only the blue bar fails to enclose
+    // them) and the scroll math already unions noteheads into
+    // activeRect via computeActiveCursorRect, so the score still scrolls
+    // them into view. Net: drop the stretch entirely in favor of OSMD's
+    // stable natural cursor sizing.
     ensureCursorVisible(osmd);
     highlightCurrentNotes();
     // [DIAG-CURSORPOS] Verify cursor visual lines up with the staff.
@@ -553,65 +562,6 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       absDelta: Math.abs(nextScrollTop - scroller.scrollTop),
       nextScrollTop,
     };
-  }
-
-  /** Extend cursor element's top/height to cover noteheads that lie
-   *  outside the staff-line bounds. Called after every cursor.update()
-   *  so high ledger-line notes (e.g. Eb7) don't float above the blue
-   *  bar.
-   *
-   *  Bug fix 2026-05-12: OSMD does NOT reset style.height between
-   *  updates (only style.top moves). The earlier version of this
-   *  function added (extendUp + extendDown) to the previously-stretched
-   *  height every call, so the cursor element grew unboundedly (130 →
-   *  12000+ px observed in server.log over a 2-minute practice). We now
-   *  stash the previous stretch deltas on dataset and undo them before
-   *  reading the "natural" height OSMD set. */
-  function stretchCursorToNotes(cursor: OsmdCursorRef, ce: HTMLElement): void {
-    if (!ce.style) return;
-
-    // Undo the previous stretch first so we read OSMD's untouched height.
-    const prevUp = parseFloat(ce.dataset?._stretchUp ?? '') || 0;
-    const prevDown = parseFloat(ce.dataset?._stretchDown ?? '') || 0;
-    if (prevUp > 0 || prevDown > 0) {
-      const curTopPx = parseFloat(ce.style.top) || 0;
-      const curHeightPx = parseFloat(ce.style.height) || 0;
-      if (prevUp > 0) ce.style.top = `${curTopPx + prevUp}px`;
-      ce.style.height = `${Math.max(0, curHeightPx - prevUp - prevDown)}px`;
-      if (ce.dataset) {
-        delete ce.dataset._stretchUp;
-        delete ce.dataset._stretchDown;
-      }
-    }
-
-    const notes = getNotesUnderCursor(cursor);
-    if (!notes.length) return;
-
-    let noteTop = Infinity;
-    let noteBottom = -Infinity;
-    for (const note of notes) {
-      const r = noteToViewportRect(note);
-      if (!r) continue;
-      noteTop = Math.min(noteTop, r.top);
-      noteBottom = Math.max(noteBottom, r.bottom);
-    }
-    if (!Number.isFinite(noteTop)) return;
-
-    const ceRect = safeRect(ce);
-    if (!ceRect) return;
-
-    const extendUp = Math.max(0, Math.round(ceRect.top - noteTop));
-    const extendDown = Math.max(0, Math.round(noteBottom - ceRect.bottom));
-    if (extendUp < 1 && extendDown < 1) return;
-
-    const cssTopPx = parseFloat(ce.style.top) || 0;
-    const cssHeightPx = parseFloat(ce.style.height) || ce.offsetHeight || 0;
-    if (extendUp >= 1) ce.style.top = `${cssTopPx - extendUp}px`;
-    ce.style.height = `${cssHeightPx + extendUp + extendDown}px`;
-    if (ce.dataset) {
-      if (extendUp >= 1) ce.dataset._stretchUp = String(extendUp);
-      if (extendDown >= 1) ce.dataset._stretchDown = String(extendDown);
-    }
   }
 
   function activeFocusY(rect: RectLike): number {
