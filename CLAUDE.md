@@ -211,6 +211,46 @@ mic detection. Support is **not uniform across platforms**:
   available to Safari. Don't pair via iOS Settings → Bluetooth either; Roland's
   docs say to pair through the music app.
 
+### MIDI pipeline invariants (2026-05-12)
+
+The MIDI cluster was reshaped on 2026-05-12 to keep the connection + reflection
+flow platform-uniform and predictable. The contracts the cluster now relies on:
+
+- **`sysex:true` only on Apple mobile.** Boot-time `requestMIDIAccess` is
+  `{sysex:false}` everywhere except iPad/iPhone Web MIDI Browser, where BLE-MIDI
+  requires sysex. This stops Chrome from surfacing a SysEx permission prompt on
+  every page load.
+- **WMB quirk-pass (`state!=='connected'` loose attach) is Apple-mobile only.**
+  On desktop / Android the spec-strict pass is enough; a loose attach there
+  could grab transient pre-init ports (IAC Driver mid- bringup, USB still
+  negotiating descriptors).
+- **Visual reflection runs without a session.** `onMidiNoteOn` always updates
+  `midiState.activeNotes` + the chord-window reducer so the on-screen keyboard
+  lights up even before ▶ Start. Flow / combo / particle bursts / quality
+  histories stay gated on `state.running`.
+- **Mic muting is `enabled`-only.** Both `mic-pipeline.ts` and
+  `game-state-update.ts` mute mic-driven visuals + history pushes for the entire
+  duration a MIDI port is attached. The previous "MIDI active within 2 s" window
+  let mic data leak back in during silent gaps between presses.
+- **Reconnect is always one-shot polling.** `detach` (Web MIDI) and
+  `onGattDisconnect` (BLE-MIDI) both `startMidiAutoRescan()` so a hot-replug
+  recovers without user action. The poller self-stops the moment anything
+  re-attaches.
+- **Auto-rescan during practice still enumerates.** `isPaused()=true` (=
+  `practice.enabled`) skips only the periodic `ensureAccess(true)` call (=
+  force-fresh `MIDIAccess` re-request, the source of dt=50 ms frame spikes per
+  server.log 03:52). Plain enumeration via the cached access still runs so
+  mid-practice hot-plugs recover.
+- **`attach()` respects BLE.** If `bleMidi.connected`, attach skips so a
+  parallel Web MIDI port can't silently overwrite the BlePortMarker.
+- **`attach()` binds the dispatcher before flipping `enabled`.** Mic pipeline
+  mutes itself the instant `enabled` flips; the old ordering left a tiny window
+  where a note-on between `enabled=true` and `onmidimessage=handler` was
+  silently dropped.
+- **Practice cursor needs `state.running` AND `practice.enabled`.** A press
+  while practice is enabled but the session is paused (settings panel,
+  post-section result card) no longer phantom-advances the cursor.
+
 ## Architecture
 
 ### Audio Pipeline

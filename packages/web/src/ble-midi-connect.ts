@@ -78,9 +78,12 @@ export interface BleMidiConnectDeps {
   bleMidi: BleMidiState;
   midiInput: MidiPortsInputRef;
 
-  /** Audio context guards — same shape as midi-ports.ts. */
+  /** Audio context guards — same shape as midi-ports.ts.
+   *  `state.micSuspended` is read-only here; the production audio
+   *  shell flips it via suspendMic / resumeMic, not via this
+   *  module's deps. */
   hasAudioCtx: () => boolean;
-  state: { micSuspended: boolean };
+  state: { readonly micSuspended: boolean };
   suspendMic: () => void;
   resumeMic: () => void;
 

@@ -164,6 +164,12 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     t,
   });
 
+  // BLE connect / GATT-disconnect handler only ever READS
+  // state.micSuspended. Exposing a getter (rather than the previous
+  // bidirectional get/set wrapper) makes that contract obvious; the
+  // production state ref is updated by suspendMic/resumeMic in
+  // shell-audio.ts, not by ble-midi-connect.
+
   /** @returns {boolean} */
   function attachMidiPort(port: any): boolean {
     return _ports.attach(port);
@@ -250,9 +256,6 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     state: {
       get micSuspended() {
         return state.micSuspended;
-      },
-      set micSuspended(v: any) {
-        state.micSuspended = v;
       },
     },
     suspendMic: deps.suspendMic,
