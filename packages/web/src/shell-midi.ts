@@ -129,6 +129,7 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
   const _dispatch = MidiDispatch.createMidiDispatch({
     midiInput,
     practice,
+    isSessionRunning: () => !!state.running,
     pulseMidiBadge: () => _indicator.pulseBadge(),
     onMidiNoteOn: (m: number, v: number) => deps.getOnMidiNoteOn()(m, v),
     onMidiNoteOff: (m: number) => deps.getOnMidiNoteOff()(m),

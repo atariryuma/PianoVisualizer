@@ -39,6 +39,9 @@ function makeDispatch(
   const deps: MidiDispatchDeps = {
     midiInput: { lastEventTime: 0 },
     practice: { enabled: false },
+    // Default true — most existing tests assert "session is running"
+    // by implication. The gated tests below override it to false.
+    isSessionRunning: () => true,
     pulseMidiBadge: m.pulseMidiBadge,
     onMidiNoteOn: m.onMidiNoteOn,
     onMidiNoteOff: m.onMidiNoteOff,
@@ -105,7 +108,7 @@ describe('dispatch — command routing', () => {
     expect(deps.midiInput.lastEventTime).toBe(1234);
   });
 
-  it('practice + noteOn → matchNoteOnset(midi, true)', () => {
+  it('practice + running session + noteOn → matchNoteOnset(midi, true)', () => {
     const { d, mocks } = makeDispatch({ practice: { enabled: true } });
     d.dispatch(0x90, 64, 100);
     expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true);
@@ -114,6 +117,22 @@ describe('dispatch — command routing', () => {
   it('!practice + noteOn → no matchNoteOnset', () => {
     const { d, mocks } = makeDispatch();
     d.dispatch(0x90, 64, 100);
+    expect(mocks.matchNoteOnset).not.toHaveBeenCalled();
+  });
+
+  it('practice + session NOT running + noteOn → no matchNoteOnset (cursor stays put)', () => {
+    // Practice is enabled but the session is paused (e.g. user is on
+    // the settings panel or the post-section result card). A
+    // physical key press should NOT phantom-advance the cursor.
+    const { d, mocks } = makeDispatch({
+      practice: { enabled: true },
+      isSessionRunning: () => false,
+    });
+    d.dispatch(0x90, 64, 100);
+    // Note-on visuals + badge still fire (we want the user to see
+    // their press), only the practice-match call is suppressed.
+    expect(mocks.onMidiNoteOn).toHaveBeenCalledWith(64, 100);
+    expect(mocks.pulseMidiBadge).toHaveBeenCalledOnce();
     expect(mocks.matchNoteOnset).not.toHaveBeenCalled();
   });
 });

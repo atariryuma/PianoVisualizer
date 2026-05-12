@@ -183,19 +183,20 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
       console.log('[MIDI] skip virtual/system port: ' + port.name);
       return false;
     }
+    // BLE-MIDI owns the midiInput slot when connected. A parallel
+    // Web MIDI attach (e.g. a post-BLE-connect rescan that surfaced
+    // a USB device, or onstatechange firing during the GATT handshake)
+    // would otherwise overwrite midiInput.port with a Web MIDI port,
+    // drop the BlePortMarker, and leave BLE message routing alive but
+    // unreachable from the indicator / verifyAlive path.
+    if (deps.getBleMidi().connected) {
+      console.log('[MIDI] skip attach — BLE-MIDI already connected: ' + port.name);
+      return false;
+    }
     const wasMidiOn = deps.midiInput.enabled;
     const prev = deps.midiInput.port;
     if (prev && 'onmidimessage' in prev) {
       (prev as MidiPortRef).onmidimessage = null;
-    }
-    deps.midiInput.port = port;
-    deps.midiInput.enabled = true;
-    deps.midiInput.lastEventTime = 0;
-
-    // v13: MIDI is the new authoritative source — drop the mic so the
-    // privacy LED goes off and YIN/AGC/onset stop chewing CPU.
-    if (!wasMidiOn && deps.hasAudioCtx() && !deps.state.micSuspended) {
-      deps.suspendMic();
     }
 
     // @WMB-WORKAROUND (Phase 0d): explicit port.open() before the
@@ -218,7 +219,24 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     }
     // /@WMB-WORKAROUND
 
+    // Wire the dispatcher BEFORE flipping midiInput.enabled. Mic
+    // pipeline mutes itself the instant `enabled` is true; without
+    // this ordering, a note-on landing in the gap between
+    // `enabled=true` and `onmidimessage=handler` would be silently
+    // dropped (mic ignores it because MIDI is "on", and the MIDI
+    // dispatcher isn't bound yet).
     port.onmidimessage = deps.onMidiMessageHandler;
+
+    deps.midiInput.port = port;
+    deps.midiInput.enabled = true;
+    deps.midiInput.lastEventTime = 0;
+
+    // v13: MIDI is the new authoritative source — drop the mic so the
+    // privacy LED goes off and YIN/AGC/onset stop chewing CPU.
+    if (!wasMidiOn && deps.hasAudioCtx() && !deps.state.micSuspended) {
+      deps.suspendMic();
+    }
+
     deps.setInputIndicator();
     deps.refreshIntroHint?.();
     deps.micMeter?.classList.remove('visible');

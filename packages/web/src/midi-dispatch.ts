@@ -38,6 +38,13 @@ export interface MidiDispatchDeps {
   midiInput: MidiDispatchInputRef;
   practice: MidiDispatchPracticeRef;
 
+  /** Read at dispatch time. Practice cursor advancement is gated on
+   *  BOTH `practice.enabled` AND a running session — without this,
+   *  a press while practice is enabled but the user has paused into
+   *  the settings panel / section result card would phantom-advance
+   *  the cursor. */
+  isSessionRunning: () => boolean;
+
   /** Visual heartbeat — flashes the MIDI badge briefly. */
   pulseMidiBadge: () => void;
 
@@ -102,7 +109,9 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
     if (cmd === 0x90 && b > 0) {
       deps.pulseMidiBadge();
       deps.onMidiNoteOn(a, b);
-      if (deps.practice.enabled) deps.matchNoteOnset(a, true);
+      if (deps.practice.enabled && deps.isSessionRunning()) {
+        deps.matchNoteOnset(a, true);
+      }
     } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
       // 0x80 explicit note-off OR 0x90 with velocity 0 (running-status
       // note-off — common on cheaper keyboards).

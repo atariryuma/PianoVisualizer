@@ -198,6 +198,20 @@ describe('attach', () => {
     expect(mocks.setInputIndicator).not.toHaveBeenCalled();
   });
 
+  it('skips attach when BLE-MIDI is already connected (BLE owns the slot)', () => {
+    // A post-BLE-connect Web MIDI rescan must NOT silently overwrite
+    // the BlePortMarker — that would orphan the BLE session and
+    // leave the indicator in an inconsistent state.
+    const { ports, mocks, midiInput, bleMidi } = makePorts();
+    bleMidi.connected = true;
+    const port: MidiPortRef = { name: 'usb-keyboard', state: 'connected' };
+    const result = ports.attach(port);
+    expect(result).toBe(false);
+    expect(midiInput.port).not.toBe(port);
+    expect(mocks.suspendMic).not.toHaveBeenCalled();
+    expect(mocks.setInputIndicator).not.toHaveBeenCalled();
+  });
+
   it('flips midiInput state on a fresh port', () => {
     const port: MidiPortRef = { name: 'Roland', state: 'connected' };
     const { ports, midiInput } = makePorts();
