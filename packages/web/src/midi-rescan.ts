@@ -140,30 +140,40 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
       throw new Error('Web MIDI API not available');
     }
 
-    // Try sysex:true first (Web MIDI Browser exposes BLE-MIDI only
-    // with sysex granted). Fall back to sysex:false on rejection.
-    // Surface both failure reasons so debugging is possible.
-    let sysexErr: Error | null = null;
+    // sysex policy:
+    //   - Apple mobile (iPad / iPhone Web MIDI Browser): try sysex:true
+    //     first because WMB only exposes BLE-MIDI when sysex is granted.
+    //     Fall back to sysex:false on rejection so a sysex-denied WMB
+    //     session can still see USB-class devices.
+    //   - Desktop Chrome / Android Chrome: sysex:false only. We don't
+    //     need SysEx for note + CC events, and asking sysex:true here
+    //     would surface an unrelated permission prompt (the "Allow MIDI
+    //     devices with SysEx?" dialog) on every page load.
     let access: MidiAccessRef;
-    try {
-      access = await deps.navigator.requestMIDIAccess({ sysex: true });
-    } catch (e) {
-      sysexErr = e as Error;
+    if (deps.isAppleMobile()) {
+      let sysexErr: Error | null = null;
       try {
-        access = await deps.navigator.requestMIDIAccess({ sysex: false });
-      } catch (e2) {
-        const err2 = e2 as Error;
-        const reason =
-          '[sysex:true] ' +
-          (sysexErr.name || 'Err') +
-          ': ' +
-          sysexErr.message +
-          ' / [sysex:false] ' +
-          (err2.name || 'Err') +
-          ': ' +
-          err2.message;
-        throw new Error(reason);
+        access = await deps.navigator.requestMIDIAccess({ sysex: true });
+      } catch (e) {
+        sysexErr = e as Error;
+        try {
+          access = await deps.navigator.requestMIDIAccess({ sysex: false });
+        } catch (e2) {
+          const err2 = e2 as Error;
+          const reason =
+            '[sysex:true] ' +
+            (sysexErr.name || 'Err') +
+            ': ' +
+            sysexErr.message +
+            ' / [sysex:false] ' +
+            (err2.name || 'Err') +
+            ': ' +
+            err2.message;
+          throw new Error(reason);
+        }
       }
+    } else {
+      access = await deps.navigator.requestMIDIAccess({ sysex: false });
     }
 
     // Wire the statechange handler — desktop-Chrome path that
@@ -219,13 +229,18 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
           return true;
         }
       }
-      // @WMB-WORKAROUND: WMB pre-paired BLE keyboards can show up
-      // with state='unknown' until first open(); attempt the loose
-      // pass here too so the rescan poller catches them.
-      for (const port of ports) {
-        if (!deps.midiInput.enabled && deps.attachMidiPort(port)) {
-          console.log('[MIDI] rescan attached non-connected port (WMB quirk): ' + port.name);
-          return true;
+      // @WMB-WORKAROUND: WMB pre-paired BLE keyboards on iPad can show
+      // up with state='unknown' until first open(). Gated to Apple
+      // mobile so desktop / Android don't accidentally attach a
+      // transient pre-init port (IAC Driver mid-bringup, a USB device
+      // still negotiating descriptors, etc.) and steal focus from the
+      // real keyboard that's about to flip to 'connected'.
+      if (deps.isAppleMobile()) {
+        for (const port of ports) {
+          if (!deps.midiInput.enabled && deps.attachMidiPort(port)) {
+            console.log('[MIDI] rescan attached non-connected port (WMB quirk): ' + port.name);
+            return true;
+          }
         }
       }
       // /@WMB-WORKAROUND

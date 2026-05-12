@@ -149,10 +149,13 @@ describe('initWebMIDI — strict-pass attach', () => {
   });
 });
 
-describe('initWebMIDI — quirk-pass attach (WMB)', () => {
-  it('attaches a non-connected port when strict pass found nothing', async () => {
+describe('initWebMIDI — quirk-pass attach (WMB, Apple mobile only)', () => {
+  it('Apple mobile: attaches a non-connected port when strict pass found nothing', async () => {
     const ports: MidiPortRef[] = [{ name: 'wmbPaired', state: 'unknown' }];
-    const fx = makeFixture({ gatherMidiInputs: vi.fn(() => ports) });
+    const fx = makeFixture({
+      gatherMidiInputs: vi.fn(() => ports),
+      isAppleMobile: () => true,
+    });
     await fx.init.initWebMIDI();
     // attachMidiPort called once during the quirk pass (strict skipped
     // because state !== 'connected').
@@ -161,7 +164,7 @@ describe('initWebMIDI — quirk-pass attach (WMB)', () => {
     expect(fx.mocks.log.mock.calls.some((c) => /WMB quirk/.test(c[0]))).toBe(true);
   });
 
-  it('falls through when attachMidiPort returns false on every quirk port', async () => {
+  it('Apple mobile: falls through when attachMidiPort returns false on every quirk port', async () => {
     const ports: MidiPortRef[] = [
       { name: 'rejected', state: 'unknown' },
       { name: 'rejected2', state: 'unknown' },
@@ -169,8 +172,23 @@ describe('initWebMIDI — quirk-pass attach (WMB)', () => {
     const fx = makeFixture({
       gatherMidiInputs: vi.fn(() => ports),
       attachMidiPort: vi.fn(() => false),
+      isAppleMobile: () => true,
     });
     await fx.init.initWebMIDI();
+    expect(fx.mocks.startMidiAutoRescan).toHaveBeenCalledOnce();
+    expect(fx.mocks.showMidiWaitingHint).toHaveBeenCalledOnce();
+  });
+
+  it('non-Apple (desktop / Android): unknown-state ports are NOT loose-attached — falls through to poller', async () => {
+    const ports: MidiPortRef[] = [{ name: 'transientPort', state: 'unknown' }];
+    const fx = makeFixture({
+      gatherMidiInputs: vi.fn(() => ports),
+      isAppleMobile: () => false,
+    });
+    await fx.init.initWebMIDI();
+    // Spec-strict pass skips state!=='connected', and the quirk pass
+    // is gated to Apple mobile → no attach attempt at all.
+    expect(fx.mocks.attachMidiPort).not.toHaveBeenCalled();
     expect(fx.mocks.startMidiAutoRescan).toHaveBeenCalledOnce();
     expect(fx.mocks.showMidiWaitingHint).toHaveBeenCalledOnce();
   });

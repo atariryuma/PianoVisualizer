@@ -193,8 +193,9 @@ describe('ensureAccess', () => {
     await expect(fx.rescan.ensureAccess()).rejects.toThrow('Web MIDI API not available');
   });
 
-  it('falls back to sysex:false when sysex:true rejects', async () => {
+  it('Apple mobile: falls back to sysex:false when sysex:true rejects', async () => {
     const fx = makeFixture();
+    fx.mocks.isAppleMobile.mockReturnValue(true);
     const access: AccessHandle = { inputs: new Map() };
     Object.defineProperty(access, 'onstatechange', {
       set(v) {
@@ -217,8 +218,9 @@ describe('ensureAccess', () => {
     expect(req.mock.calls[1][0]).toEqual({ sysex: false });
   });
 
-  it('throws a combined error when both sysex paths fail', async () => {
+  it('Apple mobile: throws a combined error when both sysex paths fail', async () => {
     const fx = makeFixture();
+    fx.mocks.isAppleMobile.mockReturnValue(true);
     const req = vi.fn().mockImplementation(async () => {
       const e = new Error('denied');
       e.name = 'NotAllowedError';
@@ -226,6 +228,35 @@ describe('ensureAccess', () => {
     });
     fx.setRequest(req);
     await expect(fx.rescan.ensureAccess()).rejects.toThrow(/\[sysex:true\].*\[sysex:false\]/);
+  });
+
+  it('non-Apple (desktop / Android): only requests sysex:false', async () => {
+    const fx = makeFixture();
+    // makeFixture defaults isAppleMobile to false; keep it explicit.
+    fx.mocks.isAppleMobile.mockReturnValue(false);
+    const access: AccessHandle = { inputs: new Map() };
+    Object.defineProperty(access, 'onstatechange', {
+      set(v) {
+        access.fireStateChange = v;
+      },
+      get() {
+        return access.fireStateChange;
+      },
+      configurable: true,
+    });
+    const req = vi.fn().mockResolvedValue(access);
+    fx.setRequest(req);
+    const result = await fx.rescan.ensureAccess();
+    expect(result).toBe(access);
+    expect(req).toHaveBeenCalledTimes(1);
+    expect(req.mock.calls[0][0]).toEqual({ sysex: false });
+  });
+
+  it('non-Apple: a single sysex:false rejection surfaces as-is (no fallback)', async () => {
+    const fx = makeFixture();
+    fx.mocks.isAppleMobile.mockReturnValue(false);
+    fx.setRequest(vi.fn().mockRejectedValue(new Error('user denied MIDI')));
+    await expect(fx.rescan.ensureAccess()).rejects.toThrow('user denied MIDI');
   });
 
   it('wires onstatechange: connected + !enabled → attach', async () => {
@@ -324,13 +355,24 @@ describe('rescan', () => {
     expect(fx.mocks.attachMidiPort).not.toHaveBeenCalled();
   });
 
-  it('only-unknown-state ports → loose pass attaches (WMB workaround)', async () => {
+  it('Apple mobile: only-unknown-state ports → loose pass attaches (WMB workaround)', async () => {
     const fx = makeFixture();
+    fx.mocks.isAppleMobile.mockReturnValue(true);
     const port: MidiPortRef = { name: 'r', state: 'unknown' };
     fx.access.inputs.set('1', port);
     const ok = await fx.rescan.rescan(true);
     expect(ok).toBe(true);
     expect(fx.mocks.attachMidiPort).toHaveBeenCalledWith(port);
+  });
+
+  it('non-Apple: only-unknown-state ports are NOT loose-attached', async () => {
+    const fx = makeFixture();
+    fx.mocks.isAppleMobile.mockReturnValue(false);
+    const port: MidiPortRef = { name: 'r', state: 'unknown' };
+    fx.access.inputs.set('1', port);
+    const ok = await fx.rescan.rescan(true);
+    expect(ok).toBe(false);
+    expect(fx.mocks.attachMidiPort).not.toHaveBeenCalled();
   });
 
   it('all attaches fail + silent=false → "could not connect" diag', async () => {

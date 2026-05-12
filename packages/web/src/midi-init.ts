@@ -140,11 +140,15 @@ export function createMidiInit(deps: MidiInitDeps): MidiInit {
       }
 
       // @WMB-WORKAROUND (Phase 0d): second-pass attach ignoring state.
-      // Web MIDI Browser sometimes reports a pre-paired BLE-MIDI
+      // Web MIDI Browser on iPad sometimes reports a pre-paired BLE-MIDI
       // keyboard with state='unknown' or 'pending' until the page
-      // actively opens it. attachMidiPort still rejects virtual/system
-      // ports, so this doesn't loosen the safety filter.
-      if (!attached) {
+      // actively opens it. Gated to Apple mobile — on desktop / Android
+      // the spec-strict pass is enough, and a loose pass there would
+      // grab transient pre-init ports (e.g. IAC Driver still warming
+      // up, a USB device mid-descriptor) and silently bind a dead
+      // handler. attachMidiPort still rejects virtual/system ports, so
+      // this doesn't loosen the safety filter on iPad either.
+      if (!attached && deps.isAppleMobile()) {
         for (const port of allPorts) {
           if (deps.attachMidiPort(port)) {
             log('[MIDI] attached non-connected port (WMB quirk): ' + port.name);
