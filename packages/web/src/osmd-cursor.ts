@@ -195,6 +195,13 @@ const MIN_SCROLL_DELTA_PX = 8;
 const ACTIVE_SCROLL_COOLDOWN_MS = 120;
 const SAME_SYSTEM_REVERSAL_COOLDOWN_MS = 450;
 const MAX_ACTIVE_SCROLL_DELTA_PX = 120;
+/** Where to land focusY on a "fire" event (first-scroll / system-change).
+ *  0.33 ≈ upper-third of the panel — leaves context above (~33% of the
+ *  panel for the previous system / measures) and lookahead below (~67%
+ *  for the upcoming staff). Pure "edge-of-safe-band" landing (the
+ *  default for within-system reveals) feels too top-pinned for the big
+ *  events; centering at this ratio matches how human readers track. */
+const FIRE_LANDING_RATIO = 0.33;
 
 type ScrollReason =
   | 'first-scroll'
@@ -540,20 +547,34 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     metrics: ScrollMetrics,
     reason: ScrollReason
   ): ScrollPlan {
-    // The active region extends belowFocus pixels below focusY (stem,
-    // ledger lines, lower staff). Shrink effectiveSafeBottom so that
-    // when focusY lands there, activeRect.bottom lands at safeBottom —
-    // keeping the entire staff visible instead of clipping the bottom.
-    const belowFocus = Math.max(0, metrics.activeBottom - metrics.focusY);
-    const effectiveSafeBottom = Math.max(metrics.safeTop + 1, metrics.safeBottom - belowFocus);
     let delta = 0;
-    if (metrics.focusY < metrics.safeTop) {
-      delta = metrics.focusY - metrics.safeTop;
-    } else if (metrics.focusY > effectiveSafeBottom) {
-      delta = metrics.focusY - effectiveSafeBottom;
-    }
-    if (reason === 'active-outside-safe') {
-      delta = clamp(delta, -MAX_ACTIVE_SCROLL_DELTA_PX, MAX_ACTIVE_SCROLL_DELTA_PX);
+    if (reason === 'first-scroll' || reason === 'system-change') {
+      // Fire events deserve a centered landing: aim for focusY at the
+      // upper third of the panel so the user sees context above and
+      // lookahead below. Edge-of-safe-band lands cursor too close to the
+      // panel top, especially after big back-jumps (repeat / D.C.) where
+      // the user reports the score \"sticks to the top\". See
+      // FIRE_LANDING_RATIO.
+      const panelHeight = metrics.panelBottom - metrics.panelTop;
+      const targetY = metrics.panelTop + panelHeight * FIRE_LANDING_RATIO;
+      delta = metrics.focusY - targetY;
+    } else {
+      // Within-system reveals: minimum scroll to bring focusY back into
+      // the safe band. The active region extends belowFocus pixels below
+      // focusY (stem, ledger lines, lower staff), so shrink
+      // effectiveSafeBottom so that when focusY lands there,
+      // activeRect.bottom lands at safeBottom — keeping the entire staff
+      // visible instead of clipping the bottom.
+      const belowFocus = Math.max(0, metrics.activeBottom - metrics.focusY);
+      const effectiveSafeBottom = Math.max(metrics.safeTop + 1, metrics.safeBottom - belowFocus);
+      if (metrics.focusY < metrics.safeTop) {
+        delta = metrics.focusY - metrics.safeTop;
+      } else if (metrics.focusY > effectiveSafeBottom) {
+        delta = metrics.focusY - effectiveSafeBottom;
+      }
+      if (reason === 'active-outside-safe') {
+        delta = clamp(delta, -MAX_ACTIVE_SCROLL_DELTA_PX, MAX_ACTIVE_SCROLL_DELTA_PX);
+      }
     }
 
     const nextScrollTop = Math.round(Math.max(0, scroller.scrollTop + delta));

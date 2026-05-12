@@ -170,10 +170,11 @@ describe('resetToStart', () => {
     // though the score-follow controller would normally skip same-system
     // onsets.
     //
-    // cursorTop=300, panelHeight=200: cursor {top:300, bot:420, h:120}
-    // margin=32, safeBottom=168. focusY=300+120*0.42=350.4,
-    // belowFocus=420-350.4=69.6, effectiveSafeBottom=168-69.6≈98.
-    // delta=350.4-98=252 → cursor bottom lands at safeBottom (168).
+    // cursorTop=300, panelHeight=200: cursor {top:300, bot:420, h:120}.
+    // focusY = 300 + 120*0.42 = 350.4. First-scroll lands focusY at
+    // FIRE_LANDING_RATIO (0.33) of panel height: targetY = 0 + 200*0.33
+    // = 66. delta = 350.4 - 66 = 284. After scroll, cursor focus is at
+    // upper-third of the panel (centered-with-lookahead).
     const reset = vi.fn();
     const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 300, panelHeight: 200 });
     const cursor = createOsmdCursor({
@@ -184,7 +185,7 @@ describe('resetToStart', () => {
         }),
     });
     cursor.resetToStart();
-    expect(container.scrollTop).toBe(252);
+    expect(container.scrollTop).toBe(284);
   });
 
   it('no-op when osmd cursor missing', () => {
@@ -218,14 +219,14 @@ describe('resetToStart', () => {
     // computeSystemIdx returns null. The first-scroll branch (_lastSysIdx
     // === null) still fires so the cursor lands at score start.
     // cursorTop=180, panelHeight=200: cursor {top:180, bot:300, h:120}
-    // focusY=180+120*0.42=230.4, belowFocus=69.6, effectiveSafeBottom=98.
-    // delta=230.4-98=132 → cursor bottom lands at safeBottom (168).
+    // focusY = 180 + 120*0.42 = 230.4. First-scroll targets upper-third
+    // of panel: targetY = 200*0.33 = 66. delta = 230.4 - 66 = 164.
     const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 180, panelHeight: 200 });
     const cursor = createOsmdCursor({
       getOsmd: () => makeOsmd({ cursorElement: cursorEl }),
     });
     cursor.resetToStart();
-    expect(container.scrollTop).toBe(132);
+    expect(container.scrollTop).toBe(164);
   });
 
   it('uses current notehead bounds as the scroll target when available', () => {
@@ -260,7 +261,34 @@ describe('resetToStart', () => {
         }),
     });
     cursor.resetToStart();
-    expect(container.scrollTop).toBe(459);
+    // panelHeight=400, FIRE_LANDING_RATIO=0.33 → targetY = 132.
+    // Notes at top=10/bot=20 → focusY=15 (midpoint, h=10 ≤ 96).
+    // delta = 15 - 132 = -117. scrollTop = 500 + (-117) = 383.
+    expect(container.scrollTop).toBe(383);
+  });
+
+  // Production-scenario pin (2026-05-12): user reported "リピートした後、
+  // 曲の最初、センタリングできてない" (the score sticks to the panel top
+  // after a repeat back-jump and at song start). Before this fix the
+  // first-scroll / system-change reasons used "edge of safe band"
+  // landing, putting focusY at safeTop (14% from top). Now they target
+  // the upper third of the panel (33%), leaving context above and
+  // lookahead below — matching standard score-reader behavior.
+  it('lands focusY at the upper third of the panel on first-scroll (centered with lookahead)', () => {
+    const { container, cursorEl } = makeScorePanelFixture({ cursorTop: 300, panelHeight: 240 });
+    // panel y = 0..240, FIRE_LANDING_RATIO=0.33 → targetY ≈ 79.
+    // cursor at 300..420 (h=120), focusY = 300 + 120*0.42 = 350.4.
+    // delta = 350.4 - 79.2 = 271.2 → 271.
+    const cursor = createOsmdCursor({
+      getOsmd: () => makeOsmd({ cursorElement: cursorEl }),
+    });
+    cursor.resetToStart();
+    expect(container.scrollTop).toBe(271);
+    // Verify the landing position: cursor element should now sit at
+    // upper-third area of the panel, NOT pinned to the top.
+    const cursorViewportTop = 300 - 271; // cursor doc top - scrollTop
+    expect(cursorViewportTop).toBeGreaterThan(0); // not clipped above
+    expect(cursorViewportTop).toBeLessThan(240 * 0.5); // not below mid
   });
 
   it('does not re-scroll inside the same system while the active region stays in the hysteresis band', () => {
