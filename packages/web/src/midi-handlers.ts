@@ -194,15 +194,33 @@ export function spawnMidiNoteVisuals(
   if (deps.state.flow < 10) deps.triggerWakeUpFlash(deps.state, deps.wufOpts);
 }
 
-/** Note-on entry point. No-op when the session isn't running.
- *  Side effects: midiState.activeNotes mutation, pitch + history
- *  reducer ticks, optional visuals + glow effect. */
+/** Note-on entry point. Split into two phases:
+ *
+ *    1. Visual reflection — always runs, even before ▶ Start. The
+ *       keyboard renderer reads `midiState.activeNotes` every frame,
+ *       so a kid who presses a key on the title screen still sees
+ *       it light up. Chord-window detection also runs here so the
+ *       overlay appears on pre-session noodling.
+ *
+ *    2. Score / flow / particle visuals — gated on `state.running`.
+ *       These belong to an active session and would corrupt the
+ *       quality histories or spawn off-screen bursts if fired
+ *       outside one.
+ *
+ *  Without the split, the badge would pulse (from midi-dispatch) on a
+ *  pre-start press but no key would light up — the most-reported
+ *  "MIDI is connected but nothing happens" symptom. */
 export function onMidiNoteOn(midiNum: number, velocity: number, deps: MidiHandlersDeps): void {
-  if (!deps.state.running) return;
   const now = performance.now();
   const synColor = deps.synColorFor(midiNum) ?? undefined;
+
+  // Phase 1 — always-on visual reflection.
   deps.midiState.activeNotes.set(midiNum, { velocity, onTimeMs: now, synColor });
   deps.midiState.sustainedNotes.delete(midiNum);
+  const cw = deps.applyOnsetToWindow(deps.midiState, midiNum, now, deps.cwOpts);
+
+  // Phase 2 — session-only scoring + particle visuals.
+  if (!deps.state.running) return;
 
   if (!deps.practice.enabled) {
     if (deps.state.micSuspended) {
@@ -221,7 +239,6 @@ export function onMidiNoteOn(midiNum: number, velocity: number, deps: MidiHandle
     deps.state.lastSilenceStartMs = -1;
   }
 
-  const cw = deps.applyOnsetToWindow(deps.midiState, midiNum, now, deps.cwOpts);
   // Free-play also runs the glow effect; practice just shows the name
   // quietly.
   if (cw.emitted && !deps.practice.enabled) deps.effectGlowPulse();

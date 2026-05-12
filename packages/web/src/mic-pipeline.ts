@@ -57,9 +57,12 @@ export interface MicPipelinePracticeRef {
   enabled: boolean;
 }
 
-/** MIDI input ref — used to detect whether MIDI has driven a note in
- *  the last 2 s. When it has, the mic-derived note spawn is skipped
- *  to avoid double-spawn / fight YIN's octave guesses. */
+/** MIDI input ref — when a port is attached, the mic-derived note
+ *  spawn is skipped entirely to avoid double-spawn / fight YIN's
+ *  octave guesses. `lastEventTime` lingers as a field for telemetry
+ *  but the gating used to read it with a 2 s window, which let
+ *  mic-derived visuals slip in during gaps between presses; we now
+ *  trust the attach/detach invariant in midi-ports.ts instead. */
 export interface MicPipelineMidiRef {
   enabled: boolean;
   lastEventTime: number;
@@ -207,14 +210,14 @@ export function tickMicPipeline(
       deps.updatePractice(timeMs, isGoodNote, pitchResult.pitch);
     }
 
-    // v13: When a MIDI keyboard is actively playing, MIDI events drive
-    // visuals (polyphonic, velocity-aware). Skip the mic-derived
-    // single-pitch path so we don't double-spawn or fight YIN's octave
-    // guesses.
-    const midiActiveRecently =
-      deps.midiInput.enabled && performance.now() - (deps.midiInput.lastEventTime || 0) < 2000;
-
-    if (!midiActiveRecently && isGoodNote && pitchResult.pitch > deps.config.PITCH_MIN_HZ) {
+    // v13: When a MIDI keyboard is attached, MIDI events drive visuals
+    // (polyphonic, velocity-aware). Skip the mic-derived single-pitch
+    // path so we don't double-spawn or fight YIN's octave guesses.
+    // Plain `enabled` check — the old "active within 2 s" window let
+    // mic-derived visuals slip in during silent gaps between presses,
+    // which is exactly when the user expects the visualization to be
+    // quiet too.
+    if (!deps.midiInput.enabled && isGoodNote && pitchResult.pitch > deps.config.PITCH_MIN_HZ) {
       const note = deps.freqToNote(pitchResult.pitch);
       if (note) {
         // v10: Synesthesia mode color.

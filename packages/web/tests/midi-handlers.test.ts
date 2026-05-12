@@ -260,12 +260,22 @@ describe('onMidiNoteOn', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
 
-  it('no-ops when state.running is false', () => {
+  it('state.running=false: still reflects in midiState (visual + chord) but skips scoring', () => {
+    // Pre-session presses must light up the on-screen keyboard so
+    // "MIDI is connected but nothing happens" never appears. Score
+    // bookkeeping (flow / combo / particle bursts / quality
+    // histories) is gated on state.running and stays quiet.
     const { deps, mocks, midiState } = makeDeps({ state: makeState({ running: false }) });
     onMidiNoteOn(60, 100, deps);
-    expect(midiState.activeNotes.size).toBe(0);
+    // Phase 1 — always-on visual reflection.
+    expect(midiState.activeNotes.has(60)).toBe(true);
+    expect(midiState.activeNotes.get(60)!.velocity).toBe(100);
+    expect(mocks.applyOnsetToWindow).toHaveBeenCalledOnce();
+    // Phase 2 — session-only side-effects suppressed.
     expect(mocks.spawnBurst).not.toHaveBeenCalled();
-    expect(mocks.applyOnsetToWindow).not.toHaveBeenCalled();
+    expect(mocks.applyOnsetToHistory).not.toHaveBeenCalled();
+    expect(mocks.applyOnsetPitch).not.toHaveBeenCalled();
+    expect(mocks.effectGlowPulse).not.toHaveBeenCalled();
   });
 
   it('records the active note + drops sustained dup', () => {

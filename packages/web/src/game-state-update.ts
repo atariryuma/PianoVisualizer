@@ -316,12 +316,15 @@ export function updateGameState(
   // 4. Session confidence.
   deps.updateSessionConfidence(timeMs, isActivePlay);
 
-  // v13: When MIDI is the active source, MIDI events drive the
-  // quality histories (rhythm/dynamics/stability). Skip the mic
-  // push to avoid double-counting and keep silent (headphone)
-  // practice fully evaluable.
+  // v13: When MIDI is attached, MIDI events drive the quality
+  // histories (rhythm/dynamics/stability). Skip the mic push to avoid
+  // double-counting and keep silent (headphone) practice fully
+  // evaluable. Plain `enabled` check — the old "active within 2 s"
+  // window let mic data sneak back in during silent gaps, which is
+  // the opposite of what we want: silent gaps in MIDI play should NOT
+  // be backfilled by ambient mic noise.
   const midi = deps.getMidiInput();
-  const midiDrivingHistories = midi.enabled && timeMs - (midi.lastEventTime || 0) < 2000;
+  const midiDrivingHistories = midi.enabled;
 
   if (isOnsetNote && !midiDrivingHistories) {
     deps.core.applyOnsetToHistory(s, timeMs, rms, deps.qhOptsMic);

@@ -269,7 +269,7 @@ describe('tickMicPipeline — mic-active branch', () => {
 // ─── MIDI-active gate ───────────────────────────────────────────────
 
 describe('tickMicPipeline — MIDI-active gate', () => {
-  it('skips mic-driven note spawn when MIDI fired in last 2s', () => {
+  it('skips mic-driven note spawn when MIDI is enabled (any lastEventTime)', () => {
     const now = performance.now();
     const { deps, hooks } = makeDeps({
       midiInput: { enabled: true, lastEventTime: now - 500 },
@@ -282,7 +282,11 @@ describe('tickMicPipeline — MIDI-active gate', () => {
     expect(hooks.showNoteDisplay).not.toHaveBeenCalled();
   });
 
-  it('runs the spawn path when MIDI is enabled but stale (>2s)', () => {
+  it('still skips mic-driven note spawn when MIDI is enabled but quiet for >2 s', () => {
+    // Old policy backfilled mic data into silent gaps between MIDI
+    // presses; new policy keeps the mic muted as long as a MIDI port
+    // is attached, so a long pause between presses should NOT
+    // re-enable mic-driven visuals.
     const now = performance.now();
     const { deps, hooks } = makeDeps({
       midiInput: { enabled: true, lastEventTime: now - 3000 },
@@ -290,7 +294,7 @@ describe('tickMicPipeline — MIDI-active gate', () => {
     deps.state.yinSkipCounter = 2;
     hooks.detectPitchYIN.mockReturnValue({ pitch: 440, conf: 0.9, rms: 0.1 });
     tickMicPipeline(now, 16, deps);
-    expect(hooks.spawnBurst).toHaveBeenCalled();
+    expect(hooks.spawnBurst).not.toHaveBeenCalled();
   });
 
   it('runs the spawn path when MIDI is disabled', () => {

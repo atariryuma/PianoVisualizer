@@ -156,7 +156,13 @@ export function createBleMidiConnect(deps: BleMidiConnectDeps): BleMidiConnect {
 
       deps.midiInput.enabled = true;
       deps.midiInput.port = { name: device.name || 'BLE-MIDI' };
-      deps.midiInput.lastEventTime = performance.now();
+      // Sentinel 0 so it matches the Web MIDI attach path
+      // (midi-ports.ts attach also writes 0). Nothing now reads
+      // `lastEventTime` as a gating value — mic-pipeline and
+      // game-state-update both moved to `enabled`-only checks —
+      // but keeping it consistent simplifies future debug log
+      // interpretation.
+      deps.midiInput.lastEventTime = 0;
       if (deps.hasAudioCtx() && !deps.state.micSuspended) {
         deps.suspendMic();
       }
