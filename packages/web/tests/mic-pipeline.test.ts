@@ -275,6 +275,84 @@ describe('tickMicPipeline — mic → midiState bridge', () => {
   });
 });
 
+// ─── mic → chord detection end-to-end (Opt-3 integration) ──────────
+
+describe('tickMicPipeline — mic-driven chord detection (E2E with real applyOnsetToWindow)', () => {
+  // Use the actual PianoCore reducer + chord detector here. This is
+  // the integration test that proves an arpeggiated C major chord
+  // played on an acoustic piano (mic-only) surfaces a chord name in
+  // midiState.lastChordName — the chord-display renderer reads that
+  // field every frame, so this is the contract that lets the chord
+  // overlay appear without MIDI.
+  function makeMidiState(): {
+    activeNotes: Map<
+      number,
+      { velocity: number; onTimeMs: number; synColor?: string | null; source?: 'mic' | 'midi' }
+    >;
+    recentOnsets: Array<{ midi: number; timeMs: number }>;
+    lastChordName: string;
+    lastChordTimeMs: number;
+  } {
+    return {
+      activeNotes: new Map(),
+      recentOnsets: [],
+      lastChordName: '',
+      lastChordTimeMs: 0,
+    };
+  }
+
+  it('three consecutive mic onsets within 80 ms → lastChordName populated', async () => {
+    const { applyOnsetToWindow, detectChord } = await import('@piano/core');
+    const cwOpts = { windowMs: 80, minNotes: 3, repeatCooldownMs: 600, detectChord };
+    const midiState = makeMidiState();
+
+    // Onset 1: C4 (midi 60). YIN must return the right pitch each call.
+    const fxC = makeDeps({
+      midiState,
+      applyOnsetToWindow,
+      cwOpts,
+    });
+    fxC.hooks.detectPitchYIN.mockReturnValue({ pitch: 261.63, conf: 0.95, rms: 0.1 });
+    fxC.hooks.freqToNote.mockReturnValue({ name: 'C', octave: 4, noteNum: 60, freq: 261.63 });
+    fxC.deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, fxC.deps);
+
+    // Onset 2: E4 (midi 64), 30 ms later.
+    const fxE = makeDeps({
+      midiState,
+      applyOnsetToWindow,
+      cwOpts,
+      state: fxC.state,
+    });
+    fxE.hooks.detectPitchYIN.mockReturnValue({ pitch: 329.63, conf: 0.95, rms: 0.1 });
+    fxE.hooks.freqToNote.mockReturnValue({ name: 'E', octave: 4, noteNum: 64, freq: 329.63 });
+    fxE.deps.state.yinSkipCounter = 2;
+    // MIN_NOTE_INTERVAL_MS=50 in the test config — bump time past it
+    // so the spawn block fires and the second onset registers.
+    tickMicPipeline(1060, 16, fxE.deps);
+
+    // Onset 3: G4 (midi 67), another 30 ms later — still inside the
+    // 80 ms chord window (1060 - 1000 = 60 ms < 80 ms is the cw window
+    // we passed in).
+    const fxG = makeDeps({
+      midiState,
+      applyOnsetToWindow,
+      cwOpts,
+      state: fxE.state,
+    });
+    fxG.hooks.detectPitchYIN.mockReturnValue({ pitch: 392.0, conf: 0.95, rms: 0.1 });
+    fxG.hooks.freqToNote.mockReturnValue({ name: 'G', octave: 4, noteNum: 67, freq: 392.0 });
+    fxG.deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1078, 16, fxG.deps);
+
+    expect(midiState.lastChordName).not.toBe('');
+    expect(midiState.activeNotes.size).toBe(3);
+    expect(midiState.activeNotes.has(60)).toBe(true);
+    expect(midiState.activeNotes.has(64)).toBe(true);
+    expect(midiState.activeNotes.has(67)).toBe(true);
+  });
+});
+
 // ─── mic-active branch ─────────────────────────────────────────────
 
 describe('tickMicPipeline — mic-active branch', () => {
