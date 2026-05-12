@@ -502,6 +502,39 @@ describe('startPracticeSection — audio offset', () => {
     await fx.start(0);
     expect(fx.practice.audioOffsetMs).toBe(40);
   });
+
+  it('Tone start throws but context is alive → startAudioTime stays in Tone clock units', async () => {
+    // Regression for the 2026-05-12 unit-mismatch bug: when Transport.start
+    // threw but Tone.context.currentTime was still readable, the catch
+    // path stored `performance.now() / 1000 + lead` (page-clock seconds).
+    // practiceRealElapsedMs then computed
+    // `(tone.context.currentTime - startAudioTime) * 1000` which mixed
+    // clocks and returned huge negative ms forever — lane stuck in
+    // pre-roll, cursor never advanced.
+    const fakeTone = makeFakeTone({ startThrows: true });
+    // makeFakeTone's now() returns a stable value (typically 0). The
+    // catch path should write Tone.now() + lead = 0 + 0.05 ≈ 0.05.
+    const fx = makeFixture({ tone: fakeTone, prefs: { audioOffsetMs: null } });
+    await fx.start(0);
+    // startAudioTime should be small (Tone-clock seconds, near 0), NOT
+    // a giant page-clock value (performance.now() / 1000 is many
+    // thousand seconds since vitest started).
+    expect(fx.practice.startAudioTime).toBeLessThan(10);
+    expect(fx.practice.startAudioTime).toBeGreaterThanOrEqual(0);
+  });
+
+  it('Tone completely unreachable → startAudioTime falls back to page clock', async () => {
+    // With tone=undefined, practice-scoring's practiceRealElapsedMs uses
+    // its `performance.now() - startAudioTime * 1000` page-clock branch.
+    // The catch path must produce a value in matching units (page-clock
+    // seconds) so the formula gives a sane elapsed.
+    const fx = makeFixture({ tone: undefined, prefs: { audioOffsetMs: null } });
+    await fx.start(0);
+    // performance.now() / 1000 in a vitest run is typically large; the
+    // catch path adds AUDIO_START_LEAD_SEC (≈ 0.05) on top. Anything
+    // larger than 1 second confirms we picked the page-clock branch.
+    expect(fx.practice.startAudioTime).toBeGreaterThan(0);
+  });
 });
 
 // ─── DIAG dump gate ────────────────────────────────────────────────

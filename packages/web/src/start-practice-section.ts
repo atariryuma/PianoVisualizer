@@ -426,7 +426,28 @@ export function createStartPracticeSection(
       }
     } catch (e) {
       console.error('Tone start failed', e);
-      deps.practice.startAudioTime = performance.now() / 1000 + AUDIO_START_LEAD_SEC;
+      // Pin startAudioTime in whichever clock practiceRealElapsedMs is
+      // about to read. The formula uses `tone?.context` to pick:
+      //   - Tone-clock seconds when tone.context exists
+      //   - page-clock seconds otherwise
+      // If Tone is loaded but Transport.start threw (most common
+      // failure mode — AudioContext suspended or transport in a bad
+      // state), `tone.context.currentTime` is still readable, so we
+      // MUST use Tone-clock seconds here. Using page-clock seconds
+      // mixes units and would leave practiceRealElapsedMs returning
+      // huge negative values forever (lane never scrolls, cursor
+      // never moves, scoring stuck). Only fall back to page clock
+      // when Tone really is unreachable.
+      const t = deps.Tone as { context?: { currentTime?: number }; now?: () => number } | undefined;
+      if (t?.context?.currentTime != null) {
+        // Prefer Tone.now() because it includes the configured
+        // lookAhead — that's the same convention the happy path uses.
+        const toneNowSec =
+          typeof t.now === 'function' ? t.now() : (t.context.currentTime as number);
+        deps.practice.startAudioTime = toneNowSec + AUDIO_START_LEAD_SEC;
+      } else {
+        deps.practice.startAudioTime = performance.now() / 1000 + AUDIO_START_LEAD_SEC;
+      }
       // Tone-failure short-circuits the audio-latency probe — reset
       // audioOffsetMs so the lane uses sane compensation rather
       // than stale state.
