@@ -190,8 +190,19 @@ export function createShellAudio(deps: ShellAudioDeps): ShellAudio {
     resetOnsetState: _resetOnsetState,
     onAfterRecovery: () => {
       // iOS WKWebView contract: post-background the Tone.js Transport is
-      // unreliable, so practice mode is forcibly off and the audio engine
-      // re-arms on the next user-driven start.
+      // unreliable on WebKit, so practice mode is forcibly off there and
+      // the audio engine re-arms on the next user-driven start.
+      //
+      // Scoped to Apple-mobile (2026-05-12): on desktop / Android the
+      // Transport stays accurate through an AudioContext rebuild, and
+      // recover() is also triggered by `navigator.mediaDevices.devicechange`
+      // — which fires when a USB MIDI controller's audio-class endpoint
+      // is plugged/unplugged (Roland / M-Audio / many others register
+      // both MIDI + audio together). The previous blanket abort killed
+      // mid-practice rendering on every MIDI cable wiggle, leaving the
+      // canvas with just the background fade (no lane backdrop, no
+      // hit line, no falling notes).
+      if (!deps.isAppleMobile()) return;
       const practice = deps.getPractice();
       if (practice.enabled) {
         practice.enabled = false;
