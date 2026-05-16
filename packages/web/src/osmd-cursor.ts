@@ -1,10 +1,29 @@
-// OSMD cursor — four operations on the OSMD instance + its cursor,
-// plus the scroll-tracking concern.
+// OSMD cursor — five operations on the OSMD instance + its cursor,
+// plus the scroll-tracking concern, plus a custom SVG-ground-truth
+// cursor overlay.
 //
 // Industry-standard architecture (mirrors musicxml-player +
-// osmd-audio-player), with one local choice: OSMD's built-in
-// `followCursor` is OFF and we drive the fixed OSMD panel's scrollTop
-// ourselves (see `ensureCursorVisible` below for rationale).
+// osmd-audio-player + Verovio's CSS-class approach), with two local
+// choices:
+//
+//   1. OSMD's built-in `followCursor` is OFF and we drive the fixed
+//      OSMD panel's scrollTop ourselves (see `ensureCursorVisible`).
+//
+//   2. OSMD's native cursor element is HIDDEN and we paint our own
+//      yellow overlay from the rendered SVG's bounding rects (see
+//      `paintCustomCursor`). Rationale: OSMD's cursor uses
+//      `MusicSystem.PositionAndShape.AbsolutePosition.y +
+//      StaffLine[0].RelativePosition.y` for its top, but with
+//      `<octave-shift>` brackets — especially nested / overlapping
+//      ones (size="8" + size="15" + number="2" channels) — the
+//      renderer doesn't shift the staff lines down by the bracket
+//      space OSMD reserved, leaving the cursor 200-300px BELOW the
+//      actual staff. Verified against Liszt's La Campanella (78
+//      octave-shift brackets, drift -232 → -328px over 56s). The
+//      SVG-ground-truth approach reads `getBoundingClientRect` from
+//      the actually-rendered notes + stave path elements, bypassing
+//      OSMD's data-model bug for ANY MusicXML (Verovio uses the same
+//      "DOM is the source of truth" pattern).
 //
 //   1. resetToStart() — reset cursor to score start, clear highlights,
 //      ensure visible.
@@ -177,6 +196,12 @@ export interface OsmdCursor {
   clearHighlights(): void;
   highlightCurrentNotes(): void;
   setCursorToNote(target: CursorTarget): void;
+  /** Re-paint the custom SVG-ground-truth cursor overlay against the
+   *  current cursor position. Call after window resize / OSMD re-
+   *  render / zoom change to keep the overlay aligned. Cheap +
+   *  idempotent — does nothing in non-DOM environments or when the
+   *  cursor has no notes. */
+  repaintCustomCursor(): void;
 }
 
 const DEFAULT_HIGHLIGHT_FILL = '#ff3b6b';
@@ -206,6 +231,32 @@ const MAX_ACTIVE_SCROLL_DELTA_PX = 120;
  *  bottom. */
 const FIRE_TARGET_RATIO = 0.5;
 
+/** Custom-cursor overlay tuning. Mirrors OSMD's original cursor visual
+ *  (gold, semi-transparent) but reads its position from the rendered
+ *  SVG rather than OSMD's data-model — so it stays glued to the actual
+ *  staff even on scores where `MusicSystem.AbsolutePosition.y` is
+ *  thrown off by octave-shift brackets / multi-voice layouts. */
+const CUSTOM_CURSOR_COLOR = 'rgba(255, 215, 0, 0.30)';
+const CUSTOM_CURSOR_PAD_X = 4;
+const CUSTOM_CURSOR_CLASS = 'piano-osmd-cursor-overlay';
+/** Maximum number of ancestor walk-up steps when searching for a
+ *  parent SVG group that contains stave path elements. 8 covers every
+ *  layout VexFlow has shipped (note → voice → stave → system → page). */
+const STAVE_LOOKUP_MAX_DEPTH = 8;
+/** VexFlow stave selector — `.vf-stave` is the class VexFlow 4.x + 5.x put
+ *  on the per-staff group element. Bare class selector is intentional (it
+ *  walks the element's actual class list, immune to substring collisions
+ *  like `class="vf-stavenote"` on note groups, which is critical because
+ *  note groups are siblings of the stave under the system group). */
+const STAVE_SELECTOR = '.vf-stave';
+/** Vertical-proximity tolerance for grouping `.vf-stave` elements into
+ *  the "current system". A grand-staff system spans treble (top) ~120
+ *  px gap ~ bass (bottom) ≈ 100-180px total; an octave-shift-padded
+ *  system can reach ~250px. 200 covers both with room to spare while
+ *  staying tight enough to exclude the neighbouring system on dense
+ *  pages. */
+const STAFF_Y_PROXIMITY_PX = 200;
+
 type ScrollReason =
   | 'first-scroll'
   | 'system-change'
@@ -223,6 +274,16 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     lastScrollAtMs: 0,
     lastScrollDirection: 0,
   };
+  /** The custom SVG-ground-truth cursor overlay. Lazily created on
+   *  first paint, lives inside #osmdContainer so it scrolls with the
+   *  score content. Re-attached if the container is replaced on
+   *  song-swap (detected via `isConnected`). */
+  let customOverlay: HTMLDivElement | null = null;
+  /** ResizeObserver tied to the score scroller so the overlay re-
+   *  paints when OSMD re-renders (font load, orientation change, zoom
+   *  flip). Set once per scroller element. */
+  let overlayResizeObserver: ResizeObserver | null = null;
+  let overlayObservedScroller: HTMLElement | null = null;
   let _diagSkipTick = 0;
 
   function clearHighlights(): void {
@@ -296,6 +357,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       /* OSMD's reset can throw on a partially-loaded score */
     }
     ensureCursorVisible(osmd);
+    paintCustomCursor(osmd);
   }
 
   function setCursorToNote(target: CursorTarget): void {
@@ -311,23 +373,21 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       /* cursor.update math can throw on grace notes / unformatted
        * notes; the visual stays at the last successful place. */
     }
-    // NOTE 2026-05-12: a previous revision had a `stretchCursorToNotes`
-    // call here that extended cursorElement.style.{top,height} to cover
-    // ledger-line notes (e.g. Eb7) that fall outside the staff. Two
-    // failed iterations both leaked: OSMD resets style.top on each
-    // cursor.update() but NOT style.height, so any undo strategy that
-    // touched both ended up either over-correcting top (slow drift) or
-    // under-correcting height (unbounded growth — production log showed
-    // cssH climbing 130 → 12061px over a 2-minute session, after which
-    // the huge cursor element visually pushed scroll math out of band).
-    // The visual disconnect for ledger notes is mild (the highlight
-    // remains clearly visible — only the blue bar fails to enclose
-    // them) and the scroll math already unions noteheads into
-    // activeRect via computeActiveCursorRect, so the score still scrolls
-    // them into view. Net: drop the stretch entirely in favor of OSMD's
-    // stable natural cursor sizing.
+    // NOTE 2026-05-13: the previous `stretchCursorToNotes` approach
+    // (extending cursorElement.style.{top,height}) was retired on
+    // 2026-05-12 because OSMD only resets `style.top` on each
+    // cursor.update(), not `style.height` — so any undo path either
+    // over-corrected top (slow drift) or grew height unbounded (130
+    // → 12061px over 2 minutes in production). The current solution
+    // sidesteps the issue entirely by hiding OSMD's native cursor
+    // and painting our own overlay from the rendered SVG's bounding
+    // rects (see `paintCustomCursor`). The SVG ground truth is
+    // immune to the OSMD layout bug that places systems hundreds of
+    // pixels off when octave-shift brackets are present (verified
+    // on Liszt's La Campanella: drift -232 → -328px gone).
     ensureCursorVisible(osmd);
     highlightCurrentNotes();
+    paintCustomCursor(osmd);
     // [DIAG-CURSORPOS] Verify cursor visual lines up with the staff.
     // Logs once every 16 calls. Compares cursor top vs first highlighted
     // note top vs the system's expected top.
@@ -498,6 +558,331 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       left: Math.min(a.left ?? 0, b.left ?? 0),
       right: Math.max(a.right ?? 0, b.right ?? 0),
     };
+  }
+
+  /** Find the Y range (top/bottom) of the staff system the given notes
+   *  are rendered on, using the actual SVG bounding rects of VexFlow's
+   *  stave path elements as ground truth.
+   *
+   *  This is the core of the OSMD-bug workaround: instead of trusting
+   *  `MusicSystem.PositionAndShape.AbsolutePosition.y` (which is off
+   *  by hundreds of pixels on scores with nested octave-shifts), we
+   *  read where the stave was actually drawn in the SVG. Returns null
+   *  on any failure — callers fall back to the notes' own Y range.
+   *
+   *  Algorithm (2026-05-13 revision — system-stable + notehead-anchor):
+   *    1. Walk up from a note's `<g>` collecting the LARGEST set of
+   *       `.vf-stave` descendants found at any ancestor level. VexFlow
+   *       creates one `.vf-stave` per measure per staff, so a measure-
+   *       level ancestor sees only this measure's staves while a
+   *       system-level ancestor sees all measures' staves — we want
+   *       the broader set so two adjacent measures in the same system
+   *       pick the SAME stave union (the previous X-overlap filter
+   *       picked different staves per measure → 27px height drift
+   *       within a single system, server.log 2026-05-13 08:47).
+   *    2. Use the **notehead's** Y midpoint (from `noteToViewportRect`,
+   *       which picks the notehead path specifically) as the anchor
+   *       point — NOT the note `<g>` bounding box, because that <g>
+   *       includes stems, beams, and ledger lines that can extend
+   *       hundreds of pixels from the staff. For octave-shift-padded
+   *       passages a `<g>` midpoint can land between two systems and
+   *       pick the wrong anchor stave → wrong system identified →
+   *       drift across measures in the same system (server.log
+   *       2026-05-13 09:03, sysIdx=5 m=14→15 drifted 125→138 px).
+   *       The notehead is always on or one-staff-spacing from the
+   *       actual staff, making it a reliable anchor.
+   *    3. Find the stave whose Y midpoint is closest to the notehead.
+   *    4. Union all staves within ±STAFF_Y_PROXIMITY_PX of that
+   *       anchor's Y midpoint — that's the current system row.
+   *       Neighbouring systems are filtered out by distance. */
+  function findStaffSystemYRange(notes: OsmdGraphicalNote[]): RectLike | null {
+    for (const note of notes) {
+      let g: SVGGElement | null = null;
+      try {
+        g = typeof note?.getSVGGElement === 'function' ? note.getSVGGElement() : null;
+      } catch {
+        continue;
+      }
+      if (!g) continue;
+      // Prefer the notehead position for anchor selection — it's stable
+      // and always near the actual staff. Fall back to the <g> rect
+      // only when the notehead can't be isolated (rests / partial
+      // renders), accepting some imprecision in that edge case.
+      const noteHeadRect = noteToViewportRect(note) ?? safeRect(g);
+      if (!noteHeadRect) continue;
+
+      // Walk up to the highest ancestor with stave descendants. Keep
+      // the LARGEST collection encountered so we have all of the
+      // system's staves (not just the current measure's).
+      let parent: Element | null = g.parentElement;
+      let bestStaves: Element[] = [];
+      for (let i = 0; i < STAVE_LOOKUP_MAX_DEPTH && parent; i++) {
+        try {
+          const found = parent.querySelectorAll(STAVE_SELECTOR);
+          if (found.length > bestStaves.length) {
+            bestStaves = Array.from(found);
+          }
+        } catch {
+          /* invalid selector on this browser — bail */
+          break;
+        }
+        parent = parent.parentElement;
+      }
+      if (bestStaves.length === 0) continue;
+
+      // Find the stave whose Y midpoint is closest to the notehead's Y —
+      // that's our system anchor. Notehead Y is always inside or one-
+      // staff-spacing from the staff, so the closest stave is reliably
+      // the current system's.
+      const headYMid = (noteHeadRect.top + noteHeadRect.bottom) / 2;
+      let anchorYMid = NaN;
+      let anchorDist = Infinity;
+      const staveRects: RectLike[] = [];
+      for (const stave of bestStaves) {
+        const sr = safeRect(stave);
+        if (!sr) continue;
+        staveRects.push(sr);
+        const sYMid = (sr.top + sr.bottom) / 2;
+        const dist = Math.abs(sYMid - headYMid);
+        if (dist < anchorDist) {
+          anchorDist = dist;
+          anchorYMid = sYMid;
+        }
+      }
+      if (!Number.isFinite(anchorYMid)) continue;
+
+      // Union all staves within Y_PROXIMITY of the anchor — that's the
+      // current system row. Identical for every measure in that row.
+      let top = Infinity;
+      let bottom = -Infinity;
+      for (const sr of staveRects) {
+        const sYMid = (sr.top + sr.bottom) / 2;
+        if (Math.abs(sYMid - anchorYMid) > STAFF_Y_PROXIMITY_PX) continue;
+        if (sr.top < top) top = sr.top;
+        if (sr.bottom > bottom) bottom = sr.bottom;
+      }
+      if (Number.isFinite(top) && Number.isFinite(bottom) && bottom > top) {
+        return { top, bottom, left: noteHeadRect.left, right: noteHeadRect.right };
+      }
+    }
+    return null;
+  }
+
+  /** Ensures the custom cursor overlay div exists inside the score
+   *  scroller. Returns the element, or null in non-DOM environments.
+   *  Idempotent + survives song-swap (re-creates the div if its
+   *  previous parent was torn down). */
+  function ensureCustomOverlay(scroller: HTMLElement): HTMLDivElement | null {
+    if (customOverlay && customOverlay.isConnected && scroller.contains(customOverlay)) {
+      return customOverlay;
+    }
+    if (typeof document === 'undefined') return null;
+    let existing: HTMLDivElement | null = null;
+    try {
+      existing = scroller.querySelector<HTMLDivElement>(`.${CUSTOM_CURSOR_CLASS}`);
+    } catch {
+      /* ignore — selector errors only in pathological environments */
+    }
+    if (existing) {
+      customOverlay = existing;
+      return existing;
+    }
+    const div = document.createElement('div');
+    div.className = CUSTOM_CURSOR_CLASS;
+    div.setAttribute('aria-hidden', 'true');
+    div.style.position = 'absolute';
+    div.style.pointerEvents = 'none';
+    div.style.background = CUSTOM_CURSOR_COLOR;
+    div.style.borderRadius = '4px';
+    div.style.transition = 'opacity 80ms linear, top 100ms ease-out, left 100ms ease-out';
+    div.style.opacity = '0';
+    div.style.zIndex = '2';
+    div.style.willChange = 'top, left, width, height';
+    // Ensure the scroller can position children — only set when not
+    // already positioned, so we don't override app.css.
+    const computed = typeof getComputedStyle === 'function' ? getComputedStyle(scroller) : null;
+    if (computed && computed.position === 'static') {
+      scroller.style.position = 'relative';
+    }
+    scroller.appendChild(div);
+    customOverlay = div;
+    // Wire a ResizeObserver once per scroller so re-renders (font
+    // load, orientation flip, zoom change) trigger a re-paint without
+    // the shell having to know about us. happy-dom + older Safari
+    // don't always expose ResizeObserver — degrade silently.
+    if (typeof ResizeObserver !== 'undefined' && overlayObservedScroller !== scroller) {
+      try {
+        overlayResizeObserver?.disconnect();
+      } catch {
+        /* prior observer may already be GC'd */
+      }
+      try {
+        overlayResizeObserver = new ResizeObserver(() => {
+          const osmd = deps.getOsmd();
+          if (osmd) paintCustomCursor(osmd);
+        });
+        overlayResizeObserver.observe(scroller);
+        overlayObservedScroller = scroller;
+      } catch {
+        /* observer creation failed — paint-on-cursor-change still works */
+      }
+    }
+    return div;
+  }
+
+  /** Hides OSMD's built-in cursor element. The native cursor is mis-
+   *  positioned on octave-shift-heavy scores; our custom overlay takes
+   *  over visually. We leave the element in the DOM (OSMD keeps its
+   *  iterator state through it) and just zero out its visibility. */
+  function hideOsmdNativeCursor(ce: HTMLElement | undefined): void {
+    if (!ce) return;
+    if (ce.style.opacity !== '0') ce.style.opacity = '0';
+    if (ce.style.pointerEvents !== 'none') ce.style.pointerEvents = 'none';
+  }
+
+  /** Paint the custom cursor overlay at the current cursor position.
+   *
+   *  Design (2026-05-13 revision — stable-height):
+   *
+   *  - **Y range = staff system only** (the `.vf-stave` group union).
+   *    The previous notes-union approach varied height 120 → 460 px
+   *    per cursor advance because note `<g>` elements include stems,
+   *    beams, and ledger lines that can extend hundreds of pixels
+   *    above/below the staff. Snapping to staff Y gives a stable
+   *    ~staff-height bar that only changes on system transitions —
+   *    matches Soundslice's "wide rectangle" cursor and OSMD's
+   *    native type=1 (current-measure) intent.
+   *  - **X range = current notes' notehead cluster** with horizontal
+   *    padding. Narrower than a full-measure highlight but unambiguous
+   *    about which note is sounding right now (the pink notehead
+   *    paint from `highlightCurrentNotes` reinforces this).
+   *  - **Notes outside the staff** (extreme ledger lines, octave
+   *    shifts) are still visible via the pink note highlight — the
+   *    gold bar marks "look here, this is the staff", not "this is
+   *    where every note lives".
+   *
+   *  All positions come from `getBoundingClientRect` on rendered SVG
+   *  elements, bypassing OSMD's `MusicSystem.AbsolutePosition` bug
+   *  (verified on La Campanella's 78 octave-shifts). Safe to call on
+   *  every cursor change; idempotent + cheap. */
+  function paintCustomCursor(osmd: OsmdInstanceRef): void {
+    const cursor = osmd.cursor;
+    if (!cursor) return;
+    const ce = cursor.cursorElement;
+    const scroller = resolveScoreScroller(ce);
+    if (!scroller) return;
+
+    hideOsmdNativeCursor(ce);
+
+    const overlay = ensureCustomOverlay(scroller);
+    if (!overlay) return;
+
+    const notes = getNotesUnderCursor(cursor);
+    if (notes.length === 0) {
+      overlay.style.opacity = '0';
+      return;
+    }
+
+    // X range from the notes' noteheads — that's where the action is.
+    let notesRect: RectLike | null = null;
+    for (const note of notes) {
+      const r = noteToViewportRect(note);
+      if (r) notesRect = notesRect ? unionRects(notesRect, r) : r;
+    }
+    if (!notesRect) {
+      overlay.style.opacity = '0';
+      return;
+    }
+
+    // Y range from the staff system's `.vf-stave` elements — stable
+    // per system, immune to note `<g>` bounding-rect variation. Falls
+    // back to notesRect Y when no staves are found (e.g. happy-dom
+    // tests without rendered SVG).
+    const staffRange = findStaffSystemYRange(notes);
+    const visualRect: RectLike = staffRange ?? notesRect;
+
+    // Convert viewport rect → scroll-content rect. The overlay lives
+    // inside `scroller`, so adding scrollTop/scrollLeft anchors it to
+    // the content (it then scrolls naturally with the page).
+    let panelRect: RectLike | null = null;
+    try {
+      const r = scroller.getBoundingClientRect();
+      panelRect = { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+    } catch {
+      return;
+    }
+    const scrollTop = scroller.scrollTop || 0;
+    const scrollLeft = scroller.scrollLeft || 0;
+    const top = visualRect.top - panelRect.top + scrollTop;
+    // X: prefer notes' X for the chord cluster; staff X would span the
+    // whole system which is wider than needed for "the note playing
+    // right now."
+    const left = (notesRect.left ?? 0) - (panelRect.left ?? 0) + scrollLeft;
+    const width = (notesRect.right ?? 0) - (notesRect.left ?? 0);
+    const height = visualRect.bottom - visualRect.top;
+    if (!Number.isFinite(top) || !Number.isFinite(left) || width <= 0 || height <= 0) {
+      overlay.style.opacity = '0';
+      return;
+    }
+
+    overlay.style.top = `${top}px`;
+    overlay.style.left = `${left - CUSTOM_CURSOR_PAD_X}px`;
+    overlay.style.width = `${width + 2 * CUSTOM_CURSOR_PAD_X}px`;
+    overlay.style.height = `${height}px`;
+    overlay.style.opacity = '1';
+
+    _diagOverlay(overlay, visualRect, panelRect, scrollTop, scroller);
+  }
+
+  /** [DIAG-OVERLAY] Verify the painted overlay rect matches the staff
+   *  position. Logs once every 16 paints (matches `_diagCursorPos`
+   *  cadence). Forwarded to server.log via the remote-log gate. */
+  let _diagOverlayCalls = 0;
+  function _diagOverlay(
+    overlay: HTMLDivElement,
+    visualRect: RectLike,
+    panelRect: RectLike,
+    scrollTop: number,
+    scroller: HTMLElement
+  ): void {
+    _diagOverlayCalls++;
+    if (_diagOverlayCalls % 16 !== 1) return;
+    try {
+      const top = parseFloat(overlay.style.top);
+      const left = parseFloat(overlay.style.left);
+      const width = parseFloat(overlay.style.width);
+      const height = parseFloat(overlay.style.height);
+      // Compute overlay's current screen rect (where the user actually
+      // sees the bar) to compare against the staff's screen position.
+      const overlayScreenTop = top - scrollTop + (panelRect.top ?? 0);
+      const overlayScreenBot = overlayScreenTop + height;
+      const panelTop = panelRect.top ?? 0;
+      const panelBot = panelRect.bottom ?? panelTop + (scroller.clientHeight || 0);
+      const aboveSafe = Math.max(0, panelTop - overlayScreenTop);
+      const belowSafe = Math.max(0, overlayScreenBot - panelBot);
+      console.log(
+        '[DIAG-OVERLAY] ' +
+          JSON.stringify({
+            overlayTop: Math.round(top),
+            overlayLeft: Math.round(left),
+            overlayW: Math.round(width),
+            overlayH: Math.round(height),
+            overlayScreenTop: Math.round(overlayScreenTop),
+            overlayScreenBot: Math.round(overlayScreenBot),
+            staffTop: Math.round(visualRect.top),
+            staffBot: Math.round(visualRect.bottom),
+            panelTop: Math.round(panelTop),
+            panelBot: Math.round(panelBot),
+            // How much the overlay extends past the panel (clipped px).
+            // 0/0 = fits cleanly; >0 above or below = doesn't fit.
+            clippedAbove: Math.round(aboveSafe),
+            clippedBelow: Math.round(belowSafe),
+            scrollTop: Math.round(scrollTop),
+          })
+      );
+    } catch (e) {
+      console.warn('[DIAG-OVERLAY] threw: ' + (e as Error).message);
+    }
   }
 
   function scorePanelMargins(scroller: HTMLElement): { top: number; bottom: number } {
@@ -828,10 +1213,21 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     }
   }
 
+  /** Public entry point for re-painting the custom overlay when the
+   *  caller knows the layout changed (resize / zoom / re-render).
+   *  Internal updates from setCursorToNote / resetToStart bypass this
+   *  wrapper and call `paintCustomCursor(osmd)` directly. */
+  function repaintCustomCursor(): void {
+    const osmd = deps.getOsmd();
+    if (!osmd) return;
+    paintCustomCursor(osmd);
+  }
+
   return {
     resetToStart,
     clearHighlights,
     highlightCurrentNotes,
     setCursorToNote,
+    repaintCustomCursor,
   };
 }

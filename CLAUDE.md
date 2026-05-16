@@ -19,10 +19,10 @@ The repo is a pnpm workspace; **`packages/web` is the production entry**. Phase
 boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 [`packages/web/src/shell-bootstrap.ts`](packages/web/src/shell-bootstrap.ts).
 
-**Engine + shell extraction status (2026-05-12)**: `@piano/core` holds the
+**Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 786 core
-tests, 1464 web tests, and the Vite web build.
+tests, 1490 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -349,16 +349,66 @@ that earlier scrollIntoView-based attempts (v1-v4) hit on dense passages:
 - **`belowFocus` correction**: `planPanelScroll` subtracts the active-region's
   extent below focusY from `safeBottom` so the staff bottom always lands inside
   the viewport, not 28px below.
-- **`stretchCursorToNotes`**: after every `cursor.update()`, the cursor
-  element's `style.top`/`style.height` are extended to cover any noteheads
-  outside the staff lines (e.g. Eb7 on multiple ledger lines above the treble)
-  so the blue bar visually encloses the highlight rather than floating below it.
 - **Layout-graph chain**: system-change detection walks
   `GraphicalMusicSheet.MeasureList[m][0].parentMusicSystem.Id` — the same path
   OSMD's own `Cursor.update` uses internally.
 - **`[CURSOR-SCROLL v10]` + `[DIAG-CURSORPOS]` diag logs**: forwarded to
   `server.log` via the remote-log gate so the in-the-wild scroll cadence stays
   inspectable (event / reason / panel + safe band + focusY / delta).
+
+### Custom cursor overlay (SVG ground truth, 2026-05-13)
+
+OSMD's native yellow cursor element is **hidden** and we paint our own gold
+overlay (`rgba(255, 215, 0, 0.30)`) from the rendered SVG's bounding rects.
+Rationale: OSMD positions its cursor from
+`MusicSystem.PositionAndShape.AbsolutePosition.y + StaffLine[0].RelativePosition.y`,
+but on scores with `<octave-shift>` brackets — especially nested ones
+(`size="8"` plus `size="15"` plus multi-channel `number="N"`) — OSMD reserves
+bracket-padding space in the system's bounding box but the renderer doesn't
+shift the staff lines down by that amount. Result: the cursor lands 200–328 px
+below the actual staff, drift growing as the score progresses (verified on
+Liszt's _La Campanella_, 78 octave-shifts, head_dy −232 → −328 px over 56 s).
+
+The fix mirrors **Verovio's "DOM is the source of truth" pattern** + OSMD's own
+recommended approach (`graphicalNote.getSVGGElement().getBoundingClientRect()`):
+
+- **Hide OSMD's native cursor**: `cursor.cursorElement.style.opacity = '0'` (the
+  iterator still advances, only the visible bar is replaced).
+- **Paint a `<div>` overlay**: lazy-created child of `#osmdContainer`,
+  `position: absolute`, gold tint, no pointer events. Scrolls naturally with the
+  score content because it lives inside the scrollable container.
+- **X range from notes**: union of `noteToViewportRect()` over
+  `GNotesUnderCursor()` — already correct in the SVG even when OSMD's data model
+  is off.
+- **Y range from stave path elements (stable-height, 2026-05-13)**: walk up from
+  each note's `<g>` to find ancestors with VexFlow `.vf-stave` children, filter
+  by horizontal overlap with the note (so only the current system contributes),
+  union those Y ranges. **Y does NOT extend to noteheads** — the first iteration
+  unioned with notes and made the bar pulse 120 → 460 px per cursor advance
+  (note `<g>` bounding rects include stems, beams, and ledger lines that spread
+  far from the staff). Pink notehead paint (`highlightCurrentNotes`) covers the
+  actual sounding notes; the gold bar marks "the staff is here, look at this
+  measure." Matches Soundslice's "Wide rectangle" cursor + OSMD's native type=1
+  intent. Falls back to notes' Y when no `.vf-stave` is found (happy-dom tests,
+  partial-load fixtures).
+- **`[DIAG-OVERLAY]` log (every 16 paints)**: overlayTop/Left/W/H +
+  overlayScreenTop/Bot + staffTop/Bot + panelTop/Bot + clippedAbove/Below.
+  `clippedAbove`/`clippedBelow` measure overlay-vs-panel fit objectively — 0/0
+  means the bar fits cleanly, anything else means the system is too tall for the
+  panel and the user sees a partial view.
+- **ResizeObserver self-attached**: the overlay re-paints on container resize
+  (font load, orientation flip, OSMD re-render) without the shell wiring up
+  anything. happy-dom / older Safari without ResizeObserver still get paint-
+  on-cursor-change behavior.
+- **Public `repaintCustomCursor()` API**: for callers (settings panel zoom,
+  manual scroll) that need to nudge the overlay without advancing the cursor.
+
+The previous `stretchCursorToNotes` approach (extending OSMD's native cursor's
+`style.top` / `style.height`) was retired on 2026-05-12 because OSMD resets
+`style.top` on each `cursor.update()` but not `style.height`, leading to
+unbounded growth (production log: 130 → 12061 px over 2 min). The custom-
+overlay approach owns its own element entirely, so this class of bug cannot
+recur.
 
 ### Tab visibility + clock freeze
 
