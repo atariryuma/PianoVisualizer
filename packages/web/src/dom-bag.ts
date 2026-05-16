@@ -115,6 +115,8 @@ export interface DomBag {
   journalBtn: HTMLElement;
   journalModal: HTMLElement;
   journalCloseBtn: HTMLElement;
+  journalPianistCard: HTMLElement;
+  journalWeeklyMeter: HTMLElement;
   journalLibraryRollup: HTMLElement;
   journalRepertoireList: HTMLElement;
   journalStampsGrid: HTMLElement;
@@ -224,6 +226,8 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'journalBtn',
   'journalModal',
   'journalCloseBtn',
+  'journalPianistCard',
+  'journalWeeklyMeter',
   'journalLibraryRollup',
   'journalRepertoireList',
   'journalStampsGrid',

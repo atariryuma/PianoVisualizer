@@ -24,6 +24,15 @@ export interface PrefsShape {
   audioOffsetMs?: number | null;
   debug?: boolean;
   lang?: 'en' | 'jp';
+  /** Kid-chosen nickname displayed on the journal "Pianist Card".
+   *  Identity-primer per McPherson 10-year longitudinal — kids with a
+   *  named long-term self-concept sustain practice the longest. */
+  pianistName?: string;
+  /** Long-term commitment age the kid named when setting up the card.
+   *  Stored as the target *age* (not year-from-now) so the displayed
+   *  countdown stays meaningful as time passes — but the journal renders
+   *  it as relative ("4 months in") when current age is known. */
+  pianistCommitYear?: number;
 }
 
 /** Minimal localStorage-like surface. The shell hands in the real
@@ -102,6 +111,12 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   }
   if (r.lang === 'en' || r.lang === 'jp') {
     out.lang = r.lang;
+  }
+  if (typeof r.pianistName === 'string' && r.pianistName.trim().length > 0) {
+    out.pianistName = String(r.pianistName).slice(0, 20).trim();
+  }
+  if (typeof r.pianistCommitYear === 'number' && r.pianistCommitYear > 1900) {
+    out.pianistCommitYear = r.pianistCommitYear | 0;
   }
   return out;
 }

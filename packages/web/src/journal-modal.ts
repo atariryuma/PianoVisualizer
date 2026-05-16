@@ -26,6 +26,8 @@ export interface JournalModalDom {
   journalBtn: HTMLElement;
   journalModal: HTMLElement;
   journalCloseBtn: HTMLElement;
+  journalPianistCard: HTMLElement;
+  journalWeeklyMeter: HTMLElement;
   journalLibraryRollup: HTMLElement;
   journalRepertoireList: HTMLElement;
   journalStampsGrid: HTMLElement;
@@ -34,6 +36,11 @@ export interface JournalModalDom {
   libraryMasteryStrip: HTMLElement;
   resStampsEarned: HTMLElement;
   sectionBannerHint: HTMLElement;
+}
+
+export interface PianistIdentity {
+  name?: string;
+  commitYear?: number;
 }
 
 export interface JournalModalDeps {
@@ -60,6 +67,11 @@ export interface JournalModalDeps {
   /** Optional: jump the kid into a song's panel from the repertoire
    *  tab. When provided, each book becomes clickable. */
   selectSong?: (songId: string) => void;
+  /** Live read of the pianist identity stored in prefs. Optional —
+   *  modal hides the card when omitted (preserves backward compat). */
+  getPianistIdentity?(): PianistIdentity;
+  /** Persist the kid's chosen name + commit-year. */
+  setPianistIdentity?(id: PianistIdentity): void;
 }
 
 /** Shape result-card hands the journal at section-complete time. */
@@ -112,6 +124,15 @@ const DIFFICULTY_ICONS: Record<NonNullable<JournalSongRef['difficulty']>, string
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Local-time Monday at 00:00 for the ISO week containing `d`. */
+function startOfIsoWeek(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  const dow = out.getDay() || 7; // Sun=7 in ISO terms
+  out.setDate(out.getDate() - (dow - 1));
+  return out;
 }
 
 /** Visual tint per rarity — drives the stamp grid's badge color. */
@@ -434,7 +455,104 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     }
   }
 
+  function renderPianistCard(): void {
+    const target = deps.dom.journalPianistCard;
+    if (!target || !deps.getPianistIdentity) {
+      if (target) target.innerHTML = '';
+      return;
+    }
+    const id = deps.getPianistIdentity();
+    target.innerHTML = '';
+    target.classList.toggle('is-empty', !id.name);
+
+    if (!id.name) {
+      const cta = document.createElement('button');
+      cta.className = 'pianist-card-cta';
+      cta.textContent = deps.t('pianistCardCta');
+      cta.addEventListener('click', promptForIdentity);
+      target.appendChild(cta);
+      return;
+    }
+
+    const name = document.createElement('div');
+    name.className = 'pianist-card-name';
+    name.textContent = '🎹 ' + id.name;
+    target.appendChild(name);
+
+    if (id.commitYear) {
+      const sub = document.createElement('div');
+      sub.className = 'pianist-card-commit';
+      sub.textContent = deps.t('pianistCommitFmt', { y: id.commitYear });
+      target.appendChild(sub);
+    }
+
+    const edit = document.createElement('button');
+    edit.className = 'pianist-card-edit';
+    edit.textContent = '✎';
+    edit.title = deps.t('pianistEditTitle');
+    edit.setAttribute('aria-label', deps.t('pianistEditTitle'));
+    edit.addEventListener('click', promptForIdentity);
+    target.appendChild(edit);
+  }
+
+  function promptForIdentity(): void {
+    if (!deps.setPianistIdentity) return;
+    const cur = deps.getPianistIdentity?.() ?? {};
+    const promptFn = typeof globalThis.prompt === 'function' ? globalThis.prompt : null;
+    if (!promptFn) return;
+    const nameInput = promptFn(deps.t('pianistNamePrompt'), cur.name ?? '');
+    if (nameInput == null) return;
+    const trimmed = nameInput.trim().slice(0, 20);
+    if (trimmed.length === 0) return;
+    const yearInput = promptFn(
+      deps.t('pianistCommitPrompt'),
+      cur.commitYear != null ? String(cur.commitYear) : ''
+    );
+    const parsedYear = yearInput != null ? Number(yearInput.trim()) : NaN;
+    const commitYear =
+      Number.isFinite(parsedYear) && parsedYear > 1900 ? Math.floor(parsedYear) : undefined;
+    deps.setPianistIdentity({ name: trimmed, commitYear });
+    renderPianistCard();
+  }
+
+  function renderWeeklyMeter(): void {
+    const target = deps.dom.journalWeeklyMeter;
+    if (!target) return;
+    const progress = deps.getProgress();
+    const days = progress.streakDays ?? [];
+    if (days.length === 0) {
+      target.innerHTML = '';
+      return;
+    }
+    const now = new Date();
+    const monday = startOfIsoWeek(now);
+    const weekDays = new Set<string>();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      weekDays.add(deps.formatDateKey(d));
+    }
+    let count = 0;
+    for (const k of days) if (weekDays.has(k)) count++;
+    const target3 = 3;
+    const reached = count >= target3;
+    target.innerHTML =
+      '<div class="weekly-meter-row">' +
+      '<span class="weekly-meter-label">' +
+      deps.t('weeklyMeterLabel') +
+      '</span>' +
+      '<span class="weekly-meter-value' +
+      (reached ? ' weekly-meter-reached' : '') +
+      '">' +
+      deps.t('weeklyMeterFmt', { n: count, target: target3 }) +
+      (reached ? ' ✓' : '') +
+      '</span>' +
+      '</div>';
+  }
+
   function render(): void {
+    renderPianistCard();
+    renderWeeklyMeter();
     renderLibraryRollup();
     renderRepertoireTab();
     renderStampsTab();

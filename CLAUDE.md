@@ -12,6 +12,33 @@ effects on a canvas. The UI is bilingual (EN / 日本語).
 
 Current version: **0.14**
 
+## Gamification: banned-list (kid-safety)
+
+Empirical reviews (Veiga et al. 2025; arXiv 2412.05039 dark-patterns in mobile
+games; Frontiers Educ 2024) consistently rank these patterns as the highest-harm
+mechanics for under-13 users. **Do not add any of them**, even when the request
+looks reasonable:
+
+- **FOMO timers** ("offer expires in 23:59", limited-time rewards on
+  songs/stamps). Time pressure flips intrinsic motivation extrinsic.
+- **Public leaderboards with named ranks**. Social-pressure ranking doubles the
+  streak-shame harm for kids 9-12.
+- **RNG / loot-box / gacha mechanics**. Every stamp/seal predicate is
+  deterministic. A kid must be able to _see and chase_ the goal.
+- **Daily streak with loss/shame copy**. Use lifetime-days counters or
+  best-streak (non-decreasing). Streak counters that decrement carry a measured
+  harm score (Hanus & Fox 2015; Decision Lab "Streak Creep").
+- **False-progress** (bars that never complete, infinite metas with no defined
+  finish). Every progress bar must resolve to a reachable end.
+- **Surveillance-style parent monitoring**. Földi 2024: passive parent
+  monitoring flips kid motivation extrinsic. Any family/share surface must be
+  _kid-initiated_, not parent-pulled.
+- **Performance-contingent rewards**. Deci/Koestner/Ryan 1999: stamps on
+  "perfect" gate intrinsic motivation. Reward attempts, improvement, and
+  milestones instead. (Current stamps already follow this.)
+- **Variable-ratio reinforcement on core progression**. Acceptable as decorative
+  _celebration_ (visual effects), but never as gating.
+
 ## Repository structure
 
 The repo is a pnpm workspace; **`packages/web` is the production entry**. Phase

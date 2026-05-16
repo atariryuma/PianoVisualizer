@@ -38,6 +38,7 @@ export interface ShellUiDeps {
   midiInput: MidiInputRef;
   midiState: MidiState;
   prefs: InitialPrefs;
+  savePrefs?: () => void;
   config: PianoConfig;
   /** Mutable currentSong — getter/setter. */
   getCurrentSong: () => any;
@@ -167,6 +168,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'journalBtn',
       'journalModal',
       'journalCloseBtn',
+      'journalPianistCard',
+      'journalWeeklyMeter',
       'journalLibraryRollup',
       'journalRepertoireList',
       'journalStampsGrid',
@@ -182,6 +185,15 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     getSessionPeakFlow: () => Number((deps.state as any).peakFlow ?? 0),
     t,
     formatDateKey: PianoCore.formatDateKey,
+    getPianistIdentity: () => ({
+      name: (deps.prefs as any).pianistName,
+      commitYear: (deps.prefs as any).pianistCommitYear,
+    }),
+    setPianistIdentity: (id) => {
+      (deps.prefs as any).pianistName = id.name;
+      (deps.prefs as any).pianistCommitYear = id.commitYear;
+      deps.savePrefs?.();
+    },
   });
 
   // ── Result-card ──

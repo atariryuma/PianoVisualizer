@@ -401,6 +401,27 @@ export const T_STRINGS: TranslationTable = {
   // ==== 0.14 — Practice journal (completion visualization) ====
   // Title screen button + library strip
   journalBtn: { en: '📔 Practice journal', jp: '📔 練習ジャーナル' },
+  // Pianist Card — identity primer per McPherson 10-yr longitudinal.
+  pianistCardCta: {
+    en: '🎹 Tap to set your pianist name',
+    jp: '🎹 ピアニスト名を決める',
+  },
+  pianistNamePrompt: {
+    en: 'What should we call you as a pianist?',
+    jp: 'ピアニストとしての名前は?',
+  },
+  pianistCommitPrompt: {
+    en: "Until what year do you think you'll keep playing? (e.g. 2035) — skip with Cancel",
+    jp: '何年までピアノを続けると思う? (例: 2035) — スキップは Cancel',
+  },
+  pianistCommitFmt: {
+    en: 'Playing until {y}',
+    jp: '{y}年まで続ける',
+  },
+  pianistEditTitle: { en: 'Edit pianist card', jp: 'ピアニストカードを編集' },
+  // Weekly practice meter — Zhao 2022 weekly-cadence safety.
+  weeklyMeterLabel: { en: 'This week', jp: '今週の練習' },
+  weeklyMeterFmt: { en: '{n} / {target} days', jp: '{n} / {target} 日' },
   // Goal-gradient hint that rides beneath the section banner.
   // Kept short: the banner is on-screen for ~2 s.
   sectionBannerHintFmt: {

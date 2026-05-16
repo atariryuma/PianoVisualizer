@@ -549,6 +549,7 @@ export function boot(): void {
     midiInput,
     midiState,
     prefs,
+    savePrefs,
     config: CONFIG,
     dateKey: PianoCore.formatDateKey,
     getCurrentSong: () => currentSong,
