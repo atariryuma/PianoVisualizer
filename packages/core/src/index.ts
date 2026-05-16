@@ -443,6 +443,7 @@ export {
   practiceBeatMs,
   computePracticeTimings,
   practiceElapsedMs,
+  isFixedTempoMode,
 } from './state/practice-state';
 export type {
   PracticeMode,

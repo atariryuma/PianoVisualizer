@@ -68,10 +68,15 @@ export interface SongProgress {
   >;
 }
 
+/** Schema version bumped on breaking semantic changes. Payloads with a
+ *  lower number are rewritten on load — see `migrateAndDefaultProgress`. */
+export const CURRENT_SCHEMA_VERSION = 2;
+
 /** Top-level shape persisted under `pianoViz_practice_v1`. The streak
  *  fields satisfy `StreakState` so streak.ts's reducer can mutate this
  *  directly without a separate state object. */
 export interface PracticeProgress extends StreakState {
+  schemaVersion: number;
   songs: Record<string, SongProgress>;
   /** Stamp ID → epoch-ms timestamp earned. Populated by stamps.ts's
    *  evaluator at section-complete time. Missing on payloads written
@@ -98,6 +103,7 @@ export function defaultSongProgress(): SongProgress {
 /** Build a fresh top-level progress blob — no streak, no songs. */
 export function defaultPracticeProgress(): PracticeProgress {
   return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     streakDays: [],
     streakCount: 0,
     songs: {},
@@ -105,48 +111,24 @@ export function defaultPracticeProgress(): PracticeProgress {
   };
 }
 
-/**
- * Take whatever `localStorage.getItem` returned (parsed) and return a
- * guaranteed well-formed `PracticeProgress`. Handles:
- *
- *   * `null` / `undefined` — returns the default shape.
- *   * v0 schema (top-level `sections` / `unlockedTempos` /
- *     `unlockedSections`) — migrates the legacy keys into a single
- *     `songs.fur_elise` bucket. The original migration shipped on
- *     2026-04-30 with the schema-rename commit; we still see this on
- *     reinstalls of users who haven't relaunched in the meantime.
- *   * v1 schema (already has `songs`) — passes through, with the
- *     default fields filled in for any missing top-level keys.
- *
- * Pure: no I/O, no globals.
- */
+/** Return a well-formed PracticeProgress from raw localStorage JSON.
+ *  Payloads below CURRENT_SCHEMA_VERSION are wiped (songs + earnedStamps)
+ *  because mode wasn't recorded per-attempt — guided credit can't be
+ *  separated from rhythm. streakDays survives. */
 export function migrateAndDefaultProgress(raw: unknown): PracticeProgress {
   const def = defaultPracticeProgress();
   if (!raw || typeof raw !== 'object') return def;
-  const r = raw as Record<string, unknown> & {
-    sections?: Record<string, SectionProgress>;
-    unlockedTempos?: Record<string, boolean>;
-    unlockedSections?: Record<string, boolean>;
-    songs?: Record<string, SongProgress>;
-  };
+  const r = raw as Record<string, unknown>;
+  const rawVersion = typeof r.schemaVersion === 'number' ? r.schemaVersion : 1;
 
-  // v0 → v1: top-level sections/unlocked* migrated under songs.fur_elise.
-  if (r.sections && !r.songs) {
-    r.songs = {
-      fur_elise: {
-        sections: r.sections,
-        unlockedTempos: r.unlockedTempos ?? { 60: true, 75: false, 90: false, 100: false },
-        unlockedSections: r.unlockedSections ?? { A1: true, B: false, A2: false },
-        history: {},
-      },
+  if (rawVersion < CURRENT_SCHEMA_VERSION) {
+    return {
+      ...def,
+      streakDays: Array.isArray(r.streakDays) ? (r.streakDays as string[]) : [],
+      streakCount: typeof r.streakCount === 'number' ? r.streakCount : 0,
     };
-    delete r.sections;
-    delete r.unlockedTempos;
-    delete r.unlockedSections;
   }
 
-  // Defensive: `earnedStamps` was added in 0.14. Pre-0.14 payloads
-  // lack the field entirely; we don't want callers to deref undefined.
   const merged = Object.assign(def, r) as PracticeProgress;
   if (!merged.earnedStamps || typeof merged.earnedStamps !== 'object') {
     merged.earnedStamps = {};

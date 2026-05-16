@@ -20,7 +20,8 @@
 // renderer is called whenever the controls flip a flag, plus on every
 // langchange event and after sectionIdx mutations from the result-card.
 
-import type { Lang } from '@piano/core';
+import { isFixedTempoMode } from '@piano/core';
+import type { Lang, PracticeMode } from '@piano/core';
 
 /** Per-song progress slice the renderer reads. */
 export interface SongPanelProgress {
@@ -35,7 +36,7 @@ export interface SongPanelProgress {
 export interface SongPanelPracticeRef {
   progress: { streakCount?: number; streakDays: string[] } | null;
   tempoPct: number;
-  mode: string;
+  mode: PracticeMode;
   fullSongMode: boolean;
   sectionIdx: number;
   handFilter: 'L' | 'R' | null;
@@ -142,11 +143,8 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
       deps.dom.streakCal.appendChild(cell);
     }
 
-    // Full-song listen always plays at 100% (see buildFullSongNotes).
-    // Compute up front so the BPM hint + tempo buttons agree on what
-    // the kid will actually hear when they tap Start.
-    const tempoLockedToFull = deps.practice.mode === 'listen' && deps.practice.fullSongMode;
-    const displayedTempoPct = tempoLockedToFull ? 100 : deps.practice.tempoPct;
+    const tempoLocked = isFixedTempoMode(deps.practice.mode, deps.practice.fullSongMode);
+    const displayedTempoPct = tempoLocked ? 100 : deps.practice.tempoPct;
 
     // Show the score's source BPM so the user knows why two versions
     // of the same piece can feel different at the same tempo% (e.g.
@@ -165,10 +163,8 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     deps.dom.tempoRow.innerHTML = '';
     for (const step of TEMPO_STEPS) {
       const btn = document.createElement('button');
-      // Full-song listen forces 100% regardless of unlock progression
-      // — the tempo row dims as a whole and only 100% reads as active.
-      const isActive = tempoLockedToFull ? step === 100 : step === deps.practice.tempoPct;
-      const isLocked = tempoLockedToFull ? step !== 100 : !sp.unlockedTempos[step];
+      const isActive = tempoLocked ? step === 100 : step === deps.practice.tempoPct;
+      const isLocked = tempoLocked ? step !== 100 : !sp.unlockedTempos[step];
       btn.className = 'tempo-btn' + (isActive ? ' active' : '') + (isLocked ? ' locked' : '');
       // Lock indicator lives in CSS (.tempo-btn.locked::after) so the
       // disabled state reads as designed UI, not an emoji-pasted suffix.
@@ -182,7 +178,7 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
       };
       deps.dom.tempoRow.appendChild(btn);
     }
-    deps.dom.tempoRow.style.opacity = tempoLockedToFull ? '0.55' : '';
+    deps.dom.tempoRow.style.opacity = tempoLocked ? '0.55' : '';
 
     deps.dom.sectionList.innerHTML = '';
     if (!currentSong || !currentSong._loaded || currentSong.sections.length === 0) {

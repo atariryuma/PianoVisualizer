@@ -27,8 +27,11 @@
 // it as a mutable let elsewhere; fresh on every call so a song
 // change re-uses the new bpm immediately.
 
+import { isFixedTempoMode } from '@piano/core';
+import type { PracticeMode } from '@piano/core';
+
 export interface PracticeTimingsPracticeRef {
-  mode: string;
+  mode: PracticeMode;
   fullSongMode: boolean;
   tempoPct: number;
 }
@@ -83,7 +86,7 @@ export interface PracticeTimings {
 export function createPracticeTimings(deps: PracticeTimingsDeps): PracticeTimings {
   function effectiveTempoPct(): number {
     const p = deps.getPractice();
-    if (p.mode === 'listen' && p.fullSongMode) return 100;
+    if (isFixedTempoMode(p.mode, p.fullSongMode)) return 100;
     return p.tempoPct || 100;
   }
 

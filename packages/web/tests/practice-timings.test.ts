@@ -18,7 +18,7 @@ function makeFixture(
   } = {}
 ) {
   const practice: PracticeTimingsPracticeRef = {
-    mode: over.mode ?? 'guided',
+    mode: over.mode ?? 'rhythm',
     fullSongMode: over.fullSongMode ?? false,
     tempoPct: over.tempoPct ?? 75,
   };
@@ -104,18 +104,23 @@ describe('createPracticeTimings — effectiveTempoPct', () => {
     expect(fx.pt.effectiveTempoPct()).toBe(60);
   });
 
-  it('returns tempoPct when guided', () => {
+  it('forces 100 in guided regardless of tempoPct setting', () => {
     const fx = makeFixture({ mode: 'guided', fullSongMode: false, tempoPct: 75 });
+    expect(fx.pt.effectiveTempoPct()).toBe(100);
+  });
+
+  it('returns tempoPct in rhythm mode', () => {
+    const fx = makeFixture({ mode: 'rhythm', fullSongMode: false, tempoPct: 75 });
     expect(fx.pt.effectiveTempoPct()).toBe(75);
   });
 
-  it('returns 100 when tempoPct is 0 / falsy', () => {
-    const fx = makeFixture({ mode: 'guided', tempoPct: 0 });
+  it('returns 100 when tempoPct is 0 / falsy (rhythm)', () => {
+    const fx = makeFixture({ mode: 'rhythm', tempoPct: 0 });
     expect(fx.pt.effectiveTempoPct()).toBe(100);
   });
 
   it('reads through the thunk on every call (mode change picks up immediately)', () => {
-    const fx = makeFixture({ mode: 'guided', tempoPct: 60 });
+    const fx = makeFixture({ mode: 'rhythm', tempoPct: 60 });
     expect(fx.pt.effectiveTempoPct()).toBe(60);
     fx.practice.mode = 'listen';
     fx.practice.fullSongMode = true;

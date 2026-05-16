@@ -181,9 +181,11 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     if (!cur || cur.timeMs == null) return false;
 
     const dtSigned = elapsed - cur.timeMs; // +late, -early
+    // Guided has no late ceiling — the note waits — but blocks early
+    // presses so count-in taps don't pre-credit a hit.
     const inWindow =
       deps.practice.mode === 'guided'
-        ? true
+        ? dtSigned >= -deps.tuning.hitWindowEarlyMs
         : dtSigned >= -deps.tuning.hitWindowEarlyMs && dtSigned <= deps.tuning.hitWindowMs;
 
     // Find the played note inside the current chord cluster (cur and

@@ -42,6 +42,13 @@ export type PracticeMode = 'guided' | 'rhythm' | 'listen';
 export type Hand = 'L' | 'R';
 export type HandFilter = Hand | null;
 
+/** True when the mode plays at the song's native tempo regardless of
+ *  the user-selected `tempoPct` — guided is pure practice (no tempo
+ *  ladder) and full-song listen plays the score end-to-end. */
+export function isFixedTempoMode(mode: PracticeMode, fullSongMode: boolean): boolean {
+  return mode === 'guided' || (mode === 'listen' && fullSongMode);
+}
+
 /** A single note in the section schedule. timeMs is section-relative + count-in offset. */
 export interface PracticeNote {
   hand: Hand;
@@ -272,8 +279,13 @@ export function matchNoteOnset(
 
   const cur = notes[idx];
   const dtSigned = opts.elapsed - cur.timeMs;
+  // Guided allows unbounded late (note waits) but enforces the same
+  // early window as rhythm — so presses during count-in (before the
+  // note has descended to the hit zone) don't credit a hit.
   const inWindow =
-    s.mode === 'guided' ? true : dtSigned >= -HIT_WINDOW_EARLY_MS && dtSigned <= HIT_WINDOW_MS;
+    s.mode === 'guided'
+      ? dtSigned >= -HIT_WINDOW_EARLY_MS
+      : dtSigned >= -HIT_WINDOW_EARLY_MS && dtSigned <= HIT_WINDOW_MS;
 
   // Find the matched note: first try cur, then any chord-mate within ±tolerance.
   let matched: PracticeNote | null = null;

@@ -255,15 +255,23 @@ describe('matchNoteOnset', () => {
     expect(r.type).toBe('wrong-note');
   });
 
-  it('guided mode: any-time press counts as a hit (no timing window)', () => {
+  it('guided mode: late press counts as a hit (note waits, no late ceiling)', () => {
     s.mode = 'guided';
     const r = matchNoteOnset(s, 60, { elapsed: 99999 }, 0) as Extract<
       MatchOutcome,
       { type: 'hit' }
     >;
     expect(r.type).toBe('hit');
-    expect(r.isPerfect).toBe(true); // guided is always perfect
+    expect(r.isPerfect).toBe(true);
     expect(r.timingScore).toBe(1.0);
+  });
+
+  it('guided mode: very-early press (count-in phase) is rejected', () => {
+    s.mode = 'guided';
+    // cur.timeMs = 1000 (mkNote default). elapsed = 500 → dtSigned = -500ms,
+    // well past the HIT_WINDOW_EARLY_MS = 120 budget.
+    const r = matchNoteOnset(s, 60, { elapsed: 500 }, 0);
+    expect(r.type).toBe('wrong-note');
   });
 
   it('chord-mate: matches a sibling note within ±CHORD_MATE_TOLERANCE_MS', () => {

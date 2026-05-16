@@ -118,7 +118,7 @@ function makeProg(): ResultCardSongProgress {
 function makeDeps(over: Partial<ResultCardDeps> = {}): ResultCardDeps {
   const practice: ResultCardPracticeRef = {
     enabled: true,
-    mode: 'guided',
+    mode: 'rhythm',
     sectionIdx: 0,
     fullSongMode: false,
     tempoPct: 75,
@@ -245,7 +245,7 @@ describe('createResultCard — renderResultCard', () => {
   it('builds the unlocked-msg from tempo + section + streak entries', () => {
     const deps = makeDeps();
     deps.practice._lastResult = {
-      mode: 'guided',
+      mode: 'rhythm',
       secId: 'a1',
       stars: 3,
       unlockedTempo: 90,
@@ -258,10 +258,10 @@ describe('createResultCard — renderResultCard', () => {
     expect(deps.dom.resUnlock.textContent).toContain('streakDaysFmt');
   });
 
-  it('hides resTryPlay in non-listen results', () => {
+  it('hides resTryPlay in rhythm results', () => {
     const deps = makeDeps();
     deps.practice._lastResult = {
-      mode: 'guided',
+      mode: 'rhythm',
       secId: 'a1',
       stars: 1,
       unlockedTempo: null,
@@ -269,6 +269,24 @@ describe('createResultCard — renderResultCard', () => {
       streakDays: null,
     };
     createResultCard(deps).renderResultCard();
+    expect(deps.dom.resTryPlay!.style.display).toBe('none');
+  });
+
+  it('renders guided completion as non-scoring (no stars, guidedComplete copy)', () => {
+    const deps = makeDeps();
+    deps.practice._lastResult = {
+      mode: 'guided',
+      secId: 'a1',
+      stars: 0,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+    };
+    createResultCard(deps).renderResultCard();
+    expect(deps.dom.resTitle.textContent).toBe('guidedCompleteTitle');
+    expect(deps.dom.resMsg.textContent).toBe('guidedCompleteMsg');
+    expect(deps.dom.resStars.style.display).toBe('none');
+    expect(deps.dom.resUnlock.textContent).toBe('');
     expect(deps.dom.resTryPlay!.style.display).toBe('none');
   });
 });
@@ -331,7 +349,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('persists progress + records practice day in scoring path', () => {
     const deps = makeDeps();
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(deps.recordPracticeDay).toHaveBeenCalled();
     expect(deps.savePracticeProgress).toHaveBeenCalled();
@@ -339,7 +357,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('star ≥ 3 fires golden burst + 8-star shower', () => {
     const deps = makeDeps({ computeStars: vi.fn(() => 3) });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(deps.effectGoldenBurst).toHaveBeenCalled();
     expect(deps.effectStarShower).toHaveBeenCalledWith(8);
@@ -347,7 +365,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('star == 2 fires flower burst + 5-star shower', () => {
     const deps = makeDeps({ computeStars: vi.fn(() => 2) });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(deps.effectFlowerBurst).toHaveBeenCalled();
     expect(deps.effectStarShower).toHaveBeenCalledWith(5);
@@ -355,7 +373,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('star == 1 fires only a 3-star shower', () => {
     const deps = makeDeps({ computeStars: vi.fn(() => 1) });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(deps.effectGoldenBurst).not.toHaveBeenCalled();
     expect(deps.effectFlowerBurst).not.toHaveBeenCalled();
@@ -364,14 +382,14 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('star == 0 fires no celebration effects', () => {
     const deps = makeDeps({ computeStars: vi.fn(() => 0) });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(deps.effectStarShower).not.toHaveBeenCalled();
   });
 
   it('renders 3 star spans (filled vs empty by star count)', () => {
     const deps = makeDeps({ computeStars: vi.fn(() => 2) });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     const spans = deps.dom.resStars.querySelectorAll('span');
     expect(spans.length).toBe(3);
@@ -382,7 +400,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('hides resDurationRow when durPct is null (guided mode)', () => {
     const deps = makeDeps();
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     deps.practice.durationScoredCount = 0;
     createResultCard(deps).completePracticeSection();
     expect(deps.dom.resDurationRow!.style.display).toBe('none');
@@ -399,7 +417,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('shows resNext when next section is unlocked', () => {
     const deps = makeDeps();
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     deps.practice.sectionIdx = 0; // a1, next is b which is unlocked in fixture
     createResultCard(deps).completePracticeSection();
     expect(deps.dom.resNext.style.display).toBe('');
@@ -407,7 +425,7 @@ describe('createResultCard — completePracticeSection', () => {
 
   it('hides resNext when next section is locked', () => {
     const deps = makeDeps();
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     deps.practice.sectionIdx = 1; // b, next is a2 which is NOT unlocked in fixture
     createResultCard(deps).completePracticeSection();
     expect(deps.dom.resNext.style.display).toBe('none');
@@ -427,17 +445,17 @@ describe('createResultCard — completePracticeSection', () => {
       songProg: () => sp,
       setupHiDPICanvas: vi.fn(() => makeStubCtx()),
     });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(sp.history.a1.length).toBe(8); // pushed + shifted, still 8
   });
 
   it('caches snapshot on practice._lastResult for langchange re-render', () => {
     const deps = makeDeps();
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     createResultCard(deps).completePracticeSection();
     expect(deps.practice._lastResult).toMatchObject({
-      mode: 'guided',
+      mode: 'rhythm',
       secId: 'a1',
       stars: 2,
       unlockedTempo: 90,
@@ -454,7 +472,7 @@ describe('createResultCard — completePracticeSection', () => {
         streakDays: null,
       })),
     });
-    deps.practice.mode = 'guided';
+    deps.practice.mode = 'rhythm';
     deps.practice.sectionIdx = 0; // a1; next is b
     createResultCard(deps).completePracticeSection();
     expect(sp.unlockedTempos[90]).toBe(true);

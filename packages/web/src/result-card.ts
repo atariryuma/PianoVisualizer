@@ -20,10 +20,12 @@
 //     attempts' accuracy, with star halos for ≥3-star clears, current
 //     value label, and a colored trend delta vs the previous run.
 
+import type { PracticeMode } from '@piano/core';
+
 /** Practice slice the module reads + writes. */
 export interface ResultCardPracticeRef {
   enabled: boolean;
-  mode: string;
+  mode: PracticeMode;
   sectionIdx: number;
   fullSongMode: boolean;
   tempoPct: number;
@@ -44,7 +46,7 @@ export interface ResultCardPracticeRef {
 /** Snapshot retained on `practice._lastResult` so renderResultCard can
  *  re-paint on a language change without re-running scoring. */
 export interface ResultSnapshot {
-  mode: string;
+  mode: PracticeMode;
   secId: string;
   fullSong?: boolean;
   stars: number;
@@ -202,32 +204,46 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     const secLookup = currentSong?.sections.find((s) => s.id === r.secId);
     if (!r.fullSong && !secLookup) return;
 
-    if (r.mode === 'listen') {
-      deps.dom.resTitle.textContent = deps.t(r.fullSong ? 'listenedFullTitle' : 'listenedTitle');
+    if (r.mode === 'listen' || r.mode === 'guided') {
+      let title: string;
+      let msg: string;
       let subtitle: string;
+      if (r.mode === 'guided') {
+        title = deps.t('guidedCompleteTitle');
+        msg = deps.t('guidedCompleteMsg');
+      } else if (r.fullSong) {
+        title = deps.t('listenedFullTitle');
+        msg = deps.t('listenedFullMsg');
+      } else {
+        title = deps.t('listenedTitle');
+        msg = deps.t('listenedMsg');
+      }
       if (r.fullSong) {
         subtitle = currentSong ? deps.t(currentSong.titleKey) : '';
       } else {
-        // !r.fullSong → secLookup is defined (early return guarantees it).
         const s = secLookup as ResultCardSection;
         subtitle = deps.t(s.nameKey) + (s.isBoss ? ' 👑' : '');
       }
+      deps.dom.resTitle.textContent = title;
       deps.dom.resSectionName.textContent = subtitle;
+      deps.dom.resMsg.textContent = msg;
+      deps.dom.resUnlock.textContent = '';
       deps.dom.resStars.style.display = 'none';
       document.querySelectorAll('#sectionResult .result-stat').forEach((el) => {
         (el as HTMLElement).style.display = 'none';
       });
-      deps.dom.resMsg.textContent = deps.t(r.fullSong ? 'listenedFullMsg' : 'listenedMsg');
-      deps.dom.resUnlock.textContent = '';
       if (deps.dom.resHistoryWrap) deps.dom.resHistoryWrap.classList.add('hidden');
-      deps.dom.resNext.style.display = 'none';
-      if (deps.dom.resTryPlay) deps.dom.resTryPlay.style.display = '';
+      if (r.mode === 'listen') {
+        deps.dom.resNext.style.display = 'none';
+        if (deps.dom.resTryPlay) deps.dom.resTryPlay.style.display = '';
+      } else if (deps.dom.resTryPlay) {
+        deps.dom.resTryPlay.style.display = 'none';
+      }
       return;
     }
 
-    // Rhythm/guided result. Past this point we always have a real
-    // section (rhythm/guided never sets fullSong, so the early return
-    // above guarantees secLookup).
+    // Past this point we're in rhythm — fullSong is never set there, so
+    // the line-205 early-return guarantees secLookup is defined.
     const sec = secLookup as ResultCardSection;
     deps.dom.resStars.style.display = '';
     document.querySelectorAll('#sectionResult .result-stat').forEach((el) => {
@@ -333,6 +349,27 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         deps.practice.fullSongMode = false;
       }
       renderResultCard();
+      deps.dom.sectionResult.classList.add('visible');
+      deps.practice._completing = false;
+      return;
+    }
+
+    if (deps.practice.mode === 'guided') {
+      deps.practice._lastResult = {
+        mode: 'guided',
+        secId: sec.id,
+        stars: 0,
+        unlockedTempo: null,
+        unlockedSecKey: null,
+        streakDays: null,
+      };
+      renderResultCard();
+      const nextIdx = deps.sectionIds.indexOf(sec.id) + 1;
+      const hasNext =
+        nextIdx > 0 &&
+        nextIdx < deps.sectionIds.length &&
+        !!deps.songProg().unlockedSections[deps.sectionIds[nextIdx]];
+      deps.dom.resNext.style.display = hasNext ? '' : 'none';
       deps.dom.sectionResult.classList.add('visible');
       deps.practice._completing = false;
       return;

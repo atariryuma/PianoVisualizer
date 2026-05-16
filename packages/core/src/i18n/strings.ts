@@ -135,6 +135,12 @@ export const T_STRINGS: TranslationTable = {
   listenedFullTitle: { en: '🎧 You heard the whole song!', jp: '🎧 曲を聴き終わりました！' },
   listenedFullMsg: { en: 'Try playing it now.', jp: 'つぎは弾いてみよう。' },
   tryPlayingNow: { en: '▶ Try playing', jp: '▶ 弾いてみる' },
+  // Guided-mode completion (no scoring — pure practice)
+  guidedCompleteTitle: { en: '✨ Practice complete!', jp: '✨ 練習おつかれさま！' },
+  guidedCompleteMsg: {
+    en: 'Try again, or move to the next part.',
+    jp: 'もう一度練習する? 次の部分に進む?',
+  },
   // Practice HUD
   score: { en: 'Score', jp: '楽譜' },
   quit: { en: 'Quit', jp: 'やめる' },

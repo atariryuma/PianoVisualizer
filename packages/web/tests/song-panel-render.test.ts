@@ -93,7 +93,7 @@ function makeDeps(overrides: Partial<SongPanelRenderDeps> = {}): SongPanelRender
   const practice: SongPanelPracticeRef = {
     progress: { streakCount: 3, streakDays: ['2026-05-05', '2026-05-06', '2026-05-07'] },
     tempoPct: 75,
-    mode: 'guided',
+    mode: 'rhythm',
     fullSongMode: false,
     sectionIdx: 0,
     handFilter: null,
@@ -250,6 +250,20 @@ describe('createSongPanelRender — tempo row', () => {
     expect(deps.dom.tempoRow.style.opacity).toBe('0.55');
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
     expect(buttons[0].classList.contains('locked')).toBe(true);
+    expect(buttons[3].classList.contains('locked')).toBe(false); // 100 active
+    expect(buttons[3].classList.contains('active')).toBe(true);
+  });
+
+  it('guided mode locks the tempo row to 100 regardless of tempoPct', () => {
+    const deps = makeDeps();
+    deps.practice.mode = 'guided';
+    deps.practice.tempoPct = 75;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.tempoRow.style.opacity).toBe('0.55');
+    const buttons = deps.dom.tempoRow.querySelectorAll('button');
+    expect(buttons[0].classList.contains('locked')).toBe(true); // 60
+    expect(buttons[1].classList.contains('locked')).toBe(true); // 75
+    expect(buttons[2].classList.contains('locked')).toBe(true); // 90
     expect(buttons[3].classList.contains('locked')).toBe(false); // 100 active
     expect(buttons[3].classList.contains('active')).toBe(true);
   });
