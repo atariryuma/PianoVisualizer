@@ -2355,11 +2355,20 @@ body[data-layout='desktop'] #modeButtons {
 }
 /* Inserted user-song buttons on the start screen — match .mode-btn sizing.
        Reserve horizontal padding equal on both sides so the centered label
-       can't run into the absolutely-positioned ✕ delete button. */
+       can't run into the absolutely-positioned ✕ delete button.
+
+       Each tile is a `.practice-song-tile-wrap` div with the song button
+       and the ✕ button as siblings (not nested) — Safari/iOS mis-routes
+       taps when a <button> sits inside another <button>. */
 #userSongList {
   display: contents;
 }
-#userSongList .mode-btn {
+.practice-song-tile-wrap {
+  position: relative;
+  display: flex;
+}
+.practice-song-tile-wrap > .practice-song-btn {
+  flex: 1 1 auto;
   padding-right: 56px;
   padding-left: 56px;
 }
@@ -2367,7 +2376,7 @@ body[data-layout='desktop'] #modeButtons {
        0.85rem font hit ~22px — too easy to misclick on iPad / Android tablets,
        and the danger of accidentally tapping ✕ instead of the song made the
        feature feel risky. Bumped to ~40x36 effective touch area. */
-#userSongList .mode-btn .my-remove {
+.practice-song-tile-wrap > .my-remove {
   position: absolute;
   top: 50%;
   right: 8px;
@@ -2384,7 +2393,7 @@ body[data-layout='desktop'] #modeButtons {
   min-height: 36px;
   -webkit-tap-highlight-color: transparent;
 }
-#userSongList .mode-btn .my-remove:hover {
+.practice-song-tile-wrap > .my-remove:hover {
   background: rgba(180, 40, 60, 0.55);
 }
 /* My library rename button (inside add-song modal). Inherits the danger-pill
@@ -2393,6 +2402,22 @@ body[data-layout='desktop'] #modeButtons {
 #addSongMyList .my-row .my-rename {
   border-color: rgba(180, 200, 255, 0.35);
   color: rgba(200, 220, 255, 0.9);
+}
+
+/* Kid-friendly difficulty badge — challenge axis separate from stars
+   (Csikszentmihalyi flow channel; Sigman 2022). */
+.mode-btn-difficulty {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.9em;
+  opacity: 0.85;
+  vertical-align: baseline;
+}
+.jr-book-difficulty {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.9em;
+  opacity: 0.85;
 }
 
 /* Practice journal (0.14) — title strip + modal + result-card stamp rows. */
@@ -2879,14 +2904,20 @@ body[data-layout='desktop'] #modeButtons {
 
 .jr-earned-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   padding: 6px 10px;
   border-radius: var(--r-md);
   background: rgba(255, 215, 0, 0.1);
   border: 1px solid rgba(255, 215, 0, 0.3);
   font-size: 0.85rem;
   animation: jr-earned-pop 600ms var(--ease-spring) both;
+}
+
+.jr-earned-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .jr-earned-icon {
@@ -2903,6 +2934,21 @@ body[data-layout='desktop'] #modeButtons {
   color: rgba(255, 215, 0, 0.95);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.jr-earned-tip {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-style: italic;
+  line-height: 1.3;
+}
+
+.jr-stamp-tip {
+  font-size: 0.7rem;
+  color: var(--c-accent-gold);
+  margin-top: 4px;
+  line-height: 1.3;
+  font-style: italic;
 }
 
 @keyframes jr-earned-pop {

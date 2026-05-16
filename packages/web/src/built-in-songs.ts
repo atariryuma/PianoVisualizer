@@ -25,20 +25,32 @@ export type SectionDef = {
   isBoss: boolean;
 };
 
-/** @returns the song record (typed `any` because the rest of the shell
- *  reads/writes lazy-load fields freely). */
+/** Kid-friendly difficulty bands. Stars convey *score* already — this is
+ *  *challenge* (orthogonal axis, Csikszentmihalyi flow). Visible icons
+ *  let the kid self-calibrate next-piece choice (Sigman 2022). */
+export type SongDifficulty = 'sprout' | 'leaf' | 'tree' | 'mountain';
+
+export const DIFFICULTY_ICON: Record<SongDifficulty, string> = {
+  sprout: '🌱',
+  leaf: '🌿',
+  tree: '🌳',
+  mountain: '🏔️',
+};
+
 export function makeSong(
   id: string,
   titleKey: string,
   composerKey: string,
   icon: string,
-  sectionDefs: SectionDef[]
+  sectionDefs: SectionDef[],
+  difficulty?: SongDifficulty
 ): any {
   return {
     id,
     titleKey,
     composerKey,
     icon,
+    difficulty,
     mxlUrl: 'assets/' + id + '.mxl',
     xmlUrl: 'assets/' + id + '.xml',
     sectionDefs,
@@ -59,18 +71,30 @@ export function createBuiltInSongs(): Record<string, any> {
   return {
     // Für Elise (Beethoven WoO 59) — 106-measure Mutopia edition.
     // Form: A(0-22) | B(23-37) | A(38-54) | C(55-77) | A+coda(78-105)
-    fur_elise: makeSong('fur_elise', 'furElise', 'composerBeethoven', '🌸', [
-      { id: 'A1', nameKey: 'feA1', descKey: 'feA1desc', startMeasure: 0, isBoss: false },
-      { id: 'B', nameKey: 'feB', descKey: 'feBdesc', startMeasure: 23, isBoss: false },
-      { id: 'A2', nameKey: 'feA2', descKey: 'feA2desc', startMeasure: 55, isBoss: true },
-    ]),
+    fur_elise: makeSong(
+      'fur_elise',
+      'furElise',
+      'composerBeethoven',
+      '🌸',
+      [
+        { id: 'A1', nameKey: 'feA1', descKey: 'feA1desc', startMeasure: 0, isBoss: false },
+        { id: 'B', nameKey: 'feB', descKey: 'feBdesc', startMeasure: 23, isBoss: false },
+        { id: 'A2', nameKey: 'feA2', descKey: 'feA2desc', startMeasure: 55, isBoss: true },
+      ],
+      'leaf'
+    ),
     // Mozart Sonata K.331/3 "Rondo alla Turca" — 137-measure musetrainer edition.
-    // Form: A(0-8) | B(9-25) | A'(26-34) | C(35-43) | A''(44-60)
-    //        | D(61-69) | E(70-78) | F(79-95) | G(96-104) | Coda(105-136)
-    alla_turca: makeSong('alla_turca', 'turkishMarch', 'composerMozart', '🥁', [
-      { id: 'A1', nameKey: 'taA1', descKey: 'taA1desc', startMeasure: 0, isBoss: false },
-      { id: 'B', nameKey: 'taB', descKey: 'taBdesc', startMeasure: 26, isBoss: false },
-      { id: 'A2', nameKey: 'taA2', descKey: 'taA2desc', startMeasure: 70, isBoss: true },
-    ]),
+    alla_turca: makeSong(
+      'alla_turca',
+      'turkishMarch',
+      'composerMozart',
+      '🥁',
+      [
+        { id: 'A1', nameKey: 'taA1', descKey: 'taA1desc', startMeasure: 0, isBoss: false },
+        { id: 'B', nameKey: 'taB', descKey: 'taBdesc', startMeasure: 26, isBoss: false },
+        { id: 'A2', nameKey: 'taA2', descKey: 'taA2desc', startMeasure: 70, isBoss: true },
+      ],
+      'tree'
+    ),
   };
 }

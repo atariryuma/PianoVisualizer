@@ -98,6 +98,7 @@ export interface DomBag {
   resUnlock: HTMLElement;
   resQuit: HTMLElement;
   resRetry: HTMLElement;
+  resStretch: HTMLElement;
   resNext: HTMLElement;
   resTryPlay: HTMLElement;
   resHome: HTMLElement;
@@ -210,6 +211,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'resUnlock',
   'resQuit',
   'resRetry',
+  'resStretch',
   'resNext',
   'resTryPlay',
   'resHome',

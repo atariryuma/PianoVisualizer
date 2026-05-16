@@ -154,7 +154,10 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
             nameKey: String(sec.nameKey ?? ''),
           }))
         : [];
-      out.push({ id, titleKey, composer, sections });
+      const difficulty = ['sprout', 'leaf', 'tree', 'mountain'].includes(s.difficulty)
+        ? (s.difficulty as JournalSongRef['difficulty'])
+        : undefined;
+      out.push({ id, titleKey, composer, difficulty, sections });
     }
     return out;
   }
@@ -200,6 +203,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'resHistoryWrap',
       'resHistoryChart',
       'resNext',
+      'resStretch',
       'resTryPlay'
     ) as any,
     practice: deps.practice,
@@ -265,7 +269,21 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       }
       return earned;
     },
+    getStretchSongId: () => {
+      const current = deps.getCurrentSong();
+      const currentId = (current && typeof current === 'object' && current.id) || '';
+      return _journal.pickStretchSong(currentId);
+    },
   } as any);
+
+  // resStretch click — jump to the suggested stretch song. selectSong
+  // closes the result card via the song-panel transition.
+  dom.resStretch.addEventListener('click', () => {
+    const id = (dom.resStretch as HTMLElement).dataset.songId;
+    if (!id) return;
+    dom.sectionResult.classList.remove('visible');
+    selectSong(id);
+  });
 
   // ── Song-panel render ──
   const _songPanelRender = SongPanelRender.createSongPanelRender({

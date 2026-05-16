@@ -135,12 +135,19 @@ export const T_STRINGS: TranslationTable = {
   listenedFullTitle: { en: '🎧 You heard the whole song!', jp: '🎧 曲を聴き終わりました！' },
   listenedFullMsg: { en: 'Try playing it now.', jp: 'つぎは弾いてみよう。' },
   tryPlayingNow: { en: '▶ Try playing', jp: '▶ 弾いてみる' },
+  stretchBtn: { en: '🌳 Try a stretch piece', jp: '🌳 ちがう曲に挑戦' },
   // Guided-mode completion (no scoring — pure practice)
   guidedCompleteTitle: { en: '✨ Practice complete!', jp: '✨ 練習おつかれさま！' },
   guidedCompleteMsg: {
     en: 'Try again, or move to the next part.',
     jp: 'もう一度練習する? 次の部分に進む?',
   },
+  // Kid-friendly difficulty bands (challenge axis, separate from stars).
+  // 🌱 sprout / 🌿 leaf / 🌳 tree / 🏔️ mountain — visible self-calibration.
+  difficultySprout: { en: '🌱 Sprout (beginner)', jp: '🌱 ふたば（はじめてさん）' },
+  difficultyLeaf: { en: '🌿 Leaf (easy)', jp: '🌿 葉（やさしめ）' },
+  difficultyTree: { en: '🌳 Tree (steady)', jp: '🌳 木（しっかり練習）' },
+  difficultyMountain: { en: '🏔️ Mountain (stretch!)', jp: '🏔️ 山（チャレンジ！）' },
   // Practice HUD
   score: { en: 'Score', jp: '楽譜' },
   quit: { en: 'Quit', jp: 'やめる' },
@@ -181,10 +188,20 @@ export const T_STRINGS: TranslationTable = {
   enc7: { en: 'Shining!', jp: 'かがやいてる！' },
   enc8: { en: 'Awesome!', jp: 'さいこう！' },
   // Result tiers
-  tier0Title: { en: 'Try again!', jp: 'もういちど！' },
+  // tier0 uses Dweck "Not yet" + specific next strategy (Mueller & Dweck
+  // 1998; EEF 2019 — generic "not yet" alone failed, the specific
+  // strategy is what carries the effect).
+  tier0Title: { en: 'Not yet — keep going!', jp: 'もうちょっと！' },
   tier0Msg: {
-    en: 'Start with a slow tempo. Give it another try!',
-    jp: 'まずはゆっくりテンポでも大丈夫。リトライしてみよう！',
+    en: 'Try a slower tempo, or play one hand at a time first.',
+    jp: 'ゆっくりテンポにするか、片手ずつ弾いてみよう。',
+  },
+  // tier0 escalation — after 2+ consecutive 0-star attempts, switch to a
+  // mode-switch suggestion (listen the section, take a breath).
+  tier0RetryTitle: { en: 'Tough section!', jp: '難しいところだね！' },
+  tier0RetryMsg: {
+    en: 'Many kids struggle here. Try Listen mode to hear it first.',
+    jp: 'ここは多くの人がつまずく場所。まずリッスンで聴いてみよう。',
   },
   tier1Title: { en: 'Clear!', jp: 'クリア！' },
   tier1Msg: {
@@ -534,4 +551,103 @@ export const T_STRINGS: TranslationTable = {
   stampLifetime30DaysName: { en: '30 Days', jp: '30日達成' },
   stampLifetime30DaysDesc: { en: 'Practiced on 30 different days', jp: '30日練習' },
   stampLifetime30DaysEarned: { en: '30 practice days!', jp: '30日達成!' },
+  // Stamp coaching tips — one-line Knowledge-of-Performance hints fired
+  // on earn. Salmoni 1984 guidance hypothesis: intermittent KP > per-
+  // attempt KP. Once-per-stamp-event is the right cadence for kids 9-12.
+  stampFirstSectionTip: {
+    en: 'That feeling is your brain mapping the keys.',
+    jp: 'いまの感覚は、脳がキーを覚えた合図だよ。',
+  },
+  stampFirstThreeStarTip: {
+    en: 'Accuracy, timing, and length all clicked together.',
+    jp: '音・タイミング・長さが全部そろった証。',
+  },
+  stampSongAllSectionsTip: {
+    en: 'Most players take 5-10 tries per section. Normal!',
+    jp: '1章あたり5〜10回トライは普通。当たり前!',
+  },
+  stampSongSilverTip: {
+    en: 'Silver = every part is solidly playable.',
+    jp: '銀ランクは「どこもしっかり弾ける」レベル。',
+  },
+  stampSongGoldTip: {
+    en: 'Gold takes weeks of practice. You earned this.',
+    jp: '金は週単位の積み重ね。あなたが続けた結果。',
+  },
+  stampTempo100Tip: {
+    en: 'Full tempo means the song is in your body now.',
+    jp: '本来の速さで弾ける = 体に入った状態。',
+  },
+  stampCombo25Tip: {
+    en: 'Your focus held for 25 in a row. Breathe, continue.',
+    jp: '25連続で集中が続いた。深呼吸して次へ。',
+  },
+  stampCombo50Tip: {
+    en: '50-combo shows the rhythm has internalized.',
+    jp: '50コンボはリズムが体に染みた印。',
+  },
+  stampCombo100Tip: {
+    en: '100-combo is the flow zone — athletes train for this.',
+    jp: '100コンボは「フロー」。アスリートも目指す境地。',
+  },
+  stampPerfectAccTip: {
+    en: 'Every note hit. Your map of the score is precise.',
+    jp: '全音正解。楽譜の地図ができてる。',
+  },
+  stampFlowPeak80Tip: {
+    en: 'High flow happens when challenge meets ability.',
+    jp: 'フローは、難しさと実力が釣り合うときに来る。',
+  },
+  stampFlowPeakMaxTip: {
+    en: 'Peak flow. Remember this feeling — chase it again.',
+    jp: 'フローのピーク。この感覚を覚えておこう。',
+  },
+  stampSameSection5xTip: {
+    en: 'Repetition wires the finger map (Wulf, motor learning).',
+    jp: '反復で指の地図ができる（Wulf 2008の研究）。',
+  },
+  stampSameSection8xTip: {
+    en: '8 reps and the movement becomes automatic.',
+    jp: '8回でその動きが自動化する。',
+  },
+  stampSlowTempo5Tip: {
+    en: 'Slow practice IS fast practice — not a shortcut.',
+    jp: 'ゆっくり練習が結局いちばん早い近道。',
+  },
+  stampVarietyTodayTip: {
+    en: 'Mixing sections beats grinding one (research-backed).',
+    jp: '色々な箇所を回す方が、1ヶ所連続より上達する。',
+  },
+  stampComebackTip: {
+    en: '+20% in one try means you changed something. Keep it.',
+    jp: '1回で20%アップ = 何かを変えた証。その方法をキープ。',
+  },
+  stampStarUpTip: {
+    en: 'New star = your brain found a better pattern.',
+    jp: '星アップ = 脳が新しいパターンを見つけた。',
+  },
+  stampTwoSongsTip: {
+    en: 'Two songs in rotation lets skills transfer between them.',
+    jp: '2曲回しは技が曲間で移る相乗効果あり。',
+  },
+  stampFiveSongsTip: {
+    en: 'Five-piece rotation is where many pianists actually live.',
+    jp: '5曲回しはピアニストの定番。',
+  },
+  stampTenSectionsTip: {
+    en: '10 sections under your hands. You play piano now.',
+    jp: '10章クリア。もう「弾ける人」だね。',
+  },
+  stampLifetime3DaysTip: {
+    en: 'Three days is the habit seed sprouting.',
+    jp: '3日 = 習慣のたねが芽を出した。',
+  },
+  stampLifetime7DaysTip: {
+    en: "A week of practice — your brain accepts this as 'who I am'.",
+    jp: '1週間続けると脳が「これは続けるもの」と認識する。',
+  },
+  stampLifetime30DaysTip: {
+    en: '30 days of practice. You are a pianist, full stop.',
+    jp: '30日 = もう「ピアノを弾く人」。',
+  },
 };

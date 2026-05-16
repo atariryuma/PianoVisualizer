@@ -24,12 +24,36 @@
           <span class="mode-btn-label">🎨 <span data-i18n="freePlay">Free Play</span></span>
           <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
         </button>
-        <button class="mode-btn primary practice-song-btn" data-song="fur_elise">
-          <span class="mode-btn-label">🌸 <span data-i18n="furElise">Für Elise</span></span>
+        <button
+          class="mode-btn primary practice-song-btn"
+          data-song="fur_elise"
+          data-difficulty="leaf"
+        >
+          <span class="mode-btn-label">
+            🌸 <span data-i18n="furElise">Für Elise</span>
+            <span
+              class="mode-btn-difficulty"
+              data-i18n-title="difficultyLeaf"
+              title="A leaf-level piece"
+              >🌿</span
+            >
+          </span>
           <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
         </button>
-        <button class="mode-btn primary practice-song-btn" data-song="alla_turca">
-          <span class="mode-btn-label">🥁 <span data-i18n="turkishMarch">Turkish March</span></span>
+        <button
+          class="mode-btn primary practice-song-btn"
+          data-song="alla_turca"
+          data-difficulty="tree"
+        >
+          <span class="mode-btn-label">
+            🥁 <span data-i18n="turkishMarch">Turkish March</span>
+            <span
+              class="mode-btn-difficulty"
+              data-i18n-title="difficultyTree"
+              title="A tree-level piece"
+              >🌳</span
+            >
+          </span>
           <span class="mode-btn-loading" data-i18n="starting">Starting...</span>
         </button>
         <!-- User-added songs are injected here at runtime by renderUserSongButtons(). -->
@@ -385,6 +409,9 @@
           <button id="resHome" data-i18n-title="backToTitle" title="Back to title">🏠</button>
           <button id="resQuit" data-i18n="songSelect">Song select</button>
           <button id="resRetry" data-i18n="tryAgainBtn">Try again</button>
+          <button id="resStretch" data-i18n="stretchBtn" style="display: none">
+            🌳 Try a stretch piece
+          </button>
           <button id="resTryPlay" class="primary" data-i18n="tryPlayingNow" style="display: none">
             ▶ Try playing
           </button>
@@ -496,7 +523,12 @@
 
         <div class="add-song-tab-body" data-tab-body="file" hidden>
           <label class="add-song-file-pick">
-            <input type="file" id="addSongFileInput" accept=".mxl,.musicxml,.xml" hidden />
+            <input
+              type="file"
+              id="addSongFileInput"
+              accept=".mxl,.musicxml,.xml,application/vnd.recordare.musicxml+zip,application/vnd.recordare.musicxml+xml,application/xml,text/xml,application/zip,application/octet-stream,*/*"
+              hidden
+            />
             <span data-i18n="addSongFilePick">Choose .mxl / .musicxml / .xml file</span>
           </label>
           <div class="settings-help" data-i18n="addSongFileHelp">

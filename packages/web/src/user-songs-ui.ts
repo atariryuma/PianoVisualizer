@@ -365,24 +365,29 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
     deps.dom.userSongList.innerHTML = '';
     const userSongs = Object.values(deps.songs).filter((s) => s._isUser);
     for (const song of userSongs) {
+      // Sibling layout: a wrapping div hosts the song button and the ✕
+      // delete button as separate children. Nesting <button> inside <button>
+      // is invalid HTML; iOS Safari mis-routes the tap to the outer button,
+      // making the ✕ silently inert.
+      const wrap = document.createElement('div');
+      wrap.className = 'practice-song-tile-wrap';
+
       const btn = document.createElement('button');
       btn.className = 'mode-btn primary practice-song-btn';
       btn.setAttribute('data-song', song.id);
-      btn.style.position = 'relative';
       const labelText = (song.icon || '🎵') + ' ' + (song._userTitle || song.id);
-      // innerHTML is acceptable here: data-i18n text is from our T_STRINGS,
-      // and the dynamic labelText goes through textContent below. The fixed
-      // template gives us the loading-overlay span + ✕ button without three
-      // separate createElement chains.
       btn.innerHTML =
         '<span class="mode-btn-label"></span>' +
-        '<span class="mode-btn-loading" data-i18n="starting">Starting...</span>' +
-        '<button class="my-remove" type="button" aria-label="delete">✕</button>';
+        '<span class="mode-btn-loading" data-i18n="starting">Starting...</span>';
       const labelEl = btn.querySelector('.mode-btn-label');
       if (labelEl) labelEl.textContent = labelText;
       btn.addEventListener('click', () => deps.selectSong(song.id));
-      const removeBtn = btn.querySelector('.my-remove') as HTMLButtonElement | null;
-      if (!removeBtn) continue;
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'my-remove';
+      removeBtn.type = 'button';
+      removeBtn.setAttribute('aria-label', 'delete');
+      removeBtn.textContent = '✕';
       removeBtn.title = deps.t('addSongRemove');
       removeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -397,7 +402,10 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
         renderUserSongButtons();
         if (deps.dom.modal.classList.contains('visible')) renderMyList();
       });
-      deps.dom.userSongList.appendChild(btn);
+
+      wrap.appendChild(btn);
+      wrap.appendChild(removeBtn);
+      deps.dom.userSongList.appendChild(wrap);
     }
   }
 

@@ -53,6 +53,9 @@ export interface ResultSnapshot {
   unlockedTempo: number | null;
   unlockedSecKey: string | null;
   streakDays: number | null;
+  /** Trailing run of 0-star attempts ending at this one. >=2 escalates
+   *  the tier0 copy to gentler "tough section" framing + Listen hint. */
+  zeroStarStreak?: number;
 }
 
 export interface ResultCardSection {
@@ -104,6 +107,7 @@ export interface ResultCardDom {
   resHistoryWrap: HTMLElement | null;
   resHistoryChart: HTMLCanvasElement;
   resNext: HTMLElement;
+  resStretch: HTMLElement | null;
   resTryPlay: HTMLElement | null;
 }
 
@@ -161,6 +165,11 @@ export interface ResultCardDeps {
   /** Optional hook fired once per attempt after progress is persisted.
    *  Shell uses it to evaluate stamps + paint meta-progression UI. */
   onSectionAttemptDone?: (input: AttemptCompletionInput) => readonly string[];
+  /** Optional: returns a song ID *other than the current one* the kid
+   *  could try next, for the result-card's "Stretch piece" button.
+   *  Returns null when no candidate. Shell wires from journal-modal's
+   *  pickNearCompletion across the library. */
+  getStretchSongId?: () => string | null;
 }
 
 export interface AttemptCompletionInput {
@@ -239,6 +248,9 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       } else if (deps.dom.resTryPlay) {
         deps.dom.resTryPlay.style.display = 'none';
       }
+      // Stretch button: handled per-mode in completePracticeSection
+      // (the listen branch hides it; guided + rhythm set it via stretchId).
+      if (deps.dom.resStretch) deps.dom.resStretch.style.display = 'none';
       return;
     }
 
@@ -251,9 +263,12 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     });
     if (deps.dom.resTryPlay) deps.dom.resTryPlay.style.display = 'none';
     const tier = deps.resolveResultTier(r.stars);
-    deps.dom.resTitle.textContent = deps.t(tier.titleKey);
+    const escalatedZeroStar = r.stars === 0 && (r.zeroStarStreak ?? 0) >= 2;
+    const titleKey = escalatedZeroStar ? 'tier0RetryTitle' : tier.titleKey;
+    const msgKey = escalatedZeroStar ? 'tier0RetryMsg' : tier.msgKey;
+    deps.dom.resTitle.textContent = deps.t(titleKey);
     deps.dom.resSectionName.textContent = deps.t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-    deps.dom.resMsg.textContent = deps.t(tier.msgKey);
+    deps.dom.resMsg.textContent = deps.t(msgKey);
     let unlockedMsg = '';
     if (r.unlockedTempo) {
       unlockedMsg += deps.t('tempoUnlockedFmt', { v: r.unlockedTempo });
@@ -370,6 +385,11 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         nextIdx < deps.sectionIds.length &&
         !!deps.songProg().unlockedSections[deps.sectionIds[nextIdx]];
       deps.dom.resNext.style.display = hasNext ? '' : 'none';
+      if (deps.dom.resStretch) {
+        const stretchId = deps.getStretchSongId?.() ?? null;
+        deps.dom.resStretch.style.display = stretchId ? '' : 'none';
+        deps.dom.resStretch.dataset.songId = stretchId ?? '';
+      }
       deps.dom.sectionResult.classList.add('visible');
       deps.practice._completing = false;
       return;
@@ -458,9 +478,14 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       });
     }
 
-    // Snapshot context for renderResultCard (handles localized strings)
-    // + re-render on language change. Numeric / visibility state below
-    // isn't language-dependent so it stays imperative.
+    // Count trailing 0-star attempts (including this one) so the
+    // renderer can escalate to gentler tier0 copy after 2+ consecutive.
+    let zeroStarStreak = 0;
+    for (let i = histArr.length - 1; i >= 0; i--) {
+      if ((histArr[i]?.s ?? 1) === 0) zeroStarStreak++;
+      else break;
+    }
+
     deps.practice._lastResult = {
       mode: deps.practice.mode,
       secId: sec.id,
@@ -468,6 +493,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       unlockedTempo,
       unlockedSecKey,
       streakDays,
+      zeroStarStreak,
     };
     renderResultCard();
     deps.dom.resStars.innerHTML = '';
@@ -493,6 +519,12 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       nextIdx < deps.sectionIds.length &&
       !!deps.songProg().unlockedSections[deps.sectionIds[nextIdx]];
     deps.dom.resNext.style.display = hasNext ? '' : 'none';
+
+    if (deps.dom.resStretch) {
+      const stretchId = deps.getStretchSongId?.() ?? null;
+      deps.dom.resStretch.style.display = stretchId ? '' : 'none';
+      deps.dom.resStretch.dataset.songId = stretchId ?? '';
+    }
 
     // Big celebration
     if (stars >= 3) {

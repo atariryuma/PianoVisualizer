@@ -17,6 +17,8 @@ export interface JournalSongRef {
   id: string;
   titleKey: string;
   composer?: string;
+  /** Kid-friendly difficulty band — drives the 🌱/🌿/🌳/🏔️ badge. */
+  difficulty?: 'sprout' | 'leaf' | 'tree' | 'mountain';
   sections: Array<{ id: string; nameKey: string }>;
 }
 
@@ -90,12 +92,27 @@ export interface JournalModal {
   /** Paint the section-banner hint line for a song. No-op when the
    *  song has no near-completion target (clears any prior hint text). */
   paintSectionBannerHint(songId: string): void;
+  /** Return the top near-completion song id that isn't `excludeSongId`,
+   *  or null if no other song is close to a seal upgrade. Used by the
+   *  result-card's "Stretch piece" button to feed forward to a new piece. */
+  pickStretchSong(excludeSongId: string): string | null;
   isOpen(): boolean;
 }
 
 export type JournalTab = 'repertoire' | 'stamps' | 'calendar';
 
 const TAB_IDS: readonly JournalTab[] = ['repertoire', 'stamps', 'calendar'] as const;
+
+const DIFFICULTY_ICONS: Record<NonNullable<JournalSongRef['difficulty']>, string> = {
+  sprout: '🌱',
+  leaf: '🌿',
+  tree: '🌳',
+  mountain: '🏔️',
+};
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 /** Visual tint per rarity — drives the stamp grid's badge color. */
 const RARITY_CLASS: Record<string, string> = {
@@ -227,6 +244,13 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       const title = document.createElement('div');
       title.className = 'jr-book-title';
       title.textContent = deps.t(song.titleKey);
+      if (song.difficulty) {
+        const diff = document.createElement('span');
+        diff.className = 'jr-book-difficulty';
+        diff.title = deps.t('difficulty' + capitalize(song.difficulty));
+        diff.textContent = DIFFICULTY_ICONS[song.difficulty];
+        title.appendChild(diff);
+      }
       body.appendChild(title);
 
       if (song.composer) {
@@ -318,6 +342,10 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
           (earned ? ' jr-stamp-on' : ' jr-stamp-off') +
           ' ' +
           RARITY_CLASS[stamp.rarity];
+        const tipLine =
+          earned && stamp.tipKey
+            ? '<div class="jr-stamp-tip">💡 ' + deps.t(stamp.tipKey) + '</div>'
+            : '';
         tile.innerHTML =
           '<div class="jr-stamp-icon">' +
           (earned ? stamp.icon : '❓') +
@@ -327,7 +355,8 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
           '</div>' +
           '<div class="jr-stamp-desc">' +
           deps.t(stamp.descKey) +
-          '</div>';
+          '</div>' +
+          tipLine;
         grid.appendChild(tile);
       }
       section.appendChild(grid);
@@ -464,20 +493,43 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       if (!def) continue;
       const row = document.createElement('div');
       row.className = 'jr-earned-row';
-      row.innerHTML =
-        '<span class="jr-earned-icon">' +
-        def.icon +
-        '</span>' +
-        '<span class="jr-earned-name">' +
-        deps.t(def.nameKey) +
-        '</span>' +
-        '<span class="jr-earned-burst">+1</span>';
+      const head = document.createElement('div');
+      head.className = 'jr-earned-head';
+      const icon = document.createElement('span');
+      icon.className = 'jr-earned-icon';
+      icon.textContent = def.icon;
+      const name = document.createElement('span');
+      name.className = 'jr-earned-name';
+      name.textContent = deps.t(def.nameKey);
+      const burst = document.createElement('span');
+      burst.className = 'jr-earned-burst';
+      burst.textContent = '+1';
+      head.appendChild(icon);
+      head.appendChild(name);
+      head.appendChild(burst);
+      row.appendChild(head);
+      if (def.tipKey) {
+        const tip = document.createElement('div');
+        tip.className = 'jr-earned-tip';
+        tip.textContent = deps.t(def.tipKey);
+        row.appendChild(tip);
+      }
       target.appendChild(row);
     }
   }
 
   function getStampDef(id: string): StampDef | undefined {
     return stamps.find((s) => s.id === id);
+  }
+
+  function pickStretchSong(excludeSongId: string): string | null {
+    const songRefs = deps.getSongs();
+    const songs = songRefs.map(songRefToDef);
+    const near = PianoCore.pickNearCompletion(songs, deps.getProgress(), songs.length);
+    for (const entry of near) {
+      if (entry.songId !== excludeSongId) return entry.songId;
+    }
+    return null;
   }
 
   function clearSectionBannerHint(): void {
@@ -559,6 +611,7 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     applyAttempt,
     getStampDef,
     paintSectionBannerHint,
+    pickStretchSong,
     isOpen,
   };
 }
