@@ -396,9 +396,15 @@ export interface StarTier {
   dur: number;
 }
 
+// Kid-9-12-tuned thresholds (research-aligned: Dweck process-praise +
+// SDT competence + Csikszentmihalyi flow). ★3 is reachable with 5-10
+// focused attempts (not a perfectionist grind). ★2 introduces a gentle
+// timing requirement so rhythm is taught before ★3 demands it, instead
+// of springing 70% timing on the kid out of nowhere. ★1 stays at 50%
+// accuracy so the section-unlock gate still implies real playing.
 export const STAR_TIERS: readonly StarTier[] = Object.freeze([
-  Object.freeze({ stars: 3, acc: 90, timing: 70, dur: 70 }),
-  Object.freeze({ stars: 2, acc: 75, timing: 0, dur: 50 }),
+  Object.freeze({ stars: 3, acc: 85, timing: 60, dur: 55 }),
+  Object.freeze({ stars: 2, acc: 70, timing: 30, dur: 45 }),
   Object.freeze({ stars: 1, acc: 50, timing: 0, dur: 0 }),
 ]);
 

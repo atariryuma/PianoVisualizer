@@ -403,12 +403,11 @@ describe('computeStars', () => {
   });
 
   it('treats null durPct as "ignore" (guided mode)', () => {
-    // 90 acc + 70 timing = should still get 3 stars even with null dur.
     expect(computeStars(90, 70, null)).toBe(3);
   });
 
   it('null durPct still requires acc + timing thresholds', () => {
-    expect(computeStars(85, 65, null)).toBe(2); // misses 3-star timing 70
+    expect(computeStars(85, 55, null)).toBe(2); // misses 3-star timing 60
   });
 
   it('STAR_TIERS is ordered descending by stars', () => {
