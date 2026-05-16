@@ -694,10 +694,11 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     div.style.pointerEvents = 'none';
     div.style.background = CUSTOM_CURSOR_COLOR;
     div.style.borderRadius = '4px';
-    div.style.transition = 'opacity 80ms linear, top 100ms ease-out, left 100ms ease-out';
+    // Position snaps per paint — animating top/left while width/height
+    // jump produced mid-flight deformation. Fade opacity only.
+    div.style.transition = 'opacity 80ms linear';
     div.style.opacity = '0';
     div.style.zIndex = '2';
-    div.style.willChange = 'top, left, width, height';
     // Ensure the scroller can position children — only set when not
     // already positioned, so we don't override app.css.
     const computed = typeof getComputedStyle === 'function' ? getComputedStyle(scroller) : null;
