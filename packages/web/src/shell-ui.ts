@@ -23,6 +23,8 @@ import * as ResultCard from './result-card';
 import type { AttemptCompletionInput } from './result-card';
 import * as JournalModal from './journal-modal';
 import type { JournalSongRef } from './journal-modal';
+import * as PianistEditor from './pianist-editor';
+import { PIANIST_AVATARS } from './prefs-storage';
 import * as SongPanelRender from './song-panel-render';
 import * as SongPanelControls from './song-panel-controls';
 import * as SelectSong from './select-song';
@@ -115,6 +117,8 @@ export interface ShellUi {
   refreshJournal: () => void;
   openJournal: (initialTab?: 'repertoire' | 'stamps' | 'calendar') => void;
   closeJournal: () => void;
+  closePianistEditor: () => void;
+  isPianistEditorOpen: () => boolean;
 }
 
 export function createShellUi(deps: ShellUiDeps): ShellUi {
@@ -192,9 +196,65 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     setPianistIdentity: (id) => {
       (deps.prefs as any).pianistName = id.name;
       (deps.prefs as any).pianistCommitYear = id.commitYear;
+      (deps.prefs as any).pianistAvatar = id.avatar;
       deps.savePrefs?.();
     },
+    openPianistEditor: () => _pianistEditor.open(),
   });
+
+  function getPianistIdentity(): JournalModal.PianistIdentity {
+    const p = deps.prefs as any;
+    const avatar = typeof p.pianistAvatar === 'string' ? p.pianistAvatar : undefined;
+    return {
+      name: p.pianistName,
+      commitYear: p.pianistCommitYear,
+      avatar: avatar && PIANIST_AVATARS.includes(avatar) ? avatar : undefined,
+    };
+  }
+
+  function renderPianistBadge(): void {
+    const target = dom.startScreenPianistBadge;
+    if (!target) return;
+    const id = getPianistIdentity();
+    target.innerHTML = '';
+    if (!id.name) return;
+    const avatar = document.createElement('span');
+    avatar.className = 'start-pianist-avatar';
+    avatar.textContent = id.avatar ?? '🎹';
+    const name = document.createElement('span');
+    name.className = 'start-pianist-name';
+    name.textContent = t('startScreenPianistGreetingFmt', { name: id.name });
+    target.appendChild(avatar);
+    target.appendChild(name);
+  }
+
+  const _pianistEditor = PianistEditor.createPianistEditor({
+    dom: DomBag.pickDom(
+      dom,
+      'pianistEditModal',
+      'pianistEditCloseBtn',
+      'pianistAvatarGrid',
+      'pianistNameInput',
+      'pianistCommitInput',
+      'pianistEditCancelBtn',
+      'pianistEditSaveBtn'
+    ),
+    getIdentity: getPianistIdentity,
+    setIdentity: (id) => {
+      (deps.prefs as any).pianistName = id.name;
+      (deps.prefs as any).pianistCommitYear = id.commitYear;
+      (deps.prefs as any).pianistAvatar = id.avatar;
+      deps.savePrefs?.();
+    },
+    onSaved: () => {
+      _journal.render();
+      _journal.renderLibraryStrip();
+      renderPianistBadge();
+    },
+    t,
+  });
+
+  renderPianistBadge();
 
   // ── Result-card ──
   const SECTION_IDS = ['A1', 'B', 'A2'];
@@ -449,9 +509,14 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       // grown during the session that just ended.
       _journal.renderLibraryStrip();
     },
-    refreshJournal: () => _journal.renderLibraryStrip(),
+    refreshJournal: () => {
+      _journal.renderLibraryStrip();
+      renderPianistBadge();
+    },
     openJournal: (initialTab?: 'repertoire' | 'stamps' | 'calendar') => _journal.open(initialTab),
     closeJournal: () => _journal.close(),
+    closePianistEditor: () => _pianistEditor.close(),
+    isPianistEditorOpen: () => _pianistEditor.isOpen(),
     installStartButtons: () => {
       BootSession.installStartButton(dom.startBtn, {
         state: deps.state,

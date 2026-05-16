@@ -406,19 +406,28 @@ export const T_STRINGS: TranslationTable = {
     en: '🎹 Tap to set your pianist name',
     jp: '🎹 ピアニスト名を決める',
   },
-  pianistNamePrompt: {
-    en: 'What should we call you as a pianist?',
-    jp: 'ピアニストとしての名前は?',
-  },
-  pianistCommitPrompt: {
-    en: "Until what year do you think you'll keep playing? (e.g. 2035) — skip with Cancel",
-    jp: '何年までピアノを続けると思う? (例: 2035) — スキップは Cancel',
-  },
   pianistCommitFmt: {
     en: 'Playing until {y}',
     jp: '{y}年まで続ける',
   },
-  pianistEditTitle: { en: 'Edit pianist card', jp: 'ピアニストカードを編集' },
+  pianistDaysLeftFmt: { en: '{n} days to go', jp: 'あと{n}日' },
+  pianistGoalReached: { en: '🎯 You reached your goal year!', jp: '🎯 目標の年に到達!' },
+  pianistEditTitle: { en: 'Pianist card', jp: 'ピアニストカード' },
+  pianistAvatarLabel: { en: 'Choose an avatar', jp: 'アバターを選ぶ' },
+  pianistNameLabel: { en: 'Pianist name', jp: 'ピアニスト名' },
+  pianistNamePlaceholder: { en: 'Your name', jp: '名前' },
+  pianistCommitLabel: { en: 'Playing until (year)', jp: '何年まで続ける?' },
+  pianistCommitPlaceholder: { en: '2035', jp: '2035' },
+  pianistCommitHelp: {
+    en: "How long do you think you'll keep playing? (Optional)",
+    jp: '何年までピアノを続けると思う? (任意)',
+  },
+  startScreenPianistGreetingFmt: {
+    en: "{name}'s piano journey",
+    jp: '{name}のピアノ・ジャーニー',
+  },
+  cancel: { en: 'Cancel', jp: 'キャンセル' },
+  save: { en: 'Save', jp: '保存' },
   // Weekly practice meter — Zhao 2022 weekly-cadence safety.
   weeklyMeterLabel: { en: 'This week', jp: '今週の練習' },
   weeklyMeterFmt: { en: '{n} / {target} days', jp: '{n} / {target} 日' },

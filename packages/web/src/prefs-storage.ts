@@ -33,6 +33,8 @@ export interface PrefsShape {
    *  countdown stays meaningful as time passes — but the journal renders
    *  it as relative ("4 months in") when current age is known. */
   pianistCommitYear?: number;
+  /** Chosen avatar — one of PIANIST_AVATARS. Empty string = unset. */
+  pianistAvatar?: string;
 }
 
 /** Minimal localStorage-like surface. The shell hands in the real
@@ -118,5 +120,22 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   if (typeof r.pianistCommitYear === 'number' && r.pianistCommitYear > 1900) {
     out.pianistCommitYear = r.pianistCommitYear | 0;
   }
+  if (typeof r.pianistAvatar === 'string' && PIANIST_AVATARS.includes(r.pianistAvatar)) {
+    out.pianistAvatar = r.pianistAvatar;
+  }
   return out;
 }
+
+/** Avatar choices — 8 kid-friendly emojis that read as "this is me as a
+ *  pianist." Identity-priming via avatar customisation (Fu et al. 2025
+ *  CHI). Order is the render order in the picker. */
+export const PIANIST_AVATARS: readonly string[] = Object.freeze([
+  '🎹',
+  '🌟',
+  '🎼',
+  '🎵',
+  '🎶',
+  '✨',
+  '🦋',
+  '🌈',
+]);

@@ -117,6 +117,14 @@ export interface DomBag {
   journalCloseBtn: HTMLElement;
   journalPianistCard: HTMLElement;
   journalWeeklyMeter: HTMLElement;
+  pianistEditModal: HTMLElement;
+  pianistEditCloseBtn: HTMLElement;
+  pianistAvatarGrid: HTMLElement;
+  pianistNameInput: HTMLElement;
+  pianistCommitInput: HTMLElement;
+  pianistEditCancelBtn: HTMLElement;
+  pianistEditSaveBtn: HTMLElement;
+  startScreenPianistBadge: HTMLElement;
   journalLibraryRollup: HTMLElement;
   journalRepertoireList: HTMLElement;
   journalStampsGrid: HTMLElement;
@@ -228,6 +236,14 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'journalCloseBtn',
   'journalPianistCard',
   'journalWeeklyMeter',
+  'pianistEditModal',
+  'pianistEditCloseBtn',
+  'pianistAvatarGrid',
+  'pianistNameInput',
+  'pianistCommitInput',
+  'pianistEditCancelBtn',
+  'pianistEditSaveBtn',
+  'startScreenPianistBadge',
   'journalLibraryRollup',
   'journalRepertoireList',
   'journalStampsGrid',

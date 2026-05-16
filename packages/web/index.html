@@ -18,6 +18,9 @@
   <body>
     <div id="startScreen">
       <h1>Piano Visualizer</h1>
+      <!-- Personalized identity badge — McPherson 2015 long-term self-concept.
+           Empty until the kid sets a pianist name in the journal. -->
+      <div id="startScreenPianistBadge" class="start-screen-pianist-badge"></div>
       <p data-i18n="tagline">Play the piano and watch the screen come alive</p>
       <div id="modeButtons">
         <button id="startBtn" class="mode-btn">
@@ -480,6 +483,70 @@
         <div class="journal-tab-body" data-tab-body="calendar" hidden>
           <div id="journalCalendar"></div>
           <div id="journalActivityList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Pianist edit modal — identity primer (McPherson 2015) ===== -->
+    <div
+      id="pianistEditModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pianistEditModalTitle"
+    >
+      <div class="settings-card pianist-edit-card">
+        <div class="settings-header">
+          <div class="settings-title" id="pianistEditModalTitle">
+            🎹 <span data-i18n="pianistEditTitle">Pianist card</span>
+          </div>
+          <button
+            class="settings-close"
+            id="pianistEditCloseBtn"
+            data-i18n-title="close"
+            title="Close"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-label" data-i18n="pianistAvatarLabel">Choose an avatar</div>
+          <div id="pianistAvatarGrid" class="pianist-avatar-grid" role="radiogroup"></div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-label" data-i18n="pianistNameLabel">Pianist name</div>
+          <input
+            type="text"
+            id="pianistNameInput"
+            class="pianist-text-input"
+            maxlength="20"
+            data-i18n-placeholder="pianistNamePlaceholder"
+            placeholder="Your name"
+          />
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-label" data-i18n="pianistCommitLabel">
+            Playing until (year)
+          </div>
+          <input
+            type="number"
+            id="pianistCommitInput"
+            class="pianist-text-input"
+            min="2024"
+            max="2099"
+            step="1"
+            data-i18n-placeholder="pianistCommitPlaceholder"
+            placeholder="2035"
+          />
+          <div class="settings-help" data-i18n="pianistCommitHelp">
+            How long do you think you'll keep playing? (Optional)
+          </div>
+        </div>
+        <div class="pianist-edit-actions">
+          <button class="settings-btn" id="pianistEditCancelBtn" data-i18n="cancel">Cancel</button>
+          <button class="settings-btn primary" id="pianistEditSaveBtn" data-i18n="save">
+            Save
+          </button>
         </div>
       </div>
     </div>

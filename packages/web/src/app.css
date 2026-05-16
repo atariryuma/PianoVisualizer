@@ -2404,6 +2404,26 @@ body[data-layout='desktop'] #modeButtons {
   color: rgba(200, 220, 255, 0.9);
 }
 
+/* Title-screen pianist greeting — McPherson long-term self-concept. */
+.start-screen-pianist-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+.start-screen-pianist-badge:empty {
+  display: none;
+}
+.start-pianist-avatar {
+  font-size: 1.3rem;
+}
+.start-pianist-name {
+  font-weight: 600;
+}
+
 /* Pianist Card — identity surface for McPherson long-term self-concept. */
 .journal-pianist-card {
   display: flex;
@@ -2415,6 +2435,14 @@ body[data-layout='desktop'] #modeButtons {
   border-radius: var(--r-md);
   margin-bottom: var(--sp-3);
   position: relative;
+}
+.pianist-card-avatar {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.pianist-card-body {
+  flex: 1;
+  min-width: 0;
 }
 .journal-pianist-card.is-empty {
   background: rgba(255, 255, 255, 0.03);
@@ -2457,6 +2485,69 @@ body[data-layout='desktop'] #modeButtons {
 }
 .pianist-card-cta:hover {
   color: rgba(255, 255, 255, 0.95);
+}
+
+/* Pianist edit modal — full form (avatar + name + commit year). */
+#pianistEditModal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 16, 0.78);
+  backdrop-filter: blur(4px);
+}
+#pianistEditModal.visible {
+  display: flex;
+}
+.pianist-edit-card {
+  max-width: 460px;
+  width: 92vw;
+}
+.pianist-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.pianist-avatar-cell {
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-md);
+  padding: 10px 0;
+  font-size: 1.8rem;
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+.pianist-avatar-cell:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.pianist-avatar-cell-active {
+  border-color: var(--c-accent-gold);
+  background: rgba(255, 215, 0, 0.1);
+}
+.pianist-text-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.pianist-text-input:focus {
+  outline: none;
+  border-color: var(--c-accent-gold);
+}
+.pianist-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: var(--sp-4);
 }
 
 /* Weekly practice meter — 3-of-7-days non-shame target (Zhao 2022). */

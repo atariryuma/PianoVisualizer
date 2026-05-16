@@ -41,6 +41,7 @@ export interface JournalModalDom {
 export interface PianistIdentity {
   name?: string;
   commitYear?: number;
+  avatar?: string;
 }
 
 export interface JournalModalDeps {
@@ -72,6 +73,9 @@ export interface JournalModalDeps {
   getPianistIdentity?(): PianistIdentity;
   /** Persist the kid's chosen name + commit-year. */
   setPianistIdentity?(id: PianistIdentity): void;
+  /** Open the pianist-edit modal. Owned by the shell so the modal can
+   *  re-paint its inputs from current prefs before opening. */
+  openPianistEditor?(): void;
 }
 
 /** Shape result-card hands the journal at section-complete time. */
@@ -469,50 +473,55 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       const cta = document.createElement('button');
       cta.className = 'pianist-card-cta';
       cta.textContent = deps.t('pianistCardCta');
-      cta.addEventListener('click', promptForIdentity);
+      cta.addEventListener('click', openEditor);
       target.appendChild(cta);
       return;
     }
 
+    const avatar = document.createElement('div');
+    avatar.className = 'pianist-card-avatar';
+    avatar.textContent = id.avatar ?? '🎹';
+    target.appendChild(avatar);
+
+    const body = document.createElement('div');
+    body.className = 'pianist-card-body';
     const name = document.createElement('div');
     name.className = 'pianist-card-name';
-    name.textContent = '🎹 ' + id.name;
-    target.appendChild(name);
+    name.textContent = id.name;
+    body.appendChild(name);
 
     if (id.commitYear) {
       const sub = document.createElement('div');
       sub.className = 'pianist-card-commit';
-      sub.textContent = deps.t('pianistCommitFmt', { y: id.commitYear });
-      target.appendChild(sub);
+      const today = new Date();
+      // Approximate days remaining — uses Jan 1 of commit year as the
+      // anchor so kids see a tangible countdown without us asking for
+      // a month/day. Negative values fall back to a "goal reached" copy.
+      const goalMs = new Date(id.commitYear, 0, 1).getTime();
+      const daysLeft = Math.round((goalMs - today.getTime()) / 86400000);
+      if (daysLeft > 0) {
+        sub.textContent =
+          deps.t('pianistCommitFmt', { y: id.commitYear }) +
+          ' · ' +
+          deps.t('pianistDaysLeftFmt', { n: daysLeft });
+      } else {
+        sub.textContent = deps.t('pianistGoalReached');
+      }
+      body.appendChild(sub);
     }
+    target.appendChild(body);
 
     const edit = document.createElement('button');
     edit.className = 'pianist-card-edit';
     edit.textContent = '✎';
     edit.title = deps.t('pianistEditTitle');
     edit.setAttribute('aria-label', deps.t('pianistEditTitle'));
-    edit.addEventListener('click', promptForIdentity);
+    edit.addEventListener('click', openEditor);
     target.appendChild(edit);
   }
 
-  function promptForIdentity(): void {
-    if (!deps.setPianistIdentity) return;
-    const cur = deps.getPianistIdentity?.() ?? {};
-    const promptFn = typeof globalThis.prompt === 'function' ? globalThis.prompt : null;
-    if (!promptFn) return;
-    const nameInput = promptFn(deps.t('pianistNamePrompt'), cur.name ?? '');
-    if (nameInput == null) return;
-    const trimmed = nameInput.trim().slice(0, 20);
-    if (trimmed.length === 0) return;
-    const yearInput = promptFn(
-      deps.t('pianistCommitPrompt'),
-      cur.commitYear != null ? String(cur.commitYear) : ''
-    );
-    const parsedYear = yearInput != null ? Number(yearInput.trim()) : NaN;
-    const commitYear =
-      Number.isFinite(parsedYear) && parsedYear > 1900 ? Math.floor(parsedYear) : undefined;
-    deps.setPianistIdentity({ name: trimmed, commitYear });
-    renderPianistCard();
+  function openEditor(): void {
+    deps.openPianistEditor?.();
   }
 
   function renderWeeklyMeter(): void {

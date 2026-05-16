@@ -114,6 +114,8 @@ export function boot(): void {
   let openAddSongModal: () => void = _voidStub;
   let closeAddSongModal: () => void = _voidStub;
   let closeJournalModal: () => void = _voidStub;
+  let closePianistEditor: () => void = _voidStub;
+  let isPianistEditorOpen: () => boolean = () => false;
   let completePracticeSection: () => void = _voidStub;
   let renderResultCard: () => void = _voidStub;
   let showSessionSummary: () => void = _voidStub;
@@ -128,6 +130,11 @@ export function boot(): void {
       { priority: 50, isOpen: () => _isOpen(DOM_SECEDIT), close: () => closeSectionEditor() },
       { priority: 40, isOpen: () => _isVisible(DOM.settingsPanel), close: () => closeSettings() },
       { priority: 30, isOpen: () => _isOpen(DOM_ADDSONG), close: () => closeAddSongModal() },
+      {
+        priority: 28,
+        isOpen: () => isPianistEditorOpen(),
+        close: () => closePianistEditor(),
+      },
       {
         priority: 25,
         isOpen: () => _isVisible(DOM.journalModal),
@@ -589,6 +596,8 @@ export function boot(): void {
   const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
   ({ renderResultCard, completePracticeSection } = _ui);
   closeJournalModal = () => _ui.closeJournal();
+  closePianistEditor = () => _ui.closePianistEditor();
+  isPianistEditorOpen = () => _ui.isPianistEditorOpen();
   _ui.installPracticeSongButtons();
 
   // ── Dev-mode shell — moved to packages/web/src/shell-dev-mode.ts (batch 154).
