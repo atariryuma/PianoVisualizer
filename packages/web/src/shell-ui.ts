@@ -20,6 +20,9 @@ import * as PianoCore from '@piano/core';
 import type { T } from '@piano/core';
 import * as IntroHintUi from './intro-hint-ui';
 import * as ResultCard from './result-card';
+import type { AttemptCompletionInput } from './result-card';
+import * as JournalModal from './journal-modal';
+import type { JournalSongRef } from './journal-modal';
 import * as SongPanelRender from './song-panel-render';
 import * as SongPanelControls from './song-panel-controls';
 import * as SelectSong from './select-song';
@@ -107,6 +110,10 @@ export interface ShellUi {
   /** Boot start button installers — `installStartButtons(opts)` registers
    *  click handlers on both start buttons. */
   installStartButtons: () => void;
+  /** 0.14 — Practice journal forwarders. */
+  refreshJournal: () => void;
+  openJournal: (initialTab?: 'repertoire' | 'stamps' | 'calendar') => void;
+  closeJournal: () => void;
 }
 
 export function createShellUi(deps: ShellUiDeps): ShellUi {
@@ -126,6 +133,53 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
   } as any);
 
   const showHitChip = (kind: string, text: string) => _introHintUi.showHitChip(kind, text);
+
+  // ── Practice journal (must be built before result-card so its
+  //    onSectionAttemptDone hook can delegate to _journal.applyAttempt) ──
+  function buildJournalSongRefs(): JournalSongRef[] {
+    const out: JournalSongRef[] = [];
+    const songsObj = deps.songs as Record<string, any>;
+    for (const id of Object.keys(songsObj)) {
+      const s = songsObj[id];
+      if (!s || typeof s !== 'object') continue;
+      const titleKey: string = s.titleKey ?? '__userTitle:' + id;
+      const composer: string | undefined = s._userComposer
+        ? String(s._userComposer)
+        : s.composerKey
+          ? t(s.composerKey)
+          : undefined;
+      const sections: JournalSongRef['sections'] = Array.isArray(s.sections)
+        ? s.sections.map((sec: any, i: number) => ({
+            id: String(sec.id ?? String.fromCharCode(65 + i)),
+            nameKey: String(sec.nameKey ?? ''),
+          }))
+        : [];
+      out.push({ id, titleKey, composer, sections });
+    }
+    return out;
+  }
+  const _journal = JournalModal.createJournalModal({
+    dom: DomBag.pickDom(
+      dom,
+      'journalBtn',
+      'journalModal',
+      'journalCloseBtn',
+      'journalLibraryRollup',
+      'journalRepertoireList',
+      'journalStampsGrid',
+      'journalCalendar',
+      'journalActivityList',
+      'libraryMasteryStrip',
+      'resStampsEarned',
+      'sectionBannerHint'
+    ),
+    getProgress: () => deps.practice.progress as PianoCore.PracticeProgress,
+    getSongs: () => buildJournalSongRefs(),
+    saveProgress: () => deps.savePracticeProgress(),
+    getSessionPeakFlow: () => Number((deps.state as any).peakFlow ?? 0),
+    t,
+    formatDateKey: PianoCore.formatDateKey,
+  });
 
   // ── Result-card ──
   const SECTION_IDS = ['A1', 'B', 'A2'];
@@ -166,6 +220,51 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     clamp01: deps.clamp01,
     t,
     remoteLogEnabled: deps.remoteLogEnabled,
+    onSectionAttemptDone: (input: AttemptCompletionInput) => {
+      const earned = _journal.applyAttempt({
+        songId: input.songId,
+        sectionId: input.sectionId,
+        stars: input.stars,
+        accPct: input.accPct,
+        tempoPct: input.tempoPct,
+        sectionBestCombo: input.sectionBestCombo,
+        isListenMode: input.isListenMode,
+        priorStars: input.priorStars,
+        priorBestPct: input.priorBestPct,
+      });
+      // Amplify the highest-rarity stamp this attempt with extra
+      // particle effects; commons stay text-only so the rarer moments
+      // don't get diluted.
+      if (earned.length > 0) {
+        const rank: Record<string, number> = {
+          common: 0,
+          rare: 1,
+          epic: 2,
+          legendary: 3,
+        };
+        let topRank = -1;
+        let topRarity = '';
+        for (const id of earned) {
+          const def = _journal.getStampDef(id);
+          if (!def) continue;
+          const r = rank[def.rarity] ?? 0;
+          if (r > topRank) {
+            topRank = r;
+            topRarity = def.rarity;
+          }
+        }
+        if (topRarity === 'legendary') {
+          deps.effectGoldenBurst();
+          deps.effectStarShower(12);
+        } else if (topRarity === 'epic') {
+          deps.effectFlowerBurst();
+          deps.effectStarShower(6);
+        } else if (topRarity === 'rare') {
+          deps.effectStarShower(3);
+        }
+      }
+      return earned;
+    },
   } as any);
 
   // ── Song-panel render ──
@@ -249,7 +348,10 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     loadCurrentScore: deps.loadCurrentScore,
     remoteLogEnabled: deps.remoteLogEnabled,
   } as any);
-  const selectSong = (songId: string) => _selectSong.selectSong(songId);
+  const selectSong = (songId: string) => {
+    _selectSong.selectSong(songId);
+    _journal.paintSectionBannerHint(songId);
+  };
 
   // ── PracticeFlow — installed at construction time. returnToTitle is wired
   //   back into the song-panel-controls thunk via _returnToTitle assignment. ──
@@ -311,7 +413,15 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         });
       });
     },
-    returnToTitle: () => _returnToTitle(),
+    returnToTitle: () => {
+      _returnToTitle();
+      // Refresh the title-screen mastery strip — progress may have
+      // grown during the session that just ended.
+      _journal.renderLibraryStrip();
+    },
+    refreshJournal: () => _journal.renderLibraryStrip(),
+    openJournal: (initialTab?: 'repertoire' | 'stamps' | 'calendar') => _journal.open(initialTab),
+    closeJournal: () => _journal.close(),
     installStartButtons: () => {
       BootSession.installStartButton(dom.startBtn, {
         state: deps.state,

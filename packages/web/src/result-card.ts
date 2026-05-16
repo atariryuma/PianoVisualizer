@@ -60,6 +60,7 @@ export interface ResultCardSection {
 }
 
 export interface ResultCardSong {
+  id: string;
   titleKey: string;
   sections: ResultCardSection[];
 }
@@ -69,7 +70,7 @@ export interface ResultCardSongProgress {
   unlockedTempos: Record<number, boolean>;
   unlockedSections: Record<string, boolean>;
   sections: Record<string, { stars: number; bestPct: number } | undefined>;
-  history: Record<string, Array<{ d: number; a: number; t: number; s: number }>>;
+  history: Record<string, Array<{ d: number; a: number; t: number; s: number; tempoPct?: number }>>;
 }
 
 /** Tier shape returned by PianoCore.resolveResultTier. */
@@ -155,6 +156,30 @@ export interface ResultCardDeps {
    *  fullSongMode flag is being reset (or persisted into the next
    *  selectSong). Production: false. */
   remoteLogEnabled?: boolean;
+  /** Optional hook fired once per attempt after progress is persisted.
+   *  Shell uses it to evaluate stamps + paint meta-progression UI. */
+  onSectionAttemptDone?: (input: AttemptCompletionInput) => readonly string[];
+}
+
+export interface AttemptCompletionInput {
+  /** The song id whose progress was just written. */
+  songId: string;
+  /** Section id within that song. */
+  sectionId: string;
+  /** Final star count awarded this attempt (0–3). */
+  stars: number;
+  /** Hit percentage 0–100. */
+  accPct: number;
+  /** Tempo tier used (60/75/90/100). */
+  tempoPct: number;
+  /** Mid-section best combo run (sectionBestCombo). */
+  sectionBestCombo: number;
+  /** True for listen-mode attempts — completion stamps gate on this. */
+  isListenMode: boolean;
+  /** Stars THIS section had before this attempt landed. */
+  priorStars: number;
+  /** bestPct THIS section had before this attempt landed. */
+  priorBestPct: number;
 }
 
 export interface ResultCard {
@@ -282,6 +307,21 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         unlockedSecKey: null,
         streakDays: null,
       };
+      // Listen-mode also fires the attempt hook so lifetime/streak
+      // stamps tick after a listen-through.
+      if (deps.onSectionAttemptDone) {
+        deps.onSectionAttemptDone({
+          songId: currentSong.id,
+          sectionId: sec.id,
+          stars: 0,
+          accPct: 0,
+          tempoPct: deps.practice.tempoPct,
+          sectionBestCombo: 0,
+          isListenMode: true,
+          priorStars: 0,
+          priorBestPct: 0,
+        });
+      }
       // Bug fix (2026-05-08): clear fullSongMode after a fullSong
       // listen completes so the toggle doesn't carry into the next
       // selectSong. Without this, the next song's startPracticeSection
@@ -313,6 +353,10 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // Save to progress (per-song)
     const sp = deps.songProg();
     const prog = sp.sections[sec.id] || { stars: 0, bestPct: 0 };
+    // Capture pre-attempt values before the overwrites below so the
+    // improvement-based stamp predicates can compare against them.
+    const priorStars = prog.stars;
+    const priorBestPct = prog.bestPct;
     if (stars > prog.stars) prog.stars = stars;
     if (accPct > prog.bestPct) prog.bestPct = accPct;
     sp.sections[sec.id] = prog;
@@ -350,11 +394,32 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
 
     if (!sp.history[sec.id]) sp.history[sec.id] = [];
     const histArr = sp.history[sec.id];
-    histArr.push({ d: Date.now(), a: accPct, t: timingPct, s: stars });
+    histArr.push({
+      d: Date.now(),
+      a: accPct,
+      t: timingPct,
+      s: stars,
+      tempoPct: deps.practice.tempoPct,
+    });
     if (histArr.length > 8) histArr.shift();
     const sectionHistory = histArr;
 
     deps.savePracticeProgress();
+
+    // Fire after persist so any downstream evaluation sees the latest progress.
+    if (deps.onSectionAttemptDone) {
+      deps.onSectionAttemptDone({
+        songId: currentSong.id,
+        sectionId: sec.id,
+        stars,
+        accPct,
+        tempoPct: deps.practice.tempoPct,
+        sectionBestCombo: deps.practice.sectionBestCombo,
+        isListenMode: false,
+        priorStars,
+        priorBestPct,
+      });
+    }
 
     // Snapshot context for renderResultCard (handles localized strings)
     // + re-render on language change. Numeric / visibility state below

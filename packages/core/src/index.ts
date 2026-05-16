@@ -203,6 +203,38 @@ export type {
   AttemptRecord,
 } from './state/practice-progress';
 
+// === State: mastery aggregation (song + library rollups, near-completion) ===
+export {
+  computeSongMastery,
+  computeLibraryMastery,
+  resolveSongSeal,
+  endowedProgressFraction,
+  pickNearCompletion,
+} from './state/mastery';
+export type {
+  MasterySongDef,
+  MasterySectionView,
+  SongMastery,
+  LibraryMastery,
+  SongSeal,
+  NearCompletionEntry,
+} from './state/mastery';
+
+// === State: stamp collection (varied "collectibles" awarded on section complete) ===
+export {
+  DEFAULT_STAMPS,
+  applyStampEvaluation,
+  groupStampsByCategory,
+  stampHelpers,
+} from './state/stamps';
+export type {
+  StampDef,
+  StampCategory,
+  StampRarity,
+  StampContext,
+  StampEvaluationResult,
+} from './state/stamps';
+
 // === Audio: chord recognition ===
 export { detectChord } from './audio/chord';
 

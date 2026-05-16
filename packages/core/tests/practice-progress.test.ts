@@ -8,11 +8,12 @@ import {
 } from '../src/state/practice-progress';
 
 describe('defaultPracticeProgress', () => {
-  it('starts with no streak and no songs', () => {
+  it('starts with no streak, no songs, and no stamps', () => {
     expect(defaultPracticeProgress()).toEqual({
       streakDays: [],
       streakCount: 0,
       songs: {},
+      earnedStamps: {},
     });
   });
 });
@@ -175,5 +176,40 @@ describe('getSongProgress', () => {
     const sp = getSongProgress(p, 'fur_elise');
     expect(p.songs).toBeDefined();
     expect(sp).toBe(p.songs.fur_elise);
+  });
+});
+
+describe('earnedStamps migration', () => {
+  it('fills earnedStamps={} on a pre-0.14 v1 payload', () => {
+    const raw = {
+      streakDays: ['2026-05-01'],
+      streakCount: 1,
+      songs: { fur_elise: defaultSongProgress() },
+      // earnedStamps absent — older payload
+    };
+    const r = migrateAndDefaultProgress(raw);
+    expect(r.earnedStamps).toEqual({});
+  });
+
+  it('preserves an existing earnedStamps map', () => {
+    const raw = {
+      streakDays: [],
+      streakCount: 0,
+      songs: {},
+      earnedStamps: { first_section: 1700000000000 },
+    };
+    const r = migrateAndDefaultProgress(raw);
+    expect(r.earnedStamps).toEqual({ first_section: 1700000000000 });
+  });
+
+  it('coerces a corrupt earnedStamps value to {}', () => {
+    const raw = {
+      streakDays: [],
+      streakCount: 0,
+      songs: {},
+      earnedStamps: 'not-an-object',
+    };
+    const r = migrateAndDefaultProgress(raw);
+    expect(r.earnedStamps).toEqual({});
   });
 });

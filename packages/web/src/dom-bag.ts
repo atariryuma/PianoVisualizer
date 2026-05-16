@@ -110,6 +110,19 @@ export interface DomBag {
   micMeterFill: HTMLElement;
   midiBadge: HTMLElement;
 
+  // Practice journal (0.14 — completion visualization)
+  journalBtn: HTMLElement;
+  journalModal: HTMLElement;
+  journalCloseBtn: HTMLElement;
+  journalLibraryRollup: HTMLElement;
+  journalRepertoireList: HTMLElement;
+  journalStampsGrid: HTMLElement;
+  journalCalendar: HTMLElement;
+  journalActivityList: HTMLElement;
+  libraryMasteryStrip: HTMLElement;
+  resStampsEarned: HTMLElement;
+  sectionBannerHint: HTMLElement;
+
   // Settings panel
   settingsBtn: HTMLElement;
   settingsPanel: HTMLElement;
@@ -206,6 +219,17 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'micMeter',
   'micMeterFill',
   'midiBadge',
+  'journalBtn',
+  'journalModal',
+  'journalCloseBtn',
+  'journalLibraryRollup',
+  'journalRepertoireList',
+  'journalStampsGrid',
+  'journalCalendar',
+  'journalActivityList',
+  'libraryMasteryStrip',
+  'resStampsEarned',
+  'sectionBannerHint',
   'settingsBtn',
   'settingsPanel',
   'settingsCloseBtn',

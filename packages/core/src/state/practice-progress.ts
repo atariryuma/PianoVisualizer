@@ -62,7 +62,10 @@ export interface SongProgress {
    *  The shell migrator (`migrateAndDefaultProgress`) keeps both in scope so a
    *  future schema bump can pick one canonical shape. Until then this typedef
    *  accepts either. */
-  history: Record<string, AttemptRecord | Array<{ d: number; a: number; t: number; s: number }>>;
+  history: Record<
+    string,
+    AttemptRecord | Array<{ d: number; a: number; t: number; s: number; tempoPct?: number }>
+  >;
 }
 
 /** Top-level shape persisted under `pianoViz_practice_v1`. The streak
@@ -70,6 +73,11 @@ export interface SongProgress {
  *  directly without a separate state object. */
 export interface PracticeProgress extends StreakState {
   songs: Record<string, SongProgress>;
+  /** Stamp ID → epoch-ms timestamp earned. Populated by stamps.ts's
+   *  evaluator at section-complete time. Missing on payloads written
+   *  before 0.14; `migrateAndDefaultProgress` fills an empty object so
+   *  callers can write into it without a presence check. */
+  earnedStamps: Record<string, number>;
 }
 
 /** Build a fresh per-song progress bucket — empty sections at 0 stars,
@@ -93,6 +101,7 @@ export function defaultPracticeProgress(): PracticeProgress {
     streakDays: [],
     streakCount: 0,
     songs: {},
+    earnedStamps: {},
   };
 }
 
@@ -136,7 +145,13 @@ export function migrateAndDefaultProgress(raw: unknown): PracticeProgress {
     delete r.unlockedSections;
   }
 
-  return Object.assign(def, r);
+  // Defensive: `earnedStamps` was added in 0.14. Pre-0.14 payloads
+  // lack the field entirely; we don't want callers to deref undefined.
+  const merged = Object.assign(def, r) as PracticeProgress;
+  if (!merged.earnedStamps || typeof merged.earnedStamps !== 'object') {
+    merged.earnedStamps = {};
+  }
+  return merged;
 }
 
 /**

@@ -2100,6 +2100,36 @@ body[data-layout='desktop'] #modeButtons {
   }
 }
 
+/* Section-banner near-completion hint — sits below the banner, fades in
+   alongside the banner animation. Static text (does not re-animate on each
+   section change); journal-modal.paintSectionBannerHint rewrites on song
+   select. Empty by default so non-near-completion songs show nothing. */
+#sectionBannerHint {
+  position: fixed;
+  left: 50%;
+  top: calc(38% + 50px);
+  transform: translateX(-50%);
+  z-index: 25;
+  font-size: 0.85rem;
+  color: rgba(255, 215, 0, 0.95);
+  text-align: center;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: rgba(20, 14, 40, 0.7);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  white-space: nowrap;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: opacity 350ms var(--ease-out);
+}
+#sectionBannerHint.show {
+  opacity: 0.95;
+}
+#sectionBannerHint:empty {
+  display: none;
+}
+
 /* Add-song modal — reuses .settings-card chrome for visual consistency. */
 #addSongModal {
   position: fixed;
@@ -2363,4 +2393,529 @@ body[data-layout='desktop'] #modeButtons {
 #addSongMyList .my-row .my-rename {
   border-color: rgba(180, 200, 255, 0.35);
   color: rgba(200, 220, 255, 0.9);
+}
+
+/* Practice journal (0.14) — title strip + modal + result-card stamp rows. */
+
+:root {
+  --c-accent-gold: rgba(255, 215, 0, 0.85);
+  --c-accent-gold-bright: rgba(255, 215, 0, 0.95);
+  --jr-ring-on: var(--c-accent-gold);
+  --jr-ring-off: rgba(255, 255, 255, 0.08);
+  --jr-rarity-common: rgba(180, 200, 255, 0.4);
+  --jr-rarity-rare: rgba(120, 200, 255, 0.55);
+  --jr-rarity-epic: rgba(220, 140, 255, 0.65);
+  --jr-rarity-legendary: var(--c-accent-gold);
+}
+
+/* ---- Title-screen entry button ---- */
+.journal-btn {
+  /* Tone slightly differently from the song buttons so the meta surface
+     reads as "your stuff" rather than "play this piece". */
+  border-color: rgba(255, 215, 0, 0.35);
+}
+
+/* ---- Title-screen mastery strip ---- */
+#libraryMasteryStrip {
+  margin-top: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.lib-strip-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  justify-content: center;
+}
+
+.lib-strip-stat {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lib-strip-near {
+  font-size: 0.8rem;
+  color: var(--c-accent-gold);
+  text-align: center;
+  max-width: 320px;
+}
+
+/* ---- Modal chrome ---- */
+#journalModal {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 16, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+#journalModal.visible {
+  display: flex;
+}
+
+.journal-card {
+  max-width: 720px;
+  width: 94vw;
+  max-height: 90vh;
+}
+
+@media (min-width: 900px) {
+  .journal-card {
+    max-width: 820px;
+  }
+}
+
+/* Rollup at top of modal */
+.journal-rollup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-4);
+}
+
+.rollup-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.rollup-icon {
+  font-size: 1.1rem;
+}
+
+.rollup-label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.rollup-value {
+  color: rgba(255, 255, 255, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+
+.rollup-percent {
+  color: rgba(255, 215, 0, 0.9);
+  font-weight: 600;
+}
+
+/* Tab strip */
+.journal-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: var(--sp-4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.journal-tab {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition:
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.journal-tab:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.journal-tab.active {
+  color: rgba(255, 255, 255, 0.95);
+  border-bottom-color: var(--c-accent-gold);
+}
+
+.journal-tab-body {
+  min-height: 200px;
+}
+
+/* ---- Repertoire tab ---- */
+#journalRepertoireList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.jr-book {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--r-md);
+}
+
+.jr-book-clickable {
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.jr-book-clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 215, 0, 0.25);
+}
+
+.jr-ring {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.jr-ring-inner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--c-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.jr-ring-percent {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.jr-ring-seal {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* Seal-tier accent: brighten the conic ring at higher tiers. */
+.jr-ring-bronze {
+  filter: hue-rotate(-10deg) brightness(0.95);
+}
+.jr-ring-silver {
+  filter: brightness(1.05);
+}
+.jr-ring-gold {
+  filter: brightness(1.15) saturate(1.1);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.35);
+}
+.jr-ring-platinum {
+  filter: brightness(1.25) saturate(1.2);
+  box-shadow: 0 0 18px rgba(180, 220, 255, 0.45);
+}
+
+.jr-book-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.jr-book-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jr-book-composer {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+}
+
+.jr-section-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.jr-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.jr-dot-stars-1 {
+  color: rgba(255, 215, 0, 0.75);
+  border-color: rgba(255, 215, 0, 0.25);
+}
+.jr-dot-stars-2 {
+  color: rgba(255, 215, 0, 0.9);
+  border-color: rgba(255, 215, 0, 0.45);
+  background: rgba(255, 215, 0, 0.05);
+}
+.jr-dot-stars-3 {
+  color: #ffd700;
+  border-color: rgba(255, 215, 0, 0.8);
+  background: rgba(255, 215, 0, 0.12);
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.25);
+}
+.jr-dot-locked {
+  color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.jr-tempo-pips {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.jr-tempo-pip {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.jr-tempo-pip-on {
+  background: rgba(255, 215, 0, 0.1);
+  border-color: rgba(255, 215, 0, 0.45);
+  color: rgba(255, 215, 0, 0.9);
+}
+
+/* ---- Stamps tab ---- */
+.jr-stamp-section {
+  margin-bottom: var(--sp-5);
+}
+
+.jr-stamp-section-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: var(--sp-2);
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.jr-stamp-count {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 215, 0, 0.8);
+}
+
+.jr-stamp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.jr-stamp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 6px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-spring);
+}
+
+.jr-stamp-on:hover {
+  transform: translateY(-1px);
+}
+
+.jr-stamp-off {
+  opacity: 0.45;
+}
+
+.jr-stamp-on.rarity-common {
+  border-color: var(--jr-rarity-common);
+}
+.jr-stamp-on.rarity-rare {
+  border-color: var(--jr-rarity-rare);
+  background: rgba(120, 200, 255, 0.06);
+}
+.jr-stamp-on.rarity-epic {
+  border-color: var(--jr-rarity-epic);
+  background: rgba(220, 140, 255, 0.06);
+}
+.jr-stamp-on.rarity-legendary {
+  border-color: var(--jr-rarity-legendary);
+  background: rgba(255, 215, 0, 0.08);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.2);
+}
+
+.jr-stamp-icon {
+  font-size: 1.8rem;
+  line-height: 1.1;
+}
+
+.jr-stamp-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 2px;
+}
+
+.jr-stamp-desc {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+/* ---- Calendar tab ---- */
+#journalCalendar {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+  margin-bottom: var(--sp-4);
+}
+
+@media (max-width: 500px) {
+  #journalCalendar {
+    grid-template-columns: repeat(7, 1fr);
+  }
+}
+
+.jr-cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.jr-cal-cell-on {
+  background: rgba(255, 215, 0, 0.18);
+  color: var(--c-accent-gold-bright);
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.2);
+}
+
+.jr-cal-summary {
+  display: flex;
+  gap: var(--sp-4);
+  justify-content: center;
+  padding: var(--sp-3);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--r-md);
+}
+
+.jr-cal-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.jr-cal-stat-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.jr-cal-stat-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: rgba(255, 215, 0, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+
+.jr-empty {
+  text-align: center;
+  padding: var(--sp-5);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.85rem;
+}
+
+/* ---- Result-card "+1 sticker" rows ---- */
+.result-stamps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.result-stamps:empty {
+  display: none;
+}
+
+.jr-earned-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  font-size: 0.85rem;
+  animation: jr-earned-pop 600ms var(--ease-spring) both;
+}
+
+.jr-earned-icon {
+  font-size: 1.2rem;
+}
+
+.jr-earned-name {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+.jr-earned-burst {
+  color: rgba(255, 215, 0, 0.95);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes jr-earned-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

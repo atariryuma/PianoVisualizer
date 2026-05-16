@@ -35,7 +35,14 @@
         <!-- User-added songs are injected here at runtime by renderUserSongButtons(). -->
         <div id="userSongList"></div>
         <button id="addSongBtn" class="mode-btn" data-i18n="addSongBtn">➕ Add a song</button>
+        <button id="journalBtn" class="mode-btn journal-btn" data-i18n="journalBtn">
+          📔 Practice journal
+        </button>
       </div>
+      <!-- Library-mastery summary strip — endowed-progress (Nunes & Drèze 2006):
+           shows a non-zero baseline the moment the kid opens the app so it
+           reads "in progress", not "0%". -->
+      <div id="libraryMasteryStrip"></div>
     </div>
     <canvas id="canvas" role="img" aria-label="Piano visualizer animation"></canvas>
     <div id="hud">
@@ -341,6 +348,11 @@
     <div id="osmdContainer"></div>
     <!-- Section-start banner that flies in at the start of each section -->
     <div id="sectionBanner"></div>
+    <!-- Goal-gradient hint line — paints "⭐ あと1星で『曲名』が金の楽譜!" beneath
+         the banner when the active song is one star away from a higher seal.
+         Empty most of the time; written by journal-modal.paintSectionBannerHint
+         on song select. Static text — does not animate per section. -->
+    <div id="sectionBannerHint"></div>
 
     <div id="sectionResult" role="dialog" aria-modal="true" aria-labelledby="resTitle">
       <div class="result-card">
@@ -364,6 +376,11 @@
         </div>
         <div class="result-msg" id="resMsg"></div>
         <div class="result-unlock" id="resUnlock"></div>
+        <!-- Stamp-earned strip: shell-collection paints "+1 sticker" rows here
+             after completePracticeSection runs stamp evaluation. Empty most
+             attempts (predicates are deduped against earnedStamps), populated
+             on milestone-clear attempts. -->
+        <div class="result-stamps" id="resStampsEarned"></div>
         <div class="result-actions">
           <button id="resHome" data-i18n-title="backToTitle" title="Back to title">🏠</button>
           <button id="resQuit" data-i18n="songSelect">Song select</button>
@@ -372,6 +389,61 @@
             ▶ Try playing
           </button>
           <button id="resNext" class="primary" data-i18n="nextBtn">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Practice-journal modal (0.14 — completion-visualization layer) =====
+         Three tabs: 📚 Repertoire (per-song mastery rings + section dots),
+         🏅 Stamps (24 collectibles, earned colored / unearned silhouette),
+         📅 Journal (calendar of practice days + section activity).
+         Research grounding: Hamari & Eranti 2011 (varied collectibles),
+         Nunes & Drèze 2006 (endowed progress), Korok-model abundance. -->
+    <div id="journalModal" role="dialog" aria-modal="true" aria-labelledby="journalModalTitle">
+      <div class="settings-card journal-card">
+        <div class="settings-header">
+          <div class="settings-title" id="journalModalTitle">
+            📔 <span data-i18n="journalTitle">Practice journal</span>
+          </div>
+          <button
+            class="settings-close"
+            id="journalCloseBtn"
+            data-i18n-title="close"
+            title="Close"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Library-wide rollup: stars earned out of total possible.
+             Always visible above the tabs so the kid sees lifetime progress
+             before drilling into per-song / per-stamp views. -->
+        <div id="journalLibraryRollup" class="journal-rollup"></div>
+
+        <div class="journal-tabs">
+          <button class="journal-tab active" data-tab="repertoire" data-i18n="journalTabRepertoire">
+            📚 Repertoire
+          </button>
+          <button class="journal-tab" data-tab="stamps" data-i18n="journalTabStamps">
+            🏅 Stamps
+          </button>
+          <button class="journal-tab" data-tab="calendar" data-i18n="journalTabCalendar">
+            📅 Calendar
+          </button>
+        </div>
+
+        <div class="journal-tab-body" data-tab-body="repertoire">
+          <div id="journalRepertoireList"></div>
+        </div>
+
+        <div class="journal-tab-body" data-tab-body="stamps" hidden>
+          <div id="journalStampsGrid"></div>
+        </div>
+
+        <div class="journal-tab-body" data-tab-body="calendar" hidden>
+          <div id="journalCalendar"></div>
+          <div id="journalActivityList"></div>
         </div>
       </div>
     </div>

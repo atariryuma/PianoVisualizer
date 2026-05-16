@@ -113,6 +113,7 @@ export function boot(): void {
   let closeSectionEditor: () => void = _voidStub;
   let openAddSongModal: () => void = _voidStub;
   let closeAddSongModal: () => void = _voidStub;
+  let closeJournalModal: () => void = _voidStub;
   let completePracticeSection: () => void = _voidStub;
   let renderResultCard: () => void = _voidStub;
   let showSessionSummary: () => void = _voidStub;
@@ -127,6 +128,11 @@ export function boot(): void {
       { priority: 50, isOpen: () => _isOpen(DOM_SECEDIT), close: () => closeSectionEditor() },
       { priority: 40, isOpen: () => _isVisible(DOM.settingsPanel), close: () => closeSettings() },
       { priority: 30, isOpen: () => _isOpen(DOM_ADDSONG), close: () => closeAddSongModal() },
+      {
+        priority: 25,
+        isOpen: () => _isVisible(DOM.journalModal),
+        close: () => closeJournalModal(),
+      },
       {
         priority: 20,
         isOpen: () => _isVisible(DOM.sessionSummary),
@@ -581,6 +587,7 @@ export function boot(): void {
   });
   const { showHitChip, refreshIntroHint, hideIntroHint, renderSongPanel } = _ui;
   ({ renderResultCard, completePracticeSection } = _ui);
+  closeJournalModal = () => _ui.closeJournal();
   _ui.installPracticeSongButtons();
 
   // ── Dev-mode shell — moved to packages/web/src/shell-dev-mode.ts (batch 154).
@@ -631,5 +638,6 @@ export function boot(): void {
   // Initialize progress on load (so the panel works without audio start) +
   // install ▶ Start button.
   practice.progress = loadPracticeProgress();
+  _ui.refreshJournal();
   _ui.installStartButtons();
 }

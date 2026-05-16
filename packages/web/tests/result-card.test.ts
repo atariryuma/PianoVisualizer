@@ -73,6 +73,7 @@ function makeDom(): ResultCardDom {
 
 function makeSong(): ResultCardSong {
   return {
+    id: 'fur_elise',
     titleKey: 'furElise',
     sections: [
       { id: 'a1', nameKey: 'feA1' },
