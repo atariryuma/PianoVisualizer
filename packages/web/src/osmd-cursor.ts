@@ -249,13 +249,15 @@ const STAVE_LOOKUP_MAX_DEPTH = 8;
  *  like `class="vf-stavenote"` on note groups, which is critical because
  *  note groups are siblings of the stave under the system group). */
 const STAVE_SELECTOR = '.vf-stave';
-/** Vertical-proximity tolerance for grouping `.vf-stave` elements into
- *  the "current system". A grand-staff system spans treble (top) ~120
- *  px gap ~ bass (bottom) ≈ 100-180px total; an octave-shift-padded
- *  system can reach ~250px. 200 covers both with room to spare while
- *  staying tight enough to exclude the neighbouring system on dense
- *  pages. */
-const STAFF_Y_PROXIMITY_PX = 200;
+/** Grouping tolerance when unioning `.vf-stave` elements of the current
+ *  system. Tight enough to exclude neighbouring systems (centre-to-centre
+ *  typically ≥150px) but loose enough to catch a normal grand staff
+ *  (treble-bass midpoint distance ~50-70px). */
+const STAFF_Y_PROXIMITY_PX = 100;
+/** Reject staff-range heights below this — values smaller than a single
+ *  full staff (~12px) signal a partial SVG render; fall back to the
+ *  notes' Y range so the overlay doesn't paint a wisp of a bar. */
+const MIN_STAFF_RANGE_PX = 24;
 
 type ScrollReason =
   | 'first-scroll'
@@ -795,11 +797,15 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
       return;
     }
 
-    // Y range from the staff system's `.vf-stave` elements — stable
-    // per system, immune to note `<g>` bounding-rect variation. Falls
-    // back to notesRect Y when no staves are found (e.g. happy-dom
-    // tests without rendered SVG).
-    const staffRange = findStaffSystemYRange(notes);
+    // Y range from the system's `.vf-stave` elements — stable per system,
+    // immune to note `<g>` bounding-rect variation. Anomalously thin
+    // results (< MIN_STAFF_RANGE_PX) indicate a partial SVG render and
+    // fall back to the active notes' Y range.
+    const freshStaffRange = findStaffSystemYRange(notes);
+    const staffRange =
+      freshStaffRange && freshStaffRange.bottom - freshStaffRange.top >= MIN_STAFF_RANGE_PX
+        ? freshStaffRange
+        : null;
     const visualRect: RectLike = staffRange ?? notesRect;
 
     // Convert viewport rect → scroll-content rect. The overlay lives
