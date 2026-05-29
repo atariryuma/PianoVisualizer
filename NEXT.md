@@ -16,6 +16,17 @@ Immediate maintenance queue:
 3. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
    Vitest may need approval because Vite/esbuild spawns a child process.
 
+Recent landings (2026-05-30):
+
+- **Section-result KP coaching** — `PianoCore.pickSectionFocus()` (pure) pairs
+  one genuine strength with one specific next step from the scored
+  accuracy/timing/note-length, rendered into `#resFocus` on the rhythm-mode
+  result card with the weak stat row tinted. Faded feedback: null on ★3
+  (celebrate, don't coach); effort-based praise below a 55 honesty floor. Closes
+  the "coaching only existed in free-play" gap. Research: KP > KR for
+  multi-dimensional motor tasks (systematic review 2021); EEF 2019 / Dweck
+  process-praise; guidance hypothesis (Salmoni 1984). +8 core, +4 web tests.
+
 Recent landings (2026-05-12):
 
 - **cursor v10 + practice-visibility + bottom-fit + stretch** — the score-follow
@@ -702,10 +713,31 @@ the file. Detailed checklist in
 
 ## Backlog (rotate up as items complete)
 
-(empty — Phase 0d / 0e dominate near-term planning. The next major non-0d/0e
-work is Phase 1 Capacitor install, but that needs Mac + Xcode + Android Studio,
-so it's blocked on human hardware. See
-[ROADMAP.md](ROADMAP.md#phase-1--capacitor-first-install--blocked-on-human).)
+Phase 1 Capacitor install needs Mac + Xcode + Android Studio, so it's blocked on
+human hardware. See
+[ROADMAP.md](ROADMAP.md#phase-1--capacitor-first-install--blocked-on-human).
+
+**Pedagogy / learning-effectiveness follow-ups** (research-driven, kid-safe, all
+implementable without hardware — vet each against the banned-list):
+
+- **Self-assessment prompt** (highest-evidence next step). "How would you score
+  yourself?" before/after the star reveal is proven to raise _both_ motivation
+  and performance in children's piano practice (Int J Soc Robotics 2023) and is
+  the missing self-evaluation phase of Zimmerman/McPherson self-regulated
+  learning. Lowest-risk shape: an ephemeral, optional post-reveal
+  self-reflection (😣/🙂/😄) with a calibration-aware affirmation — no
+  persistence (avoids the surveillance banned-pattern + schema churn), the act
+  of self-rating is itself the documented benefit. Needs careful result-card
+  flow + focus-trap work; human iPad A/B for the interactive path.
+- **Improvement-trajectory view**. `growthScore` / per-axis scores are computed
+  but only the accuracy line is graphed. A "your timing improved 15pt over your
+  last 5 tries" rollup (journal or session summary) would surface real progress
+  (competence, SDT). Reuses the 8-entry attempt history (add `t`/`s` series to
+  the chart toggle).
+- **Pre-flight scaffolding for a struggled section**. The Listen-mode hint only
+  appears _after_ a 2nd 0-star run (`zeroStarStreak>=2`). A song-panel
+  pre-practice note ("this took a few tries last time — want to Listen first?")
+  would scaffold _before_ the kid fails again (feed-forward, not just feedback).
 
 ---
 
