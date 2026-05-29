@@ -294,6 +294,31 @@ export const T_STRINGS: TranslationTable = {
     en: 'hold each note fully before moving on',
     jp: '1音ずつ最後まで伸ばしてから次の音へ',
   },
+  // Section-result coaching (Knowledge of Performance). Shown on the result
+  // card under ★3: pairs one real strength with one specific next step so
+  // the kid leaves knowing *what* to work on, not just the outcome (KP > KR
+  // for multi-dimensional tasks; EEF 2019 specific-strategy; Dweck process-
+  // praise). {s}=strength clause, {f}=next-step clause.
+  sectionFocusFmt: { en: 'Nice — {s}. Next: {f}.', jp: 'いいね、{s}。次は{f}。' },
+  // Strength clauses (named only when the dimension actually cleared a
+  // floor; 'sfEffort' is the honest fallback when nothing did).
+  sfEffort: { en: 'you played the whole part through', jp: 'さいごまで弾けたね' },
+  sfNotesStrong: { en: 'you found most of the notes', jp: '音をよく見つけられている' },
+  sfTimingStrong: { en: 'your timing fits the beat', jp: 'リズムがビートに合ってきた' },
+  sfHoldStrong: { en: 'you held the notes their full length', jp: '音を最後まで伸ばせている' },
+  // Next-step clauses (one specific, actionable strategy per weak axis).
+  fNotes: {
+    en: 'play one hand slowly to lock in the notes',
+    jp: '片手でゆっくり弾いて音をおぼえよう',
+  },
+  fTiming: {
+    en: 'count out loud, or drop one tempo step to catch the beat',
+    jp: '声に出して数えるか、テンポを1だんおとしてビートに合わせよう',
+  },
+  fHold: {
+    en: "hold each note until the next one — don't lift early",
+    jp: '次の音まで指をはなさず、最後までのばそう',
+  },
   // Quest names + descriptions (free-play)
   qst1Name: { en: 'First Notes', jp: 'はじまりの音' },
   qst1Desc: { en: 'Play 3 notes', jp: '音を3回鳴らしてみよう' },

@@ -48,8 +48,8 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
-composition layer. `pnpm verify` currently covers lint, typecheck, 786 core
-tests, 1490 web tests, and the Vite web build.
+composition layer. `pnpm verify` currently covers lint, typecheck, 845 core
+tests, 1497 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -341,6 +341,21 @@ temporarily limits max gain to prevent amplifying speech.
 - **Encouragement system**: replaces numeric combo display with escalating
   bilingual messages (`Nice! → Great! → ... → Awesome!`), each triggering a
   unique visual effect.
+- **Section-result coaching (Knowledge of Performance)**: after a scored
+  (rhythm-mode) section, the result card pairs one genuine _strength_ with one
+  specific _next step_, derived from the already-computed accuracy / timing /
+  note-length percentages, and tints the matching stat row.
+  `PianoCore.pickSectionFocus(accPct, timingPct, durPct, stars)` is the pure
+  selector (`packages/core/src/state/practice-state.ts`); `result-card.ts`
+  renders it into `#resFocus`. Research basis: KP > KR for multi-dimensional
+  motor tasks (systematic review, 2021); pair strength + specific strategy (EEF
+  2019; Mueller & Dweck 1998 process-praise). **Faded feedback** — a clean ★3
+  run returns `null` (celebrate, don't coach), per the guidance hypothesis
+  (Salmoni 1984). A dimension is named as a strength only above
+  `SECTION_FOCUS_STRENGTH_FLOOR` (55); below that the praise is effort-based so
+  it stays calibrated to reality. The free-play HUD coaching
+  (`quality.ts buildCoachingFeedback`) is the live-play sibling; this is its
+  end-of-section counterpart.
 
 ### Rendering
 

@@ -20,7 +20,7 @@
 //     attempts' accuracy, with star halos for ≥3-star clears, current
 //     value label, and a colored trend delta vs the previous run.
 
-import type { PracticeMode } from '@piano/core';
+import type { PracticeMode, SectionFocus } from '@piano/core';
 
 /** Practice slice the module reads + writes. */
 export interface ResultCardPracticeRef {
@@ -56,6 +56,11 @@ export interface ResultSnapshot {
   /** Trailing run of 0-star attempts ending at this one. >=2 escalates
    *  the tier0 copy to gentler "tough section" framing + Listen hint. */
   zeroStarStreak?: number;
+  /** Knowledge-of-Performance coaching for this run (strength + next step
+   *  + which stat row to emphasise). null on ★3 (mastery — celebrate, don't
+   *  coach) and on listen/guided. Retained so a langchange re-render keeps
+   *  the tip without re-scoring. */
+  focus?: SectionFocus | null;
 }
 
 export interface ResultCardSection {
@@ -103,6 +108,9 @@ export interface ResultCardDom {
   resDurationRow: HTMLElement | null;
   resCombo: HTMLElement;
   resMsg: HTMLElement;
+  /** Knowledge-of-Performance coaching line (strength + next step). Optional
+   *  so partial-DOM tests and older shells degrade gracefully. */
+  resFocus?: HTMLElement | null;
   resUnlock: HTMLElement;
   resHistoryWrap: HTMLElement | null;
   resHistoryChart: HTMLCanvasElement;
@@ -136,6 +144,14 @@ export interface ResultCardDeps {
   /** Resolve the result tier from a star count
    *  (PianoCore.resolveResultTier). */
   resolveResultTier(stars: number): ResultTier;
+  /** Pick the Knowledge-of-Performance coaching for a scored run
+   *  (PianoCore.pickSectionFocus). Returns null on ★3. */
+  pickSectionFocus(
+    accPct: number,
+    timingPct: number,
+    durPct: number | null,
+    stars: number
+  ): SectionFocus | null;
   /** Decide which unlocks fire (PianoCore.computeUnlocks — pure). */
   computeUnlocks(args: {
     stars: number;
@@ -204,6 +220,42 @@ export interface ResultCard {
 }
 
 export function createResultCard(deps: ResultCardDeps): ResultCard {
+  // The stat row to emphasise is the `.result-stat` ancestor of each value
+  // span. Map a focus dimension to that row element.
+  const focusRowFor = (dim: SectionFocus['focusDim']): HTMLElement | null => {
+    const span =
+      dim === 'accuracy'
+        ? deps.dom.resAcc
+        : dim === 'timing'
+          ? deps.dom.resTiming
+          : deps.dom.resDuration;
+    return (span?.closest?.('.result-stat') as HTMLElement | null) ?? span?.parentElement ?? null;
+  };
+
+  /** Clear the coaching line + any row emphasis. Idempotent — called on
+   *  every render so listen/guided/★3 cards never inherit a stale tip. */
+  const clearFocus = (): void => {
+    for (const dim of ['accuracy', 'timing', 'duration'] as const) {
+      focusRowFor(dim)?.classList.remove('focus-row');
+    }
+    if (deps.dom.resFocus) {
+      deps.dom.resFocus.textContent = '';
+      deps.dom.resFocus.style.display = 'none';
+    }
+  };
+
+  /** Paint the strength + next-step line and tint the matching stat row. */
+  const applyFocus = (focus: SectionFocus): void => {
+    if (deps.dom.resFocus) {
+      deps.dom.resFocus.textContent = deps.t('sectionFocusFmt', {
+        s: deps.t(focus.strengthKey),
+        f: deps.t(focus.focusKey),
+      });
+      deps.dom.resFocus.style.display = '';
+    }
+    focusRowFor(focus.focusDim)?.classList.add('focus-row');
+  };
+
   function renderResultCard(): void {
     const r = deps.practice._lastResult;
     if (!r) return;
@@ -237,6 +289,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.dom.resSectionName.textContent = subtitle;
       deps.dom.resMsg.textContent = msg;
       deps.dom.resUnlock.textContent = '';
+      clearFocus();
       deps.dom.resStars.style.display = 'none';
       document.querySelectorAll('#sectionResult .result-stat').forEach((el) => {
         (el as HTMLElement).style.display = 'none';
@@ -280,6 +333,12 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       unlockedMsg += deps.t('streakDaysFmt', { v: r.streakDays });
     }
     deps.dom.resUnlock.textContent = unlockedMsg.trim();
+
+    // Knowledge-of-Performance coaching: one strength + one next step, with
+    // the weak stat row tinted. Absent on ★3 (focus is null) — a clean run
+    // celebrates rather than gets coached (faded feedback).
+    clearFocus();
+    if (r.focus) applyFocus(r.focus);
   }
 
   function completePracticeSection(): void {
@@ -494,6 +553,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       unlockedSecKey,
       streakDays,
       zeroStarStreak,
+      focus: deps.pickSectionFocus(accPct, timingPct, durPct, stars),
     };
     renderResultCard();
     deps.dom.resStars.innerHTML = '';
