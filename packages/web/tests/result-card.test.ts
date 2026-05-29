@@ -46,6 +46,12 @@ function makeDom(): ResultCardDom {
       <div id="resMsg"></div>
       <div id="resFocus"></div>
       <div id="resUnlock"></div>
+      <div id="resSelfAssess" style="display: none">
+        <button id="resFeelTricky"></button>
+        <button id="resFeelOk"></button>
+        <button id="resFeelGreat"></button>
+        <div id="resFeelResult" style="display: none"></div>
+      </div>
       <div id="resHistoryWrap">
         <canvas id="resHistoryChart" width="280" height="80"></canvas>
       </div>
@@ -66,6 +72,11 @@ function makeDom(): ResultCardDom {
     resMsg: document.getElementById('resMsg') as HTMLElement,
     resFocus: document.getElementById('resFocus') as HTMLElement,
     resUnlock: document.getElementById('resUnlock') as HTMLElement,
+    resSelfAssess: document.getElementById('resSelfAssess') as HTMLElement,
+    resFeelTricky: document.getElementById('resFeelTricky') as HTMLElement,
+    resFeelOk: document.getElementById('resFeelOk') as HTMLElement,
+    resFeelGreat: document.getElementById('resFeelGreat') as HTMLElement,
+    resFeelResult: document.getElementById('resFeelResult') as HTMLElement,
     resHistoryWrap: document.getElementById('resHistoryWrap'),
     resHistoryChart: document.getElementById('resHistoryChart') as HTMLCanvasElement,
     resNext: document.getElementById('resNext') as HTMLElement,
@@ -611,5 +622,98 @@ describe('drawHistoryChart', () => {
       { d: 1, a: 51, t: 51, s: 1 },
     ]);
     expect(tFn).toHaveBeenCalledWith('trendSimilar');
+  });
+});
+
+// ─── self-assessment (SRL reflection) ────────────────────────────────
+
+describe('createResultCard — self-assessment', () => {
+  function showRhythm(stars: number) {
+    const deps = makeDeps();
+    const rc = createResultCard(deps);
+    deps.practice._lastResult = {
+      mode: 'rhythm',
+      secId: 'a1',
+      stars,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+    };
+    rc.renderResultCard();
+    return { deps, rc };
+  }
+
+  it('shows the prompt block with no reply until a button is tapped', () => {
+    const { deps } = showRhythm(2);
+    expect(deps.dom.resSelfAssess!.style.display).toBe('');
+    expect(deps.dom.resFeelResult!.style.display).toBe('none');
+    expect(deps.dom.resFeelResult!.textContent).toBe('');
+    expect(deps.dom.resFeelGreat!.classList.contains('chosen')).toBe(false);
+  });
+
+  it('gives the earned-confidence reply when the kid felt great AND cleared (★2+)', () => {
+    const { deps } = showRhythm(2);
+    deps.dom.resFeelGreat!.click();
+    expect(deps.dom.resFeelResult!.textContent).toBe('selfAssessReplyGreatWin');
+    expect(deps.dom.resFeelResult!.style.display).toBe('');
+    expect(deps.dom.resFeelGreat!.classList.contains('chosen')).toBe(true);
+    expect(deps.dom.resFeelTricky!.classList.contains('chosen')).toBe(false);
+  });
+
+  it('praises the noticing when the kid felt it was tricky and is not there yet', () => {
+    const { deps } = showRhythm(1);
+    deps.dom.resFeelTricky!.click();
+    expect(deps.dom.resFeelResult!.textContent).toBe('selfAssessReplyTricky');
+  });
+
+  it('never makes a score claim on a low scored run that felt great', () => {
+    const { deps } = showRhythm(1);
+    deps.dom.resFeelGreat!.click();
+    // The non-"Win" reply — honors the joy, makes no claim about the score.
+    expect(deps.dom.resFeelResult!.textContent).toBe('selfAssessReplyGreat');
+  });
+
+  it('uses score-free replies for guided completion (no stars to calibrate)', () => {
+    const deps = makeDeps();
+    const rc = createResultCard(deps);
+    deps.practice._lastResult = {
+      mode: 'guided',
+      secId: 'a1',
+      stars: 0,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+    };
+    rc.renderResultCard();
+    deps.dom.resFeelGreat!.click();
+    expect(deps.dom.resFeelResult!.textContent).toBe('selfAssessReplyGreat');
+  });
+
+  it('keeps the chosen reply across a langchange re-render', () => {
+    const { deps, rc } = showRhythm(2);
+    deps.dom.resFeelOk!.click();
+    expect(deps.dom.resFeelResult!.textContent).toBe('selfAssessReplyOk');
+    rc.renderResultCard(); // simulate JP↔EN flip
+    expect(deps.dom.resFeelResult!.textContent).toBe('selfAssessReplyOk');
+    expect(deps.dom.resFeelOk!.classList.contains('chosen')).toBe(true);
+  });
+
+  it('resets the reflection on the next completed attempt', () => {
+    const { deps, rc } = showRhythm(2);
+    deps.dom.resFeelGreat!.click();
+    expect(deps.dom.resFeelResult!.style.display).toBe('');
+    deps.practice.mode = 'rhythm';
+    rc.completePracticeSection();
+    expect(deps.dom.resFeelResult!.style.display).toBe('none');
+    expect(deps.dom.resFeelResult!.textContent).toBe('');
+    expect(deps.dom.resFeelGreat!.classList.contains('chosen')).toBe(false);
+  });
+
+  it('ignores taps when there is no active result snapshot', () => {
+    const deps = makeDeps();
+    createResultCard(deps);
+    deps.practice._lastResult = null;
+    deps.dom.resFeelGreat!.click();
+    expect(deps.dom.resFeelResult!.textContent).toBe('');
   });
 });

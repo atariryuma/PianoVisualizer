@@ -319,6 +319,40 @@ export const T_STRINGS: TranslationTable = {
     en: "hold each note until the next one — don't lift early",
     jp: '次の音まで指をはなさず、最後までのばそう',
   },
+  // Self-assessment (self-regulated-learning reflection phase). One optional,
+  // non-persisted tap on the result card. The *act* of self-rating is the
+  // documented benefit (Int J Soc Robotics 2023 — raised both motivation and
+  // performance in children's piano practice; Zimmerman/McPherson SRL
+  // self-evaluation). Replies never contradict the kid's own feeling and
+  // never shame a low score (calibration honesty + growth mindset).
+  selfAssessPrompt: { en: 'How did that feel?', jp: 'どんなかんじだった？' },
+  selfAssessBtnTricky: { en: '😣 Tricky', jp: '😣 むずかしかった' },
+  selfAssessBtnOk: { en: '🙂 Okay', jp: '🙂 まあまあ' },
+  selfAssessBtnGreat: { en: '😄 Great', jp: '😄 ばっちり' },
+  // Felt tricky but actually cleared (★2+): validate effort + reframe.
+  selfAssessReplyTrickyWin: {
+    en: 'Felt tricky — and you still did it! Tricky means you are leveling up.',
+    jp: 'むずかしく感じたのに、できてる！むずかしい＝レベルアップ中のサインだよ。',
+  },
+  // Felt tricky, not yet there: praise the noticing (metacognition).
+  selfAssessReplyTricky: {
+    en: 'Noticing it feels tricky is a real skill — that is where practice goes next.',
+    jp: '「むずかしい」と気づけるのは大事な力。そこが次のびしろだよ。',
+  },
+  selfAssessReplyOk: {
+    en: 'Trust that feeling — it tells you what to practice next.',
+    jp: 'その「まあまあ」の感覚を大切に。次の練習のヒントになるよ。',
+  },
+  // Felt great and cleared: affirm the earned confidence.
+  selfAssessReplyGreatWin: {
+    en: 'That confidence is well earned. Trust it!',
+    jp: 'その自信はホンモノ。信じていいよ！',
+  },
+  // Felt great, score not there yet: honor the joy, never contradict it.
+  selfAssessReplyGreat: {
+    en: 'Loving how it felt is what keeps you playing. Keep that joy!',
+    jp: '「楽しかった！」がいちばん大事。その気持ちでつづけよう！',
+  },
   // Quest names + descriptions (free-play)
   qst1Name: { en: 'First Notes', jp: 'はじまりの音' },
   qst1Desc: { en: 'Play 3 notes', jp: '音を3回鳴らしてみよう' },

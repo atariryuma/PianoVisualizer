@@ -112,6 +112,13 @@ export interface ResultCardDom {
    *  so partial-DOM tests and older shells degrade gracefully. */
   resFocus?: HTMLElement | null;
   resUnlock: HTMLElement;
+  // Self-assessment (SRL reflection) — all optional so the card still renders
+  // if the block is absent.
+  resSelfAssess?: HTMLElement | null;
+  resFeelTricky?: HTMLElement | null;
+  resFeelOk?: HTMLElement | null;
+  resFeelGreat?: HTMLElement | null;
+  resFeelResult?: HTMLElement | null;
   resHistoryWrap: HTMLElement | null;
   resHistoryChart: HTMLCanvasElement;
   resNext: HTMLElement;
@@ -256,6 +263,57 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     focusRowFor(focus.focusDim)?.classList.add('focus-row');
   };
 
+  // ── Self-assessment (self-regulated-learning reflection) ──
+  // One optional, non-persisted tap. The choice lives only in this closure
+  // and resets per new result, so nothing is stored about the child's mood
+  // (kid-initiated reflection, not surveillance). Listeners attach once.
+  type FeelRating = 'tricky' | 'ok' | 'great';
+  let selfAssessChoice: FeelRating | null = null;
+  const feelButtons: Array<{ rating: FeelRating; el?: HTMLElement | null }> = [
+    { rating: 'tricky', el: deps.dom.resFeelTricky },
+    { rating: 'ok', el: deps.dom.resFeelOk },
+    { rating: 'great', el: deps.dom.resFeelGreat },
+  ];
+
+  /** Which reply to show. The "Win" variants (which reference doing well)
+   *  fire only on a scored run that actually cleared (★2+); every other path
+   *  uses a reply that makes no score claim, so it's safe for guided/listen
+   *  and never contradicts a kid who felt great on a low score. */
+  const replyKeyFor = (rating: FeelRating, r: ResultSnapshot | null): string => {
+    const cleared = r?.mode === 'rhythm' && (r?.stars ?? 0) >= 2;
+    if (rating === 'tricky') return cleared ? 'selfAssessReplyTrickyWin' : 'selfAssessReplyTricky';
+    if (rating === 'ok') return 'selfAssessReplyOk';
+    return cleared ? 'selfAssessReplyGreatWin' : 'selfAssessReplyGreat';
+  };
+
+  /** Reset (new result) or re-paint (langchange) the self-assess block from
+   *  the current closure choice + snapshot. Reads `selfAssessChoice` live. */
+  const renderSelfAssess = (r: ResultSnapshot | null): void => {
+    if (!deps.dom.resSelfAssess) return;
+    deps.dom.resSelfAssess.style.display = '';
+    for (const b of feelButtons) {
+      b.el?.classList.toggle('chosen', b.rating === selfAssessChoice);
+    }
+    if (deps.dom.resFeelResult) {
+      if (selfAssessChoice) {
+        deps.dom.resFeelResult.textContent = deps.t(replyKeyFor(selfAssessChoice, r));
+        deps.dom.resFeelResult.style.display = '';
+      } else {
+        deps.dom.resFeelResult.textContent = '';
+        deps.dom.resFeelResult.style.display = 'none';
+      }
+    }
+  };
+
+  for (const b of feelButtons) {
+    b.el?.addEventListener('click', () => {
+      // Ignore taps on a stale/empty card.
+      if (!deps.practice._lastResult) return;
+      selfAssessChoice = b.rating;
+      renderSelfAssess(deps.practice._lastResult);
+    });
+  }
+
   function renderResultCard(): void {
     const r = deps.practice._lastResult;
     if (!r) return;
@@ -304,6 +362,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // Stretch button: handled per-mode in completePracticeSection
       // (the listen branch hides it; guided + rhythm set it via stretchId).
       if (deps.dom.resStretch) deps.dom.resStretch.style.display = 'none';
+      renderSelfAssess(r);
       return;
     }
 
@@ -339,9 +398,14 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // celebrates rather than gets coached (faded feedback).
     clearFocus();
     if (r.focus) applyFocus(r.focus);
+
+    renderSelfAssess(r);
   }
 
   function completePracticeSection(): void {
+    // New attempt → clear any prior self-assessment so the reflection prompt
+    // starts fresh (the renderResultCard calls below repaint it).
+    selfAssessChoice = null;
     deps.practice.enabled = false;
     deps.stopPracticeAudio();
     deps.releaseWakeLock();

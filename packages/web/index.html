@@ -407,6 +407,18 @@
              (clean run → celebrate, no coaching) and on listen/guided. -->
         <div class="result-focus" id="resFocus" style="display: none"></div>
         <div class="result-unlock" id="resUnlock"></div>
+        <!-- Self-assessment (SRL reflection). One optional, non-persisted tap:
+             the act of self-rating is the documented benefit; the reply never
+             contradicts the kid's feeling and never shames a low score. -->
+        <div class="result-self-assess" id="resSelfAssess" style="display: none">
+          <div class="self-assess-prompt" data-i18n="selfAssessPrompt">How did that feel?</div>
+          <div class="self-assess-btns">
+            <button id="resFeelTricky" data-i18n="selfAssessBtnTricky">😣 Tricky</button>
+            <button id="resFeelOk" data-i18n="selfAssessBtnOk">🙂 Okay</button>
+            <button id="resFeelGreat" data-i18n="selfAssessBtnGreat">😄 Great</button>
+          </div>
+          <div class="self-assess-result" id="resFeelResult" style="display: none"></div>
+        </div>
         <!-- Stamp-earned strip: shell-collection paints "+1 sticker" rows here
              after completePracticeSection runs stamp evaluation. Empty most
              attempts (predicates are deduped against earnedStamps), populated

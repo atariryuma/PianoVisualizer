@@ -1966,6 +1966,61 @@ body[data-layout='desktop'] #modeButtons {
   font-weight: 600;
 }
 
+/* Self-assessment (SRL reflection) — a calm, optional "how did that feel?"
+   tap. No correct answer, so the buttons are neutral until chosen. */
+.result-self-assess {
+  margin: 12px 0 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.self-assess-prompt {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 8px;
+}
+
+.self-assess-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.self-assess-btns button {
+  flex: 1;
+  min-width: 84px;
+  padding: 8px 6px;
+  font-size: 0.82rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.self-assess-btns button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.self-assess-btns button.chosen {
+  background: rgba(120, 200, 255, 0.22);
+  border-color: rgba(140, 210, 255, 0.85);
+  transform: translateY(-1px);
+}
+
+.self-assess-result {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: rgba(190, 230, 255, 0.92);
+  margin-top: 10px;
+  text-align: center;
+}
+
 .result-unlock {
   font-size: 0.85rem;
   color: #ffd57a;
