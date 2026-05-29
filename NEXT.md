@@ -18,6 +18,16 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **Self-assessment (SRL reflection)** — the result card ends with an optional,
+  non-persisted "How did that feel?" tap (😣/🙂/😄). The reply is
+  calibration-aware but never contradicts the kid's feeling or shames a low
+  score (earned-confidence replies fire only on a cleared ★2+ scored run).
+  Choice lives only in a `result-card.ts` closure, resets per attempt, never
+  stored (kid-initiated reflection, not surveillance). Research: the act of
+  self-rating raises both motivation and performance in children's piano
+  practice (Int J Soc Robotics 2023); Zimmerman/McPherson SRL self-evaluation
+  phase. +8 web tests. _Interactive — touch ergonomics still want a human iPad
+  A/B._
 - **Section-result KP coaching** — `PianoCore.pickSectionFocus()` (pure) pairs
   one genuine strength with one specific next step from the scored
   accuracy/timing/note-length, rendered into `#resFocus` on the rhythm-mode
@@ -720,15 +730,6 @@ human hardware. See
 **Pedagogy / learning-effectiveness follow-ups** (research-driven, kid-safe, all
 implementable without hardware — vet each against the banned-list):
 
-- **Self-assessment prompt** (highest-evidence next step). "How would you score
-  yourself?" before/after the star reveal is proven to raise _both_ motivation
-  and performance in children's piano practice (Int J Soc Robotics 2023) and is
-  the missing self-evaluation phase of Zimmerman/McPherson self-regulated
-  learning. Lowest-risk shape: an ephemeral, optional post-reveal
-  self-reflection (😣/🙂/😄) with a calibration-aware affirmation — no
-  persistence (avoids the surveillance banned-pattern + schema churn), the act
-  of self-rating is itself the documented benefit. Needs careful result-card
-  flow + focus-trap work; human iPad A/B for the interactive path.
 - **Improvement-trajectory view**. `growthScore` / per-axis scores are computed
   but only the accuracy line is graphed. A "your timing improved 15pt over your
   last 5 tries" rollup (journal or session summary) would surface real progress

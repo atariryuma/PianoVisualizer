@@ -49,7 +49,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 845 core
-tests, 1497 web tests, and the Vite web build.
+tests, 1505 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -356,6 +356,19 @@ temporarily limits max gain to prevent amplifying speech.
   it stays calibrated to reality. The free-play HUD coaching
   (`quality.ts buildCoachingFeedback`) is the live-play sibling; this is its
   end-of-section counterpart.
+- **Self-assessment (self-regulated-learning reflection)**: the result card ends
+  with an optional, **non-persisted** "How did that feel?" tap (😣 / 🙂 / 😄).
+  The reply is calibration-aware but never contradicts the child's own feeling
+  and never shames a low score — the "earned-confidence" replies fire only on a
+  scored run that actually cleared (★2+); every other path uses a reply that
+  makes no score claim. The choice lives only in a `result-card.ts` closure
+  (`selfAssessChoice`), resets per attempt, and is **never stored**
+  (kid-initiated reflection, not surveillance — banned-list). Research: the act
+  of self-rating itself raises both motivation and performance in children's
+  piano practice (Int J Soc Robotics 2023) and is the self-evaluation phase of
+  Zimmerman / McPherson self-regulated learning. DOM: `#resSelfAssess` (prompt +
+  `#resFeelTricky` / `#resFeelOk` / `#resFeelGreat` + `#resFeelResult`);
+  listeners attach once at factory creation.
 
 ### Rendering
 
