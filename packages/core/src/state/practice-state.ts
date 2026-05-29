@@ -445,6 +445,112 @@ export function resolveResultTier(stars: number): { titleKey: string; msgKey: st
   return RESULT_TIER_KEYS[idx];
 }
 
+// =====================================================================
+// Section-result coaching (Knowledge of Performance)
+// =====================================================================
+
+/** Which scored dimension the next-step tip is about. Maps 1:1 to a
+ *  result-card stat row so the UI can emphasise the matching number. */
+export type SectionFocusDim = 'accuracy' | 'timing' | 'duration';
+
+export interface SectionFocus {
+  /** i18n key naming a genuine strength to lead with (process-praise,
+   *  competence-protecting). 'sfEffort' when nothing cleared the floor. */
+  strengthKey: string;
+  /** i18n key for the one specific, actionable next-step strategy. */
+  focusKey: string;
+  /** Which stat row the focus refers to — for the UI emphasis. */
+  focusDim: SectionFocusDim;
+}
+
+/** A dimension is only NAMED as a strength above this score; below it the
+ *  praise would outrun reality, so we fall back to effort. Sits between the
+ *  ★1 (50%) and ★2 (70%) accuracy gates — "clearly more right than wrong". */
+export const SECTION_FOCUS_STRENGTH_FLOOR = 55;
+
+/** Below this accuracy too many notes are still being missed for a
+ *  timing/length tip to be the right next step — notes come first. Matches
+ *  the ★2 accuracy gate. */
+const SECTION_FOCUS_NOTES_FIRST_BELOW = 70;
+
+const SECTION_FOCUS_STRENGTH_KEYS: Readonly<Record<SectionFocusDim, string>> = Object.freeze({
+  accuracy: 'sfNotesStrong',
+  timing: 'sfTimingStrong',
+  duration: 'sfHoldStrong',
+});
+
+const SECTION_FOCUS_NEXT_KEYS: Readonly<Record<SectionFocusDim, string>> = Object.freeze({
+  accuracy: 'fNotes',
+  timing: 'fTiming',
+  duration: 'fHold',
+});
+
+/**
+ * Knowledge-of-Performance coach for the section result card: pair one
+ * genuine strength with one specific next-step, derived from the already-
+ * computed accuracy / timing / note-length percentages. Returns i18n keys
+ * (caller localises) plus which stat row to emphasise.
+ *
+ * Research basis:
+ *  - KP > KR for multi-dimensional motor tasks (Soares-Frazão et al.,
+ *    systematic review, Int Rev Sport & Exercise Psych 2021): telling the
+ *    kid *what about the playing* to work on beats showing only the
+ *    outcome stars. Piano is multi-dimensional (pitch + time + length).
+ *  - Pair the growth area with a real strength (EEF 2019: "not yet" alone
+ *    failed — the specific strategy carries the effect; Mueller & Dweck
+ *    1998 process-praise; SDT competence need).
+ *  - Faded feedback (guidance hypothesis — Salmoni 1984 / Schmidt 1991):
+ *    a clean ★3 run returns null so augmented feedback can't breed
+ *    dependence — the kid celebrates, not gets coached.
+ *  - Calibrated honesty (self-assessment accuracy, Frontiers 2025): a
+ *    dimension is praised by name only when it clears a floor; otherwise
+ *    the strength is effort-based so the praise stays truthful.
+ *
+ * `durPct` is null in guided mode, but guided never renders the scored
+ * card; rhythm-mode callers always pass a number.
+ */
+export function pickSectionFocus(
+  accPct: number,
+  timingPct: number,
+  durPct: number | null,
+  stars: number
+): SectionFocus | null {
+  if (stars >= 3) return null;
+
+  // Measured dimensions, most-fundamental first (drives tie-breaks).
+  const dims: Array<{ dim: SectionFocusDim; score: number }> = [
+    { dim: 'accuracy', score: accPct },
+    { dim: 'timing', score: timingPct },
+  ];
+  if (durPct != null) dims.push({ dim: 'duration', score: durPct });
+
+  // Focus = weakest dimension; strict-less-than keeps the earlier (more
+  // fundamental) axis on ties.
+  let focus = dims[0];
+  for (const d of dims) if (d.score < focus.score) focus = d;
+  // Fundamentals override: you can't fix timing/length on notes you aren't
+  // hitting yet, so a low hit rate always routes to the notes tip.
+  if (accPct < SECTION_FOCUS_NOTES_FIRST_BELOW) focus = dims[0];
+
+  // Strength = strongest dimension that ISN'T the focus, named only if it
+  // clears the honesty floor; else lead with effort.
+  let strengthDim: SectionFocusDim | null = null;
+  let best = -1;
+  for (const d of dims) {
+    if (d.dim === focus.dim) continue;
+    if (d.score > best) {
+      best = d.score;
+      strengthDim = d.dim;
+    }
+  }
+  const strengthKey =
+    strengthDim != null && best >= SECTION_FOCUS_STRENGTH_FLOOR
+      ? SECTION_FOCUS_STRENGTH_KEYS[strengthDim]
+      : 'sfEffort';
+
+  return { strengthKey, focusKey: SECTION_FOCUS_NEXT_KEYS[focus.dim], focusDim: focus.dim };
+}
+
 /** Tempo speeds the practice flow gates: a section cleared at one tempo
  *  unlocks the next one (gated on stars >= 2). */
 export const TEMPO_TIERS: readonly number[] = Object.freeze([60, 75, 90, 100]);

@@ -44,6 +44,7 @@ function makeDom(): ResultCardDom {
         <span id="resCombo"></span>
       </div>
       <div id="resMsg"></div>
+      <div id="resFocus"></div>
       <div id="resUnlock"></div>
       <div id="resHistoryWrap">
         <canvas id="resHistoryChart" width="280" height="80"></canvas>
@@ -63,6 +64,7 @@ function makeDom(): ResultCardDom {
     resDurationRow: document.getElementById('resDurationRow'),
     resCombo: document.getElementById('resCombo') as HTMLElement,
     resMsg: document.getElementById('resMsg') as HTMLElement,
+    resFocus: document.getElementById('resFocus') as HTMLElement,
     resUnlock: document.getElementById('resUnlock') as HTMLElement,
     resHistoryWrap: document.getElementById('resHistoryWrap'),
     resHistoryChart: document.getElementById('resHistoryChart') as HTMLCanvasElement,
@@ -147,6 +149,7 @@ function makeDeps(over: Partial<ResultCardDeps> = {}): ResultCardDeps {
     savePracticeProgress: vi.fn(),
     computeStars: vi.fn(() => 2),
     resolveResultTier: vi.fn(() => ({ titleKey: 'tier2Title', msgKey: 'tier2Msg' })),
+    pickSectionFocus: vi.fn(() => null),
     computeUnlocks: vi.fn(() => ({
       unlockedTempo: 90,
       unlockedSecKey: 'feA2',
@@ -288,6 +291,63 @@ describe('createResultCard — renderResultCard', () => {
     expect(deps.dom.resStars.style.display).toBe('none');
     expect(deps.dom.resUnlock.textContent).toBe('');
     expect(deps.dom.resTryPlay!.style.display).toBe('none');
+  });
+
+  it('paints the KP coaching line and tints the focused stat row', () => {
+    const deps = makeDeps();
+    deps.practice._lastResult = {
+      mode: 'rhythm',
+      secId: 'a1',
+      stars: 1,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+      focus: { strengthKey: 'sfNotesStrong', focusKey: 'fTiming', focusDim: 'timing' },
+    };
+    createResultCard(deps).renderResultCard();
+    expect(deps.dom.resFocus!.textContent).toContain('sectionFocusFmt');
+    expect(deps.dom.resFocus!.style.display).toBe('');
+    // Only the timing row is emphasised.
+    expect(deps.dom.resTiming.closest('.result-stat')!.classList.contains('focus-row')).toBe(true);
+    expect(deps.dom.resAcc.closest('.result-stat')!.classList.contains('focus-row')).toBe(false);
+    expect(deps.dom.resDuration.closest('.result-stat')!.classList.contains('focus-row')).toBe(
+      false
+    );
+  });
+
+  it('hides the coaching line and clears emphasis on a clean (focus=null) run', () => {
+    const deps = makeDeps();
+    // Pre-dirty the timing row to prove the render clears stale emphasis.
+    deps.dom.resTiming.closest('.result-stat')!.classList.add('focus-row');
+    deps.practice._lastResult = {
+      mode: 'rhythm',
+      secId: 'a1',
+      stars: 3,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+      focus: null,
+    };
+    createResultCard(deps).renderResultCard();
+    expect(deps.dom.resFocus!.textContent).toBe('');
+    expect(deps.dom.resFocus!.style.display).toBe('none');
+    expect(deps.dom.resTiming.closest('.result-stat')!.classList.contains('focus-row')).toBe(false);
+  });
+
+  it('clears any coaching emphasis when switching to a listen result', () => {
+    const deps = makeDeps();
+    deps.dom.resAcc.closest('.result-stat')!.classList.add('focus-row');
+    deps.practice._lastResult = {
+      mode: 'listen',
+      secId: 'b',
+      stars: 0,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+    };
+    createResultCard(deps).renderResultCard();
+    expect(deps.dom.resFocus!.textContent).toBe('');
+    expect(deps.dom.resAcc.closest('.result-stat')!.classList.contains('focus-row')).toBe(false);
   });
 });
 
@@ -460,6 +520,27 @@ describe('createResultCard — completePracticeSection', () => {
       stars: 2,
       unlockedTempo: 90,
     });
+  });
+
+  it('computes + caches the KP focus and paints it end-to-end', () => {
+    const focus = {
+      strengthKey: 'sfHoldStrong' as const,
+      focusKey: 'fNotes' as const,
+      focusDim: 'accuracy' as const,
+    };
+    const pickSectionFocus = vi.fn(() => focus);
+    const deps = makeDeps({ pickSectionFocus });
+    deps.practice.mode = 'rhythm';
+    deps.practice.hits = 5;
+    deps.practice.timingScoreSum = 4;
+    createResultCard(deps).completePracticeSection();
+    // pickSectionFocus is fed the scored percentages + star count.
+    // hits 5 / target 10 = 50% acc; timingScoreSum 4 / hits 5 = 80% timing;
+    // no durations scored → null; computeStars stub → 2 stars.
+    expect(pickSectionFocus).toHaveBeenCalledWith(50, 80, null, 2);
+    expect(deps.practice._lastResult?.focus).toEqual(focus);
+    expect(deps.dom.resFocus!.textContent).toContain('sectionFocusFmt');
+    expect(deps.dom.resAcc.closest('.result-stat')!.classList.contains('focus-row')).toBe(true);
   });
 
   it('persists unlock outcomes back into songProg', () => {

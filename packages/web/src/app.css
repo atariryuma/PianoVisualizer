@@ -1942,6 +1942,30 @@ body[data-layout='desktop'] #modeButtons {
   letter-spacing: 0.05em;
 }
 
+/* Knowledge-of-Performance coaching line. Calm teal accent (a "look here
+   next" cue, deliberately NOT an alarming red) framed as a growth step. */
+.result-focus {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: rgba(190, 240, 230, 0.92);
+  background: rgba(70, 200, 180, 0.1);
+  border-left: 3px solid rgba(90, 220, 200, 0.7);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  text-align: left;
+}
+
+/* The single stat row the focus tip is about — softly lifted so the kid's
+   eye connects the words to the number. No red, no "error" affordance. */
+.result-stat.focus-row {
+  background: rgba(90, 220, 200, 0.12);
+  border-radius: 6px;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-weight: 600;
+}
+
 .result-unlock {
   font-size: 0.85rem;
   color: #ffd57a;

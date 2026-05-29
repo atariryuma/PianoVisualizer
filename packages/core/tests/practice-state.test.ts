@@ -8,6 +8,8 @@ import {
   finalizeNoteHold,
   computeStars,
   resolveResultTier,
+  pickSectionFocus,
+  SECTION_FOCUS_STRENGTH_FLOOR,
   computeUnlocks,
   practiceBeatMs,
   computePracticeTimings,
@@ -439,6 +441,83 @@ describe('resolveResultTier', () => {
 
   it('coerces fractional stars by truncation', () => {
     expect(resolveResultTier(2.9)).toEqual({ titleKey: 'tier2Title', msgKey: 'tier2Msg' });
+  });
+});
+
+// =====================================================================
+// pickSectionFocus (Knowledge-of-Performance coaching)
+// =====================================================================
+
+describe('pickSectionFocus', () => {
+  it('returns null on a clean 3-star run (celebrate, do not coach)', () => {
+    expect(pickSectionFocus(95, 80, 80, 3)).toBeNull();
+  });
+
+  it('routes a low hit-rate to the notes tip regardless of which axis is lowest', () => {
+    // Accuracy below the ★2 gate (70): fundamentals first even though
+    // duration is the numerically weakest dimension.
+    const f = pickSectionFocus(55, 90, 40, 1);
+    expect(f).not.toBeNull();
+    expect(f!.focusDim).toBe('accuracy');
+    expect(f!.focusKey).toBe('fNotes');
+  });
+
+  it('focuses the weakest axis once notes are mostly landing', () => {
+    // Accuracy healthy (>=70) so the fundamentals override does not fire;
+    // timing is the weakest, so the next step is the timing strategy.
+    const f = pickSectionFocus(75, 45, 88, 2);
+    expect(f!.focusDim).toBe('timing');
+    expect(f!.focusKey).toBe('fTiming');
+    // ...and the strength names the strongest *other* axis (duration, 88).
+    expect(f!.strengthKey).toBe('sfHoldStrong');
+  });
+
+  it('focuses note length when hold-time is the weak axis', () => {
+    const f = pickSectionFocus(90, 80, 40, 2);
+    expect(f!.focusDim).toBe('duration');
+    expect(f!.focusKey).toBe('fHold');
+  });
+
+  it('leads with effort (not a named axis) when nothing clears the honesty floor', () => {
+    // Everything mediocre: the would-be strength axis is below the floor,
+    // so the praise stays truthful instead of inventing a strength.
+    const f = pickSectionFocus(68, 40, 50, 1);
+    expect(f!.strengthKey).toBe('sfEffort');
+    // Below the floor by construction.
+    expect(50).toBeLessThan(SECTION_FOCUS_STRENGTH_FLOOR);
+  });
+
+  it('names a real strength when one axis clears the floor', () => {
+    const f = pickSectionFocus(82, 40, 80, 2);
+    // accuracy (82) and duration (80) both clear the floor; the strength is
+    // the strongest non-focus axis, and the focus is timing.
+    expect(f!.focusDim).toBe('timing');
+    expect(['sfNotesStrong', 'sfHoldStrong']).toContain(f!.strengthKey);
+  });
+
+  it('handles guided-style null duration (only accuracy + timing measured)', () => {
+    const f = pickSectionFocus(90, 40, null, 2);
+    expect(f!.focusDim).toBe('timing');
+    expect(f!.strengthKey).toBe('sfNotesStrong');
+  });
+
+  it('strength axis is never the same as the focus axis', () => {
+    for (const [a, t, d, s] of [
+      [50, 90, 88, 1],
+      [88, 50, 90, 2],
+      [90, 88, 50, 2],
+      [40, 40, 40, 0],
+    ] as const) {
+      const f = pickSectionFocus(a, t, d, s);
+      if (f && f.strengthKey !== 'sfEffort') {
+        const named: Record<string, string> = {
+          sfNotesStrong: 'accuracy',
+          sfTimingStrong: 'timing',
+          sfHoldStrong: 'duration',
+        };
+        expect(named[f.strengthKey]).not.toBe(f.focusDim);
+      }
+    }
   });
 });
 
