@@ -73,6 +73,8 @@ export interface DomBag {
   fullSongRow: HTMLElement;
   songBack: HTMLElement;
   songPreflightHint: HTMLElement;
+  songPreflightText: HTMLElement;
+  songPreflightApply: HTMLElement;
   songStart: HTMLElement;
   practiceHud: HTMLElement;
   practiceTopBar: HTMLElement;
@@ -205,6 +207,8 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'fullSongRow',
   'songBack',
   'songPreflightHint',
+  'songPreflightText',
+  'songPreflightApply',
   'songStart',
   'practiceHud',
   'practiceTopBar',

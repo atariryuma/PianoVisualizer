@@ -18,6 +18,11 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **One-tap scaffold apply** — the pre-flight nudge gained a
+  `#songPreflightApply` button that applies its suggestion (switch to Listen /
+  right-hand-only / drop to the slowest unlocked tempo), then re-renders. All
+  three mutations are side-effect-free (identical to the manual hand/mode/tempo
+  rows); the kid keeps control. +4 web tests.
 - **Adaptive scaffold escalation** — `PianoCore.planSectionScaffold(history)`
   escalates the pre-flight nudge with struggle depth: shallow (2) → "Listen
   first"; deep (≥3) → strategy matched to the latest attempt's bottleneck
@@ -751,10 +756,6 @@ implementable without hardware — vet each against the banned-list):
   ("your timing improved 15pt across all songs this week") would lift the same
   growth framing to the whole library (competence, SDT). Reuses the per-section
   8-entry history + `growthScore`.
-- **Auto-apply the scaffold strategy**. The pre-flight nudge now _suggests_
-  one-hand / slower-tempo, but the kid still sets it by hand. A one-tap "set
-  this up for me" affordance (flip the hand filter / drop the tempo, then start)
-  would lower the friction — but must stay kid-initiated (no auto-forcing).
 
 ---
 

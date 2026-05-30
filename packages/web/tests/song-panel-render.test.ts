@@ -34,7 +34,10 @@ function makeDom(): SongPanelRenderDom {
     <div id="metronomeRow"></div>
     <div id="fullSongRow"></div>
     <button id="fullSongToggle"></button>
-    <div id="songPreflightHint" style="display: none"></div>
+    <div id="songPreflightHint" style="display: none">
+      <span id="songPreflightText"></span>
+      <button id="songPreflightApply" style="display: none"></button>
+    </div>
     <button id="songStart"></button>
     <div id="modeRow">
       <button class="hand-btn" data-mode="listen"></button>
@@ -62,6 +65,8 @@ function makeDom(): SongPanelRenderDom {
     fullSongRow: document.getElementById('fullSongRow'),
     fullSongToggle: document.getElementById('fullSongToggle'),
     songPreflightHint: document.getElementById('songPreflightHint'),
+    songPreflightText: document.getElementById('songPreflightText'),
+    songPreflightApply: document.getElementById('songPreflightApply'),
     songStart: document.getElementById('songStart') as HTMLElement,
   };
 }
@@ -434,7 +439,7 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
     deps.practice.mode = 'rhythm';
     createSongPanelRender(deps).render();
     expect(deps.dom.songPreflightHint!.style.display).toBe('');
-    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHint');
+    expect(deps.dom.songPreflightText!.textContent).toBe('preflightHint');
   });
 
   it('hides the nudge when the section has not been struggled with', () => {
@@ -442,7 +447,7 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
     deps.practice.mode = 'rhythm';
     createSongPanelRender(deps).render();
     expect(deps.dom.songPreflightHint!.style.display).toBe('none');
-    expect(deps.dom.songPreflightHint!.textContent).toBe('');
+    expect(deps.dom.songPreflightText!.textContent).toBe('');
   });
 
   it('does not nudge when already in Listen mode (no point)', () => {
@@ -478,7 +483,7 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
     });
     deps.practice.mode = 'rhythm';
     createSongPanelRender(deps).render();
-    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHintOneHand');
+    expect(deps.dom.songPreflightText!.textContent).toBe('preflightHintOneHand');
   });
 
   it('escalates to slower-tempo copy when notes land but timing lags', () => {
@@ -497,7 +502,7 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
     deps.practice.mode = 'rhythm';
     deps.practice.tempoPct = 90;
     createSongPanelRender(deps).render();
-    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHintSlow');
+    expect(deps.dom.songPreflightText!.textContent).toBe('preflightHintSlow');
   });
 
   it('falls back to one-hand copy when already at the slowest tempo', () => {
@@ -516,6 +521,64 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
     deps.practice.mode = 'rhythm';
     deps.practice.tempoPct = 60;
     createSongPanelRender(deps).render();
-    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHintOneHand');
+    expect(deps.dom.songPreflightText!.textContent).toBe('preflightHintOneHand');
+  });
+});
+
+// ─── one-tap "set it up for me" apply button ─────────────────────────
+
+describe('createSongPanelRender — scaffold apply button', () => {
+  const deep = (a: number) =>
+    makeProgress({
+      history: {
+        a1: [
+          { a, s: 0 },
+          { a, s: 0 },
+          { a, s: 0 },
+        ],
+      },
+    });
+
+  it('shallow struggle: apply switches to Listen mode', () => {
+    const deps = makeDeps({
+      songProg: () => makeProgress({ history: { a1: [{ s: 0 }, { s: 0 }] } }),
+    });
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightApply!.textContent).toBe('preflightApplyListen');
+    deps.dom.songPreflightApply!.click();
+    expect(deps.practice.mode).toBe('listen');
+    // Re-rendered into listen mode → the nudge hides itself.
+    expect(deps.dom.songPreflightHint!.style.display).toBe('none');
+  });
+
+  it('notes bottleneck: apply sets the right-hand filter', () => {
+    const deps = makeDeps({ songProg: () => deep(55) });
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightApply!.textContent).toBe('preflightApplyOneHand');
+    deps.dom.songPreflightApply!.click();
+    expect(deps.practice.handFilter).toBe('R');
+  });
+
+  it('timing bottleneck: apply drops to the lowest unlocked tempo', () => {
+    const deps = makeDeps({
+      songProg: () => ({ ...deep(80), unlockedTempos: { 60: true, 75: true } }),
+    });
+    deps.practice.mode = 'rhythm';
+    deps.practice.tempoPct = 90;
+    createSongPanelRender(deps).render();
+    // The i18n key is fed the chosen tempo as {v} (the stub returns the key).
+    expect(deps.t).toHaveBeenCalledWith('preflightApplySlowFmt', { v: 60 });
+    expect(deps.dom.songPreflightApply!.textContent).toBe('preflightApplySlowFmt');
+    deps.dom.songPreflightApply!.click();
+    expect(deps.practice.tempoPct).toBe(60);
+  });
+
+  it('hides the apply button when there is no nudge', () => {
+    const deps = makeDeps({ songProg: () => makeProgress({ history: { a1: [{ s: 2 }] } }) });
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightApply!.style.display).toBe('none');
   });
 });
