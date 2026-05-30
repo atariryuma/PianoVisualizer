@@ -72,6 +72,7 @@ export interface DomBag {
   fullSongToggle: HTMLElement;
   fullSongRow: HTMLElement;
   songBack: HTMLElement;
+  songPreflightHint: HTMLElement;
   songStart: HTMLElement;
   practiceHud: HTMLElement;
   practiceTopBar: HTMLElement;
@@ -203,6 +204,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'fullSongToggle',
   'fullSongRow',
   'songBack',
+  'songPreflightHint',
   'songStart',
   'practiceHud',
   'practiceTopBar',

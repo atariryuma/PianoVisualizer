@@ -10,6 +10,7 @@ import {
   resolveResultTier,
   pickSectionFocus,
   SECTION_FOCUS_STRENGTH_FLOOR,
+  needsPreflightScaffold,
   computeUnlocks,
   practiceBeatMs,
   computePracticeTimings,
@@ -518,6 +519,39 @@ describe('pickSectionFocus', () => {
         expect(named[f.strengthKey]).not.toBe(f.focusDim);
       }
     }
+  });
+});
+
+// =====================================================================
+// needsPreflightScaffold (feed-forward)
+// =====================================================================
+
+describe('needsPreflightScaffold', () => {
+  it('is false with no history', () => {
+    expect(needsPreflightScaffold([])).toBe(false);
+  });
+
+  it('is false after a single miss (one try is not a struggle)', () => {
+    expect(needsPreflightScaffold([0])).toBe(false);
+  });
+
+  it('is true after two trailing misses', () => {
+    expect(needsPreflightScaffold([0, 0])).toBe(true);
+    expect(needsPreflightScaffold([2, 1, 0, 0])).toBe(true);
+  });
+
+  it('clears the moment a star is earned (trailing run resets)', () => {
+    expect(needsPreflightScaffold([0, 0, 1])).toBe(false);
+    expect(needsPreflightScaffold([0, 0, 0, 2])).toBe(false);
+  });
+
+  it('only counts the *trailing* run, not misses earlier in the buffer', () => {
+    expect(needsPreflightScaffold([0, 0, 3, 1])).toBe(false);
+  });
+
+  it('respects a custom minStreak', () => {
+    expect(needsPreflightScaffold([0, 0], 3)).toBe(false);
+    expect(needsPreflightScaffold([0, 0, 0], 3)).toBe(true);
   });
 });
 

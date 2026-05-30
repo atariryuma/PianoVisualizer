@@ -1682,6 +1682,20 @@ body[data-layout='desktop'] #modeButtons {
   transform: translateX(20px);
 }
 
+/* Feed-forward nudge above the Start button — a gentle "try Listen first"
+   for a recently-struggled section. Warm amber, framed as help not failure. */
+.song-preflight-hint {
+  margin: 14px 0 2px;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: rgba(255, 235, 200, 0.95);
+  background: rgba(255, 190, 90, 0.12);
+  border: 1px solid rgba(255, 200, 110, 0.4);
+  border-radius: 8px;
+  text-align: center;
+}
+
 .song-actions {
   display: flex;
   gap: 8px;

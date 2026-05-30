@@ -381,6 +381,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'metronomeRow',
       'fullSongRow',
       'fullSongToggle',
+      'songPreflightHint',
       'songStart'
     ) as any,
     practice: deps.practice,

@@ -441,6 +441,7 @@ export {
   resolveResultTier,
   pickSectionFocus,
   SECTION_FOCUS_STRENGTH_FLOOR,
+  needsPreflightScaffold,
   computeUnlocks,
   practiceBeatMs,
   computePracticeTimings,

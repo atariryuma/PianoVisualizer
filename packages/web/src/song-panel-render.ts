@@ -20,7 +20,7 @@
 // renderer is called whenever the controls flip a flag, plus on every
 // langchange event and after sectionIdx mutations from the result-card.
 
-import { isFixedTempoMode } from '@piano/core';
+import { isFixedTempoMode, needsPreflightScaffold } from '@piano/core';
 import type { Lang, PracticeMode } from '@piano/core';
 
 /** Per-song progress slice the renderer reads. */
@@ -81,6 +81,9 @@ export interface SongPanelRenderDom {
   metronomeRow: HTMLElement | null;
   fullSongRow: HTMLElement | null;
   fullSongToggle: HTMLElement | null;
+  /** Feed-forward nudge shown above the start button for a recently-struggled
+   *  section. Optional so partial-DOM tests / older shells degrade gracefully. */
+  songPreflightHint?: HTMLElement | null;
   songStart: HTMLElement;
 }
 
@@ -282,6 +285,18 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     deps.dom.songStart.textContent = deps.t(
       deps.practice.mode === 'listen' ? 'startListening' : 'startPractice'
     );
+
+    // Feed-forward scaffold: if the selected section ended its recent runs in
+    // misses, nudge toward Listen-first BEFORE the next attempt — but only when
+    // the kid is about to play (already in Listen → no nudge needed).
+    if (deps.dom.songPreflightHint) {
+      const sel = currentSong?.sections[deps.practice.sectionIdx];
+      const hist = sel ? (sp.history?.[sel.id] as Array<{ s?: number }> | undefined) : undefined;
+      const stars = Array.isArray(hist) ? hist.map((h) => h?.s ?? 0) : [];
+      const show = deps.practice.mode !== 'listen' && needsPreflightScaffold(stars);
+      deps.dom.songPreflightHint.textContent = show ? deps.t('preflightHint') : '';
+      deps.dom.songPreflightHint.style.display = show ? '' : 'none';
+    }
   }
 
   return { render };

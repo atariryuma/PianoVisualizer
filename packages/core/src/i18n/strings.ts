@@ -328,6 +328,13 @@ export const T_STRINGS: TranslationTable = {
     en: "hold each note until the next one — don't lift early",
     jp: '次の音まで指をはなさず、最後までのばそう',
   },
+  // Pre-flight scaffold (feed-forward) — shown on the song panel BEFORE the kid
+  // re-attempts a section they recently got stuck on. Kid-initiated, gentle, no
+  // shame (Hattie & Timperley 2007 "where to next?").
+  preflightHint: {
+    en: '💡 Tricky last time? Tap 🎧 Listen to hear it first.',
+    jp: '💡 前回は難しかったかな？🎧 リッスンで先に聴いてみよう。',
+  },
   // Self-assessment (self-regulated-learning reflection phase). One optional,
   // non-persisted tap on the result card. The *act* of self-rating is the
   // documented benefit (Int J Soc Robotics 2023 — raised both motivation and
