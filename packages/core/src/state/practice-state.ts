@@ -571,6 +571,58 @@ export function needsPreflightScaffold(historyStars: readonly number[], minStrea
   return streak >= minStreak;
 }
 
+/** Which strategy the pre-flight nudge suggests. `listen` is the low-friction
+ *  first step; deeper struggle escalates to a strategy matched to the weakest
+ *  axis of the most recent attempt. */
+export type ScaffoldStrategy = 'listen' | 'oneHand' | 'slowTempo';
+
+export interface ScaffoldPlan {
+  /** Whether to show the nudge at all (trailing 0-star run ≥ minStreak). */
+  show: boolean;
+  /** Trailing 0-star run length — the struggle depth. */
+  depth: number;
+  /** Suggested strategy (only meaningful when `show`). */
+  strategy: ScaffoldStrategy;
+}
+
+/** Struggle depth at or beyond which the nudge escalates from "just listen"
+ *  to a concrete practice strategy. */
+export const SCAFFOLD_ESCALATE_DEPTH = 3;
+/** Accuracy below this on the latest attempt routes the escalation to
+ *  one-hand practice (notes are the bottleneck); at/above it, to slower tempo
+ *  (timing is the bottleneck). Matches the ★2 accuracy gate. */
+export const SCAFFOLD_NOTES_BOTTLENECK_BELOW = 70;
+
+/**
+ * Adaptive pre-flight scaffold (feed-forward that escalates with need —
+ * Wood/Bruner/Ross 1976 scaffolding: more support the more the learner
+ * struggles, faded as they cope). A shallow struggle gets the low-friction
+ * "just listen" nudge; a deeper run escalates to the strategy matched to the
+ * latest attempt's weakest axis — one-hand when notes are still being missed
+ * (more fundamental), slower tempo when notes land but timing doesn't.
+ *
+ * `history` is the per-section attempt list, oldest → newest, each carrying
+ * accuracy `a` and stars `s` (timing/duration aren't stored per attempt).
+ */
+export function planSectionScaffold(
+  history: ReadonlyArray<{ a: number; s: number }>,
+  minStreak = 2
+): ScaffoldPlan {
+  const stars = history.map((h) => h.s);
+  const show = needsPreflightScaffold(stars, minStreak);
+  let depth = 0;
+  for (let i = stars.length - 1; i >= 0; i--) {
+    if (stars[i] === 0) depth++;
+    else break;
+  }
+  let strategy: ScaffoldStrategy = 'listen';
+  if (show && depth >= SCAFFOLD_ESCALATE_DEPTH) {
+    const last = history[history.length - 1];
+    strategy = (last?.a ?? 100) < SCAFFOLD_NOTES_BOTTLENECK_BELOW ? 'oneHand' : 'slowTempo';
+  }
+  return { show, depth, strategy };
+}
+
 /** Tempo speeds the practice flow gates: a section cleared at one tempo
  *  unlocks the next one (gated on stars >= 2). */
 export const TEMPO_TIERS: readonly number[] = Object.freeze([60, 75, 90, 100]);

@@ -18,6 +18,12 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **Adaptive scaffold escalation** — `PianoCore.planSectionScaffold(history)`
+  escalates the pre-flight nudge with struggle depth: shallow (2) → "Listen
+  first"; deep (≥3) → strategy matched to the latest attempt's bottleneck
+  (one-hand when accuracy < 70, slower tempo otherwise; render falls back to
+  one-hand at the slowest tempo). Wood/Bruner/Ross 1976 scaffolding. +5 core, +3
+  web tests.
 - **Pre-flight scaffold (feed-forward)** — the song panel nudges "Tricky last
   time? Tap 🎧 Listen first" above Start when the selected section's recent
   attempts ended in a 0-star run (`PianoCore.needsPreflightScaffold`, trailing
@@ -745,10 +751,10 @@ implementable without hardware — vet each against the banned-list):
   ("your timing improved 15pt across all songs this week") would lift the same
   growth framing to the whole library (competence, SDT). Reuses the per-section
   8-entry history + `growthScore`.
-- **Adaptive scaffold escalation**. The pre-flight nudge currently always
-  suggests Listen. A next step: escalate by struggle depth (e.g. after 3+ misses
-  also offer "drop to 60% tempo" or "one hand first"), reusing
-  `pickSectionFocus`'s weakest-axis signal to pick which strategy to surface.
+- **Auto-apply the scaffold strategy**. The pre-flight nudge now _suggests_
+  one-hand / slower-tempo, but the kid still sets it by hand. A one-tap "set
+  this up for me" affordance (flip the hand filter / drop the tempo, then start)
+  would lower the friction — but must stay kid-initiated (no auto-forcing).
 
 ---
 

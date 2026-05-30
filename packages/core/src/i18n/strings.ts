@@ -335,6 +335,16 @@ export const T_STRINGS: TranslationTable = {
     en: '💡 Tricky last time? Tap 🎧 Listen to hear it first.',
     jp: '💡 前回は難しかったかな？🎧 リッスンで先に聴いてみよう。',
   },
+  // Escalated variants — shown when the struggle runs deeper (3+ misses),
+  // matched to the bottleneck: notes (one hand) vs timing (slower tempo).
+  preflightHintOneHand: {
+    en: '💡 Still tricky? Try one hand (👈 / 👉) slowly, then 🎧 Listen.',
+    jp: '💡 まだ難しい？片手（👈 / 👉）でゆっくり→🎧 リッスンもしてみよう。',
+  },
+  preflightHintSlow: {
+    en: '💡 Still tricky? Pick a slower tempo, then 🎧 Listen first.',
+    jp: '💡 まだ難しい？テンポを下げて、🎧 リッスンで先に聴こう。',
+  },
   // Self-assessment (self-regulated-learning reflection phase). One optional,
   // non-persisted tap on the result card. The *act* of self-rating is the
   // documented benefit (Int J Soc Robotics 2023 — raised both motivation and

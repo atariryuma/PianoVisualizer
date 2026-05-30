@@ -462,4 +462,60 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
     createSongPanelRender(deps).render();
     expect(deps.dom.songPreflightHint!.style.display).toBe('');
   });
+
+  it('escalates to one-hand copy on a deep, notes-bottleneck struggle', () => {
+    const deps = makeDeps({
+      songProg: () =>
+        makeProgress({
+          history: {
+            a1: [
+              { a: 50, s: 0 },
+              { a: 55, s: 0 },
+              { a: 58, s: 0 },
+            ],
+          },
+        }),
+    });
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHintOneHand');
+  });
+
+  it('escalates to slower-tempo copy when notes land but timing lags', () => {
+    const deps = makeDeps({
+      songProg: () =>
+        makeProgress({
+          history: {
+            a1: [
+              { a: 75, s: 0 },
+              { a: 80, s: 0 },
+              { a: 85, s: 0 },
+            ],
+          },
+        }),
+    });
+    deps.practice.mode = 'rhythm';
+    deps.practice.tempoPct = 90;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHintSlow');
+  });
+
+  it('falls back to one-hand copy when already at the slowest tempo', () => {
+    const deps = makeDeps({
+      songProg: () =>
+        makeProgress({
+          history: {
+            a1: [
+              { a: 75, s: 0 },
+              { a: 80, s: 0 },
+              { a: 85, s: 0 },
+            ],
+          },
+        }),
+    });
+    deps.practice.mode = 'rhythm';
+    deps.practice.tempoPct = 60;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHintOneHand');
+  });
 });
