@@ -49,7 +49,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 845 core
-tests, 1505 web tests, and the Vite web build.
+tests, 1508 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -369,6 +369,13 @@ temporarily limits max gain to prevent amplifying speech.
   Zimmerman / McPherson self-regulated learning. DOM: `#resSelfAssess` (prompt +
   `#resFeelTricky` / `#resFeelOk` / `#resFeelGreat` + `#resFeelResult`);
   listeners attach once at factory creation.
+- **Growth chart (trajectory)**: `result-card.ts drawHistoryChart` plots the
+  last 8 attempts as two trend lines — **accuracy (gold, primary, 3-star
+  halos)** and **timing (cyan)** — over a shared 0–100% axis, with a legend. The
+  caption is **self-referenced and growth-framed**: new personal best → "🌟 Best
+  yet!", else gain-vs-first-attempt → "↑ +X%", else "Keep going". The old red "↓
+  -X%" loss-frame was removed — there is no "you went down" branch by design
+  (banned-list: no shame/loss copy, SDT competence).
 
 ### Rendering
 

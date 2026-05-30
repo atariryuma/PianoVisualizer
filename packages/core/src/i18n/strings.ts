@@ -266,6 +266,15 @@ export const T_STRINGS: TranslationTable = {
   // Result-screen growth chart
   growthChartFmt: { en: 'Growth ({v} attempts)', jp: '成長グラフ ({v}回)' },
   trendSimilar: { en: '→ similar', jp: '→ おなじくらい' },
+  // Growth-framed trajectory caption (replaces the old red "↓ -8%" loss-frame
+  // — no down-arrow, ever; self-referenced to the kid's own past, not a target).
+  // A new personal best, else gain-since-first, else a neutral encouragement.
+  trendBestYet: { en: '🌟 Best yet!', jp: '🌟 自己ベスト！' },
+  trendUpFmt: { en: '↑ +{v}% vs. first', jp: '↑ 最初より +{v}%' },
+  trendKeepGoing: { en: 'Keep going 🌱', jp: 'この調子 🌱' },
+  // Two-line chart legend (accuracy = gold, timing = cyan).
+  legendAccuracy: { en: 'Acc', jp: '正確さ' },
+  legendTiming: { en: 'Time', jp: 'テンポ' },
   sustainLabel: { en: 'SUSTAIN' },
   // Free-play HUD (session status while playing without a song)
   listeningFmt: { en: '{p}Listening{p}', jp: '{p}きいてるよ{p}' },

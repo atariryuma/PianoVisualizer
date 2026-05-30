@@ -608,20 +608,61 @@ describe('drawHistoryChart', () => {
     expect((ctx.beginPath as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(3);
   });
 
-  it('uses trendSimilar when delta is small', () => {
-    const canvas = document.createElement('canvas');
+  function chartDeps() {
     const ctx = makeStubCtx();
-    const tFn = vi.fn((k: string) => k);
-    const deps = {
-      setupHiDPICanvas: vi.fn(() => ctx),
-      clamp01: (v: number) => Math.max(0, Math.min(1, v)),
-      t: tFn,
+    const tFn = vi.fn((k: string, vars?: Record<string, unknown>) =>
+      vars ? `${k}${JSON.stringify(vars)}` : k
+    );
+    return {
+      ctx,
+      tFn,
+      deps: {
+        setupHiDPICanvas: vi.fn(() => ctx),
+        clamp01: (v: number) => Math.max(0, Math.min(1, v)),
+        t: tFn,
+      },
     };
-    drawHistoryChart(deps, canvas, [
+  }
+
+  it('captions a new personal best as "best yet" (never a down-arrow)', () => {
+    const { deps, tFn } = chartDeps();
+    drawHistoryChart(deps, document.createElement('canvas'), [
       { d: 0, a: 50, t: 50, s: 1 },
-      { d: 1, a: 51, t: 51, s: 1 },
+      { d: 1, a: 72, t: 60, s: 2 }, // 72 > prior best (50) → best yet
     ]);
-    expect(tFn).toHaveBeenCalledWith('trendSimilar');
+    expect(tFn).toHaveBeenCalledWith('trendBestYet');
+    // No loss-frame string is ever emitted.
+    const drawn = (tFn.mock.calls as Array<[string]>).map((c) => c[0]);
+    expect(drawn).not.toContain('trendSimilar');
+  });
+
+  it('captions "+X% vs first" when up from the start but not a new best', () => {
+    const { deps, tFn } = chartDeps();
+    drawHistoryChart(deps, document.createElement('canvas'), [
+      { d: 0, a: 60, t: 50, s: 1 },
+      { d: 1, a: 90, t: 80, s: 3 }, // best is 90
+      { d: 2, a: 80, t: 70, s: 2 }, // 80 < best(90) but > first(60) → +20
+    ]);
+    expect(tFn).toHaveBeenCalledWith('trendUpFmt', { v: 20 });
+  });
+
+  it('captions "keep going" when not up vs first (no shame copy)', () => {
+    const { deps, tFn } = chartDeps();
+    drawHistoryChart(deps, document.createElement('canvas'), [
+      { d: 0, a: 70, t: 70, s: 2 },
+      { d: 1, a: 60, t: 55, s: 1 }, // below first, not a best
+    ]);
+    expect(tFn).toHaveBeenCalledWith('trendKeepGoing');
+  });
+
+  it('draws both line legends (accuracy + timing)', () => {
+    const { deps, tFn } = chartDeps();
+    drawHistoryChart(deps, document.createElement('canvas'), [
+      { d: 0, a: 50, t: 50, s: 1 },
+      { d: 1, a: 75, t: 70, s: 2 },
+    ]);
+    expect(tFn).toHaveBeenCalledWith('legendAccuracy');
+    expect(tFn).toHaveBeenCalledWith('legendTiming');
   });
 });
 

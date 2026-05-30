@@ -675,9 +675,11 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
   return { renderResultCard, completePracticeSection };
 }
 
-/** Growth chart — line graph of accuracy over the last 8 attempts.
- *  Exported so tests can call it directly without going through the
- *  whole completePracticeSection flow. */
+/** Growth chart — two trend lines over the last 8 attempts: accuracy (gold,
+ *  primary, with 3-star halos) and timing (cyan). Caption is a growth-framed,
+ *  self-referenced trajectory (best-yet / up-since-first / keep-going) — never
+ *  a loss-frame. Exported so tests can call it directly without going through
+ *  the whole completePracticeSection flow. */
 export function drawHistoryChart(
   deps: Pick<ResultCardDeps, 'setupHiDPICanvas' | 'clamp01' | 't'>,
   canvas: HTMLCanvasElement,
@@ -718,6 +720,26 @@ export function drawHistoryChart(
   const xAt = (i: number): number => (n === 1 ? padX + innerW / 2 : padX + (i / (n - 1)) * innerW);
   const yAt = (v: number): number => padTop + innerH * (1 - deps.clamp01(v / 100));
 
+  // Timing trend (cyan) — drawn first so the primary accuracy line sits on
+  // top. Same 0–100% axis, so both share yAt().
+  c.strokeStyle = 'rgba(120, 210, 255, 0.7)';
+  c.lineWidth = 1.6;
+  c.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = xAt(i);
+    const y = yAt(history[i].t);
+    if (i === 0) c.moveTo(x, y);
+    else c.lineTo(x, y);
+  }
+  c.stroke();
+  for (let i = 0; i < n; i++) {
+    c.beginPath();
+    c.arc(xAt(i), yAt(history[i].t), 2.4, 0, Math.PI * 2);
+    c.fillStyle = '#78d2ff';
+    c.fill();
+  }
+
+  // Accuracy trend (gold) — primary line, with a halo on 3-star clears.
   c.strokeStyle = 'rgba(255, 215, 0, 0.85)';
   c.lineWidth = 2;
   c.beginPath();
@@ -728,7 +750,6 @@ export function drawHistoryChart(
     else c.lineTo(x, y);
   }
   c.stroke();
-
   for (let i = 0; i < n; i++) {
     const x = xAt(i);
     const y = yAt(history[i].a);
@@ -745,37 +766,66 @@ export function drawHistoryChart(
     }
   }
 
+  // Endpoint value labels, colour-keyed to each line (doubles as a legend
+  // cue). Nudge the timing label off the accuracy one when the two endpoints
+  // are close so they don't overprint.
   const last = history[n - 1];
-  const prev = history[n - 2];
   const lastX = xAt(n - 1);
-  const lastY = yAt(last.a);
-  c.fillStyle = 'rgba(255,255,255,0.85)';
-  c.font = 'bold 11px sans-serif';
+  const accY = yAt(last.a);
+  const timeY = yAt(last.t);
   c.textAlign = 'right';
   c.textBaseline = 'alphabetic';
-  const labelOffsetY = lastY < padTop + 16 ? 14 : -6;
-  c.fillText(last.a + '%', lastX - 5, lastY + labelOffsetY);
+  const accOffsetY = accY < padTop + 16 ? 14 : -6;
+  c.fillStyle = '#ffe27a';
+  c.font = 'bold 11px sans-serif';
+  c.fillText(last.a + '%', lastX - 5, accY + accOffsetY);
+  const close = Math.abs(accY - timeY) < 12;
+  const timeOffsetY = close ? (accOffsetY < 0 ? 14 : -6) : timeY < padTop + 14 ? 13 : -5;
+  c.fillStyle = '#9fdcff';
+  c.font = 'bold 10px sans-serif';
+  c.fillText(last.t + '%', lastX - 5, timeY + timeOffsetY);
 
-  const delta = last.a - prev.a;
+  // Growth-framed trajectory caption — self-referenced to the kid's own past,
+  // never a loss-frame (banned-list): new personal best > gain-since-first >
+  // neutral encouragement. There is no "you went down" branch by design.
+  const first = history[0];
+  let bestPrev = 0;
+  for (let i = 0; i < n - 1; i++) bestPrev = Math.max(bestPrev, history[i].a);
   let txt: string;
   let col: string;
-  if (delta >= 3) {
-    txt = '↑ +' + delta + '%';
+  if (last.a > bestPrev) {
+    txt = deps.t('trendBestYet');
+    col = '#ffd86a';
+  } else if (last.a > first.a) {
+    txt = deps.t('trendUpFmt', { v: last.a - first.a });
     col = '#7eff8a';
-  } else if (delta <= -3) {
-    txt = '↓ ' + delta + '%';
-    col = '#ff8a9a';
   } else {
-    txt = deps.t('trendSimilar');
-    col = 'rgba(255,255,255,0.55)';
+    txt = deps.t('trendKeepGoing');
+    col = 'rgba(255,255,255,0.6)';
   }
   c.textAlign = 'left';
   c.fillStyle = col;
   c.font = 'bold 11px sans-serif';
   c.fillText(txt, padX, h - 4);
 
-  c.textAlign = 'right';
-  c.fillStyle = 'rgba(255,255,255,0.45)';
-  c.font = '10px sans-serif';
-  c.fillText(deps.t('growthChartFmt', { v: n }), padX + innerW, h - 4);
+  // Legend (bottom-right): gold = accuracy, cyan = timing. Fixed offsets so we
+  // never call measureText (the happy-dom test ctx doesn't implement it).
+  const legY = h - 7;
+  const accDotX = padX + innerW - 96;
+  const timeDotX = padX + innerW - 44;
+  c.font = '9px sans-serif';
+  c.textAlign = 'left';
+  c.textBaseline = 'middle';
+  c.fillStyle = '#ffd700';
+  c.beginPath();
+  c.arc(accDotX, legY, 2.5, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.6)';
+  c.fillText(deps.t('legendAccuracy'), accDotX + 5, legY);
+  c.fillStyle = '#78d2ff';
+  c.beginPath();
+  c.arc(timeDotX, legY, 2.5, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.6)';
+  c.fillText(deps.t('legendTiming'), timeDotX + 5, legY);
 }
