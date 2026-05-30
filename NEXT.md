@@ -26,8 +26,8 @@ Recent landings (2026-05-30):
   each section's accuracy/timing gain across the current ISO week and the
   journal rollup shows "📈 This week: Accuracy/Timing +Xpt" only when the kid
   improved (positive-only; no loss-frame). Lifts per-section growth framing to
-  the whole library (SDT competence). +7 core tests; render is
-  build/typecheck-verified (journal modal has no unit harness).
+  the whole library (SDT competence). +7 core tests; the journal render is now
+  covered too (see the journal-modal test harness landing above).
 - **One-tap scaffold apply** — the pre-flight nudge gained a
   `#songPreflightApply` button that applies its suggestion (switch to Listen /
   right-hand-only / drop to the slowest unlocked tempo), then re-renders. All
