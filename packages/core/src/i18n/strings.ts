@@ -554,6 +554,12 @@ export const T_STRINGS: TranslationTable = {
   rollupStarsFmt: { en: '{earned} / {total}', jp: '{earned} / {total}' },
   rollupStampsFmt: { en: '{earned} / {total}', jp: '{earned} / {total}' },
   rollupDaysFmt: { en: '{n}', jp: '{n} 日' },
+  // Weekly growth rollup — shown only when the kid actually improved this week
+  // (positive-only; never a "you went down" line). Self-referenced to their
+  // own past week.
+  rollupGrowthLabel: { en: 'This week', jp: '今週' },
+  rollupGrowthAccFmt: { en: 'Accuracy +{v}pt 📈', jp: '正確さ +{v}pt 📈' },
+  rollupGrowthTimeFmt: { en: 'Timing +{v}pt 📈', jp: 'テンポ +{v}pt 📈' },
   // Repertoire tab
   sealNone: { en: 'Just starting', jp: 'これから' },
   sealBronze: { en: 'Bronze', jp: '銅' },

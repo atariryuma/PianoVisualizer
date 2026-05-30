@@ -210,6 +210,7 @@ export {
   resolveSongSeal,
   endowedProgressFraction,
   pickNearCompletion,
+  weeklyLibraryGrowth,
 } from './state/mastery';
 export type {
   MasterySongDef,
@@ -218,6 +219,8 @@ export type {
   LibraryMastery,
   SongSeal,
   NearCompletionEntry,
+  WeeklyGrowth,
+  WeeklyGrowthAttempt,
 } from './state/mastery';
 
 // === State: stamp collection (varied "collectibles" awarded on section complete) ===

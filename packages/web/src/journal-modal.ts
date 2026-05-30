@@ -199,6 +199,46 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     const earnedCount = Object.keys(progress.earnedStamps ?? {}).length;
     const totalStamps = stamps.length;
 
+    // Weekly growth (positive-only): collect every section's attempts and ask
+    // the library-growth aggregate for the best axis the kid improved this
+    // week. Defensive iteration mirrors the calendar tab's history walk.
+    const weekStartMs = startOfIsoWeek(new Date()).getTime();
+    const sectionAttempts: Array<Array<{ d: number; a: number; t: number }>> = [];
+    for (const sp of Object.values(progress.songs ?? {})) {
+      for (const hist of Object.values(sp.history ?? {})) {
+        if (!Array.isArray(hist)) continue;
+        const rows: Array<{ d: number; a: number; t: number }> = [];
+        for (const h of hist) {
+          if (
+            h != null &&
+            typeof h === 'object' &&
+            typeof (h as { d?: unknown }).d === 'number' &&
+            typeof (h as { a?: unknown }).a === 'number' &&
+            typeof (h as { t?: unknown }).t === 'number'
+          ) {
+            const e = h as { d: number; a: number; t: number };
+            rows.push({ d: e.d, a: e.a, t: e.t });
+          }
+        }
+        if (rows.length) sectionAttempts.push(rows);
+      }
+    }
+    const growth = PianoCore.weeklyLibraryGrowth(sectionAttempts, weekStartMs);
+    let growthRow = '';
+    if (growth.axis) {
+      const fmt = growth.axis === 'accuracy' ? 'rollupGrowthAccFmt' : 'rollupGrowthTimeFmt';
+      growthRow =
+        '<div class="rollup-row rollup-growth">' +
+        '<span class="rollup-icon">📈</span>' +
+        '<span class="rollup-label">' +
+        deps.t('rollupGrowthLabel') +
+        '</span>' +
+        '<span class="rollup-value">' +
+        deps.t(fmt, { v: growth.gainPct }) +
+        '</span>' +
+        '</div>';
+    }
+
     deps.dom.journalLibraryRollup.innerHTML =
       '<div class="rollup-row">' +
       '<span class="rollup-icon">⭐</span>' +
@@ -229,7 +269,8 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       '<span class="rollup-value">' +
       deps.t('rollupDaysFmt', { n: progress.streakDays?.length ?? 0 }) +
       '</span>' +
-      '</div>';
+      '</div>' +
+      growthRow;
   }
 
   function renderRepertoireTab(): void {

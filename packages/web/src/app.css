@@ -2834,6 +2834,13 @@ body[data-layout='desktop'] #modeButtons {
   font-weight: 600;
 }
 
+/* Weekly-growth row — only painted when the kid improved this week, so a
+   gentle green "well done" tint is always positive (never a loss-frame). */
+.rollup-growth .rollup-value {
+  color: #9fffb0;
+  font-weight: 600;
+}
+
 /* Tab strip */
 .journal-tabs {
   display: flex;

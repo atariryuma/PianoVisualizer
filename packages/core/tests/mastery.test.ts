@@ -5,6 +5,7 @@ import {
   resolveSongSeal,
   endowedProgressFraction,
   pickNearCompletion,
+  weeklyLibraryGrowth,
   type MasterySongDef,
 } from '../src/state/mastery';
 import {
@@ -225,5 +226,101 @@ describe('pickNearCompletion', () => {
       ) as PracticeProgress['songs'],
     };
     expect(pickNearCompletion(songs, progress, 2).length).toBe(2);
+  });
+});
+
+describe('weeklyLibraryGrowth', () => {
+  const WK = 1_000_000; // arbitrary "Monday 00:00" ms for the week window
+
+  it('returns no growth when there are no qualifying sections', () => {
+    expect(weeklyLibraryGrowth([], WK)).toEqual({
+      axis: null,
+      gainPct: 0,
+      sectionsCounted: 0,
+    });
+  });
+
+  it('ignores sections with fewer than 2 attempts this week', () => {
+    const g = weeklyLibraryGrowth([[{ d: WK + 1, a: 50, t: 50 }]], WK);
+    expect(g.sectionsCounted).toBe(0);
+    expect(g.axis).toBeNull();
+  });
+
+  it('excludes attempts from before the week start', () => {
+    // First attempt is last week → only one in-week attempt remains → no pair.
+    const g = weeklyLibraryGrowth(
+      [
+        [
+          { d: WK - 5, a: 40, t: 40 },
+          { d: WK + 5, a: 80, t: 80 },
+        ],
+      ],
+      WK
+    );
+    expect(g.sectionsCounted).toBe(0);
+  });
+
+  it('reports the accuracy axis when accuracy improved most', () => {
+    const g = weeklyLibraryGrowth(
+      [
+        [
+          { d: WK + 1, a: 50, t: 60 },
+          { d: WK + 2, a: 80, t: 65 },
+        ],
+      ],
+      WK
+    );
+    expect(g.axis).toBe('accuracy');
+    expect(g.gainPct).toBe(30);
+    expect(g.sectionsCounted).toBe(1);
+  });
+
+  it('reports the timing axis when timing improved most', () => {
+    const g = weeklyLibraryGrowth(
+      [
+        [
+          { d: WK + 1, a: 70, t: 40 },
+          { d: WK + 2, a: 72, t: 75 },
+        ],
+      ],
+      WK
+    );
+    expect(g.axis).toBe('timing');
+    expect(g.gainPct).toBe(35);
+  });
+
+  it('averages gains across sections', () => {
+    const g = weeklyLibraryGrowth(
+      [
+        [
+          { d: WK + 1, a: 40, t: 50 },
+          { d: WK + 2, a: 60, t: 50 },
+        ], // acc +20
+        [
+          { d: WK + 1, a: 50, t: 50 },
+          { d: WK + 2, a: 90, t: 50 },
+        ], // acc +40
+      ],
+      WK
+    );
+    expect(g.axis).toBe('accuracy');
+    expect(g.gainPct).toBe(30); // (20 + 40) / 2
+    expect(g.sectionsCounted).toBe(2);
+  });
+
+  it('is positive-only: a flat or down week shows nothing (no loss-frame)', () => {
+    const g = weeklyLibraryGrowth(
+      [
+        [
+          { d: WK + 1, a: 80, t: 80 },
+          { d: WK + 2, a: 60, t: 70 },
+        ],
+      ],
+      WK
+    );
+    expect(g.axis).toBeNull();
+    expect(g.gainPct).toBe(0);
+    // The section still counted toward the sample, it just didn't improve.
+    expect(g.sectionsCounted).toBe(1);
   });
 });
