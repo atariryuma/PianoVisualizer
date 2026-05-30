@@ -48,8 +48,8 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
-composition layer. `pnpm verify` currently covers lint, typecheck, 851 core
-tests, 1512 web tests, and the Vite web build.
+composition layer. `pnpm verify` currently covers lint, typecheck, 856 core
+tests, 1515 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -384,7 +384,14 @@ temporarily limits max gain to prevent amplifying speech.
   trailing 0-star run ≥ 2, same threshold as the result-card escalation) drives
   it; `song-panel-render.ts` renders `#songPreflightHint`. Hidden in Listen mode
   (already listening) and clears the moment a star is earned. Kid-initiated, no
-  shame copy.
+  shame copy. The nudge is **adaptive**:
+  `PianoCore.planSectionScaffold(history)` escalates with struggle depth — a
+  shallow run (2) gets the low-friction "Listen first"; a deeper run (≥3)
+  escalates to the strategy matched to the latest attempt's bottleneck —
+  **one-hand** when notes are still missed (accuracy < 70), **slower tempo**
+  when notes land but timing lags (the render falls back to one-hand when
+  already at the slowest tempo). Mirrors Wood/Bruner/Ross 1976 (more support the
+  more the learner struggles).
 
 ### Rendering
 

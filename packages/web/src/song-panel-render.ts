@@ -20,7 +20,7 @@
 // renderer is called whenever the controls flip a flag, plus on every
 // langchange event and after sectionIdx mutations from the result-card.
 
-import { isFixedTempoMode, needsPreflightScaffold } from '@piano/core';
+import { isFixedTempoMode, planSectionScaffold } from '@piano/core';
 import type { Lang, PracticeMode } from '@piano/core';
 
 /** Per-song progress slice the renderer reads. */
@@ -287,14 +287,26 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     );
 
     // Feed-forward scaffold: if the selected section ended its recent runs in
-    // misses, nudge toward Listen-first BEFORE the next attempt — but only when
-    // the kid is about to play (already in Listen → no nudge needed).
+    // misses, nudge toward a strategy BEFORE the next attempt — but only when
+    // the kid is about to play (already in Listen → no nudge needed). The
+    // suggestion escalates with struggle depth (just-listen → one-hand /
+    // slower-tempo, matched to the latest attempt's bottleneck).
     if (deps.dom.songPreflightHint) {
       const sel = currentSong?.sections[deps.practice.sectionIdx];
-      const hist = sel ? (sp.history?.[sel.id] as Array<{ s?: number }> | undefined) : undefined;
-      const stars = Array.isArray(hist) ? hist.map((h) => h?.s ?? 0) : [];
-      const show = deps.practice.mode !== 'listen' && needsPreflightScaffold(stars);
-      deps.dom.songPreflightHint.textContent = show ? deps.t('preflightHint') : '';
+      const hist = sel
+        ? (sp.history?.[sel.id] as Array<{ a?: number; s?: number }> | undefined)
+        : undefined;
+      const entries = Array.isArray(hist) ? hist.map((h) => ({ a: h?.a ?? 0, s: h?.s ?? 0 })) : [];
+      const plan = planSectionScaffold(entries);
+      const show = deps.practice.mode !== 'listen' && plan.show;
+      let key = 'preflightHint';
+      if (plan.strategy === 'oneHand') key = 'preflightHintOneHand';
+      else if (plan.strategy === 'slowTempo') {
+        // Already at the slowest tempo → slow-tempo advice can't apply; fall
+        // back to the one-hand strategy instead.
+        key = deps.practice.tempoPct <= 60 ? 'preflightHintOneHand' : 'preflightHintSlow';
+      }
+      deps.dom.songPreflightHint.textContent = show ? deps.t(key) : '';
       deps.dom.songPreflightHint.style.display = show ? '' : 'none';
     }
   }

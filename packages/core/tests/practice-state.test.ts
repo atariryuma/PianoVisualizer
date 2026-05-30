@@ -11,6 +11,7 @@ import {
   pickSectionFocus,
   SECTION_FOCUS_STRENGTH_FLOOR,
   needsPreflightScaffold,
+  planSectionScaffold,
   computeUnlocks,
   practiceBeatMs,
   computePracticeTimings,
@@ -552,6 +553,40 @@ describe('needsPreflightScaffold', () => {
   it('respects a custom minStreak', () => {
     expect(needsPreflightScaffold([0, 0], 3)).toBe(false);
     expect(needsPreflightScaffold([0, 0, 0], 3)).toBe(true);
+  });
+});
+
+// =====================================================================
+// planSectionScaffold (adaptive feed-forward escalation)
+// =====================================================================
+
+describe('planSectionScaffold', () => {
+  const h = (...rows: Array<[number, number]>) => rows.map(([a, s]) => ({ a, s }));
+
+  it('does not show below the streak threshold', () => {
+    expect(planSectionScaffold(h([40, 0]))).toEqual({ show: false, depth: 1, strategy: 'listen' });
+  });
+
+  it('shows the low-friction "listen" nudge at a shallow (2) struggle', () => {
+    const plan = planSectionScaffold(h([60, 1], [40, 0], [45, 0]));
+    expect(plan).toEqual({ show: true, depth: 2, strategy: 'listen' });
+  });
+
+  it('escalates to one-hand when notes are the bottleneck (deep + low accuracy)', () => {
+    const plan = planSectionScaffold(h([50, 0], [55, 0], [58, 0]));
+    expect(plan.show).toBe(true);
+    expect(plan.depth).toBe(3);
+    expect(plan.strategy).toBe('oneHand');
+  });
+
+  it('escalates to slower tempo when notes land but timing does not', () => {
+    // Accuracy >= 70 on the latest attempt → timing is the bottleneck.
+    const plan = planSectionScaffold(h([72, 0], [78, 0], [82, 0]));
+    expect(plan.strategy).toBe('slowTempo');
+  });
+
+  it('clears the moment a star is earned (depth resets)', () => {
+    expect(planSectionScaffold(h([20, 0], [30, 0], [60, 1])).show).toBe(false);
   });
 });
 
