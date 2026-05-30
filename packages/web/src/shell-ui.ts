@@ -382,6 +382,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'fullSongRow',
       'fullSongToggle',
       'songPreflightHint',
+      'songPreflightText',
+      'songPreflightApply',
       'songStart'
     ) as any,
     practice: deps.practice,

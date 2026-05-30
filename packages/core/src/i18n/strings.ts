@@ -345,6 +345,11 @@ export const T_STRINGS: TranslationTable = {
     en: '💡 Still tricky? Pick a slower tempo, then 🎧 Listen first.',
     jp: '💡 まだ難しい？テンポを下げて、🎧 リッスンで先に聴こう。',
   },
+  // One-tap "set it up for me" button on the pre-flight nudge. Applies the
+  // suggested strategy (the kid can still change it by hand — autonomy kept).
+  preflightApplyListen: { en: '🎧 Switch to Listen', jp: '🎧 リッスンにする' },
+  preflightApplyOneHand: { en: '👉 Right hand only', jp: '👉 右手だけにする' },
+  preflightApplySlowFmt: { en: '🐢 Slow to {v}%', jp: '🐢 {v}% にする' },
   // Self-assessment (self-regulated-learning reflection phase). One optional,
   // non-persisted tap on the result card. The *act* of self-rating is the
   // documented benefit (Int J Soc Robotics 2023 — raised both motivation and

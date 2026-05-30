@@ -82,8 +82,12 @@ export interface SongPanelRenderDom {
   fullSongRow: HTMLElement | null;
   fullSongToggle: HTMLElement | null;
   /** Feed-forward nudge shown above the start button for a recently-struggled
-   *  section. Optional so partial-DOM tests / older shells degrade gracefully. */
+   *  section. `Hint` is the container, `Text` the copy, `Apply` the one-tap
+   *  "set it up for me" button. All optional so partial-DOM tests / older
+   *  shells degrade gracefully. */
   songPreflightHint?: HTMLElement | null;
+  songPreflightText?: HTMLElement | null;
+  songPreflightApply?: HTMLElement | null;
   songStart: HTMLElement;
 }
 
@@ -290,7 +294,8 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     // misses, nudge toward a strategy BEFORE the next attempt — but only when
     // the kid is about to play (already in Listen → no nudge needed). The
     // suggestion escalates with struggle depth (just-listen → one-hand /
-    // slower-tempo, matched to the latest attempt's bottleneck).
+    // slower-tempo, matched to the latest attempt's bottleneck), and a one-tap
+    // button applies it (kid keeps control — the hand/mode/tempo rows still win).
     if (deps.dom.songPreflightHint) {
       const sel = currentSong?.sections[deps.practice.sectionIdx];
       const hist = sel
@@ -299,15 +304,55 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
       const entries = Array.isArray(hist) ? hist.map((h) => ({ a: h?.a ?? 0, s: h?.s ?? 0 })) : [];
       const plan = planSectionScaffold(entries);
       const show = deps.practice.mode !== 'listen' && plan.show;
-      let key = 'preflightHint';
-      if (plan.strategy === 'oneHand') key = 'preflightHintOneHand';
-      else if (plan.strategy === 'slowTempo') {
-        // Already at the slowest tempo → slow-tempo advice can't apply; fall
-        // back to the one-hand strategy instead.
-        key = deps.practice.tempoPct <= 60 ? 'preflightHintOneHand' : 'preflightHintSlow';
-      }
-      deps.dom.songPreflightHint.textContent = show ? deps.t(key) : '';
       deps.dom.songPreflightHint.style.display = show ? '' : 'none';
+
+      // Resolve the effective strategy: slow-tempo can't apply when already at
+      // the slowest tempo, so it falls back to one-hand.
+      let strategy = plan.strategy;
+      if (strategy === 'slowTempo' && deps.practice.tempoPct <= TEMPO_STEPS[0]) {
+        strategy = 'oneHand';
+      }
+      const textKey =
+        strategy === 'oneHand'
+          ? 'preflightHintOneHand'
+          : strategy === 'slowTempo'
+            ? 'preflightHintSlow'
+            : 'preflightHint';
+      if (deps.dom.songPreflightText) {
+        deps.dom.songPreflightText.textContent = show ? deps.t(textKey) : '';
+      }
+
+      // One-tap apply: set the suggested control and re-render so the hand /
+      // mode / tempo rows reflect it. All three mutations are side-effect-free
+      // (identical to what the manual buttons do).
+      const applyBtn = deps.dom.songPreflightApply;
+      if (applyBtn) {
+        applyBtn.style.display = show ? '' : 'none';
+        if (show) {
+          if (strategy === 'oneHand') {
+            applyBtn.textContent = deps.t('preflightApplyOneHand');
+            applyBtn.onclick = () => {
+              deps.practice.handFilter = 'R';
+              render();
+            };
+          } else if (strategy === 'slowTempo') {
+            const slowest = TEMPO_STEPS.find((s) => sp.unlockedTempos[s]) ?? deps.practice.tempoPct;
+            applyBtn.textContent = deps.t('preflightApplySlowFmt', { v: slowest });
+            applyBtn.onclick = () => {
+              deps.practice.tempoPct = slowest;
+              render();
+            };
+          } else {
+            applyBtn.textContent = deps.t('preflightApplyListen');
+            applyBtn.onclick = () => {
+              deps.practice.mode = 'listen';
+              render();
+            };
+          }
+        } else {
+          applyBtn.onclick = null;
+        }
+      }
     }
   }
 

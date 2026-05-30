@@ -1683,8 +1683,13 @@ body[data-layout='desktop'] #modeButtons {
 }
 
 /* Feed-forward nudge above the Start button — a gentle "try Listen first"
-   for a recently-struggled section. Warm amber, framed as help not failure. */
+   for a recently-struggled section. Warm amber, framed as help not failure.
+   Holds the copy plus a one-tap "set it up for me" button. */
 .song-preflight-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   margin: 14px 0 2px;
   padding: 9px 12px;
   font-size: 0.82rem;
@@ -1694,6 +1699,28 @@ body[data-layout='desktop'] #modeButtons {
   border: 1px solid rgba(255, 200, 110, 0.4);
   border-radius: 8px;
   text-align: center;
+}
+
+.song-preflight-hint button {
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #2a1c08;
+  background: rgba(255, 205, 120, 0.92);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+
+.song-preflight-hint button:hover {
+  background: rgba(255, 218, 150, 1);
+}
+
+.song-preflight-hint button:active {
+  transform: translateY(1px);
 }
 
 .song-actions {

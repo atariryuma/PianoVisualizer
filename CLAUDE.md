@@ -49,7 +49,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 856 core
-tests, 1515 web tests, and the Vite web build.
+tests, 1519 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -391,7 +391,10 @@ temporarily limits max gain to prevent amplifying speech.
   **one-hand** when notes are still missed (accuracy < 70), **slower tempo**
   when notes land but timing lags (the render falls back to one-hand when
   already at the slowest tempo). Mirrors Wood/Bruner/Ross 1976 (more support the
-  more the learner struggles).
+  more the learner struggles). A one-tap `#songPreflightApply` button
+  **applies** the suggestion (sets mode / hand filter / tempo, then re-renders)
+  — all three mutations are side-effect-free, matching the manual rows; autonomy
+  is kept (the kid can still change it by hand).
 
 ### Rendering
 
