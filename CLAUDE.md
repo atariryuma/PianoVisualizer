@@ -49,7 +49,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 863 core
-tests, 1519 web tests, and the Vite web build.
+tests, 1524 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -402,8 +402,9 @@ temporarily limits max gain to prevent amplifying speech.
   shows a "📈 This week: Accuracy/Timing +Xpt" row **only when the kid
   improved** (axis null → no row). Positive-only by design — no "you went down"
   line (banned-list; SDT competence). Lifts the per-section growth framing to
-  the whole library. (Core fn is unit-tested; the journal modal has no test
-  harness, so the render is build/typecheck-verified.)
+  the whole library. (Both the aggregation and the journal render are
+  unit-tested — `journal-modal.test.ts` drives the real `render()` through
+  `@piano/core` and asserts the growth row + its positive-only suppression.)
 
 ### Rendering
 

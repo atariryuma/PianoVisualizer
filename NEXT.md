@@ -18,6 +18,10 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **Journal-modal test harness** — first Vitest coverage for the journal modal
+  (`journal-modal.test.ts`): a full-DOM + minimal-deps harness drives the real
+  `render()` through `@piano/core`. Covers a render() smoke test (every tab on
+  minimal data) + the weekly-growth row (accuracy/timing/none). +5 web tests.
 - **Weekly growth rollup (journal)** — `PianoCore.weeklyLibraryGrowth` averages
   each section's accuracy/timing gain across the current ISO week and the
   journal rollup shows "📈 This week: Accuracy/Timing +Xpt" only when the kid
@@ -757,11 +761,12 @@ human hardware. See
 **Pedagogy / learning-effectiveness follow-ups** (research-driven, kid-safe, all
 implementable without hardware — vet each against the banned-list):
 
-- **Journal-modal test harness**. The journal modal (≈745 lines, 6 sub-render
-  passes) has no Vitest coverage; the new weekly-growth row + the existing
-  repertoire/stamps/calendar renders are only build/typecheck-verified. A
-  minimal `render()` harness (full DOM + stubbed deps) would let future journal
-  work assert behaviour instead of eyeballing it.
+- **Extend journal-modal coverage**. `journal-modal.test.ts` now harnesses
+  `render()` (smoke + weekly-growth row). The repertoire / stamps / calendar /
+  pianist-card sub-renders are exercised (no throw) but not yet asserted in
+  detail — extend the harness to pin their output (seal glyphs, stamp earned vs
+  silhouette, calendar practiced days) so future journal edits are
+  regression-safe.
 
 ---
 
