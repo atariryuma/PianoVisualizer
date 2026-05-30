@@ -48,7 +48,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
-composition layer. `pnpm verify` currently covers lint, typecheck, 856 core
+composition layer. `pnpm verify` currently covers lint, typecheck, 863 core
 tests, 1519 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
@@ -395,6 +395,15 @@ temporarily limits max gain to prevent amplifying speech.
   **applies** the suggestion (sets mode / hand filter / tempo, then re-renders)
   — all three mutations are side-effect-free, matching the manual rows; autonomy
   is kept (the kid can still change it by hand).
+- **Weekly growth rollup (journal)**:
+  `PianoCore.weeklyLibraryGrowth(sections, weekStartMs)` (pure) averages each
+  section's accuracy/timing gain (latest − first) across the current ISO week
+  and reports the larger **positive** axis; the journal's `renderLibraryRollup`
+  shows a "📈 This week: Accuracy/Timing +Xpt" row **only when the kid
+  improved** (axis null → no row). Positive-only by design — no "you went down"
+  line (banned-list; SDT competence). Lifts the per-section growth framing to
+  the whole library. (Core fn is unit-tested; the journal modal has no test
+  harness, so the render is build/typecheck-verified.)
 
 ### Rendering
 

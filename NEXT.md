@@ -18,6 +18,12 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **Weekly growth rollup (journal)** — `PianoCore.weeklyLibraryGrowth` averages
+  each section's accuracy/timing gain across the current ISO week and the
+  journal rollup shows "📈 This week: Accuracy/Timing +Xpt" only when the kid
+  improved (positive-only; no loss-frame). Lifts per-section growth framing to
+  the whole library (SDT competence). +7 core tests; render is
+  build/typecheck-verified (journal modal has no unit harness).
 - **One-tap scaffold apply** — the pre-flight nudge gained a
   `#songPreflightApply` button that applies its suggestion (switch to Listen /
   right-hand-only / drop to the slowest unlocked tempo), then re-renders. All
@@ -751,11 +757,11 @@ human hardware. See
 **Pedagogy / learning-effectiveness follow-ups** (research-driven, kid-safe, all
 implementable without hardware — vet each against the banned-list):
 
-- **Cross-section / weekly trajectory rollup**. The result-card chart now shows
-  per-section accuracy + timing trends; a journal or session-summary rollup
-  ("your timing improved 15pt across all songs this week") would lift the same
-  growth framing to the whole library (competence, SDT). Reuses the per-section
-  8-entry history + `growthScore`.
+- **Journal-modal test harness**. The journal modal (≈745 lines, 6 sub-render
+  passes) has no Vitest coverage; the new weekly-growth row + the existing
+  repertoire/stamps/calendar renders are only build/typecheck-verified. A
+  minimal `render()` harness (full DOM + stubbed deps) would let future journal
+  work assert behaviour instead of eyeballing it.
 
 ---
 

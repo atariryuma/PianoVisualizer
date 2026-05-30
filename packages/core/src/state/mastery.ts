@@ -252,3 +252,65 @@ export function pickNearCompletion(
   candidates.sort((a, b) => a.starsToNext - b.starsToNext);
   return candidates.slice(0, limit);
 }
+
+// =====================================================================
+// Weekly growth rollup (library-wide, self-referenced, positive-only)
+// =====================================================================
+
+/** A single scored attempt as the weekly-growth aggregate needs it. */
+export interface WeeklyGrowthAttempt {
+  /** Timestamp (ms). */
+  d: number;
+  /** Accuracy percent 0–100. */
+  a: number;
+  /** Timing percent 0–100. */
+  t: number;
+}
+
+export interface WeeklyGrowth {
+  /** Which axis improved most this week, or null when nothing improved. */
+  axis: 'accuracy' | 'timing' | null;
+  /** Rounded average gain in points (≥ 1 when `axis` is set; 0 otherwise). */
+  gainPct: number;
+  /** Number of sections that had ≥ 2 attempts this week (the sample size). */
+  sectionsCounted: number;
+}
+
+/**
+ * Library-wide "how much did you grow this week" summary. For each section
+ * with ≥ 2 attempts since `weekStartMs`, take the per-axis gain (latest minus
+ * first this week), average those gains across sections, and report the larger
+ * positive axis. **Positive-only by design** — a flat or down week returns
+ * `axis: null` so the UI shows nothing rather than a loss-frame (banned-list:
+ * no shame copy; SDT competence). Self-referenced to the kid's own past week,
+ * never a target or a peer.
+ *
+ * Pure: `weekStartMs` is passed in (the caller computes the local ISO-week
+ * Monday) so this stays deterministic and testable.
+ */
+export function weeklyLibraryGrowth(
+  sections: ReadonlyArray<ReadonlyArray<WeeklyGrowthAttempt>>,
+  weekStartMs: number
+): WeeklyGrowth {
+  let accSum = 0;
+  let timeSum = 0;
+  let counted = 0;
+  for (const attempts of sections) {
+    const wk = attempts.filter((x) => x.d >= weekStartMs).sort((p, q) => p.d - q.d);
+    if (wk.length < 2) continue;
+    accSum += wk[wk.length - 1].a - wk[0].a;
+    timeSum += wk[wk.length - 1].t - wk[0].t;
+    counted++;
+  }
+  if (counted === 0) return { axis: null, gainPct: 0, sectionsCounted: 0 };
+  const accAvg = accSum / counted;
+  const timeAvg = timeSum / counted;
+  // Prefer the bigger gain; accuracy wins ties (the more fundamental axis).
+  if (accAvg >= timeAvg && accAvg >= 1) {
+    return { axis: 'accuracy', gainPct: Math.round(accAvg), sectionsCounted: counted };
+  }
+  if (timeAvg >= 1) {
+    return { axis: 'timing', gainPct: Math.round(timeAvg), sectionsCounted: counted };
+  }
+  return { axis: null, gainPct: 0, sectionsCounted: counted };
+}
