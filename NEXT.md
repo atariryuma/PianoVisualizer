@@ -18,6 +18,11 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **Growth chart trajectory** — `drawHistoryChart` now plots two trend lines
+  (accuracy gold + timing cyan) over the last 8 attempts with a legend, and the
+  caption is self-referenced + growth-framed (best-yet / +X% vs first /
+  keep-going). The old red "↓ -X%" loss-frame is gone — no "you went down"
+  branch (banned-list: no shame copy; SDT competence). +3 web tests.
 - **Self-assessment (SRL reflection)** — the result card ends with an optional,
   non-persisted "How did that feel?" tap (😣/🙂/😄). The reply is
   calibration-aware but never contradicts the kid's feeling or shames a low
@@ -730,11 +735,11 @@ human hardware. See
 **Pedagogy / learning-effectiveness follow-ups** (research-driven, kid-safe, all
 implementable without hardware — vet each against the banned-list):
 
-- **Improvement-trajectory view**. `growthScore` / per-axis scores are computed
-  but only the accuracy line is graphed. A "your timing improved 15pt over your
-  last 5 tries" rollup (journal or session summary) would surface real progress
-  (competence, SDT). Reuses the 8-entry attempt history (add `t`/`s` series to
-  the chart toggle).
+- **Cross-section / weekly trajectory rollup**. The result-card chart now shows
+  per-section accuracy + timing trends; a journal or session-summary rollup
+  ("your timing improved 15pt across all songs this week") would lift the same
+  growth framing to the whole library (competence, SDT). Reuses the per-section
+  8-entry history + `growthScore`.
 - **Pre-flight scaffolding for a struggled section**. The Listen-mode hint only
   appears _after_ a 2nd 0-star run (`zeroStarStreak>=2`). A song-panel
   pre-practice note ("this took a few tries last time — want to Listen first?")
