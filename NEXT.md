@@ -18,6 +18,11 @@ Immediate maintenance queue:
 
 Recent landings (2026-05-30):
 
+- **Pre-flight scaffold (feed-forward)** — the song panel nudges "Tricky last
+  time? Tap 🎧 Listen first" above Start when the selected section's recent
+  attempts ended in a 0-star run (`PianoCore.needsPreflightScaffold`, trailing
+  run ≥ 2). Scaffolds before failure, not only after (Hattie & Timperley 2007).
+  Hidden in Listen mode; clears once a star is earned. +6 core, +4 web tests.
 - **Growth chart trajectory** — `drawHistoryChart` now plots two trend lines
   (accuracy gold + timing cyan) over the last 8 attempts with a legend, and the
   caption is self-referenced + growth-framed (best-yet / +X% vs first /
@@ -740,10 +745,10 @@ implementable without hardware — vet each against the banned-list):
   ("your timing improved 15pt across all songs this week") would lift the same
   growth framing to the whole library (competence, SDT). Reuses the per-section
   8-entry history + `growthScore`.
-- **Pre-flight scaffolding for a struggled section**. The Listen-mode hint only
-  appears _after_ a 2nd 0-star run (`zeroStarStreak>=2`). A song-panel
-  pre-practice note ("this took a few tries last time — want to Listen first?")
-  would scaffold _before_ the kid fails again (feed-forward, not just feedback).
+- **Adaptive scaffold escalation**. The pre-flight nudge currently always
+  suggests Listen. A next step: escalate by struggle depth (e.g. after 3+ misses
+  also offer "drop to 60% tempo" or "one hand first"), reusing
+  `pickSectionFocus`'s weakest-axis signal to pick which strategy to surface.
 
 ---
 

@@ -34,6 +34,7 @@ function makeDom(): SongPanelRenderDom {
     <div id="metronomeRow"></div>
     <div id="fullSongRow"></div>
     <button id="fullSongToggle"></button>
+    <div id="songPreflightHint" style="display: none"></div>
     <button id="songStart"></button>
     <div id="modeRow">
       <button class="hand-btn" data-mode="listen"></button>
@@ -60,6 +61,7 @@ function makeDom(): SongPanelRenderDom {
     metronomeRow: document.getElementById('metronomeRow'),
     fullSongRow: document.getElementById('fullSongRow'),
     fullSongToggle: document.getElementById('fullSongToggle'),
+    songPreflightHint: document.getElementById('songPreflightHint'),
     songStart: document.getElementById('songStart') as HTMLElement,
   };
 }
@@ -418,5 +420,46 @@ describe('createSongPanelRender — start button', () => {
     deps.practice.mode = 'listen';
     createSongPanelRender(deps).render();
     expect(deps.dom.songStart.textContent).toBe('startListening');
+  });
+});
+
+// ─── feed-forward pre-flight hint ────────────────────────────────────
+
+describe('createSongPanelRender — pre-flight scaffold', () => {
+  // The selected section (sectionIdx 0 → 'a1') has two trailing 0-star runs.
+  const struggled = () => makeProgress({ history: { a1: [{ s: 1 }, { s: 0 }, { s: 0 }] } });
+
+  it('shows the Listen-first nudge for a recently-struggled section', () => {
+    const deps = makeDeps({ songProg: struggled });
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.style.display).toBe('');
+    expect(deps.dom.songPreflightHint!.textContent).toBe('preflightHint');
+  });
+
+  it('hides the nudge when the section has not been struggled with', () => {
+    const deps = makeDeps({ songProg: () => makeProgress({ history: { a1: [{ s: 2 }] } }) });
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.style.display).toBe('none');
+    expect(deps.dom.songPreflightHint!.textContent).toBe('');
+  });
+
+  it('does not nudge when already in Listen mode (no point)', () => {
+    const deps = makeDeps({ songProg: struggled });
+    deps.practice.mode = 'listen';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.style.display).toBe('none');
+  });
+
+  it('keys off the selected section, not section 0', () => {
+    // Struggle is on 'b' (idx 1); a1 is clean. Selecting b shows the nudge.
+    const deps = makeDeps({
+      songProg: () => makeProgress({ history: { a1: [{ s: 3 }], b: [{ s: 0 }, { s: 0 }] } }),
+    });
+    deps.practice.mode = 'rhythm';
+    deps.practice.sectionIdx = 1;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songPreflightHint!.style.display).toBe('');
   });
 });

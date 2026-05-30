@@ -551,6 +551,26 @@ export function pickSectionFocus(
   return { strengthKey, focusKey: SECTION_FOCUS_NEXT_KEYS[focus.dim], focusDim: focus.dim };
 }
 
+/**
+ * Pre-flight scaffold decision (feed-forward — Hattie & Timperley 2007's
+ * "where to next?"). A section whose recent attempts ended in a run of misses
+ * is offered the Listen-first nudge BEFORE the next try, not only after
+ * failing again — scaffolding ahead of failure instead of reacting to it.
+ *
+ * Mirrors the result-card escalation threshold (a trailing 0-star run ≥ 2).
+ * Clears itself the moment the kid earns a star (the trailing run resets), so
+ * the nudge only shows while genuinely stuck. `historyStars` is the
+ * per-section attempt star sequence, oldest → newest.
+ */
+export function needsPreflightScaffold(historyStars: readonly number[], minStreak = 2): boolean {
+  let streak = 0;
+  for (let i = historyStars.length - 1; i >= 0; i--) {
+    if (historyStars[i] === 0) streak++;
+    else break;
+  }
+  return streak >= minStreak;
+}
+
 /** Tempo speeds the practice flow gates: a section cleared at one tempo
  *  unlocks the next one (gated on stars >= 2). */
 export const TEMPO_TIERS: readonly number[] = Object.freeze([60, 75, 90, 100]);

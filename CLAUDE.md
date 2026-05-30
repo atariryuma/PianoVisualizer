@@ -48,8 +48,8 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
-composition layer. `pnpm verify` currently covers lint, typecheck, 845 core
-tests, 1508 web tests, and the Vite web build.
+composition layer. `pnpm verify` currently covers lint, typecheck, 851 core
+tests, 1512 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -376,6 +376,15 @@ temporarily limits max gain to prevent amplifying speech.
   yet!", else gain-vs-first-attempt → "↑ +X%", else "Keep going". The old red "↓
   -X%" loss-frame was removed — there is no "you went down" branch by design
   (banned-list: no shame/loss copy, SDT competence).
+- **Pre-flight scaffold (feed-forward)**: the song panel shows a gentle "Tricky
+  last time? Tap 🎧 Listen first" nudge **above the Start button** when the
+  selected section's recent attempts ended in a run of misses — scaffolding
+  _before_ the next try, not only after failing again (Hattie & Timperley 2007
+  "where to next?"). `PianoCore.needsPreflightScaffold(historyStars)` (pure;
+  trailing 0-star run ≥ 2, same threshold as the result-card escalation) drives
+  it; `song-panel-render.ts` renders `#songPreflightHint`. Hidden in Listen mode
+  (already listening) and clears the moment a star is earned. Kid-initiated, no
+  shame copy.
 
 ### Rendering
 
