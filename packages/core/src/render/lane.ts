@@ -101,6 +101,15 @@ export interface LaneDrawOptions {
   laneLookaheadMs: number;
   /** Total count-in duration in ms (e.g. 4000 = 4 beats × 1s). */
   countInMs: number;
+  /** カウントインのクリック数（computePracticeTimings.beats）。省略時 4
+   *  （旧挙動互換）。カウントダウン数字はこの数から減っていく。 */
+  countInBeats?: number;
+  /** クリック 1 個分の間隔 ms。省略時 countInMs / countInBeats。 */
+  countInClickMs?: number;
+  /** GO（ダウンビート）の時刻 ms。弱起ではピックアップ長ぶん
+   *  countInMs より後ろになる（可聴クリック列と同じアンカー）。
+   *  省略時 countInMs（旧挙動互換）。 */
+  countInGoMs?: number;
   /** Early side of the hit window (above the line, in ms). */
   hitWindowEarlyMs: number;
   /** Late side of the hit window (below the line, in ms). */
@@ -376,25 +385,39 @@ export function drawPracticeLane(
     ctx.fillRect(padX, laneTop, usableW, laneHeight);
   }
 
-  // Count-in countdown — 4 → 3 → 2 → 1 → GO!, driven by realElapsedMs so the
+  // Count-in countdown — N → … → 1 → GO!, driven by realElapsedMs so the
   // animation completes regardless of the parked practice clock. realElapsedMs
   // is negative during the audio pre-roll (Tone's lookAhead + audioStartLead);
   // we want the count to appear in lockstep with the FIRST audible beep, so
   // skip drawing entirely while the kid hasn't heard anything yet.
+  //
+  // クリック列は「GO（ダウンビート）から逆向きに beats × clickMs」で
+  // 配置される（audio-scheduler.scheduleCountInBeeps と同一アンカー）。
+  // 弱起では GO が countInMs より後ろへずれ、最初のクリックまでの
+  // 頭の無音区間（ピックアップ長ぶん）には数字を出さない — 数字は常に
+  // 可聴クリックと同時に切り替わる。
+  const goMs = opts.countInGoMs ?? opts.countInMs;
+  const totalBeats = opts.countInBeats && opts.countInBeats > 0 ? opts.countInBeats : 4;
+  const clickMs =
+    opts.countInClickMs && opts.countInClickMs > 0
+      ? opts.countInClickMs
+      : opts.countInMs / totalBeats;
+  const firstClickMs = goMs - totalBeats * clickMs;
   const ctElapsed = timing.realElapsedMs;
-  if (ctElapsed >= 0 && ctElapsed < opts.countInMs + 400) {
-    const totalBeats = 4;
-    const beatMs = opts.countInMs / totalBeats;
-    const beatIdx = Math.min(totalBeats - 1, Math.max(0, Math.floor(ctElapsed / beatMs)));
+  if (ctElapsed >= Math.max(0, firstClickMs) && ctElapsed < goMs + 400) {
+    const beatIdx = Math.min(
+      totalBeats - 1,
+      Math.max(0, Math.floor((ctElapsed - firstClickMs) / clickMs))
+    );
     const remaining = totalBeats - beatIdx;
-    const slotMs = ctElapsed - beatIdx * beatMs;
-    const slotProgress = 1 - Math.min(1, slotMs / beatMs);
-    const isGo = ctElapsed >= opts.countInMs;
+    const slotMs = ctElapsed - firstClickMs - beatIdx * clickMs;
+    const slotProgress = 1 - Math.min(1, slotMs / clickMs);
+    const isGo = ctElapsed >= goMs;
     const text = isGo ? opts.countInGoLabel : String(remaining);
     const pop = isGo
-      ? Math.max(0, 1 + 0.4 * Math.sin(((ctElapsed - opts.countInMs) / 400) * Math.PI))
+      ? Math.max(0, 1 + 0.4 * Math.sin(((ctElapsed - goMs) / 400) * Math.PI))
       : 0.7 + 0.6 * slotProgress;
-    const alpha = isGo ? Math.max(0, 1 - (ctElapsed - opts.countInMs) / 400) : 0.95;
+    const alpha = isGo ? Math.max(0, 1 - (ctElapsed - goMs) / 400) : 0.95;
 
     ctx.save();
     ctx.translate(W / 2, hitLineY - 60);

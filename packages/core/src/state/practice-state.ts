@@ -17,6 +17,8 @@
 //   - state.flow / state.combo nudges (game-state's responsibility)
 //   - localStorage persistence (per-song progress, streak, unlocks)
 
+import { meterBeatInfo } from '../library/measure-grid';
+
 // =====================================================================
 // Hit-window tuning constants (asymmetric: early presses punished harder).
 // =====================================================================
@@ -727,8 +729,8 @@ export function practiceBeatMs(bpm: number, tempoPct: number): number {
 export interface PracticeTimings {
   /** Count-in length in ms — clamped to a usable range so very slow songs
    *  don't have a 30-second pre-roll and very fast ones aren't rushed.
-   *  Always an integer multiple of `beatMs` (= beats × beatMs) so the
-   *  count-in clicks land exactly on the song's beat grid. */
+   *  Always an integer multiple of the click interval (= beats × clickMs)
+   *  so the count-in clicks land exactly on the song's beat grid. */
   countInMs: number;
   /** How far ahead in time the lane shows. We mirror count-in so falling
    *  notes traverse the lane during the count-in animation. */
@@ -736,8 +738,22 @@ export interface PracticeTimings {
   /** Number of count-in clicks. Normally 4, but the clamp is absorbed
    *  here (not by squeezing 4 clicks into a fixed window) so each click
    *  stays one real beat apart — a fast song counts in more beats, a
-   *  slow song fewer, but always at the true tempo. */
+   *  slow song fewer, but always at the true tempo. 拍子指定時は
+   *  「1 小節あたりのクリック数 × 整数小節数」。 */
   beats: number;
+  /** クリック 1 個分の間隔 ms（= countInMs / beats）。拍子指定時は
+   *  拍単位（複合拍子は付点四分）。従来経路では四分音符 = beatMs。 */
+  clickMs?: number;
+  /** 拍子指定時のみ: 1 小節あたりのクリック数（アクセント周期）。 */
+  clicksPerBar?: number;
+}
+
+/** カウントインを組み立てる拍子（楽譜の time signature）。 */
+export interface PracticeTimingMeter {
+  /** 拍子分子。 */
+  beats: number;
+  /** 拍子分母（beat-type）。 */
+  beatType: number;
 }
 
 export interface PracticeTimingOptions {
@@ -749,6 +765,12 @@ export interface PracticeTimingOptions {
    *  The actual beat count may grow/shrink to keep the total in the
    *  clamp window while preserving the real beat interval. */
   countInBeats?: number;
+  /** 楽譜の拍子。指定時はカウントインを「拍子ちょうど整数小節」で組む
+   *  （クリック間隔は拍単位 — 複合拍子は付点四分、3/8 は 1 拍/小節）。
+   *  クランプ [min, max] は小節数で吸収する（1 小節が max を超える極端な
+   *  遅さのときだけ 1 小節を優先して max を超える）。省略時は従来の
+   *  四分音符 4 拍ターゲット（後方互換 — 既存テストの挙動そのまま）。 */
+  meter?: PracticeTimingMeter;
 }
 
 /** Derive count-in + lane-lookahead from a beat length. Used by
@@ -774,6 +796,36 @@ export function computePracticeTimings(
   const lo = opts.minCountInMs ?? 2400;
   const hi = opts.maxCountInMs ?? 7000;
   const safeBeat = beatMs > 0 ? beatMs : 1;
+
+  // 拍子指定時: カウントイン = 拍子ちょうど整数小節（業界標準 —
+  // SmartMusic / Synthesia は完全小節ぶん数える）。クリック間隔は
+  // 拍単位（複合拍子は付点四分）、クランプは小節数で吸収する。
+  const meter = opts.meter;
+  if (meter && meter.beats > 0 && meter.beatType > 0) {
+    const info = meterBeatInfo(meter.beats, meter.beatType);
+    // 病的な拍子（分子がクリック上限超え）は従来ロジックへフォールバック。
+    if (info.clicksPerBar <= MAX_COUNT_IN_BEATS) {
+      const clickMs = safeBeat * info.clickQuarters;
+      const barMs = info.clicksPerBar * clickMs;
+      // 下限を満たす最小の小節数（4/4 で 72BPM→1 小節、120BPM→2 小節、
+      // 3/8 の短い小節→2 小節…）。上限クランプとクリック総数上限
+      // （MAX_COUNT_IN_BEATS）は小節数を削って吸収し、最低 1 小節は保つ。
+      const minBars = Math.max(1, Math.ceil(lo / barMs - 1e-9));
+      const maxBarsByClamp = Math.max(1, Math.floor(hi / barMs + 1e-9));
+      const maxBarsByCap = Math.max(1, Math.floor(MAX_COUNT_IN_BEATS / info.clicksPerBar));
+      const bars = Math.max(1, Math.min(minBars, maxBarsByClamp, maxBarsByCap));
+      const beats = info.clicksPerBar * bars;
+      const countInMs = Math.round(beats * clickMs);
+      return {
+        countInMs,
+        laneLookaheadMs: countInMs,
+        beats,
+        clickMs,
+        clicksPerBar: info.clicksPerBar,
+      };
+    }
+  }
+
   const minBeats = Math.max(1, Math.ceil(lo / safeBeat));
   const maxBeats = Math.max(1, Math.floor(hi / safeBeat));
   // When the window is narrower than a single beat (very slow tempo),
@@ -784,7 +836,7 @@ export function computePracticeTimings(
   // just with fewer beats than the floor would nominally want.
   const beats = Math.max(1, Math.min(MAX_COUNT_IN_BEATS, raw));
   const countInMs = Math.round(beats * safeBeat);
-  return { countInMs, laneLookaheadMs: countInMs, beats };
+  return { countInMs, laneLookaheadMs: countInMs, beats, clickMs: safeBeat };
 }
 
 // =====================================================================

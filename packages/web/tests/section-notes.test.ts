@@ -15,6 +15,7 @@ import {
   buildSectionNotes,
   buildFullSongNotes,
   buildBackingNotes,
+  buildMetronomeEvents,
   fullSongAnchorSec,
   computeHandRanges,
   clusterAdjacentNotes,
@@ -563,5 +564,193 @@ describe('buildSectionNotes — mic mode chord relaxation', () => {
     });
     const out = buildSectionNotes(0, deps);
     expect(out.filter((n) => !n._filtered)).toHaveLength(3);
+  });
+});
+
+// ─── buildMetronomeEvents（小節グリッド駆動メトロノーム） ────────────
+
+describe('buildMetronomeEvents', () => {
+  // 4/4・各小節 2s（= 120 BPM）・3 小節のシンプルなグリッド。
+  const fullBar44 = (startSec: number) => ({ startSec, durSec: 2, beats: 4, beatType: 4 });
+
+  it('グリッドが無い曲は null（従来の一様ループへフォールバック）', () => {
+    const deps = makeDeps({
+      song: { notes: [note()], sections: [sec(0, 4)] },
+    });
+    expect(buildMetronomeEvents(0, deps)).toBeNull();
+  });
+
+  it('セクションが無い index は空配列', () => {
+    const deps = makeDeps({
+      song: { notes: [], sections: [], measureGrid: [fullBar44(0)] },
+    });
+    expect(buildMetronomeEvents(9, deps)).toEqual([]);
+  });
+
+  it('4/4 完全小節: 小節頭アクセント + 拍クリック、GO 相当（countInMs）は除外', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 4)],
+        measureGrid: [fullBar44(0), fullBar44(2)],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(0, deps)!;
+    // 小節0: 頭 (=GO) は除外 → 4500/5000/5500。小節1: 頭 6000 がアクセント。
+    expect(out.map((e) => e.timeMs)).toEqual([4500, 5000, 5500, 6000, 6500, 7000, 7500]);
+    expect(out.map((e) => e.accent)).toEqual([false, false, false, true, false, false, false]);
+  });
+
+  it('弱起 (1 拍ピックアップ 4/4): GO がダウンビートへずれ、以降の小節頭にアクセント', () => {
+    // ピックアップ小節 0.5s (1 拍) + 完全小節 2s × 2。
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 4.5)],
+        measureGrid: [
+          { startSec: 0, durSec: 0.5, beats: 4, beatType: 4, implicit: true, barFrac: 0.25 },
+          fullBar44(0.5),
+          fullBar44(2.5),
+        ],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(0, deps)!;
+    // GO = 4000 + 0.5×1000 = 4500（最初の完全小節頭）→ その時刻は除外。
+    // ピックアップ小節のクリック（カウントイン区間）も除外。
+    // 完全小節1: 5000/5500/6000、完全小節2: 頭 6500 アクセント + 7000/7500/8000。
+    expect(out.map((e) => e.timeMs)).toEqual([5000, 5500, 6000, 6500, 7000, 7500, 8000]);
+    expect(out[3].accent).toBe(true); // 6500 = 小節線
+    expect(out.filter((e) => e.accent).map((e) => e.timeMs)).toEqual([6500]);
+  });
+
+  it('3/8 (Für Elise 型): 1 小節 = 付点四分 1 クリックで小節線に整列', () => {
+    // 3/8 各小節 1.25s、ピックアップ 1/3 小節 (0.4166s)。
+    const bar = 1.25;
+    const pickup = bar / 3;
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, pickup + bar * 3)],
+        measureGrid: [
+          {
+            startSec: 0,
+            durSec: pickup,
+            beats: 3,
+            beatType: 8,
+            implicit: true,
+            barFrac: 1 / 3,
+          },
+          { startSec: pickup, durSec: bar, beats: 3, beatType: 8 },
+          { startSec: pickup + bar, durSec: bar, beats: 3, beatType: 8 },
+          { startSec: pickup + bar * 2, durSec: bar, beats: 3, beatType: 8 },
+        ],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 2500,
+    });
+    const out = buildMetronomeEvents(0, deps)!;
+    // GO = 2500 + pickup×1000。以降は小節頭のみ（1 クリック/小節）＝全部アクセント。
+    const goMs = 2500 + pickup * 1000;
+    expect(out.map((e) => Math.round(e.timeMs))).toEqual([
+      Math.round(goMs + bar * 1000),
+      Math.round(goMs + bar * 2000),
+    ]);
+    expect(out.every((e) => e.accent)).toBe(true);
+  });
+
+  it('途中の拍子変更 (4/4 → 3/4) にアクセントが追従', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 3.5)],
+        measureGrid: [fullBar44(0), { startSec: 2, durSec: 1.5, beats: 3, beatType: 4 }],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(0, deps)!;
+    // 小節0 (4/4): 4500/5000/5500。小節1 (3/4): 頭 6000 アクセント + 6500/7000。
+    expect(out.map((e) => e.timeMs)).toEqual([4500, 5000, 5500, 6000, 6500, 7000]);
+    expect(out.filter((e) => e.accent).map((e) => e.timeMs)).toEqual([6000]);
+  });
+
+  it('テンポ 75%: ノート写像と同じ speedFactor でスケール', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 4)],
+        measureGrid: [fullBar44(0), fullBar44(2)],
+      },
+      practice: { tempoPct: 75, handFilter: null }, // speedFactor = 4/3
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(0, deps)!;
+    const sf = 100 / 75;
+    // 小節0 の 2 拍目 = 0.5s → 4000 + 500×sf。小節1 の頭 = 2s → 4000 + 2000×sf。
+    expect(out[0].timeMs).toBeCloseTo(4000 + 500 * sf, 6);
+    const accent = out.find((e) => e.accent)!;
+    expect(accent.timeMs).toBeCloseTo(4000 + 2000 * sf, 6);
+  });
+
+  it('セクション途中開始: [startSec, endSec) 範囲外の小節・拍は含めない', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 2), sec(2, 4)],
+        measureGrid: [fullBar44(0), fullBar44(2)],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(1, deps)!;
+    // セクション1 = 小節1 のみ。頭 (=GO) 除外 → 4500/5000/5500。
+    expect(out.map((e) => e.timeMs)).toEqual([4500, 5000, 5500]);
+  });
+
+  it('全曲再生 (sectionIdx=null): アンカーは最初の音・テンポ 100% 固定', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [note({ timeSec: 0.5 })], // 弱起でピックアップ音が 0.5s から
+        sections: [sec(0, 4.5)],
+        measureGrid: [
+          { startSec: 0, durSec: 1, beats: 4, beatType: 4, implicit: true, barFrac: 0.5 },
+          fullBar44(1),
+        ],
+      },
+      practice: { tempoPct: 50, handFilter: null }, // 全曲では無視される
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(null, deps)!;
+    // アンカー = 0.5 (最初の音)。GO = 4000 + (1 - 0.5)×1000 = 4500。
+    // 完全小節 (1s〜3s): 頭 4500 (=GO) 除外 → 5000/5500/6000。
+    expect(out.map((e) => e.timeMs)).toEqual([5000, 5500, 6000]);
+  });
+
+  it('部分小節 (barFrac) は実長を超える拍を鳴らさない・拍間隔は公称小節基準', () => {
+    // 中間に 4/4 の半分しかない部分小節（volta 切れ端など）。
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 5)],
+        measureGrid: [
+          fullBar44(0),
+          { startSec: 2, durSec: 1, beats: 4, beatType: 4, barFrac: 0.5 },
+          fullBar44(3),
+        ],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildMetronomeEvents(0, deps)!;
+    // 小節1 (部分): 公称 2s → 拍 0.5s 間隔、実長 1s → 頭 6000 + 6500 の 2 拍のみ。
+    // 小節2: 頭 7000 アクセント + 7500/8000/8500。
+    expect(out.map((e) => e.timeMs)).toEqual([
+      4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500,
+    ]);
+    expect(out.filter((e) => e.accent).map((e) => e.timeMs)).toEqual([6000, 7000]);
   });
 });

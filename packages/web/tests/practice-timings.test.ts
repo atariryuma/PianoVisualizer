@@ -15,6 +15,8 @@ function makeFixture(
     tempoPct?: number;
     songBpm?: number | undefined;
     noBanner?: boolean;
+    /** 小節グリッド等を持つ song を丸ごと渡す（songBpm より優先）。 */
+    song?: PracticeTimingsSong | null;
   } = {}
 ) {
   const practice: PracticeTimingsPracticeRef = {
@@ -23,7 +25,7 @@ function makeFixture(
     tempoPct: over.tempoPct ?? 75,
   };
   const song: PracticeTimingsSong | null =
-    over.songBpm === undefined ? null : { bpm: over.songBpm };
+    over.song !== undefined ? over.song : over.songBpm === undefined ? null : { bpm: over.songBpm };
 
   // PianoCore math fns — fakes that record their inputs so the
   // assertions can verify correct argument plumbing without
@@ -33,10 +35,13 @@ function makeFixture(
     // shape so test expectations stay simple.
     return 60000 / (bpm * (tempoPct / 100));
   });
-  const computePracticeTimingsFn = vi.fn((beatMs: number) => ({
-    countInMs: beatMs * 4, // 4-beat count-in
-    laneLookaheadMs: beatMs * 8,
-  }));
+  const computePracticeTimingsFn = vi.fn(
+    (beatMs: number, _opts?: { meter?: { beats: number; beatType: number } }) => ({
+      countInMs: beatMs * 4, // 4-beat count-in
+      laneLookaheadMs: beatMs * 8,
+      beats: 4,
+    })
+  );
 
   let countIn = -1;
   let laneLookahead = -1;
@@ -46,6 +51,8 @@ function makeFixture(
   const setLaneLookaheadMs = vi.fn((v: number) => {
     laneLookahead = v;
   });
+  const setCountInClickMs = vi.fn();
+  const setCountInGoMs = vi.fn();
 
   const laneSetTimings = vi.fn();
   const practiceLane = { setTimings: laneSetTimings };
@@ -68,6 +75,8 @@ function makeFixture(
       computePracticeTimings: computePracticeTimingsFn,
     },
     setCountInMs,
+    setCountInClickMs,
+    setCountInGoMs,
     setLaneLookaheadMs,
     getPracticeLane: () => practiceLane,
     sectionBannerEl,
@@ -80,6 +89,8 @@ function makeFixture(
     practiceBeatMsFn,
     computePracticeTimingsFn,
     setCountInMs,
+    setCountInClickMs,
+    setCountInGoMs,
     setLaneLookaheadMs,
     laneSetTimings,
     sectionBannerEl,
@@ -170,12 +181,19 @@ describe('createPracticeTimings — recomputePracticeTimings', () => {
     expect(fx.getLaneLookahead()).toBe(4000);
   });
 
-  it('forwards both fields into practiceLane.setTimings', () => {
+  it('forwards timing fields + click-train info into practiceLane.setTimings', () => {
+    // 仕様変更 (2026-07-19): setTimings はカウントダウン数字を可聴クリック
+    // 列に一致させるための countInBeats / countInClickMs / countInGoMs も
+    // 運ぶ。グリッド無しの曲では clickMs = countInMs/beats、goMs = countInMs
+    // （旧挙動と同値）。
     const fx = makeFixture({ songBpm: 120, tempoPct: 100 });
     fx.pt.recomputePracticeTimings();
     expect(fx.laneSetTimings).toHaveBeenCalledWith({
       laneLookaheadMs: 4000,
       countInMs: 2000,
+      countInBeats: 4,
+      countInClickMs: 500,
+      countInGoMs: 2000,
     });
   });
 
@@ -184,6 +202,135 @@ describe('createPracticeTimings — recomputePracticeTimings', () => {
     fx.pt.recomputePracticeTimings();
     fx.pt.recomputePracticeTimings();
     expect(fx.laneSetTimings).toHaveBeenCalledTimes(2);
+  });
+
+  it('grid の無い曲は meter なしで computePracticeTimings を呼ぶ（従来挙動）', () => {
+    const fx = makeFixture({ songBpm: 120, tempoPct: 100 });
+    fx.pt.recomputePracticeTimings();
+    expect(fx.computePracticeTimingsFn).toHaveBeenCalledWith(500, undefined);
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(2000); // = countInMs（弱起なし）
+  });
+
+  it('song.timeSig だけの曲（OSMD フォールバック）は meter として渡す', () => {
+    const fx = makeFixture({
+      song: { bpm: 120, timeSig: { beats: 3, beatType: 4 } },
+      tempoPct: 100,
+    });
+    fx.pt.recomputePracticeTimings();
+    expect(fx.computePracticeTimingsFn).toHaveBeenCalledWith(500, {
+      meter: { beats: 3, beatType: 4 },
+    });
+  });
+});
+
+// ─── recomputePracticeTimings — 小節グリッド（拍子・弱起） ──────────
+
+describe('createPracticeTimings — measureGrid 駆動の拍子・弱起アンカー', () => {
+  // 1 拍ピックアップ (4/4) + 完全小節 2 個。120 BPM → 小節 2s、拍 0.5s。
+  const pickupGrid = [
+    { startSec: 0, durSec: 0.5, beats: 4, beatType: 4, implicit: true, barFrac: 0.25 },
+    { startSec: 0.5, durSec: 2, beats: 4, beatType: 4 },
+    { startSec: 2.5, durSec: 2, beats: 4, beatType: 4 },
+  ];
+
+  it('アンカー小節（弱起なら次の完全小節）の拍子を meter として渡す', () => {
+    const fx = makeFixture({
+      song: {
+        bpm: 120,
+        measureGrid: pickupGrid,
+        sections: [{ startSec: 0 }],
+        notes: [{ timeSec: 0 }],
+      },
+      tempoPct: 100,
+    });
+    fx.pt.recomputePracticeTimings(0);
+    expect(fx.computePracticeTimingsFn).toHaveBeenCalledWith(500, {
+      meter: { beats: 4, beatType: 4 },
+    });
+  });
+
+  it('弱起: GO = countInMs + pickupSec×1000×(100/tempoPct)', () => {
+    const fx = makeFixture({
+      song: {
+        bpm: 120,
+        measureGrid: pickupGrid,
+        sections: [{ startSec: 0 }],
+        notes: [{ timeSec: 0 }],
+      },
+      tempoPct: 100,
+    });
+    fx.pt.recomputePracticeTimings(0);
+    // countInMs = 500×4 = 2000（モック）。pickup = 0.5s → GO = 2500。
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(2500);
+    expect(fx.laneSetTimings).toHaveBeenCalledWith(expect.objectContaining({ countInGoMs: 2500 }));
+  });
+
+  it('弱起 + テンポ 75%: pickup はノート写像と同じ speedFactor でスケール', () => {
+    const fx = makeFixture({
+      song: {
+        bpm: 120,
+        measureGrid: pickupGrid,
+        sections: [{ startSec: 0 }],
+        notes: [{ timeSec: 0 }],
+      },
+      tempoPct: 75,
+    });
+    fx.pt.recomputePracticeTimings(0);
+    // beatMs = 60000/(120×0.75) = 666.67 → countInMs = 2666.67。
+    // pickupMs = 500 × (100/75) = 666.67 → GO = countInMs + 667。
+    const countIn = fx.setCountInMs.mock.calls[0][0] as number;
+    const go = fx.setCountInGoMs.mock.calls[0][0] as number;
+    expect(go - countIn).toBe(Math.round((0.5 * 1000 * 100) / 75));
+  });
+
+  it('完全小節から始まるセクションは GO = countInMs（回帰なし）', () => {
+    const fx = makeFixture({
+      song: {
+        bpm: 120,
+        measureGrid: pickupGrid,
+        sections: [{ startSec: 0 }, { startSec: 2.5 }],
+        notes: [{ timeSec: 0 }],
+      },
+      tempoPct: 100,
+    });
+    fx.pt.recomputePracticeTimings(1);
+    const countIn = fx.setCountInMs.mock.calls[0][0] as number;
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(countIn);
+  });
+
+  it('明示 sectionIdx が無いときは practice.sectionIdx を使う', () => {
+    const fx = makeFixture({
+      song: {
+        bpm: 120,
+        measureGrid: pickupGrid,
+        sections: [{ startSec: 0 }, { startSec: 2.5 }],
+        notes: [{ timeSec: 0 }],
+      },
+      tempoPct: 100,
+    });
+    fx.practice.sectionIdx = 1; // 完全小節始まりのセクション
+    fx.pt.recomputePracticeTimings();
+    const countIn = fx.setCountInMs.mock.calls[0][0] as number;
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(countIn);
+  });
+
+  it('全曲再生 (listen+fullSong): アンカーは最初の音・speedFactor は 1', () => {
+    const fx = makeFixture({
+      mode: 'listen',
+      fullSongMode: true,
+      tempoPct: 50, // 全曲では無視される
+      song: {
+        bpm: 120,
+        measureGrid: pickupGrid,
+        sections: [{ startSec: 0 }],
+        // 最初の音がピックアップ小節の途中 (0.25s) から。
+        notes: [{ timeSec: 0.25 }],
+      },
+    });
+    fx.pt.recomputePracticeTimings(0);
+    const countIn = fx.setCountInMs.mock.calls[0][0] as number;
+    // pickup = 0.5 - 0.25 = 0.25s → GO = countInMs + 250（×1 — 100% 固定）。
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(countIn + 250);
   });
 });
 

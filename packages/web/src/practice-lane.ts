@@ -151,8 +151,16 @@ export interface PracticeLane {
   setLabels(labels: { laneLabelL: string; laneLabelR: string; countInGoLabel: string }): void;
   /** Refresh tempo-derived timings — called by recomputePracticeTimings
    *  at section start so the first frame's countdown + descent rate
-   *  match the new section's tempo. */
-  setTimings(timings: { laneLookaheadMs: number; countInMs: number }): void;
+   *  match the new section's tempo. countInBeats / countInClickMs /
+   *  countInGoMs はカウントダウン数字を可聴クリック列（GO 逆向き配置）
+   *  に一致させる追加情報 — 省略時は旧挙動（4 分割・GO=countInMs）。 */
+  setTimings(timings: {
+    laneLookaheadMs: number;
+    countInMs: number;
+    countInBeats?: number;
+    countInClickMs?: number;
+    countInGoMs?: number;
+  }): void;
 }
 
 export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
@@ -188,6 +196,11 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     kbReserve: 0,
     laneLookaheadMs: deps.laneLookaheadMs,
     countInMs: deps.countInMs,
+    // クリック列情報の初期値（旧挙動と同値）。セクション開始時に
+    // setTimings が実際の拍子・弱起アンカーで上書きする。
+    countInBeats: 4,
+    countInClickMs: deps.countInMs / 4,
+    countInGoMs: deps.countInMs,
     hitWindowEarlyMs: deps.hitWindowEarlyMs,
     hitWindowMs: deps.hitWindowMs,
     perfectMs: deps.perfectMs,
@@ -209,9 +222,24 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     laneOpts.countInGoLabel = labels.countInGoLabel;
   }
 
-  function setTimings(timings: { laneLookaheadMs: number; countInMs: number }): void {
+  function setTimings(timings: {
+    laneLookaheadMs: number;
+    countInMs: number;
+    countInBeats?: number;
+    countInClickMs?: number;
+    countInGoMs?: number;
+  }): void {
     laneOpts.laneLookaheadMs = timings.laneLookaheadMs;
     laneOpts.countInMs = timings.countInMs;
+    // クリック列情報 — 省略時は旧挙動（countInMs を 4 等分・GO=countInMs）
+    // に落とすことで、旧シグネチャの呼び出しでも表示が壊れない。
+    const beats = timings.countInBeats && timings.countInBeats > 0 ? timings.countInBeats : 4;
+    laneOpts.countInBeats = beats;
+    laneOpts.countInClickMs =
+      timings.countInClickMs && timings.countInClickMs > 0
+        ? timings.countInClickMs
+        : timings.countInMs / beats;
+    laneOpts.countInGoMs = timings.countInGoMs ?? timings.countInMs;
   }
 
   function draw(timeMs: number): void {

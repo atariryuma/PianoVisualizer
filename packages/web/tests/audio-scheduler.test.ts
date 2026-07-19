@@ -101,6 +101,43 @@ describe('scheduleCountInBeeps', () => {
       for (const call of transportSchedule.mock.calls) (call[0] as (t: number) => void)(0);
     }).not.toThrow();
   });
+
+  // ── 弱起（goMs）/ 拍単位（clickMs）対応 ────────────────────────────
+
+  it('弱起: goMs からクリック列を逆向きに配置し GO がダウンビートに乗る', () => {
+    const metronome = makeInstrumentStub();
+    // 1 拍ピックアップ: countInMs=2000 (4×500)、GO=2500。
+    // クリックは 2500 から逆向きに 4 個 → 500/1000/1500/2000、GO 2500。
+    // ピックアップ音（timeMs=countInMs=2000）は最後のクリックと同時 =
+    // カウント内の正しい拍位置で鳴る。
+    scheduleCountInBeeps({ metronome, piano: null }, 0, {
+      countInMs: 2000,
+      beats: 4,
+      clickMs: 500,
+      goMs: 2500,
+    });
+    const offsets = transportSchedule.mock.calls.map((c) => c[1]);
+    expect(offsets).toEqual([0.5, 1.0, 1.5, 2.0, 2.5]);
+  });
+
+  it('clickMs 指定（複合拍子の付点四分）でクリック間隔が拍単位になる', () => {
+    const metronome = makeInstrumentStub();
+    // 6/8: 4 クリック × 1125ms = 4500ms。
+    scheduleCountInBeeps({ metronome, piano: null }, 0, {
+      countInMs: 4500,
+      beats: 4,
+      clickMs: 1125,
+    });
+    const offsets = transportSchedule.mock.calls.map((c) => c[1]);
+    expect(offsets).toEqual([0, 1.125, 2.25, 3.375, 4.5]);
+  });
+
+  it('goMs / clickMs 省略時は従来挙動（countInMs 均等割り・GO=countInMs）', () => {
+    const metronome = makeInstrumentStub();
+    scheduleCountInBeeps({ metronome, piano: null }, 0, { countInMs: 2000, beats: 4 });
+    const offsets = transportSchedule.mock.calls.map((c) => c[1]);
+    expect(offsets).toEqual([0, 0.5, 1.0, 1.5, 2.0]);
+  });
 });
 
 describe('scheduleSectionPlayback', () => {
@@ -231,6 +268,62 @@ describe('scheduleSectionPlayback', () => {
       { notes: [], metronomeOn: true, beatMs: 500, countInMs: 0 }
     );
     expect(transportSchedule).not.toHaveBeenCalled();
+  });
+
+  // ── metronomeEvents（小節グリッド由来のクリック列） ────────────────
+
+  it('metronomeEvents があれば一様ループの代わりにその列を鳴らす', () => {
+    const metronome = makeInstrumentStub();
+    scheduleSectionPlayback(
+      { piano: null, metronome },
+      {
+        notes: [{ midi: 60, timeMs: 4000, durMs: 500 }],
+        metronomeOn: true,
+        beatMs: 500,
+        countInMs: 4000,
+        metronomeEvents: [
+          { timeMs: 4500, accent: false },
+          { timeMs: 5000, accent: true },
+        ],
+      }
+    );
+    const times = transportSchedule.mock.calls.map((c) => c[1]);
+    expect(times).toEqual([4.5, 5.0]);
+    for (const [cb, time] of transportSchedule.mock.calls) {
+      (cb as (t: number) => void)(time as number);
+    }
+    const freqs = metronome.triggerAttackRelease.mock.calls.map((c) => c[0]);
+    // accent=true → 880 Hz（小節頭）、false → 660 Hz。
+    expect(freqs).toEqual([660, 880]);
+  });
+
+  it('metronomeEvents が空配列なら何も鳴らさない（フォールバックしない）', () => {
+    scheduleSectionPlayback(
+      { piano: null, metronome: makeInstrumentStub() },
+      {
+        notes: [{ midi: 60, timeMs: 4000, durMs: 500 }],
+        metronomeOn: true,
+        beatMs: 500,
+        countInMs: 4000,
+        metronomeEvents: [],
+      }
+    );
+    expect(transportSchedule).not.toHaveBeenCalled();
+  });
+
+  it('metronomeEvents が null なら従来の一様ループへフォールバック', () => {
+    scheduleSectionPlayback(
+      { piano: null, metronome: makeInstrumentStub() },
+      {
+        notes: [{ midi: 60, timeMs: 0, durMs: 1000 }],
+        metronomeOn: true,
+        beatMs: 500,
+        countInMs: 1000,
+        metronomeEvents: null,
+      }
+    );
+    const times = transportSchedule.mock.calls.map((c) => c[1]);
+    expect(times).toEqual([1.5]); // 旧挙動と同一（countIn + 1 拍から）
   });
 
   it('clamps note duration to 0.1s minimum when calling triggerAttackRelease', () => {

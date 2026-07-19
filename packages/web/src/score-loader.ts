@@ -35,7 +35,8 @@
 //
 // Side-effects all flow through deps. The factory is stateless.
 
-import type { ScoreTiming, MeasureTimingResult } from '@piano/core';
+import { buildMeasureGrid } from '@piano/core';
+import type { ScoreTiming, MeasureTimingResult, MeasureGridEntry } from '@piano/core';
 
 /** Generic OSMD-like note shape we hand back to the song record.
  *  Same fields the legacy `OsmdLikeNote` JSDoc typedef declares. */
@@ -73,6 +74,15 @@ export interface ScoreLoaderSong {
   /** Quarter-note beats per bar (from the leading time signature) for
    *  the metronome accent. 4/4 → 4, 3/4 → 3, 6/8 → 3. Default 4. */
   beatsPerMeasure?: number;
+  /** 先頭拍子（XML 優先、無ければ OSMD Sheet フォールバック）。
+   *  カウントインを「拍子ちょうど整数小節」で組むためのソース。
+   *  どちらからも取れなければ undefined（従来の 4 拍ターゲット）。 */
+  timeSig?: { beats: number; beatType: number };
+  /** 展開後時計の per-measure テーブル — カウントイン / メトロノームの
+   *  唯一の真実（弱起・複合拍子・途中の拍子変更を構造的に吸収）。
+   *  XML 直解析（scoreTiming）が無い曲は undefined のまま → 呼び出し側は
+   *  従来の一様グリッドへ完全フォールバック（回帰ゼロ）。 */
+  measureGrid?: MeasureGridEntry[];
 }
 
 /** Result shape from `extractNotesFromOsmd`. The loader doesn't
@@ -85,9 +95,12 @@ export interface ExtractResult {
   measureBpm: number[];
 }
 
-/** OSMD measure shape we read TempoInBPM from. */
+/** OSMD measure shape we read TempoInBPM / ActiveTimeSignature from. */
 export interface OsmdMeasure {
   TempoInBPM?: number;
+  /** OSMD の Fraction（Numerator/Denominator）。XML 解析が失敗した曲の
+   *  拍子の二次ソース（beatsPerMeasure=4 固定への転落を防ぐ）。 */
+  ActiveTimeSignature?: { Numerator?: number; Denominator?: number };
 }
 
 export interface ScoreLoaderDeps {
@@ -354,15 +367,35 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
       if (songBpm < 20) songBpm = 20;
       if (songBpm > 320) songBpm = 320;
       song.bpm = songBpm;
-      // Quarter-note beats per bar from the leading time signature, for
-      // the metronome accent. beats × 4 / beatType maps any simple/compound
-      // meter onto the quarter-note metronome grid (4/4→4, 3/4→3, 6/8→3,
-      // 2/2→4). Falls back to 4 when the XML timing is unavailable.
+      // 先頭拍子: XML 直解析を優先し、無ければ OSMD Sheet の
+      // ActiveTimeSignature を二次ソースにする（XML 解析失敗時に
+      // beatsPerMeasure=4 固定へ転落しないため）。
       const leadSig = scoreTiming?.measures?.[0]?.timeSig;
+      let sigBeats = leadSig && leadSig.beats > 0 && leadSig.beatType > 0 ? leadSig.beats : 0;
+      let sigType = leadSig && leadSig.beats > 0 && leadSig.beatType > 0 ? leadSig.beatType : 0;
+      if (!sigBeats || !sigType) {
+        const osmdSig = measures[0]?.ActiveTimeSignature;
+        const n = osmdSig?.Numerator ?? 0;
+        const d = osmdSig?.Denominator ?? 0;
+        if (n > 0 && d > 0) {
+          sigBeats = n;
+          sigType = d;
+        }
+      }
+      song.timeSig = sigBeats && sigType ? { beats: sigBeats, beatType: sigType } : undefined;
+      // Quarter-note beats per bar for the metronome accent. beats × 4 /
+      // beatType maps any simple/compound meter onto the quarter-note
+      // metronome grid (4/4→4, 3/4→3, 6/8→3, 2/2→4). Falls back to 4.
       song.beatsPerMeasure =
-        leadSig && leadSig.beats > 0 && leadSig.beatType > 0
-          ? Math.max(1, Math.round((leadSig.beats * 4) / leadSig.beatType))
-          : 4;
+        sigBeats && sigType ? Math.max(1, Math.round((sigBeats * 4) / sigType)) : 4;
+      // 小節グリッド（展開後時計）— カウントイン / メトロノームの唯一の
+      // 真実。ノート展開と同じ order + durSec を使うので両者の時計は
+      // 定義上一致する。XML 経路が無い曲は undefined のまま（呼び出し側が
+      // 従来の一様グリッドへ完全フォールバック）。
+      song.measureGrid =
+        scoreTiming?.measures?.length && srcMeasureDurSec?.length
+          ? buildMeasureGrid(order, scoreTiming.measures, srcMeasureDurSec)
+          : undefined;
       song._loaded = true;
       console.log(
         '[' +

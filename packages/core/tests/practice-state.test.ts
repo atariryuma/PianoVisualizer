@@ -838,4 +838,86 @@ describe('computePracticeTimings', () => {
     const out = computePracticeTimings(333.333);
     expect(Number.isInteger(out.countInMs)).toBe(true);
   });
+
+  it('exposes clickMs == beatMs on the legacy (meter-less) path', () => {
+    const out = computePracticeTimings(500);
+    expect(out.clickMs).toBe(500);
+    expect(out.clicksPerBar).toBeUndefined();
+  });
+});
+
+// 拍子指定時: カウントイン = 拍子ちょうど整数小節（業界標準）。
+// クリック間隔は拍単位（複合拍子は付点四分）、クランプは小節数で吸収。
+describe('computePracticeTimings — meter (整数小節カウントイン)', () => {
+  it('4/4 slow enough for one bar → 4 clicks, 1 bar', () => {
+    // 72 BPM: barMs = 4×833.333 = 3333 ∈ [2400, 7000] → 1 小節
+    const out = computePracticeTimings(833.333, { meter: { beats: 4, beatType: 4 } });
+    expect(out.beats).toBe(4);
+    expect(out.clicksPerBar).toBe(4);
+    expect(out.countInMs).toBe(3333);
+    expect(out.clickMs).toBeCloseTo(833.333, 3);
+  });
+
+  it('4/4 at 120 BPM → 2 whole bars (8 clicks), NOT "1 2 3 4 5"', () => {
+    // 旧実装は 2400ms を埋める 5 拍（拍子と無関係な数）だった。
+    const out = computePracticeTimings(500, { meter: { beats: 4, beatType: 4 } });
+    expect(out.beats).toBe(8);
+    expect(out.countInMs).toBe(4000);
+    expect(out.clickMs).toBe(500);
+    expect(out.clicksPerBar).toBe(4);
+  });
+
+  it('3/4 → whole bars of 3 clicks', () => {
+    // 100 BPM: barMs = 3×600 = 1800 < 2400 → 2 小節 = 6 クリック
+    const out = computePracticeTimings(600, { meter: { beats: 3, beatType: 4 } });
+    expect(out.beats).toBe(6);
+    expect(out.countInMs).toBe(3600);
+    expect(out.clicksPerBar).toBe(3);
+  });
+
+  it('6/8 → dotted-quarter clicks (複合拍子は拍単位)', () => {
+    // 四分 80 BPM (beatMs 750) → クリック = 付点四分 1125ms、小節 2250ms
+    // → 2 小節 = 4 クリック 4500ms
+    const out = computePracticeTimings(750, { meter: { beats: 6, beatType: 8 } });
+    expect(out.clickMs).toBe(1125);
+    expect(out.clicksPerBar).toBe(2);
+    expect(out.beats).toBe(4);
+    expect(out.countInMs).toBe(4500);
+  });
+
+  it('3/8 → 1 click per bar, whole bars fill the clamp (Für Elise 型)', () => {
+    // 四分 72 BPM (beatMs 833.333) → クリック = 小節 = 1250ms → 2 小節
+    const out = computePracticeTimings(833.333, { meter: { beats: 3, beatType: 8 } });
+    expect(out.clicksPerBar).toBe(1);
+    expect(out.beats).toBe(2);
+    expect(out.countInMs).toBe(2500);
+  });
+
+  it('a single bar longer than the max clamp still counts one whole bar', () => {
+    // 小節を割ってクランプに収めない（カウントインは常に整数小節）。
+    const out = computePracticeTimings(2000, { meter: { beats: 4, beatType: 4 } });
+    expect(out.beats).toBe(4);
+    expect(out.countInMs).toBe(8000); // > 7000 を許容（1 小節が下限）
+  });
+
+  it('caps total clicks at MAX_COUNT_IN_BEATS by dropping bars', () => {
+    // beatMs=100 (病的な速さ): 下限 2400ms は 6 小節を要求するが、
+    // 16 クリック上限 → 4 小節 = 16 クリック。
+    const out = computePracticeTimings(100, { meter: { beats: 4, beatType: 4 } });
+    expect(out.beats).toBe(16);
+    expect(out.countInMs).toBe(1600);
+  });
+
+  it('pathological meter (numerator > click cap) falls back to legacy path', () => {
+    const out = computePracticeTimings(500, { meter: { beats: 32, beatType: 4 } });
+    // 従来ロジック: 120 BPM → 5 拍（clicksPerBar なし）
+    expect(out.beats).toBe(5);
+    expect(out.clicksPerBar).toBeUndefined();
+  });
+
+  it('invalid meter (0/0) falls back to legacy path', () => {
+    const out = computePracticeTimings(833.333, { meter: { beats: 0, beatType: 0 } });
+    expect(out.beats).toBe(4);
+    expect(out.clicksPerBar).toBeUndefined();
+  });
 });

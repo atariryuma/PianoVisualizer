@@ -70,6 +70,9 @@ export interface ShellPracticeDeps {
   /** 練習時間の記録（P2-19 の bootstrap 実装）。ループ周回の完了でも
    *  呼べるように optional で受ける。 */
   recordPracticeMinutes?: () => void;
+  /** 明示ポーズラッチの解除（shell-midi の resumePractice）。セクション
+   *  開始時に必ず呼び、猶予中ポーズで残ったラッチを回収する。 */
+  clearPracticePause?: () => void;
 }
 
 export interface ShellPractice {
@@ -80,7 +83,7 @@ export interface ShellPractice {
   getLaneLookaheadMs: () => number;
   /** practice-timings forwarders. */
   practiceBeatMs: () => number;
-  recomputePracticeTimings: () => void;
+  recomputePracticeTimings: (sectionIdx?: number) => void;
   showSectionBanner: (sec: any) => void;
   /** practice-scoring forwarders.
    *  P1-11: inputLagMs は MIDI event.timeStamp 由来の per-event 遅延。 */
@@ -117,6 +120,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
 
   let COUNT_IN_MS = 4000; // pre-roll before the first note (4 beats)
   let COUNT_IN_BEATS = 4; // number of count-in clicks (tempo-derived)
+  let COUNT_IN_CLICK_MS = 1000; // クリック間隔（複合拍子は付点四分）
+  let COUNT_IN_GO_MS = 4000; // GO（ダウンビート）時刻 — 弱起で countIn より後ろ
   let LANE_LOOKAHEAD_MS = 4000; // how far ahead notes appear in the lane
   /** Practice-lane back-reference — set by SelectSong / passed back here so
    *  practice-timings.recomputePracticeTimings can refresh per-frame opts. */
@@ -138,6 +143,12 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     },
     setCountInBeats: (n: number) => {
       COUNT_IN_BEATS = n;
+    },
+    setCountInClickMs: (ms: number) => {
+      COUNT_IN_CLICK_MS = ms;
+    },
+    setCountInGoMs: (ms: number) => {
+      COUNT_IN_GO_MS = ms;
     },
     setLaneLookaheadMs: (ms: number) => {
       LANE_LOOKAHEAD_MS = ms;
@@ -191,6 +202,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     cursor: deps.osmdAdapter,
     getCountInMs: () => COUNT_IN_MS,
     getCountInBeats: () => COUNT_IN_BEATS,
+    // クリック列アンカー（拍子・弱起対応）— guided / rhythm / listen の
+    // カウントインが全部同じ列で数えるための貫通口。
+    getCountInClickMs: () => COUNT_IN_CLICK_MS,
+    getCountInGoMs: () => COUNT_IN_GO_MS,
   } as any);
 
   // Hot-path bilingual cache — refreshed on langchange so per-frame lane draw
@@ -273,7 +288,11 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       'osmdContainer'
     ) as any,
     loadCurrentScore: deps.loadCurrentScore,
-    recomputePracticeTimings: () => _practiceTimings.recomputePracticeTimings(),
+    // sectionIdx を貫通させる — start 時は practice.sectionIdx がまだ
+    // 旧セクションを指しているため、開始セクションの拍子/弱起アンカーを
+    // 正しく解決するには明示引数が必要。
+    recomputePracticeTimings: (sectionIdx?: number) =>
+      _practiceTimings.recomputePracticeTimings(sectionIdx),
     buildSectionNotes,
     buildFullSongNotes,
     buildBackingNotes,
@@ -282,9 +301,27 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     Tone: deps.Tone,
     ensureToneInstruments: () => _practiceToneAudio.ensureInstruments(),
     scheduleCountInBeeps: (t: number) => _practiceToneAudio.scheduleCountIn(t),
-    audioScheduler: deps.audioScheduler,
+    // scheduleSectionPlayback をラップし、小節グリッド由来のメトロノーム
+    // クリック列（buildMetronomeEvents）を注入する。呼び出し時点で
+    // practice.sectionIdx / fullSongMode は start-practice-section が
+    // 更新済み。グリッドの無い曲は null → scheduler 側が従来の一様
+    // ループへフォールバック（回帰ゼロ）。
+    audioScheduler: {
+      scheduleSectionPlayback: (instruments: any, opts: any) => {
+        const isFullSong = practice.mode === 'listen' && !!practice.fullSongMode;
+        const metronomeEvents = SectionNotes.buildMetronomeEvents(
+          isFullSong ? null : practice.sectionIdx,
+          _sectionNotesArgs()
+        );
+        deps.audioScheduler.scheduleSectionPlayback(instruments, {
+          ...opts,
+          metronomeEvents,
+        });
+      },
+    },
     getInstruments: () => _practiceToneAudio.getInstruments(),
     practiceBeatMs: () => _practiceTimings.practiceBeatMs(),
+    clearPracticePause: deps.clearPracticePause,
     pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
   } as any);
 
@@ -356,7 +393,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     getCountInMs: () => COUNT_IN_MS,
     getLaneLookaheadMs: () => LANE_LOOKAHEAD_MS,
     practiceBeatMs: () => _practiceTimings.practiceBeatMs(),
-    recomputePracticeTimings: () => _practiceTimings.recomputePracticeTimings(),
+    recomputePracticeTimings: (sectionIdx?: number) =>
+      _practiceTimings.recomputePracticeTimings(sectionIdx),
     showSectionBanner: (sec: any) => _practiceTimings.showSectionBanner(sec),
     // P1-11: MIDI event.timeStamp 由来の per-event 遅延（第3引数）を
     // scoring まで落とさず貫通させる。

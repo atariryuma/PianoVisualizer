@@ -38,7 +38,12 @@ function makeNote(over: Partial<OsmdLikeNote> = {}): OsmdLikeNote {
   };
 }
 
-function makeFakeOsmd(measures: { TempoInBPM?: number }[] = []) {
+type FakeOsmdMeasure = {
+  TempoInBPM?: number;
+  ActiveTimeSignature?: { Numerator?: number; Denominator?: number };
+};
+
+function makeFakeOsmd(measures: FakeOsmdMeasure[] = []) {
   return { Sheet: { SourceMeasures: measures } };
 }
 
@@ -58,10 +63,10 @@ interface Spies {
 function makeFixture(
   over: {
     song?: ScoreLoaderSong;
-    scoreTiming?: { leadingQuarterBpm?: number } | null;
+    scoreTiming?: { leadingQuarterBpm?: number; measures?: unknown[] } | null;
     extractRet?: ExtractResult;
     expanded?: OsmdLikeNote[];
-    measures?: { TempoInBPM?: number }[];
+    measures?: FakeOsmdMeasure[];
     order?: number[];
     remoteLogEnabled?: boolean;
     getPracticePartIndex?: () => number;
@@ -382,6 +387,84 @@ describe('loadCurrentScore — bpm source priority', () => {
     });
     await fx.loader.loadCurrentScore();
     expect(fx.song._bpmRescaled).toBe(false);
+  });
+});
+
+// ─── 拍子 + 小節グリッド（カウントイン/メトロノームの唯一の真実） ──
+
+describe('loadCurrentScore — timeSig + measureGrid', () => {
+  /** XML 直解析相当の per-measure timing（1 拍ピックアップ 4/4 + 完全小節）。 */
+  const xmlMeasures = [
+    {
+      timeSig: { beats: 4, beatType: 4 },
+      implicit: true,
+      durationDiv: 16,
+      actualDiv: 4,
+      divisions: 4,
+      tempoEvents: [],
+    },
+    {
+      timeSig: { beats: 4, beatType: 4 },
+      implicit: false,
+      durationDiv: 16,
+      actualDiv: 16,
+      divisions: 4,
+      tempoEvents: [],
+    },
+  ];
+
+  it('XML 解析ありの曲: measureGrid が展開順に構築される（弱起フラグ込み）', async () => {
+    const fx = makeFixture({
+      scoreTiming: { leadingQuarterBpm: 120, measures: xmlMeasures },
+      order: [0, 1],
+    });
+    fx.spies.buildMeasureTimingFromXml.mockReturnValue({
+      startSec: [0, 0.5],
+      durSec: [0.5, 2],
+    });
+    await fx.loader.loadCurrentScore();
+    expect(fx.song.measureGrid).toEqual([
+      { startSec: 0, durSec: 0.5, beats: 4, beatType: 4, implicit: true, barFrac: 0.25 },
+      { startSec: 0.5, durSec: 2, beats: 4, beatType: 4 },
+    ]);
+    expect(fx.song.timeSig).toEqual({ beats: 4, beatType: 4 });
+  });
+
+  it('リピート展開順で second traversal が展開後時計に載る', async () => {
+    const fx = makeFixture({
+      scoreTiming: { leadingQuarterBpm: 120, measures: xmlMeasures },
+      order: [1, 1], // |: m1 :| 相当
+    });
+    fx.spies.buildMeasureTimingFromXml.mockReturnValue({
+      startSec: [0, 0.5],
+      durSec: [0.5, 2],
+    });
+    await fx.loader.loadCurrentScore();
+    expect(fx.song.measureGrid!.map((g) => g.startSec)).toEqual([0, 2]);
+  });
+
+  it('XML 解析なし（scoreTiming null）: measureGrid は undefined（一様フォールバック）', async () => {
+    const fx = makeFixture({ scoreTiming: null });
+    await fx.loader.loadCurrentScore();
+    expect(fx.song.measureGrid).toBeUndefined();
+  });
+
+  it('XML 解析なしでも OSMD の ActiveTimeSignature から拍子を二次取得', async () => {
+    const fx = makeFixture({
+      scoreTiming: null,
+      measures: [{ ActiveTimeSignature: { Numerator: 3, Denominator: 8 } }, {}],
+    });
+    await fx.loader.loadCurrentScore();
+    expect(fx.song.timeSig).toEqual({ beats: 3, beatType: 8 });
+    // 3/8 → 3×4/8 = 1.5 → round 2（四分音符換算のアクセント周期）。
+    expect(fx.song.beatsPerMeasure).toBe(2);
+  });
+
+  it('拍子がどこからも取れない場合は timeSig undefined / beatsPerMeasure 4', async () => {
+    const fx = makeFixture({ scoreTiming: null, measures: [{}, {}] });
+    await fx.loader.loadCurrentScore();
+    expect(fx.song.timeSig).toBeUndefined();
+    expect(fx.song.beatsPerMeasure).toBe(4);
   });
 });
 

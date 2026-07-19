@@ -66,7 +66,7 @@ export interface AudioSchedulerRef {
   scheduleCountInBeeps(
     instruments: { metronome: ToneInstrument | null; piano: ToneInstrument | null },
     startAudioTime: number,
-    opts: { countInMs: number; beats: number }
+    opts: { countInMs: number; beats: number; clickMs?: number; goMs?: number }
   ): void;
 }
 
@@ -96,6 +96,12 @@ export interface PracticeToneAudioDeps {
    *  clicks stay one real beat apart (a fast song counts in more beats,
    *  a slow one fewer). Falls back to `beats` for older call sites. */
   getCountInBeats?: () => number;
+  /** クリック 1 個分の間隔 ms（複合拍子は付点四分）。省略時は
+   *  countInMs / beats（従来互換）。 */
+  getCountInClickMs?: () => number;
+  /** GO（ダウンビート）の時刻 ms。弱起では countInMs より後ろ。
+   *  省略時 countInMs（従来互換）。 */
+  getCountInGoMs?: () => number;
   /** Fallback beats per count-in when getCountInBeats is absent.
    *  Default 4 ("4, 3, 2, 1, GO!"). */
   beats?: number;
@@ -160,6 +166,10 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     deps.audioScheduler.scheduleCountInBeeps({ metronome, piano }, startAudioTime, {
       countInMs: deps.getCountInMs(),
       beats: deps.getCountInBeats?.() ?? beats,
+      // 拍子・弱起対応のクリック列情報（practice-timings が算出）。
+      // guided / rhythm / listen すべて同じ列で数える。
+      clickMs: deps.getCountInClickMs?.(),
+      goMs: deps.getCountInGoMs?.(),
     });
   }
 

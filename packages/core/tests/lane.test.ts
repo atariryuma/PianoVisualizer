@@ -265,6 +265,82 @@ describe('drawPracticeLane', () => {
     expect(texts.some((s) => /^[1-4]$/.test(s))).toBe(false);
   });
 
+  // ── クリック列アンカー（拍子・弱起）対応のカウントダウン ──────────
+  // 数字は可聴クリック（GO から逆向きに beats × clickMs）と同時に
+  // 切り替わる。弱起では GO = countInMs + ピックアップ長。
+
+  it('counts down from countInBeats (not hardcoded 4) when provided', () => {
+    // 2 小節の 4/4（8 クリック × 500ms、GO=4000）
+    drawPracticeLane(
+      stub.ctx,
+      baseView(),
+      baseTiming({ realElapsedMs: 0, elapsedMs: 0 }),
+      baseOpts({ countInMs: 4000, countInBeats: 8, countInClickMs: 500, countInGoMs: 4000 })
+    );
+    const texts = stub.calls.filter((c) => c.method === 'fillText').map((c) => c.args[0] as string);
+    expect(texts).toContain('8');
+  });
+
+  it('弱起: hides the countdown during the pre-click pickup silence', () => {
+    // GO=4500, 4 クリック × 1000ms → 最初のクリックは 500ms。
+    // それ以前（頭の無音区間）は数字を出さない — 数字はクリックと同期。
+    drawPracticeLane(
+      stub.ctx,
+      baseView(),
+      baseTiming({ realElapsedMs: 200, elapsedMs: 0 }),
+      baseOpts({ countInMs: 4000, countInBeats: 4, countInClickMs: 1000, countInGoMs: 4500 })
+    );
+    const texts = stub.calls.filter((c) => c.method === 'fillText').map((c) => c.args[0] as string);
+    expect(texts.some((s) => /^[1-4]$/.test(s))).toBe(false);
+  });
+
+  it('弱起: numbers track the shifted click grid and GO lands at countInGoMs', () => {
+    const opts = {
+      countInMs: 4000,
+      countInBeats: 4,
+      countInClickMs: 1000,
+      countInGoMs: 4500,
+    };
+    const seen: string[] = [];
+    // クリックは 500/1500/2500/3500、GO は 4500。
+    for (const t of [600, 1600, 2600, 3600]) {
+      stub.reset();
+      drawPracticeLane(
+        stub.ctx,
+        baseView(),
+        baseTiming({ realElapsedMs: t, elapsedMs: 0 }),
+        baseOpts(opts)
+      );
+      const texts = stub.calls
+        .filter((c) => c.method === 'fillText')
+        .map((c) => c.args[0] as string);
+      const num = texts.find((s) => /^[1-4]$/.test(s));
+      if (num) seen.push(num);
+    }
+    expect(seen).toEqual(['4', '3', '2', '1']);
+    // 旧 GO 位置（countInMs=4000〜4500 の間）はまだ "1" のまま。
+    stub.reset();
+    drawPracticeLane(
+      stub.ctx,
+      baseView(),
+      baseTiming({ realElapsedMs: 4200, elapsedMs: 200 }),
+      baseOpts(opts)
+    );
+    let texts = stub.calls.filter((c) => c.method === 'fillText').map((c) => c.args[0] as string);
+    expect(texts).toContain('1');
+    expect(texts).not.toContain('GO!');
+    // GO はダウンビート（4500）以降に出る。
+    stub.reset();
+    drawPracticeLane(
+      stub.ctx,
+      baseView(),
+      baseTiming({ realElapsedMs: 4600, elapsedMs: 600 }),
+      baseOpts(opts)
+    );
+    texts = stub.calls.filter((c) => c.method === 'fillText').map((c) => c.args[0] as string);
+    expect(texts).toContain('GO!');
+  });
+
   it('clamps note width to halfW / 6 when canvas is narrow', () => {
     // Narrow screen: halfW = (320-48)/2 = 136; halfW/6 ≈ 22.67 (less than 70)
     const note = makeNote({ midi: 60, timeMs: 5500, durMs: 200 });

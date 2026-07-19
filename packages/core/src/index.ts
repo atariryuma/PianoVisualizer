@@ -322,6 +322,21 @@ export type {
 export { buildMeasureTimingFromXml } from './library/measure-timing';
 export type { MeasureTimingResult } from './library/measure-timing';
 
+// === Library: 小節グリッド（展開後時計）— カウントイン/メトロノームの唯一の真実 ===
+export {
+  buildMeasureGrid,
+  meterBeatInfo,
+  gridIndexAtSec,
+  isPartialMeasure,
+  countInPickupSec,
+  countInMeterAtAnchor,
+} from './library/measure-grid';
+export type {
+  MeasureGridEntry,
+  MeasureGridSourceMeasure,
+  MeterBeatInfo,
+} from './library/measure-grid';
+
 // === Library: playback-order parser + note re-timer ===
 export {
   parsePlaybackOrderFromXml,
@@ -484,6 +499,7 @@ export type {
   UnlockComputeResult,
   PracticeTimings,
   PracticeTimingOptions,
+  PracticeTimingMeter,
 } from './state/practice-state';
 
 // === State: quality scoring + coaching feedback ===

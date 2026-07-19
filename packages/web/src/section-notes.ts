@@ -24,6 +24,18 @@
 //      per section so the per-frame draw doesn't re-scan. Falls
 //      back to sane defaults (RH C4–C5, LH C3–C4) when one hand has
 //      no notes.
+//
+//   4. buildMetronomeEvents(sectionIdx|null, deps) — 小節グリッド
+//      （song.measureGrid、展開後時計）から継続メトロノームのクリック列
+//      を合成する。小節頭アクセント + 小節内は拍単位クリック（複合拍子は
+//      付点四分）。テンポ scale と countInMs アンカーはノート写像
+//      （relSec × speedFactor + countInMs）と同一式なので、弱起・
+//      複合拍子・途中の拍子変更でもアクセントが小節線から構造的に
+//      ずれない。グリッドが無い曲は null を返し、呼び出し側
+//      （audio-scheduler）が従来の一様ループへフォールバックする。
+
+import { countInPickupSec, meterBeatInfo } from '@piano/core';
+import type { MeasureGridEntry } from '@piano/core';
 
 /** Generic OSMD-derived note shape. Same fields as
  *  ScoreLoader.OsmdLikeNote with the timeMs/durMs additions used
@@ -100,6 +112,10 @@ export interface SectionNotesSong {
   notes?: OsmdLikeNote[];
   backingNotes?: BackingNoteLike[];
   sections?: SongSection[];
+  /** 小節グリッド（展開後時計）。無い曲（ユーザー曲 JSON・XML 解析失敗）
+   *  は undefined — buildMetronomeEvents が null を返し、従来の一様
+   *  メトロノームへフォールバックする。 */
+  measureGrid?: MeasureGridEntry[];
 }
 
 /** Subset of the practice record we read. */
@@ -402,5 +418,83 @@ export function buildBackingNotes(
     }
   }
   out.sort((a, b) => a.timeMs - b.timeMs);
+  return out;
+}
+
+/** 継続メトロノームの 1 クリック。accent=true は小節頭（880 Hz）。 */
+export interface MetronomeSchedulerEvent {
+  timeMs: number;
+  accent: boolean;
+}
+
+/** 浮動小数の丸め誤差吸収（秒領域）。 */
+const GRID_EPS_SEC = 1e-6;
+/** GO（ダウンビート）と同時刻のクリックを除外する ms トレランス。 */
+const GO_DEDUPE_MS = 1;
+
+/** 小節グリッドから継続メトロノームのクリック列を合成する。
+ *
+ *  - `sectionIdx` 指定時: セクション [startSec, endSec) の各小節。
+ *    テンポ scale + countInMs アンカーは buildSectionNotes と同一式。
+ *  - `sectionIdx === null`: 全曲再生。テンポ 100% 固定・アンカーは
+ *    fullSongAnchorSec（buildFullSongNotes / buildBackingNotes と共有）。
+ *
+ *  各小節は小節頭 (k=0) がアクセント、以降は拍単位クリック。拍の間隔は
+ *  「公称小節長 / 1 小節の拍数」— 部分小節（弱起・volta 途中切れ）では
+ *  barFrac で公称長へ換算するので、拍間隔は保たれつつ実長を超える拍は
+ *  鳴らない。カウントイン区間（timeMs <= GO）はカウントインのクリック列
+ *  と GO ビープが受け持つため除外する — GO 自体が最初の完全小節頭の
+ *  アクセントになる。
+ *
+ *  グリッドが無い曲は null（呼び出し側が従来の一様ループへフォール
+ *  バック — 回帰ゼロ）。 */
+export function buildMetronomeEvents(
+  sectionIdx: number | null,
+  deps: SectionNotesDeps
+): MetronomeSchedulerEvent[] | null {
+  const grid = deps.song.measureGrid;
+  if (!grid || !grid.length) return null;
+
+  let anchorSec: number;
+  let endSec: number;
+  let speedFactor: number;
+  if (sectionIdx === null) {
+    anchorSec = fullSongAnchorSec(deps.song);
+    const last = grid[grid.length - 1];
+    endSec = last.startSec + last.durSec;
+    speedFactor = 1; // 全曲再生は 100% 固定（buildFullSongNotes と同じ）
+  } else {
+    const sec = deps.song.sections?.[sectionIdx];
+    if (!sec) return [];
+    anchorSec = sec.startSec;
+    endSec = sec.endSec;
+    speedFactor = 100 / deps.practice.tempoPct;
+  }
+
+  // GO（ダウンビート）= countInMs + ピックアップ長 × speedFactor。
+  // practice-timings 側のクリック列アンカーと同じ純関数から導くので
+  // カウントインと継続メトロノームの継ぎ目は定義上一致する。
+  const goMs = deps.countInMs + countInPickupSec(grid, anchorSec) * 1000 * speedFactor;
+
+  const out: MetronomeSchedulerEvent[] = [];
+  for (const m of grid) {
+    if (m.startSec + m.durSec <= anchorSec + GRID_EPS_SEC) continue;
+    if (m.startSec >= endSec - GRID_EPS_SEC) break;
+    const info = meterBeatInfo(m.beats, m.beatType);
+    // 公称小節長（部分小節は barFrac で実長→公称長へ換算）から拍間隔を
+    // 出す。完全小節では barFrac 無し → durSec そのまま均等割り。
+    const fullBarSec = m.durSec / (m.barFrac && m.barFrac > 0 ? m.barFrac : 1);
+    const beatSec = fullBarSec / info.clicksPerBar;
+    if (!(beatSec > 0)) continue;
+    for (let k = 0; k < info.clicksPerBar; k++) {
+      const t = m.startSec + k * beatSec;
+      if (t >= m.startSec + m.durSec - GRID_EPS_SEC) break; // 実長を超える拍
+      if (t < anchorSec - GRID_EPS_SEC) continue; // セクション開始前
+      if (t >= endSec - GRID_EPS_SEC) break; // セクション終了後
+      const timeMs = (t - anchorSec) * 1000 * speedFactor + deps.countInMs;
+      if (timeMs <= goMs + GO_DEDUPE_MS) continue; // カウントイン + GO が受け持つ
+      out.push({ timeMs, accent: k === 0 });
+    }
+  }
   return out;
 }

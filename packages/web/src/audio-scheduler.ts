@@ -36,18 +36,28 @@ export interface AudioSchedulerDeps {
 }
 
 export interface CountInOptions {
-  /** Total count-in duration (ms). The "GO!" beep lands at this offset. */
+  /** Total count-in duration (ms). The "GO!" beep lands at this offset
+   *  unless `goMs` shifts it (弱起). */
   countInMs: number;
   /** Number of click beats inside the count-in. Legacy default: 4. */
   beats: number;
+  /** クリック 1 個分の間隔 ms。省略時 countInMs / beats（従来互換）。
+   *  複合拍子では付点四分になる（computePracticeTimings.clickMs）。 */
+  clickMs?: number;
+  /** GO（ダウンビート = 最初の完全小節頭）の時刻 ms。弱起では
+   *  countInMs + ピックアップ長 × speedFactor。省略時 countInMs
+   *  （従来互換）。クリック列はここから逆向きに配置されるので、
+   *  ピックアップ音（timeMs=countInMs〜）はカウントインのクリックの
+   *  間の正しい拍位置に落ち、GO がダウンビートに一致する。 */
+  goMs?: number;
 }
 
 /**
  * Schedule the count-in: `beats` low-pitched clicks (660 Hz) one real
- * beat apart, plus a single high-pitched (990 Hz) "GO!" beep at
- * `countInMs`. Clicks are end-anchored (the last click lands one beat
- * before GO) so the interval always equals the song's beat even when
- * the count-in length was clamped.
+ * beat apart, plus a single high-pitched (990 Hz) "GO!" beep at the
+ * downbeat (`goMs`, 省略時 `countInMs`). Clicks are end-anchored (the
+ * last click lands one beat before GO) so the interval always equals
+ * the song's beat even when the count-in length was clamped.
  *
  * Scheduled on `Tone.Transport` (relative to Transport position 0), NOT
  * at absolute context time — so `Transport.cancel()` on quit / section
@@ -67,7 +77,9 @@ export function scheduleCountInBeeps(
 ): void {
   if (!deps.metronome) return;
   const metronome = deps.metronome;
-  const beatSec = opts.countInMs / opts.beats / 1000;
+  const beatSec =
+    (opts.clickMs && opts.clickMs > 0 ? opts.clickMs : opts.countInMs / opts.beats) / 1000;
+  const goSec = (opts.goMs != null && opts.goMs >= 0 ? opts.goMs : opts.countInMs) / 1000;
   // The callback fires later (from Transport's tick), outside the
   // schedule-time try/catch, so guard the synth call there too — a
   // suspended AudioContext at fire time shouldn't crash the tick.
@@ -79,10 +91,15 @@ export function scheduleCountInBeeps(
     }
   };
   try {
+    // ダウンビート（GO）から逆向きに配置 — goMs=countInMs（弱起なし）の
+    // ときは従来の 0, beat, 2*beat, … と同一。弱起では列全体が
+    // ピックアップ長ぶん後ろへずれ、ピックアップ音がクリックの間の
+    // 正しい拍位置で鳴る。
     for (let i = 0; i < opts.beats; i++) {
-      Tone.Transport.schedule(beep(660, 0.05), i * beatSec);
+      const t = Math.max(0, goSec - (opts.beats - i) * beatSec);
+      Tone.Transport.schedule(beep(660, 0.05), t);
     }
-    Tone.Transport.schedule(beep(990, 0.08), opts.countInMs / 1000);
+    Tone.Transport.schedule(beep(990, 0.08), goSec);
   } catch {
     // Transport.schedule itself threw (Transport in a bad state).
     // Practice still works — the kid loses the count-in click but the
@@ -97,6 +114,14 @@ export interface SchedulerNote {
   timeMs: number;
   /** Sustained duration in ms. */
   durMs: number;
+}
+
+/** 小節グリッド由来のメトロノームクリック（section-notes.buildMetronomeEvents）。 */
+export interface MetronomeSchedulerEvent {
+  /** Transport=0 起点の発火時刻 ms。 */
+  timeMs: number;
+  /** true = 小節頭（880 Hz アクセント）、false = 拍クリック（660 Hz）。 */
+  accent: boolean;
 }
 
 export interface SectionPlaybackOptions {
@@ -118,8 +143,13 @@ export interface SectionPlaybackOptions {
   countInMs: number;
   /** Quarter-note beats per bar for the accent pattern (4/4 → 4, 3/4 → 3,
    *  6/8 → 3). Default 4. Previously hardcoded to 3, so every 4/4 song
-   *  got a waltz accent. */
+   *  got a waltz accent. `metronomeEvents` があるときは未使用。 */
   beatsPerMeasure?: number;
+  /** 小節グリッド由来のクリック列（弱起・複合拍子・途中の拍子変更を
+   *  小節線に構造的に整列済み）。null / undefined のときは従来の一様
+   *  ループ（beatMs 間隔 + beatsPerMeasure アクセント）へフォールバック。
+   *  空配列は「クリック無し」として尊重される。 */
+  metronomeEvents?: ReadonlyArray<MetronomeSchedulerEvent> | null;
 }
 
 /**
@@ -160,18 +190,33 @@ export function scheduleSectionPlayback(
   }
   if (opts.metronomeOn && deps.metronome && opts.notes.length > 0) {
     const metronome = deps.metronome;
-    const last = opts.notes[opts.notes.length - 1];
-    const totalMs = last.timeMs + last.durMs + 1000;
-    const beatsPerBar = opts.beatsPerMeasure && opts.beatsPerMeasure > 0 ? opts.beatsPerMeasure : 4;
-    // The count-in's "GO!" beep already lands on the downbeat at countInMs,
-    // so start the metronome one beat later (beat index 1) to avoid a
-    // triple-stacked hit at the section start. Accent (880 Hz) lands on
-    // each bar's downbeat; other beats click at 660 Hz.
-    for (let t = opts.countInMs + opts.beatMs, beat = 1; t < totalMs; t += opts.beatMs, beat++) {
-      const freq = beat % beatsPerBar === 0 ? 880 : 660;
-      Tone.Transport.schedule((time) => {
-        metronome.triggerAttackRelease(freq, 0.04, time);
-      }, t / 1000);
+    const events = opts.metronomeEvents;
+    if (events != null) {
+      // 小節グリッド由来のクリック列 — 小節頭アクセント（880 Hz）が
+      // 常に小節線に一致する（弱起・複合拍子・途中の拍子変更込み）。
+      // カウントイン区間は builder 側で除外済み（GO がダウンビート）。
+      for (const ev of events) {
+        const freq = ev.accent ? 880 : 660;
+        Tone.Transport.schedule((time) => {
+          metronome.triggerAttackRelease(freq, 0.04, time);
+        }, ev.timeMs / 1000);
+      }
+    } else {
+      // フォールバック（グリッドの無い曲）: 従来の一様ループ。
+      const last = opts.notes[opts.notes.length - 1];
+      const totalMs = last.timeMs + last.durMs + 1000;
+      const beatsPerBar =
+        opts.beatsPerMeasure && opts.beatsPerMeasure > 0 ? opts.beatsPerMeasure : 4;
+      // The count-in's "GO!" beep already lands on the downbeat at countInMs,
+      // so start the metronome one beat later (beat index 1) to avoid a
+      // triple-stacked hit at the section start. Accent (880 Hz) lands on
+      // each bar's downbeat; other beats click at 660 Hz.
+      for (let t = opts.countInMs + opts.beatMs, beat = 1; t < totalMs; t += opts.beatMs, beat++) {
+        const freq = beat % beatsPerBar === 0 ? 880 : 660;
+        Tone.Transport.schedule((time) => {
+          metronome.triggerAttackRelease(freq, 0.04, time);
+        }, t / 1000);
+      }
     }
   }
 }
