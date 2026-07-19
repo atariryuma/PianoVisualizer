@@ -111,14 +111,23 @@ export interface ScoreLoaderDeps {
     baseNotes: OsmdLikeNote[],
     order: number[],
     measures: OsmdMeasure[],
-    sourceMeasureStartSec: number[]
+    sourceMeasureStartSec: number[],
+    sourceMeasureDurSec?: number[]
   ) => OsmdLikeNote[];
+  /** Source-measure → expanded-timeline start (repeat-unfolded). Used
+   *  so section boundaries land on the same clock as the notes. */
+  expandedMeasureStartSec: (
+    order: number[],
+    measures: OsmdMeasure[],
+    sourceMeasureStartSec: number[],
+    sourceMeasureDurSec?: number[]
+  ) => number[];
 
   buildSectionsFromDefs: (
     expanded: OsmdLikeNote[],
     totalSec: number,
     sectionDefs: unknown[],
-    sourceMeasureStartSec: number[]
+    measureStartSec: number[]
   ) => unknown[];
 
   /** Verbose load-time diagnostic dumper. Only called when
@@ -247,17 +256,28 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
         console.warn('Playback order parse failed, falling back to linear', e);
         order = measures.map((_, i) => i);
       }
+      // XML-authoritative per-measure durations (parallel to
+      // srcMeasureStartSec). Passing these fixes the last measure's
+      // 72-BPM fallback that shifted D.C./D.S. second passes.
+      const srcMeasureDurSec = xmlMeasureTiming?.durSec;
       const expanded = deps.expandNotesByPlaybackOrder(
         baseNotes,
         order,
         measures,
-        srcMeasureStartSec
+        srcMeasureStartSec,
+        srcMeasureDurSec
       );
 
       // おともパート（Voice 等）も同じ再生順で展開。空なら空のまま。
       const baseBacking = extractRet.backingNotes ?? [];
       const expandedBacking = baseBacking.length
-        ? deps.expandNotesByPlaybackOrder(baseBacking, order, measures, srcMeasureStartSec)
+        ? deps.expandNotesByPlaybackOrder(
+            baseBacking,
+            order,
+            measures,
+            srcMeasureStartSec,
+            srcMeasureDurSec
+          )
         : [];
 
       let totalSec = 0;
@@ -273,16 +293,28 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
 
       song.notes = expanded;
       song.backingNotes = expandedBacking;
+
+      // Section boundaries are defined by SOURCE measure index but slice
+      // notes that live on the EXPANDED (repeat-unfolded) timeline. Map
+      // each boundary measure to its first-occurrence time on the
+      // expanded clock so a section after a repeat gets its own window
+      // (not the tail of the previous section's repeat).
+      const expandedMeasureStart = deps.expandedMeasureStartSec(
+        order,
+        measures,
+        srcMeasureStartSec,
+        srcMeasureDurSec
+      );
       song.totalSec = totalSec;
       song.playbackOrder = order;
-      // Pass per-source-measure start times so sections begin at the
-      // measure boundary (preserves leading rest visually) instead
-      // of cropping to the first note's onset.
+      // Pass the EXPANDED-timeline measure starts so sections begin at
+      // the measure boundary on the same clock as the notes (preserves
+      // leading rest visually, and stays correct across repeats).
       song.sections = deps.buildSectionsFromDefs(
         expanded,
         totalSec,
         song.sectionDefs ?? [],
-        srcMeasureStartSec
+        expandedMeasureStart
       );
 
       // Capture leading tempo so count-in clicks match the song.

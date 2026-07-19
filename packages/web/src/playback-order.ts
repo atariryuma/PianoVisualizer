@@ -51,6 +51,12 @@ export interface PlaybackOrderCoreFns<TBaseNote, TExpandedNote, TOrder> {
     order: TOrder,
     timing: { startSec: number[]; durSec: number[] }
   ): TExpandedNote[];
+  /** Source-measure → expanded-timeline first-occurrence start (for
+   *  section boundaries on repeat-unfolded scores). */
+  expandedMeasureStartSec(
+    order: TOrder,
+    timing: { startSec: number[]; durSec: number[] }
+  ): number[];
 }
 
 export interface PlaybackOrderDeps<TBaseNote, TExpandedNote, TOrder> {
@@ -66,8 +72,17 @@ export interface PlaybackOrder<TBaseNote, TExpandedNote, TOrder> {
     baseNotes: TBaseNote[],
     order: TOrder,
     measures: PlaybackOrderMeasure[],
-    sourceMeasureStartSec?: number[]
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
   ): TExpandedNote[];
+  /** Source-measure → expanded-timeline start (repeat-unfolded), for
+   *  section boundaries. Uses the same measure timing as expansion. */
+  expandedMeasureStartSec(
+    order: TOrder,
+    measures: PlaybackOrderMeasure[],
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
+  ): number[];
 }
 
 export function createPlaybackOrder<TBaseNote, TExpandedNote, TOrder>(
@@ -83,67 +98,85 @@ export function createPlaybackOrder<TBaseNote, TExpandedNote, TOrder>(
     return deps.fns.parsePlaybackOrderFromXml(text);
   }
 
-  function expandNotesByPlaybackOrder(
-    baseNotes: TBaseNote[],
-    order: TOrder,
+  /** Resolve the per-source-measure { startSec, durSec } table used by
+   *  both note expansion and section-boundary mapping.
+   *
+   *  Prefers the XML-derived timing (start + dur) when available:
+   *   - When `sourceMeasureDurSec` is supplied it's authoritative for
+   *     EVERY bar including the last (fixes the old 72-BPM fallback for
+   *     the final measure that shifted D.C./D.S. second passes).
+   *   - Else durations are the diff of consecutive starts, with an
+   *     OSMD-shaped fallback for the last bar (no i+1 to diff against). */
+  function resolveMeasureTiming(
     measures: PlaybackOrderMeasure[],
-    sourceMeasureStartSec?: number[]
-  ): TExpandedNote[] {
-    // [Bug fix 2026-05-09] Loud failure when OSMD's Sheet didn't
-    // populate. Without this guard the cumulative-sum walk below
-    // produces empty startSec[] / durSec[] arrays; the core
-    // expansion then computes `(undefined - 0) * 1000 ...` for every
-    // note, returning NaN-tainted timing. Symptom in server.log:
-    // `[DIAG/play.note] i=0 t=NaN dur=NaN`. score-loader catches the
-    // throw via its existing try/catch path and surfaces the error
-    // through `alertAudioInitError`.
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
+  ): { startSec: number[]; durSec: number[] } {
     if (!measures || measures.length === 0) {
+      // [Bug fix 2026-05-09] Loud failure when OSMD's Sheet didn't
+      // populate — otherwise the core expansion computes NaN timing
+      // for every note. score-loader surfaces the throw via alert.
       throw new Error(
         'expandNotesByPlaybackOrder: measures array is empty — OSMD Sheet.SourceMeasures was null or empty after load'
       );
     }
 
-    let measureStartSec: number[];
-    let measureDurSec: number[];
-
     if (sourceMeasureStartSec && sourceMeasureStartSec.length === measures.length) {
-      // Pre-built timing table from the XML reducer — already correct
-      // through every mid-bar tempo event. Just cumulative-diff for
-      // durations, plus an OSMD-shaped fallback for the last bar.
-      measureStartSec = sourceMeasureStartSec;
-      measureDurSec = new Array(measures.length).fill(0);
-      for (let i = 0; i < measures.length; i++) {
-        const m = measures[i];
-        if (i + 1 < measures.length) {
-          measureDurSec[i] = measureStartSec[i + 1] - measureStartSec[i];
-        } else {
-          const bpm = m?.TempoInBPM || 72;
-          measureDurSec[i] = ((m?.Duration?.realValue || 0.25) * 4 * 60) / bpm;
+      const startSec = sourceMeasureStartSec;
+      let durSec: number[];
+      if (sourceMeasureDurSec && sourceMeasureDurSec.length === measures.length) {
+        // XML-authoritative durations — correct even for the last bar.
+        durSec = sourceMeasureDurSec.slice();
+      } else {
+        durSec = new Array(measures.length).fill(0);
+        for (let i = 0; i < measures.length; i++) {
+          if (i + 1 < measures.length) {
+            durSec[i] = startSec[i + 1] - startSec[i];
+          } else {
+            const m = measures[i];
+            const bpm = m?.TempoInBPM || 72;
+            durSec[i] = ((m?.Duration?.realValue || 0.25) * 4 * 60) / bpm;
+          }
         }
       }
-    } else {
-      // Fallback path: cumulative sum of per-bar durations from OSMD
-      // shapes. Used by legacy callers that don't pre-build a full
-      // XML timing table. prevBpm carried forward across bars without
-      // an explicit TempoInBPM value (matches OSMD's per-iteration
-      // tempo state).
-      measureStartSec = new Array(measures.length).fill(0);
-      measureDurSec = new Array(measures.length).fill(0);
-      let prevBpm = 72;
-      for (let i = 0; i < measures.length; i++) {
-        const m = measures[i];
-        const bpm = m?.TempoInBPM || prevBpm;
-        measureDurSec[i] = ((m?.Duration?.realValue || 0.25) * 4 * 60) / bpm;
-        if (i > 0) measureStartSec[i] = measureStartSec[i - 1] + measureDurSec[i - 1];
-        prevBpm = bpm;
-      }
+      return { startSec, durSec };
     }
 
-    return deps.fns.expandNotesByPlaybackOrder(baseNotes, order, {
-      startSec: measureStartSec,
-      durSec: measureDurSec,
-    });
+    // Fallback path: cumulative sum of per-bar durations from OSMD
+    // shapes. Used by callers without a pre-built XML timing table.
+    const startSec = new Array(measures.length).fill(0);
+    const durSec = new Array(measures.length).fill(0);
+    let prevBpm = 72;
+    for (let i = 0; i < measures.length; i++) {
+      const m = measures[i];
+      const bpm = m?.TempoInBPM || prevBpm;
+      durSec[i] = ((m?.Duration?.realValue || 0.25) * 4 * 60) / bpm;
+      if (i > 0) startSec[i] = startSec[i - 1] + durSec[i - 1];
+      prevBpm = bpm;
+    }
+    return { startSec, durSec };
   }
 
-  return { fetchPlaybackOrder, expandNotesByPlaybackOrder };
+  function expandNotesByPlaybackOrder(
+    baseNotes: TBaseNote[],
+    order: TOrder,
+    measures: PlaybackOrderMeasure[],
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
+  ): TExpandedNote[] {
+    const timing = resolveMeasureTiming(measures, sourceMeasureStartSec, sourceMeasureDurSec);
+    return deps.fns.expandNotesByPlaybackOrder(baseNotes, order, timing);
+  }
+
+  function expandedMeasureStartSec(
+    order: TOrder,
+    measures: PlaybackOrderMeasure[],
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
+  ): number[] {
+    const timing = resolveMeasureTiming(measures, sourceMeasureStartSec, sourceMeasureDurSec);
+    return deps.fns.expandedMeasureStartSec(order, timing);
+  }
+
+  return { fetchPlaybackOrder, expandNotesByPlaybackOrder, expandedMeasureStartSec };
 }

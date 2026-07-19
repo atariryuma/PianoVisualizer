@@ -76,6 +76,7 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
       // PianoCore's signature is generically narrower than PlaybackOrder's
       // expected `unknown[]`; cast at the boundary.
       expandNotesByPlaybackOrder: PianoCore.expandNotesByPlaybackOrder as never,
+      expandedMeasureStartSec: PianoCore.expandedMeasureStartSec as never,
     },
     fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
   });
@@ -85,8 +86,28 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     baseNotes: any,
     order: any,
     measures: any,
-    sourceMeasureStartSec?: number[]
-  ) => _playbackOrder.expandNotesByPlaybackOrder(baseNotes, order, measures, sourceMeasureStartSec);
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
+  ) =>
+    _playbackOrder.expandNotesByPlaybackOrder(
+      baseNotes,
+      order,
+      measures,
+      sourceMeasureStartSec,
+      sourceMeasureDurSec
+    );
+  const expandedMeasureStartSec = (
+    order: any,
+    measures: any,
+    sourceMeasureStartSec?: number[],
+    sourceMeasureDurSec?: number[]
+  ) =>
+    _playbackOrder.expandedMeasureStartSec(
+      order,
+      measures,
+      sourceMeasureStartSec,
+      sourceMeasureDurSec
+    );
 
   // @piano/core/library/diag-load. The shim threads the shell remoteLog.
   const dumpLoadDiagnostics = (p: any) => PianoCore.dumpLoadDiagnostics(p, deps.remoteLog);
@@ -100,6 +121,7 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     extractNotesFromOsmd,
     fetchPlaybackOrder: fetchPlaybackOrder as any,
     expandNotesByPlaybackOrder: expandNotesByPlaybackOrder as any,
+    expandedMeasureStartSec: expandedMeasureStartSec as any,
     buildSectionsFromDefs: deps.buildSectionsFromDefs,
     dumpLoadDiagnostics,
     remoteLogEnabled: deps.remoteLogEnabled,

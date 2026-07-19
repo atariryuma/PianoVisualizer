@@ -49,6 +49,7 @@ interface Spies {
   extractNotesFromOsmd: ReturnType<typeof vi.fn>;
   fetchPlaybackOrder: ReturnType<typeof vi.fn>;
   expandNotesByPlaybackOrder: ReturnType<typeof vi.fn>;
+  expandedMeasureStartSec: ReturnType<typeof vi.fn>;
   buildSectionsFromDefs: ReturnType<typeof vi.fn>;
   dumpLoadDiagnostics: ReturnType<typeof vi.fn>;
   fetch: ReturnType<typeof vi.fn>;
@@ -91,6 +92,7 @@ function makeFixture(
     extractNotesFromOsmd: vi.fn().mockReturnValue(extractRet),
     fetchPlaybackOrder: vi.fn().mockResolvedValue(order),
     expandNotesByPlaybackOrder: vi.fn().mockReturnValue(expanded),
+    expandedMeasureStartSec: vi.fn().mockReturnValue([0, 1, 2]),
     buildSectionsFromDefs: vi.fn().mockReturnValue([{ id: 's0' }]),
     dumpLoadDiagnostics: vi.fn(),
     fetch: vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('<xml/>') }),
@@ -113,6 +115,8 @@ function makeFixture(
       spies.fetchPlaybackOrder as unknown as ScoreLoaderDeps['fetchPlaybackOrder'],
     expandNotesByPlaybackOrder:
       spies.expandNotesByPlaybackOrder as unknown as ScoreLoaderDeps['expandNotesByPlaybackOrder'],
+    expandedMeasureStartSec:
+      spies.expandedMeasureStartSec as unknown as ScoreLoaderDeps['expandedMeasureStartSec'],
     buildSectionsFromDefs:
       spies.buildSectionsFromDefs as unknown as ScoreLoaderDeps['buildSectionsFromDefs'],
     dumpLoadDiagnostics: spies.dumpLoadDiagnostics,
@@ -169,6 +173,9 @@ describe('loadCurrentScore — skip-load', () => {
       fetchPlaybackOrder: vi.fn() as unknown as ScoreLoaderDeps['fetchPlaybackOrder'],
       expandNotesByPlaybackOrder:
         vi.fn() as unknown as ScoreLoaderDeps['expandNotesByPlaybackOrder'],
+      expandedMeasureStartSec: vi
+        .fn()
+        .mockReturnValue([]) as unknown as ScoreLoaderDeps['expandedMeasureStartSec'],
       buildSectionsFromDefs: vi.fn(),
       dumpLoadDiagnostics: vi.fn(),
       remoteLogEnabled: false,
@@ -303,7 +310,8 @@ describe('loadCurrentScore — playback order fallback', () => {
       expect.any(Array),
       [0, 1, 2, 3], // linear from measures
       expect.any(Array),
-      expect.any(Array)
+      expect.any(Array),
+      undefined // no XML durSec table (buildMeasureTimingFromXml → {})
     );
   });
 
@@ -314,7 +322,8 @@ describe('loadCurrentScore — playback order fallback', () => {
       expect.any(Array),
       [0, 1],
       expect.any(Array),
-      expect.any(Array)
+      expect.any(Array),
+      undefined
     );
   });
 });

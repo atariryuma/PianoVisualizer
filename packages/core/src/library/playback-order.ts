@@ -306,3 +306,42 @@ export function expandNotesByPlaybackOrder<N extends PlaybackOrderNote>(
   expanded.sort((a, b) => a.timeSec - b.timeSec || a.midi - b.midi);
   return expanded;
 }
+
+/**
+ * Map each SOURCE measure index to its start time on the EXPANDED
+ * (repeat-unfolded) timeline — the cumulative seconds at the measure's
+ * FIRST playback occurrence.
+ *
+ * Section boundaries are defined by source-measure index, but the notes
+ * they slice live on the expanded timeline. Using the source-clock
+ * measure start (pre-repeat) makes every boundary after the first
+ * repeat land too early — section B inherits the tail of section A's
+ * repeat and loses its own end. This function produces the table that
+ * keeps `buildSectionsFromDefs` on the same clock as the notes.
+ *
+ * Shares the exact cumulative walk of `expandNotesByPlaybackOrder`
+ * (cumTime += durSec[mIdx]) so the two never drift. Measures never
+ * visited by `order` inherit the nearest prior visited value (or 0 at
+ * the head) so a boundary always resolves.
+ */
+export function expandedMeasureStartSec(
+  order: ReadonlyArray<number>,
+  timing: SourceMeasureTiming
+): number[] {
+  const n = timing.startSec.length;
+  const firstStart = new Array<number>(n).fill(-1);
+  let cumTime = 0;
+  for (const mIdx of order) {
+    if (mIdx >= 0 && mIdx < n && firstStart[mIdx] < 0) {
+      firstStart[mIdx] = cumTime;
+    }
+    cumTime += timing.durSec[mIdx] ?? 0.5;
+  }
+  // Fill unvisited measures with the nearest prior visited value.
+  let last = 0;
+  for (let i = 0; i < n; i++) {
+    if (firstStart[i] < 0) firstStart[i] = last;
+    else last = firstStart[i];
+  }
+  return firstStart;
+}

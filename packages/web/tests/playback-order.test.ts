@@ -46,11 +46,35 @@ function makeFixture(
       },
     } as unknown as Response;
   });
+  const expandedMeasureStartSec = vi.fn(
+    (order: FakeOrder, timing: { startSec: number[]; durSec: number[] }): number[] => {
+      // Simplified first-occurrence walk mirroring the core impl so the
+      // web wrapper's timing-resolution is what's under test here.
+      const first = new Array<number>(timing.startSec.length).fill(-1);
+      let cum = 0;
+      for (const m of order.measureIndices) {
+        if (m >= 0 && m < first.length && first[m] < 0) first[m] = cum;
+        cum += timing.durSec[m] ?? 0.5;
+      }
+      let last = 0;
+      for (let i = 0; i < first.length; i++) {
+        if (first[i] < 0) first[i] = last;
+        else last = first[i];
+      }
+      return first;
+    }
+  );
   const pb = createPlaybackOrder<FakeNote, FakeNote, FakeOrder>({
-    fns: { parsePlaybackOrderFromXml, expandNotesByPlaybackOrder },
+    fns: { parsePlaybackOrderFromXml, expandNotesByPlaybackOrder, expandedMeasureStartSec },
     fetch: fetchFn as unknown as typeof fetch,
   });
-  return { pb, parsePlaybackOrderFromXml, expandNotesByPlaybackOrder, fetchFn };
+  return {
+    pb,
+    parsePlaybackOrderFromXml,
+    expandNotesByPlaybackOrder,
+    expandedMeasureStartSec,
+    fetchFn,
+  };
 }
 
 describe('createPlaybackOrder — fetchPlaybackOrder', () => {
@@ -119,6 +143,22 @@ describe('createPlaybackOrder — expandNotesByPlaybackOrder pre-built table', (
     };
     // last bar: 0.25 * 4 * 60 / 72 = 60/72 ≈ 0.833…
     expect(callArg.durSec[1]).toBeCloseTo(60 / 72, 5);
+  });
+
+  it('uses XML-authoritative sourceMeasureDurSec for every bar including the last (P1-7)', () => {
+    const fx = makeFixture();
+    const measures: PlaybackOrderMeasure[] = [
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+    ];
+    // Pass explicit XML durations — the last bar must NOT fall back to
+    // the 72-BPM / Duration-diff heuristic (which shifted D.C./D.S.).
+    fx.pb.expandNotesByPlaybackOrder([], { measureIndices: [0, 1] }, measures, [0, 2], [2, 1.5]);
+    const callArg = fx.expandNotesByPlaybackOrder.mock.calls[0][2] as {
+      startSec: number[];
+      durSec: number[];
+    };
+    expect(callArg.durSec).toEqual([2, 1.5]); // last bar honored, not 60/72
   });
 
   it('uses 0.25 as the last-bar Duration fallback when Duration missing', () => {
@@ -239,5 +279,37 @@ describe('createPlaybackOrder — empty measures NaN guard (2026-05-09 regressio
         undefined as unknown as PlaybackOrderMeasure[]
       )
     ).toThrow(/measures array is empty/);
+  });
+});
+
+describe('createPlaybackOrder — expandedMeasureStartSec (section boundaries, P0-2)', () => {
+  it('maps section boundaries onto the repeat-unfolded timeline', () => {
+    const fx = makeFixture();
+    const measures: PlaybackOrderMeasure[] = [
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+    ];
+    // Repeat of measures 0..1: order = 0,1,0,1,2,3. XML durations 1s each.
+    const table = fx.pb.expandedMeasureStartSec(
+      { measureIndices: [0, 1, 0, 1, 2, 3] },
+      measures,
+      [0, 1, 2, 3],
+      [1, 1, 1, 1]
+    );
+    // m2/m3 pushed out past both passes of 0..1.
+    expect(table).toEqual([0, 1, 4, 5]);
+  });
+
+  it('uses the same resolved timing as expansion (falls back cleanly)', () => {
+    const fx = makeFixture();
+    const measures: PlaybackOrderMeasure[] = [
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+      { TempoInBPM: 60, Duration: { realValue: 0.25 } },
+    ];
+    // No XML table → OSMD cumulative fallback (1s/bar at 60 BPM).
+    const table = fx.pb.expandedMeasureStartSec({ measureIndices: [0, 1] }, measures);
+    expect(table).toEqual([0, 1]);
   });
 });

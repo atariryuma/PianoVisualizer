@@ -320,7 +320,11 @@ export { buildMeasureTimingFromXml } from './library/measure-timing';
 export type { MeasureTimingResult } from './library/measure-timing';
 
 // === Library: playback-order parser + note re-timer ===
-export { parsePlaybackOrderFromXml, expandNotesByPlaybackOrder } from './library/playback-order';
+export {
+  parsePlaybackOrderFromXml,
+  expandNotesByPlaybackOrder,
+  expandedMeasureStartSec,
+} from './library/playback-order';
 export type {
   PlaybackOrderOptions,
   MeasureMarkers,

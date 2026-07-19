@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   expandNotesByPlaybackOrder,
+  expandedMeasureStartSec,
   parsePlaybackOrderFromXml,
   type PlaybackOrderNote,
   type SourceMeasureTiming,
@@ -309,6 +310,46 @@ describe('expandNotesByPlaybackOrder — skip (volta)', () => {
     const r = expandNotesByPlaybackOrder(notes, [0, 1, 0, 2], timing);
     expect(r[2].cursorJump).toBe(0); // back-jump to m1
     expect(r[3].cursorJump).toBe(2); // forward-skip to m3
+  });
+});
+
+describe('expandedMeasureStartSec — section boundaries on the expanded clock', () => {
+  it('linear order → equals the source starts', () => {
+    const timing: SourceMeasureTiming = { startSec: [0, 1, 2, 3], durSec: [1, 1, 1, 1] };
+    expect(expandedMeasureStartSec([0, 1, 2, 3], timing)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('repeat pushes later measures out to their FIRST occurrence', () => {
+    // Measures 0..3 with 0..1 repeated: order = 0,1,0,1,2,3.
+    // Expanded timeline: m0@0, m1@1, m0@2, m1@3, m2@4, m3@5.
+    // First occurrences: m0=0, m1=1, m2=4, m3=5.
+    const timing: SourceMeasureTiming = { startSec: [0, 1, 2, 3], durSec: [1, 1, 1, 1] };
+    const table = expandedMeasureStartSec([0, 1, 0, 1, 2, 3], timing);
+    expect(table).toEqual([0, 1, 4, 5]);
+    // A section starting at source measure 2 now lands at 4s (after both
+    // passes of 0..1), not the source-clock 2s — so it no longer inherits
+    // the tail of the repeated block.
+  });
+
+  it('shares the cumulative walk with expandNotesByPlaybackOrder', () => {
+    const timing: SourceMeasureTiming = { startSec: [0, 1, 2], durSec: [1, 1, 1] };
+    const order = [0, 1, 0, 1, 2];
+    const table = expandedMeasureStartSec(order, timing);
+    // The note in measure 2 sits at cumTime for m2's first occurrence.
+    const notes: PlaybackOrderNote[] = [
+      { midi: 60, hand: 'R', timeSec: 2, durSec: 0.5, measureIdx: 2, inBarQuarters: 0 },
+    ];
+    const expanded = expandNotesByPlaybackOrder(notes, order, timing);
+    expect(expanded[0].timeSec).toBe(table[2]); // 4s
+  });
+
+  it('unvisited measures inherit the nearest prior visited value', () => {
+    const timing: SourceMeasureTiming = { startSec: [0, 1, 2], durSec: [1, 1, 1] };
+    // Order never visits measure 2.
+    const table = expandedMeasureStartSec([0, 1], timing);
+    expect(table[0]).toBe(0);
+    expect(table[1]).toBe(1);
+    expect(table[2]).toBe(1); // inherits m1
   });
 });
 
