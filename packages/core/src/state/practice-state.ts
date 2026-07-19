@@ -33,6 +33,12 @@ export const CHORD_MATE_TOLERANCE_MS = 30;
 export const DURATION_MIN_TOL_MS = 120;
 /** Note-length proportional tolerance (fraction of the written duration). */
 export const DURATION_TOL_FRACTION = 0.4;
+/** Inherent detection lag on the mic path: the onset is reported a frame
+ *  or two AFTER the physical attack (Onset AnalyserNode FFT 2048 @ 48 kHz
+ *  ≈ 43 ms window + YIN's every-3rd-frame throttle). Subtracted from the
+ *  elapsed clock for mic onsets so an on-the-beat press isn't judged
+ *  systematically "late". MIDI presses are exact and get 0. */
+export const MIC_INPUT_LATENCY_MS = 45;
 
 // =====================================================================
 // Types

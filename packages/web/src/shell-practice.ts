@@ -150,6 +150,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       chordMateToleranceMs: PianoCore.CHORD_MATE_TOLERANCE_MS,
       durationMinTolMs: PianoCore.DURATION_MIN_TOL_MS,
       durationTolFraction: PianoCore.DURATION_TOL_FRACTION,
+      micInputLatencyMs: PianoCore.MIC_INPUT_LATENCY_MS,
       // getter で渡す — recomputePracticeTimings がテンポ変更のたびに
       // COUNT_IN_MS を更新するので、値渡しだと初期値 4000ms に固定され
       // guided のクロック凍結境界・早押しゲートが実カウントインとズレる。

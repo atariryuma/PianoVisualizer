@@ -436,6 +436,36 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     expect(ok).toBe(false);
   });
 
+  it('mic onset is compensated for detection latency (P1-11)', () => {
+    // Note at 5000 ms. A mic onset detected at 5045 ms — but with a 45 ms
+    // detection lag the true attack was on the beat (dt≈0 → PERFECT),
+    // whereas an uncompensated read would score it 45 ms late.
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0 },
+      tuning: { micInputLatencyMs: 45 },
+      Tone: { context: { currentTime: 5.045 } },
+    });
+    const ok = fx.scoring.matchNoteOnset(60, false); // isExact=false → mic
+    expect(ok).toBe(true);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+  });
+
+  it('MIDI onset is NOT latency-compensated (exact input)', () => {
+    // Same 45 ms offset but via MIDI (isExact=true) — no mic compensation,
+    // so dt=45 which is still within perfectMs=50 → perfect, but the
+    // compensation must NOT have shifted it (verify via a 70 ms offset).
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0 },
+      tuning: { micInputLatencyMs: 45 },
+      Tone: { context: { currentTime: 5.07 } }, // dt=70
+    });
+    const ok = fx.scoring.matchNoteOnset(60, true); // MIDI → no compensation
+    expect(ok).toBe(true);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('good', 'T(nice)'); // 70>50, not perfect
+  });
+
   it('wrong note inside the window → throttled fact-based chip (P2-17)', () => {
     // In the window (dt≈40) but wrong pitch — rhythm now shows a chip.
     const fx = setup(5.04);

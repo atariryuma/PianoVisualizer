@@ -87,6 +87,10 @@ export interface PracticeScoringTuning {
   durationMinTolMs: number;
   durationTolFraction: number;
   countInMs: number;
+  /** Detection lag subtracted from the elapsed clock for MIC onsets
+   *  (PianoCore.MIC_INPUT_LATENCY_MS). MIDI presses are exact → 0.
+   *  Optional so older call sites default to no compensation. */
+  micInputLatencyMs?: number;
 }
 
 /** Subset of the Tone surface practiceRealElapsedMs reads. */
@@ -121,8 +125,11 @@ export interface PracticeScoringDeps {
 
 export interface PracticeScoring {
   medianRecentPitch(): number;
-  /** Returns true on a hit (any chord mate match), false on miss. */
-  matchNoteOnset(detectedMidi: number, isExact: boolean): boolean;
+  /** Returns true on a hit (any chord mate match), false on miss.
+   *  `inputLagMs` (optional) is per-event transport latency — e.g. the
+   *  gap between a MIDI message's driver timestamp and handler execution
+   *  — subtracted from the elapsed clock on top of the mic constant. */
+  matchNoteOnset(detectedMidi: number, isExact: boolean, inputLagMs?: number): boolean;
   /** Rhythm-mode duration scoring on key release. */
   finalizeNoteHold(detectedMidi: number): void;
   /** Sample-accurate audio time, offset-corrected. */
@@ -166,14 +173,19 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     return realElapsed;
   }
 
-  function matchNoteOnset(detectedMidi: number, isExact: boolean): boolean {
+  function matchNoteOnset(detectedMidi: number, isExact: boolean, inputLagMs = 0): boolean {
     if (!deps.practice.enabled) return false;
     // Listen mode: the song plays itself, the kid is just watching/
     // listening. Don't judge or score; let any incidental key-presses
     // create free-play visuals (handled outside this function).
     if (deps.practice.mode === 'listen') return false;
 
-    const elapsed = practiceElapsedMs();
+    // Compensate input latency: the note was physically played BEFORE the
+    // clock reads `elapsed`. Mic onsets carry a fixed detection lag; MIDI
+    // presses are exact but may carry a per-event handler lag. Shifting
+    // the elapsed clock back keeps an on-the-beat press from judging late.
+    const latency = (isExact ? 0 : (deps.tuning.micInputLatencyMs ?? 0)) + inputLagMs;
+    const elapsed = practiceElapsedMs() - latency;
     const notes = deps.practice.sectionNotes;
     // Eagerly skip past any already-resolved notes. The per-frame
     // skip-past loop normally advances currentNoteIdx, but a chord

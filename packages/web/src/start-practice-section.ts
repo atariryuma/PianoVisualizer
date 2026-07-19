@@ -69,6 +69,8 @@ export interface CurrentSongRef {
   _loaded?: boolean;
   sections?: SongSection[];
   titleKey: string;
+  /** Quarter-note beats per bar for the metronome accent (default 4). */
+  beatsPerMeasure?: number;
 }
 
 export interface StatePartial {
@@ -156,6 +158,7 @@ export interface StartSectionAudioScheduler {
       metronomeOn?: boolean;
       beatMs: number;
       countInMs: number;
+      beatsPerMeasure?: number;
     }
   ): void;
 }
@@ -440,6 +443,7 @@ export function createStartPracticeSection(
             metronomeOn: deps.practice.metronomeOn,
             beatMs: deps.practiceBeatMs(),
             countInMs: deps.countInMs(),
+            beatsPerMeasure: song.beatsPerMeasure,
           }
         );
         // Cursor sync runs per-frame from drawPracticeLane. Pass

@@ -70,6 +70,9 @@ export interface ScoreLoaderSong {
   playbackOrder?: number[];
   sections?: unknown[];
   bpm?: number;
+  /** Quarter-note beats per bar (from the leading time signature) for
+   *  the metronome accent. 4/4 → 4, 3/4 → 3, 6/8 → 3. Default 4. */
+  beatsPerMeasure?: number;
 }
 
 /** Result shape from `extractNotesFromOsmd`. The loader doesn't
@@ -334,6 +337,15 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
         }
       }
       song.bpm = songBpm || 72;
+      // Quarter-note beats per bar from the leading time signature, for
+      // the metronome accent. beats × 4 / beatType maps any simple/compound
+      // meter onto the quarter-note metronome grid (4/4→4, 3/4→3, 6/8→3,
+      // 2/2→4). Falls back to 4 when the XML timing is unavailable.
+      const leadSig = scoreTiming?.measures?.[0]?.timeSig;
+      song.beatsPerMeasure =
+        leadSig && leadSig.beats > 0 && leadSig.beatType > 0
+          ? Math.max(1, Math.round((leadSig.beats * 4) / leadSig.beatType))
+          : 4;
       song._loaded = true;
       console.log(
         '[' +

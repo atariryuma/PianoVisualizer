@@ -150,25 +150,23 @@ describe('scheduleSectionPlayback', () => {
     expect(transportSchedule).not.toHaveBeenCalled();
   });
 
-  it('schedules metronome ticks at beatMs intervals starting from countInMs', () => {
+  it('schedules metronome ticks starting one beat after count-in', () => {
     scheduleSectionPlayback(
       { piano: null, metronome: makeInstrumentStub() },
       {
-        // Section spans 0..2000ms, with 1000ms count-in window. Notes
-        // signal "section length" — metronome stops at last note + 1s pad.
         notes: [{ midi: 60, timeMs: 0, durMs: 1000 }],
         metronomeOn: true,
         beatMs: 500,
         countInMs: 1000,
       }
     );
-    // metronome runs from t=1000ms to t<(0+1000+1000)=2000ms at 500ms
-    // intervals → ticks at 1000, 1500. (2000 is exclusive bound.)
+    // The GO! beep covers the downbeat at countInMs (1000ms), so the
+    // metronome starts one beat later at 1500ms. Range [1500, 2000).
     const metronomeTimes = transportSchedule.mock.calls.map((c) => c[1]);
-    expect(metronomeTimes).toEqual([1.0, 1.5]);
+    expect(metronomeTimes).toEqual([1.5]);
   });
 
-  it('alternates 880 Hz strong / 660 Hz weak metronome beats every 3rd', () => {
+  it('accents the bar downbeat (4/4 default) — 880 Hz strong, 660 Hz weak', () => {
     const metronome = makeInstrumentStub();
     scheduleSectionPlayback(
       { piano: null, metronome },
@@ -177,18 +175,41 @@ describe('scheduleSectionPlayback', () => {
         metronomeOn: true,
         beatMs: 500,
         countInMs: 0,
+        // default beatsPerMeasure = 4
       }
     );
-    // First fire each scheduled callback to drive the instrument calls.
     for (const [cb, time] of transportSchedule.mock.calls) {
       (cb as (t: number) => void)(time as number);
     }
     const freqs = metronome.triggerAttackRelease.mock.calls.map((c) => c[0]);
-    // Beat 0 = 880, 1 = 660, 2 = 660, 3 = 880, ...
-    expect(freqs[0]).toBe(880);
-    expect(freqs[1]).toBe(660);
-    expect(freqs[2]).toBe(660);
-    expect(freqs[3]).toBe(880);
+    // Starts at beat index 1 (downbeat covered by GO). beat%4===0 → 880.
+    // beats 1,2,3 → 660; beat 4 → 880; beats 5,6,7 → 660; beat 8 → 880.
+    expect(freqs[0]).toBe(660); // beat 1
+    expect(freqs[3]).toBe(880); // beat 4 (next bar downbeat)
+    expect(freqs[7]).toBe(880); // beat 8
+  });
+
+  it('follows the time signature: 3/4 accents every 3rd beat (P2-16)', () => {
+    const metronome = makeInstrumentStub();
+    scheduleSectionPlayback(
+      { piano: null, metronome },
+      {
+        notes: [{ midi: 60, timeMs: 0, durMs: 5000 }],
+        metronomeOn: true,
+        beatMs: 500,
+        countInMs: 0,
+        beatsPerMeasure: 3,
+      }
+    );
+    for (const [cb, time] of transportSchedule.mock.calls) {
+      (cb as (t: number) => void)(time as number);
+    }
+    const freqs = metronome.triggerAttackRelease.mock.calls.map((c) => c[0]);
+    // beat%3===0 → 880. beats 1,2 → 660; beat 3 → 880; beats 4,5 → 660; 6 → 880.
+    expect(freqs[0]).toBe(660); // beat 1
+    expect(freqs[1]).toBe(660); // beat 2
+    expect(freqs[2]).toBe(880); // beat 3 (downbeat)
+    expect(freqs[5]).toBe(880); // beat 6
   });
 
   it('skips metronome when metronomeOn is false even with metronome set', () => {
@@ -259,10 +280,10 @@ describe('scheduleSectionPlayback', () => {
         countInMs: 0,
       }
     );
-    // 2 ghost calls + (last.timeMs+last.durMs+1000)/beatMs metronome ticks
-    // Metronome from t=0 to t<(1000+500+1000)=2500ms at 500ms = 5 ticks
-    // Total: 2 + 5 = 7
-    expect(transportSchedule).toHaveBeenCalledTimes(7);
+    // 2 ghost calls + metronome ticks. Metronome from t=500 (one beat
+    // after the 0ms count-in) to t<(1000+500+1000)=2500ms at 500ms:
+    // 500,1000,1500,2000 = 4 ticks. Total: 2 + 4 = 6.
+    expect(transportSchedule).toHaveBeenCalledTimes(6);
   });
 });
 

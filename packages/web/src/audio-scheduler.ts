@@ -108,14 +108,18 @@ export interface SectionPlaybackOptions {
    *  伴奏練習では「自分のパートは鳴らさず、歌のパートだけ流れる」が
    *  業界標準（SmartMusic の Accompaniment / Synthesia の Background）。 */
   backingNotes?: ReadonlyArray<SchedulerNote>;
-  /** When true, schedule the practice metronome (3-beat strong / weak
-   *  pattern) starting after the count-in window. */
+  /** When true, schedule the practice metronome (strong-beat accent on
+   *  the downbeat, weak clicks elsewhere) starting after the count-in. */
   metronomeOn: boolean;
   /** Beat duration in ms at the user's chosen tempoPct. */
   beatMs: number;
   /** Count-in duration in ms — the practice metronome starts after this
    *  offset so it doesn't double up with the count-in clicks. */
   countInMs: number;
+  /** Quarter-note beats per bar for the accent pattern (4/4 → 4, 3/4 → 3,
+   *  6/8 → 3). Default 4. Previously hardcoded to 3, so every 4/4 song
+   *  got a waltz accent. */
+  beatsPerMeasure?: number;
 }
 
 /**
@@ -158,8 +162,13 @@ export function scheduleSectionPlayback(
     const metronome = deps.metronome;
     const last = opts.notes[opts.notes.length - 1];
     const totalMs = last.timeMs + last.durMs + 1000;
-    for (let t = opts.countInMs, beat = 0; t < totalMs; t += opts.beatMs, beat++) {
-      const freq = beat % 3 === 0 ? 880 : 660;
+    const beatsPerBar = opts.beatsPerMeasure && opts.beatsPerMeasure > 0 ? opts.beatsPerMeasure : 4;
+    // The count-in's "GO!" beep already lands on the downbeat at countInMs,
+    // so start the metronome one beat later (beat index 1) to avoid a
+    // triple-stacked hit at the section start. Accent (880 Hz) lands on
+    // each bar's downbeat; other beats click at 660 Hz.
+    for (let t = opts.countInMs + opts.beatMs, beat = 1; t < totalMs; t += opts.beatMs, beat++) {
+      const freq = beat % beatsPerBar === 0 ? 880 : 660;
       Tone.Transport.schedule((time) => {
         metronome.triggerAttackRelease(freq, 0.04, time);
       }, t / 1000);
