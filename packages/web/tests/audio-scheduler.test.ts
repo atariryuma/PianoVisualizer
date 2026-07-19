@@ -35,58 +35,58 @@ beforeEach(() => {
 });
 
 describe('scheduleCountInBeeps', () => {
-  it('schedules N click beats + a final GO beep at countInMs offset', () => {
+  // Count-in beeps are now scheduled on Tone.Transport (relative to
+  // Transport position 0) so Transport.cancel() can kill pending beeps
+  // on quit. Each transportSchedule call is (callback, offsetSec); the
+  // callback fires with the precise audio `time` and calls the synth.
+  function runScheduled() {
+    for (const call of transportSchedule.mock.calls) {
+      (call[0] as (t: number) => void)(0);
+    }
+  }
+
+  it('schedules N clicks + a final GO beep on the Transport', () => {
     const metronome = makeInstrumentStub();
-    scheduleCountInBeeps(
-      { metronome, piano: null },
-      100, // startAudioTime
-      { countInMs: 2000, beats: 4 }
-    );
-    // 4 click calls + 1 final GO call
+    scheduleCountInBeeps({ metronome, piano: null }, 100, { countInMs: 2000, beats: 4 });
+    expect(transportSchedule).toHaveBeenCalledTimes(5); // 4 clicks + GO
+    runScheduled();
     expect(metronome.triggerAttackRelease).toHaveBeenCalledTimes(5);
   });
 
-  it('spaces click beats evenly across the count-in window', () => {
+  it('spaces clicks one real beat apart (Transport-relative offsets)', () => {
     const metronome = makeInstrumentStub();
     scheduleCountInBeeps({ metronome, piano: null }, 0, { countInMs: 2000, beats: 4 });
-    // beatSec = 2000ms / 4 / 1000 = 0.5s
-    // Calls 0..3 land at startAudioTime + 0, +0.5, +1.0, +1.5
-    const callTimes = metronome.triggerAttackRelease.mock.calls.slice(0, 4).map((c) => c[2]);
-    expect(callTimes).toEqual([0, 0.5, 1.0, 1.5]);
+    // beatSec = 2000 / 4 / 1000 = 0.5s → clicks at 0, 0.5, 1.0, 1.5, GO at 2.0
+    const offsets = transportSchedule.mock.calls.map((c) => c[1]);
+    expect(offsets).toEqual([0, 0.5, 1.0, 1.5, 2.0]);
   });
 
   it('uses 660 Hz for clicks and 990 Hz for the GO beep', () => {
     const metronome = makeInstrumentStub();
     scheduleCountInBeeps({ metronome, piano: null }, 0, { countInMs: 1000, beats: 2 });
+    runScheduled();
     const calls = metronome.triggerAttackRelease.mock.calls;
-    // First N are clicks at 660; last is GO at 990.
     expect(calls[0][0]).toBe(660);
     expect(calls[1][0]).toBe(660);
     expect(calls[calls.length - 1][0]).toBe(990);
   });
 
-  it('lands the GO beep exactly at countInMs offset (where the first note plays)', () => {
+  it('lands the GO beep exactly at the countInMs offset', () => {
     const metronome = makeInstrumentStub();
-    scheduleCountInBeeps(
-      { metronome, piano: null },
-      10, // startAudioTime
-      { countInMs: 3000, beats: 4 }
-    );
-    const goCall = metronome.triggerAttackRelease.mock.calls.at(-1)!;
-    expect(goCall[0]).toBe(990);
-    expect(goCall[2]).toBe(10 + 3000 / 1000); // 13
+    scheduleCountInBeeps({ metronome, piano: null }, 10, { countInMs: 3000, beats: 4 });
+    const goOffset = transportSchedule.mock.calls.at(-1)![1];
+    expect(goOffset).toBe(3000 / 1000); // 3.0s Transport-relative
   });
 
   it('honors a non-default beat count', () => {
     const metronome = makeInstrumentStub();
     scheduleCountInBeeps({ metronome, piano: null }, 0, { countInMs: 1500, beats: 6 });
-    expect(metronome.triggerAttackRelease).toHaveBeenCalledTimes(7); // 6 clicks + GO
+    expect(transportSchedule).toHaveBeenCalledTimes(7); // 6 clicks + GO
   });
 
   it('no-ops when metronome is null (mic-only mode)', () => {
-    expect(() =>
-      scheduleCountInBeeps({ metronome: null, piano: null }, 0, { countInMs: 1000, beats: 4 })
-    ).not.toThrow();
+    scheduleCountInBeeps({ metronome: null, piano: null }, 0, { countInMs: 1000, beats: 4 });
+    expect(transportSchedule).not.toHaveBeenCalled();
   });
 
   it('swallows errors from the instrument (suspended AudioContext)', () => {
@@ -95,10 +95,11 @@ describe('scheduleCountInBeeps', () => {
         throw new Error('AudioContext suspended');
       }),
     };
-    // Should NOT throw — practice mode keeps working without click sound.
-    expect(() =>
-      scheduleCountInBeeps({ metronome, piano: null }, 0, { countInMs: 1000, beats: 4 })
-    ).not.toThrow();
+    scheduleCountInBeeps({ metronome, piano: null }, 0, { countInMs: 1000, beats: 4 });
+    // Should NOT throw when the callback runs against a suspended context.
+    expect(() => {
+      for (const call of transportSchedule.mock.calls) (call[0] as (t: number) => void)(0);
+    }).not.toThrow();
   });
 });
 

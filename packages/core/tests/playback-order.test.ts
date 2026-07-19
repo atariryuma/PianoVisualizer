@@ -125,6 +125,56 @@ describe('parsePlaybackOrderFromXml — voltas (1st / 2nd ending)', () => {
     ]);
     expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 2, 3, 0, 1, 4]);
   });
+
+  it('comma-shared ending: |: m1 [1,2. m2] :| m3 plays the ending on both passes', () => {
+    // number="1,2" は1つの括弧を1周目・2周目で共有する正規の MusicXML。
+    // カンマを番号ごとに正規化していれば両周とも括弧を鳴らして 0,1,0,1,2 になる。
+    const xml = buildScore([
+      { fwdRepeat: true },
+      { ending: [{ num: '1,2', type: 'start' }], bwdRepeat: true },
+      {},
+    ]);
+    expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 0, 1, 2]);
+  });
+
+  it('whitespace in ending number="1, 2" is trimmed and behaves like "1,2"', () => {
+    const xml = buildScore([
+      { fwdRepeat: true },
+      { ending: [{ num: '1, 2', type: 'start' }], bwdRepeat: true },
+      {},
+    ]);
+    expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 0, 1, 2]);
+  });
+
+  it('comma-shared 2nd ending: |: m1 [1.] :| [2,3. m3] m4 does not truncate', () => {
+    // 2周目の再開点(2番括弧)が number="2,3" で書かれても、正規化後は '2'/'3' が
+    // 立つので探索が成立し、以降の小節が脱落しない。旧実装は '2'/'3' 完全一致に
+    // 失敗して 0,1,0 で切れていた。
+    const xml = buildScore([
+      { fwdRepeat: true },
+      { ending: [{ num: '1', type: 'start' }], bwdRepeat: true },
+      { ending: [{ num: '2,3', type: 'start' }] },
+      {},
+    ]);
+    const r = parsePlaybackOrderFromXml(xml, { parser });
+    expect(r).toEqual([0, 1, 0, 2, 3]);
+    expect(r).toContain(3);
+  });
+
+  it('no matching 2nd bracket: |: m1 [1.] :| m3 m4 keeps the trailing measures', () => {
+    // 明示的な2番括弧が無い譜面。探索が末尾まで走ってもフォールバックで素通しし、
+    // 以降の小節(2,3)を落とさない。旧実装は 0,1,0 で末尾が消えていた。
+    const xml = buildScore([
+      { fwdRepeat: true },
+      { ending: [{ num: '1', type: 'start' }], bwdRepeat: true },
+      {},
+      {},
+    ]);
+    const r = parsePlaybackOrderFromXml(xml, { parser });
+    expect(r).toContain(2);
+    expect(r).toContain(3);
+    expect(r).toEqual([0, 1, 0, 1, 2, 3]);
+  });
 });
 
 describe('parsePlaybackOrderFromXml — D.C. al Fine', () => {
@@ -157,6 +207,35 @@ describe('parsePlaybackOrderFromXml — D.S. al Coda', () => {
     // 0,1,2,3 → D.S. → 1,2 (tocoda fires post-DS) → 4,5
     const r = parsePlaybackOrderFromXml(xml, { parser });
     expect(r).toEqual([0, 1, 2, 3, 1, 2, 4, 5]);
+  });
+
+  it('element-only <segno/> / <coda/> landings still fire the D.S. al Coda jump', () => {
+    // 着地点を <sound segno|coda> 属性ではなく <direction-type><segno/> /
+    // <coda/> の記号要素だけで書く譜面。旧実装は属性しか見ず segnoIdx/codaIdx が
+    // 立たないためジャンプが不発だった。
+    const raw =
+      HEADER +
+      `<measure number="1"></measure>` +
+      `<measure number="2"><direction><direction-type><segno/></direction-type></direction></measure>` +
+      `<measure number="3"><direction><sound tocoda="x"/></direction></measure>` +
+      `<measure number="4"><direction><sound dalsegno="x"/></direction></measure>` +
+      `<measure number="5"><direction><direction-type><coda/></direction-type></direction></measure>` +
+      `<measure number="6"></measure>` +
+      FOOTER;
+    const r = parsePlaybackOrderFromXml(raw, { parser });
+    expect(r).toEqual([0, 1, 2, 3, 1, 2, 4, 5]);
+  });
+
+  it('measure-level <sound> (no <direction> wrapper) is honored — D.C. al Fine', () => {
+    // score-timing.ts が対応済みの measure 直下 <sound> を playback-order でも読む。
+    const raw =
+      HEADER +
+      `<measure number="1"><sound fine="yes"/></measure>` +
+      `<measure number="2"></measure>` +
+      `<measure number="3"><sound dacapo="yes"/></measure>` +
+      FOOTER;
+    const r = parsePlaybackOrderFromXml(raw, { parser });
+    expect(r).toEqual([0, 1, 2, 0]);
   });
 });
 

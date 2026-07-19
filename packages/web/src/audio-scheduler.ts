@@ -43,9 +43,17 @@ export interface CountInOptions {
 }
 
 /**
- * Schedule the count-in: `beats` low-pitched clicks (660 Hz) at evenly
- * spaced positions starting from `startAudioTime`, plus a single high-
- * pitched (990 Hz) "GO!" beep at `startAudioTime + countInMs/1000`.
+ * Schedule the count-in: `beats` low-pitched clicks (660 Hz) one real
+ * beat apart, plus a single high-pitched (990 Hz) "GO!" beep at
+ * `countInMs`. Clicks are end-anchored (the last click lands one beat
+ * before GO) so the interval always equals the song's beat even when
+ * the count-in length was clamped.
+ *
+ * Scheduled on `Tone.Transport` (relative to Transport position 0), NOT
+ * at absolute context time — so `Transport.cancel()` on quit / section
+ * change kills any still-pending beeps instead of letting them ring out
+ * over the song panel. The CALLER must `Tone.Transport.start(startAudioTime)`
+ * after this returns (both the rhythm/listen and guided branches do).
  *
  * No-op when `deps.metronome` is null. Wraps the schedule calls in a
  * try/catch — Tone occasionally throws when the AudioContext is
@@ -54,18 +62,29 @@ export interface CountInOptions {
  */
 export function scheduleCountInBeeps(
   deps: AudioSchedulerDeps,
-  startAudioTime: number,
+  _startAudioTime: number,
   opts: CountInOptions
 ): void {
   if (!deps.metronome) return;
+  const metronome = deps.metronome;
   const beatSec = opts.countInMs / opts.beats / 1000;
+  // The callback fires later (from Transport's tick), outside the
+  // schedule-time try/catch, so guard the synth call there too — a
+  // suspended AudioContext at fire time shouldn't crash the tick.
+  const beep = (freq: number, dur: number) => (time: number) => {
+    try {
+      metronome.triggerAttackRelease(freq, dur, time);
+    } catch {
+      /* suspended context / disposed instrument — lose the click, not the run */
+    }
+  };
   try {
     for (let i = 0; i < opts.beats; i++) {
-      deps.metronome.triggerAttackRelease(660, 0.05, startAudioTime + i * beatSec);
+      Tone.Transport.schedule(beep(660, 0.05), i * beatSec);
     }
-    deps.metronome.triggerAttackRelease(990, 0.08, startAudioTime + opts.countInMs / 1000);
+    Tone.Transport.schedule(beep(990, 0.08), opts.countInMs / 1000);
   } catch {
-    // Suspended AudioContext, instrument disposed mid-schedule, etc.
+    // Transport.schedule itself threw (Transport in a bad state).
     // Practice still works — the kid loses the count-in click but the
     // section starts on time.
   }

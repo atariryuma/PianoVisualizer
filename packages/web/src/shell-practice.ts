@@ -109,6 +109,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const { state, prefs, config, t, dom } = deps;
 
   let COUNT_IN_MS = 4000; // pre-roll before the first note (4 beats)
+  let COUNT_IN_BEATS = 4; // number of count-in clicks (tempo-derived)
   let LANE_LOOKAHEAD_MS = 4000; // how far ahead notes appear in the lane
   /** Practice-lane back-reference — set by SelectSong / passed back here so
    *  practice-timings.recomputePracticeTimings can refresh per-frame opts. */
@@ -128,6 +129,9 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     setCountInMs: (ms: number) => {
       COUNT_IN_MS = ms;
     },
+    setCountInBeats: (n: number) => {
+      COUNT_IN_BEATS = n;
+    },
     setLaneLookaheadMs: (ms: number) => {
       LANE_LOOKAHEAD_MS = ms;
     },
@@ -146,7 +150,12 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       chordMateToleranceMs: PianoCore.CHORD_MATE_TOLERANCE_MS,
       durationMinTolMs: PianoCore.DURATION_MIN_TOL_MS,
       durationTolFraction: PianoCore.DURATION_TOL_FRACTION,
-      countInMs: COUNT_IN_MS,
+      // getter で渡す — recomputePracticeTimings がテンポ変更のたびに
+      // COUNT_IN_MS を更新するので、値渡しだと初期値 4000ms に固定され
+      // guided のクロック凍結境界・早押しゲートが実カウントインとズレる。
+      get countInMs() {
+        return COUNT_IN_MS;
+      },
     },
     Tone: deps.Tone,
     showHitChip: deps.showHitChip,
@@ -173,6 +182,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     audioScheduler: deps.audioScheduler,
     cursor: deps.osmdAdapter,
     getCountInMs: () => COUNT_IN_MS,
+    getCountInBeats: () => COUNT_IN_BEATS,
   } as any);
 
   // Hot-path bilingual cache — refreshed on langchange so per-frame lane draw

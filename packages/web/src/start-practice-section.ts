@@ -410,11 +410,16 @@ export function createStartPracticeSection(
       deps.Tone.Transport.position = 0;
 
       if (deps.practice.mode === 'guided') {
-        // Guided: cursor visible, lane parks current note at hit
-        // line. No transport scheduling.
+        // Guided: cursor visible, lane parks current note at hit line.
+        // No section timeline, but we DO run the Transport for the
+        // count-in beeps — scheduling them on the Transport (rather than
+        // absolute audio time) lets Transport.cancel() on quit kill any
+        // still-pending beeps. The guided clock reads context.currentTime
+        // directly, so a running Transport doesn't affect note timing.
         deps.osmdAdapter.showCursor();
         deps.practice.startAudioTime = deps.Tone.now();
         deps.scheduleCountInBeeps(deps.practice.startAudioTime);
+        deps.Tone.Transport.start(deps.practice.startAudioTime);
       } else {
         // Rhythm / Listen: full timeline scheduling.
         const ghostActive = deps.practice.mode === 'listen' || !!deps.practice.ghostOn;

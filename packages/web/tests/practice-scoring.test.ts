@@ -224,6 +224,53 @@ describe('practiceElapsedMs', () => {
     });
     expect(fx.scoring.practiceElapsedMs()).toBe(8000);
   });
+
+  it('reads countInMs live through a getter (P0-1 shell-wiring regression)', () => {
+    // The shell passes tuning.countInMs as a getter over its COUNT_IN_MS
+    // let so a mid-session tempo change is picked up. Mirror that here:
+    // the guided count-in boundary must follow the current value, not a
+    // snapshot taken at scoring-construction time.
+    let liveCountIn = 4000;
+    const state: PracticeScoringStateRef = { recentPitches: [], flow: 0, combo: 0, bestCombo: 0 };
+    const practice: PracticeScoringRef = {
+      enabled: true,
+      mode: 'guided',
+      sectionNotes: [],
+      currentNoteIdx: 0,
+      hits: 0,
+      sectionCombo: 0,
+      sectionBestCombo: 0,
+      timingScoreSum: 0,
+      durationScoreSum: 0,
+      durationScoredCount: 0,
+      pendingHolds: new Map(),
+      startAudioTime: 0,
+      audioOffsetMs: 0,
+    };
+    const scoring = createPracticeScoring({
+      state,
+      practice,
+      tuning: {
+        ...TUNING,
+        get countInMs() {
+          return liveCountIn;
+        },
+      },
+      Tone: { context: { currentTime: 3 } }, // 3000 ms elapsed
+      showHitChip: vi.fn(),
+      spawnBurst: vi.fn(),
+      getScreen: () => ({ W: 800, H: 600 }),
+      t: (k) => k,
+      midiToName: (m) => 'M' + m,
+    });
+    // 3000 < 4000 → still counting in → real time.
+    expect(scoring.practiceElapsedMs()).toBe(3000);
+    // Tempo speeds up: count-in shrinks to 2500. Now 3000 > 2500 → past
+    // count-in → frozen at countInMs (no current note). The boundary
+    // MUST have moved with the getter.
+    liveCountIn = 2500;
+    expect(scoring.practiceElapsedMs()).toBe(2500);
+  });
 });
 
 // ─── matchNoteOnset ────────────────────────────────────────────────

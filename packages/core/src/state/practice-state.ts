@@ -718,11 +718,18 @@ export function practiceBeatMs(bpm: number, tempoPct: number): number {
 
 export interface PracticeTimings {
   /** Count-in length in ms — clamped to a usable range so very slow songs
-   *  don't have a 30-second pre-roll and very fast ones aren't rushed. */
+   *  don't have a 30-second pre-roll and very fast ones aren't rushed.
+   *  Always an integer multiple of `beatMs` (= beats × beatMs) so the
+   *  count-in clicks land exactly on the song's beat grid. */
   countInMs: number;
   /** How far ahead in time the lane shows. We mirror count-in so falling
    *  notes traverse the lane during the count-in animation. */
   laneLookaheadMs: number;
+  /** Number of count-in clicks. Normally 4, but the clamp is absorbed
+   *  here (not by squeezing 4 clicks into a fixed window) so each click
+   *  stays one real beat apart — a fast song counts in more beats, a
+   *  slow song fewer, but always at the true tempo. */
+  beats: number;
 }
 
 export interface PracticeTimingOptions {
@@ -730,22 +737,36 @@ export interface PracticeTimingOptions {
   minCountInMs?: number;
   /** Upper clamp on count-in. Default 7000 ms. */
   maxCountInMs?: number;
-  /** Beats counted in. Default 4 (standard musical count-in). */
+  /** Target beats counted in. Default 4 (standard musical count-in).
+   *  The actual beat count may grow/shrink to keep the total in the
+   *  clamp window while preserving the real beat interval. */
   countInBeats?: number;
 }
 
 /** Derive count-in + lane-lookahead from a beat length. Used by
  *  recomputePracticeTimings() in the legacy app whenever tempoPct or
- *  the song's BPM changes. */
+ *  the song's BPM changes.
+ *
+ *  Clamp semantics: instead of squeezing a fixed 4 clicks into the
+ *  [lo, hi] window (which desynced the click interval from the song's
+ *  tempo whenever 4×beatMs fell outside the window), we keep the click
+ *  interval equal to `beatMs` and pick the beat COUNT that lands the
+ *  total inside [lo, hi] as close to the target (4) as possible. */
 export function computePracticeTimings(
   beatMs: number,
   opts: PracticeTimingOptions = {}
 ): PracticeTimings {
-  const beats = opts.countInBeats ?? 4;
+  const target = opts.countInBeats ?? 4;
   const lo = opts.minCountInMs ?? 2400;
   const hi = opts.maxCountInMs ?? 7000;
-  const countInMs = Math.round(Math.max(lo, Math.min(hi, beats * beatMs)));
-  return { countInMs, laneLookaheadMs: countInMs };
+  const safeBeat = beatMs > 0 ? beatMs : 1;
+  const minBeats = Math.max(1, Math.ceil(lo / safeBeat));
+  const maxBeats = Math.max(1, Math.floor(hi / safeBeat));
+  // When the window is narrower than a single beat (very slow tempo),
+  // minBeats can exceed maxBeats — prefer staying under the upper clamp.
+  const beats = minBeats > maxBeats ? maxBeats : Math.max(minBeats, Math.min(maxBeats, target));
+  const countInMs = Math.round(beats * safeBeat);
+  return { countInMs, laneLookaheadMs: countInMs, beats };
 }
 
 // =====================================================================

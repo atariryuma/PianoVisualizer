@@ -93,13 +93,18 @@ export function installStartButton(btn: HTMLElement, deps: BootSessionDeps): voi
 export function installSongStartButton(btn: HTMLElement, deps: BootSessionDeps): void {
   btn.addEventListener('click', async () => {
     if (deps.state.starting) return;
+    // Guard the WHOLE handler, not just the cold-boot branch. The
+    // running===true branch below skips audio init but still awaits
+    // startPracticeSection; without setting `starting` here, a double-
+    // tap would pass this guard twice and run two startPracticeSection
+    // calls in parallel (double count-in, racy Transport scheduling).
+    deps.state.starting = true;
     // Defer hiding the song panel until initAudio resolves —
     // otherwise an initAudio failure leaves the user on a bare
     // canvas (the previous selectSong has already hidden the title
     // screen).
     try {
       if (!deps.state.running) {
-        deps.state.starting = true;
         await deps.initAudio();
         deps.songPanel?.classList.remove('visible');
         deps.showRunningUI();

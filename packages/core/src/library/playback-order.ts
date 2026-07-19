@@ -109,8 +109,17 @@ export function parsePlaybackOrderFromXml(
       const num = e.getAttribute('number');
       const type = e.getAttribute('type');
       if (num == null) continue;
-      if (type === 'start') startsEnding[num] = true;
-      if (type === 'stop' || type === 'discontinue') stopsEnding[num] = true;
+      // `<ending number="1,2">` は正規の MusicXML（複数括弧の共有）。カンマ区切りを
+      // 番号ごとに正規化し、番号単位で startsEnding / stopsEnding を立てる。
+      // これを怠ると raw キー完全一致になり、2周目の括弧探索が失敗して曲が途中で切れる。
+      const nums = num
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      for (const n of nums) {
+        if (type === 'start') startsEnding[n] = true;
+        if (type === 'stop' || type === 'discontinue') stopsEnding[n] = true;
+      }
     }
     let fwdRepeat = false;
     let bwdRepeat = false;
@@ -129,7 +138,14 @@ export function parsePlaybackOrderFromXml(
     let coda = false;
     let segno = false;
     let dalsegno = false;
-    for (const s of Array.from(m.querySelectorAll('direction sound'))) {
+    // <direction><sound .../> と measure 直下 <sound .../> の両方を走査する。
+    // 後者は <direction> を介さない書式で、score-timing.ts では既に対応済み
+    // （この非対称を解消しないと同じ譜面でテンポは読めるのにジャンプだけ不発になる）。
+    const soundEls = [
+      ...Array.from(m.querySelectorAll('direction sound')),
+      ...Array.from(m.children).filter((c) => c.tagName.toLowerCase() === 'sound'),
+    ];
+    for (const s of soundEls) {
       if (s.getAttribute('dacapo') === 'yes') dacapo = true;
       if (s.getAttribute('fine') === 'yes') fine = true;
       if (s.getAttribute('tocoda')) tocoda = true;
@@ -137,6 +153,11 @@ export function parsePlaybackOrderFromXml(
       if (s.getAttribute('segno')) segno = true;
       if (s.getAttribute('dalsegno')) dalsegno = true;
     }
+    // 着地点を <sound> 属性ではなく記号要素だけで書く譜面も普通に存在する
+    // （<direction-type><coda/> / <segno/>）。この場合 segnoIdx / codaIdx が
+    // 立たず D.S. / To Coda が不発になるため、記号要素も拾う。
+    if (m.querySelector('direction direction-type coda')) coda = true;
+    if (m.querySelector('direction direction-type segno')) segno = true;
     for (const w of Array.from(m.querySelectorAll('direction words'))) {
       const text = (w.textContent || '').trim();
       if (/^D\.?C\./i.test(text) || /Da\s*Capo/i.test(text)) dacapo = true;
@@ -181,12 +202,24 @@ export function parsePlaybackOrderFromXml(
     // Skip 1st-ending volta on the second pass: jump forward to 2nd / 3rd
     // ending or out of the volta block.
     if (m.startsEnding['1'] && repeatTaken.has(repeatStartIdx)) {
+      // 再開点 = 「'1' 以外の番号で始まる括弧」か「1番括弧を抜けた小節（括弧外）」。
+      // '2'/'3' 決め打ちだと `number="2,3"` のようなカンマ表記や、3番以降の括弧、
+      // 明示的な2括弧の無い譜面で探索が末尾まで走り、以降の小節が丸ごと脱落する。
       let j = i + 1;
-      while (j < info.length && !info[j].startsEnding['2'] && !info[j].startsEnding['3']) {
+      let past1 = m.stopsEnding['1']; // 開始小節が stop も兼ねる単一小節の1番括弧
+      while (j < info.length) {
+        const mj = info[j];
+        if (Object.keys(mj.startsEnding).some((n) => n !== '1')) break;
+        if (past1 && !mj.startsEnding['1']) break;
+        if (mj.stopsEnding['1']) past1 = true;
         j++;
       }
-      i = j;
-      continue;
+      if (j < info.length) {
+        i = j;
+        continue;
+      }
+      // 末尾まで再開点が見つからない場合は skip せず素通しする（曲の切り捨て防止）。
+      // 素通しでは1番括弧を再度鳴らすが、以降の小節を丸ごと落とすよりは安全。
     }
     if (m.fwdRepeat) repeatStartIdx = i;
     order.push(i);

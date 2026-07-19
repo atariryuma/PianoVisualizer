@@ -257,6 +257,11 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
       composerOverride?: string;
     } = {}
   ): Promise<UserSongRecord> {
+    // ファイル選択経路（user-songs-ui.ts → addFromBlob）は addFromUrl の
+    // ような事前チェックが無く無防備なので、URL 経路と同じサイズ上限を課す。
+    if (blob.size > deps.maxBytes) {
+      throw new Error('File too large (' + Math.round(blob.size / 1024 / 1024) + ' MB; max 20 MB)');
+    }
     const isMxl = await detectIsMxl(blob, opts);
     const xmlText = isMxl ? await deps.unzipMxlToXmlText(blob) : await blob.text();
     const meta = deps.fns.parseMusicXmlMetadata(xmlText);

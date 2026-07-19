@@ -259,6 +259,28 @@ describe('installSongStartButton — debounce', () => {
     expect(fx.spies.initAudio).not.toHaveBeenCalled();
     expect(fx.spies.startPracticeSection).not.toHaveBeenCalled();
   });
+
+  it('double-tap while running starts the section only once', async () => {
+    // Regression: the running===true branch used to skip setting
+    // state.starting, so a second tap ran startPracticeSection in
+    // parallel (double count-in). The whole handler is now guarded.
+    const btn = makeBtn();
+    const songPanel = makeSongPanel();
+    let resolveStart: () => void = () => {};
+    const startPracticeSection = vi.fn(() => new Promise<void>((r) => (resolveStart = r)));
+    const fx = makeDeps({ songPanel, startPracticeSection });
+    fx.state.running = true;
+    installSongStartButton(btn, fx.deps);
+    btn.click(); // tap 1 — enters, sets starting=true, awaits startPracticeSection
+    await Promise.resolve();
+    btn.click(); // tap 2 — must be dropped by the starting guard
+    await Promise.resolve();
+    expect(startPracticeSection).toHaveBeenCalledTimes(1);
+    resolveStart();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fx.state.starting).toBe(false);
+  });
 });
 
 describe('installSongStartButton — error path', () => {

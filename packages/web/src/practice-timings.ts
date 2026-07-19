@@ -43,9 +43,14 @@ export interface PracticeTimingsSong {
 export interface PracticeTimingsCoreFns {
   /** PianoCore.practiceBeatMs. */
   practiceBeatMs(bpm: number, tempoPct: number): number;
-  /** PianoCore.computePracticeTimings — produces both COUNT_IN_MS
-   *  and LANE_LOOKAHEAD_MS scaled to the current beat duration. */
-  computePracticeTimings(beatMs: number): { countInMs: number; laneLookaheadMs: number };
+  /** PianoCore.computePracticeTimings — produces COUNT_IN_MS,
+   *  LANE_LOOKAHEAD_MS, and the count-in beat count, all scaled to the
+   *  current beat duration. */
+  computePracticeTimings(beatMs: number): {
+    countInMs: number;
+    laneLookaheadMs: number;
+    beats: number;
+  };
 }
 
 export interface PracticeTimingsLane {
@@ -63,8 +68,11 @@ export interface PracticeTimingsDeps {
   /** PianoCore math fns. */
   fns: PracticeTimingsCoreFns;
   /** Setters that write back to the shell's COUNT_IN_MS /
-   *  LANE_LOOKAHEAD_MS lets. */
+   *  COUNT_IN_BEATS / LANE_LOOKAHEAD_MS lets. */
   setCountInMs: (ms: number) => void;
+  /** Optional — older call sites that don't track the beat count can
+   *  omit it. */
+  setCountInBeats?: (n: number) => void;
   setLaneLookaheadMs: (ms: number) => void;
   /** Lazy lookup — practice-lane scaffolding singleton is built
    *  later in the shell; thunk avoids TDZ. */
@@ -98,6 +106,7 @@ export function createPracticeTimings(deps: PracticeTimingsDeps): PracticeTiming
   function recomputePracticeTimings(): void {
     const timings = deps.fns.computePracticeTimings(practiceBeatMs());
     deps.setCountInMs(timings.countInMs);
+    deps.setCountInBeats?.(timings.beats);
     deps.setLaneLookaheadMs(timings.laneLookaheadMs);
     // Refresh in lockstep so the first frame's count-in + descent
     // rate match the new section's tempo.

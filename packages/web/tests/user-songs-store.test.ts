@@ -298,6 +298,17 @@ describe('createUserSongsStore — addFromBlob', () => {
     expect(fx.userDb.put).toHaveBeenCalledWith(rec);
     expect(fx.songs[rec.id]).toBeDefined();
   });
+
+  it('throws when blob size exceeds maxBytes (file-picker path guard)', async () => {
+    const fx = makeFixture();
+    const huge = { type: PLAIN_MIME, size: 50 * 1024 * 1024 } as unknown as Blob;
+    await expect(fx.store.addFromBlob(huge, { filename: 'big.xml' })).rejects.toThrow(
+      /File too large/
+    );
+    // 上限で弾かれるので unzip / put まで進まない。
+    expect(fx.unzip).not.toHaveBeenCalled();
+    expect(fx.userDb.put).not.toHaveBeenCalled();
+  });
 });
 
 describe('createUserSongsStore — addFromUrl', () => {

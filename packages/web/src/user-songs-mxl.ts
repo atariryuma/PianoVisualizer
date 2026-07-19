@@ -84,6 +84,12 @@ interface JSZipLibrary {
   loadAsync(buf: ArrayBuffer): Promise<JSZipInstance>;
 }
 
+// 解凍後 XML テキストの文字数上限。zip 爆弾（極端な圧縮率で巨大展開する
+// 悪意ある zip）対策。実在する楽譜 MusicXML はラフマニノフ級の大作でも
+// 数 MB 止まりなので、50MB 相当を超えるものは異常とみなして弾く（正規
+// データは巻き込まない）。
+const MAX_XML_CHARS = 50 * 1024 * 1024;
+
 export interface UnzipMxlDeps {
   /** Held by deps so production gets the lazy global, tests can stub. */
   jszip: JSZipLibrary;
@@ -102,12 +108,20 @@ export async function unzipMxlToXmlText(blob: Blob, deps: UnzipMxlDeps): Promise
   const containerFile = zip.file('META-INF/container.xml');
   if (containerFile) {
     const containerXml = await containerFile.async('text');
-    const m = containerXml.match(/full-path="([^"]+)"/);
+    // full-path はシングルクォート／ダブルクォート双方を許容（出力ツール
+    // により引用符が揺れるため）。
+    const m = containerXml.match(/full-path\s*=\s*["']([^"']+)["']/);
     if (m) scorePath = m[1];
   }
   if (!scorePath) {
     for (const name of Object.keys(zip.files)) {
-      if (name.endsWith('.xml') && !name.startsWith('META-INF')) {
+      // 内部ファイル名は .xml / .musicxml 双方あり得る。大文字拡張子
+      // （SCORE.XML 等）や META-INF の大小揺れも小文字化して吸収する。
+      const lower = name.toLowerCase();
+      if (
+        (lower.endsWith('.xml') || lower.endsWith('.musicxml')) &&
+        !lower.startsWith('meta-inf/')
+      ) {
         scorePath = name;
         break;
       }
@@ -116,5 +130,14 @@ export async function unzipMxlToXmlText(blob: Blob, deps: UnzipMxlDeps): Promise
   if (!scorePath) throw new Error('No score file inside .mxl archive');
   const scoreFile = zip.file(scorePath);
   if (!scoreFile) throw new Error('Score file vanished from zip mid-parse: ' + scorePath);
-  return scoreFile.async('text');
+  const text = await scoreFile.async('text');
+  // zip 爆弾ガード: 解凍後テキストが上限を超えたら拒否する。
+  if (text.length > MAX_XML_CHARS) {
+    throw new Error(
+      'Score XML too large (' +
+        Math.round(text.length / 1024 / 1024) +
+        ' MB of text; possible zip bomb)'
+    );
+  }
+  return text;
 }

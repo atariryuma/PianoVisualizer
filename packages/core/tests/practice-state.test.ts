@@ -771,23 +771,42 @@ describe('practiceBeatMs', () => {
 });
 
 describe('computePracticeTimings', () => {
-  it('4 × beatMs by default, with lookahead = countIn', () => {
-    const out = computePracticeTimings(500); // 120 BPM beat
-    expect(out.countInMs).toBe(2400); // 4 × 500 = 2000 → clamped up to 2400 floor
+  it('4 beats when 4 × beatMs sits inside the clamp window', () => {
+    const out = computePracticeTimings(833.333); // 72 BPM beat → 4×833=3333
+    expect(out.countInMs).toBe(3333);
+    expect(out.beats).toBe(4);
     expect(out.laneLookaheadMs).toBe(out.countInMs);
   });
 
-  it('clamps count-in below the floor (very fast tempo)', () => {
-    expect(computePracticeTimings(100).countInMs).toBe(2400); // 4×100=400 → floor
+  it('adds beats (not a longer interval) below the floor — fast tempo', () => {
+    // 120 BPM: 4×500=2000 < 2400 floor → bump to 5 beats, still 500 apart.
+    const out = computePracticeTimings(500);
+    expect(out.beats).toBe(5);
+    expect(out.countInMs).toBe(2500);
+    // The count-in interval MUST equal the real beat so clicks match tempo.
+    expect(out.countInMs / out.beats).toBe(500);
   });
 
-  it('clamps count-in above the ceiling (very slow tempo)', () => {
-    expect(computePracticeTimings(2500).countInMs).toBe(7000); // 4×2500=10000 → cap
+  it('adds many beats at very fast tempo, still one beat apart', () => {
+    const out = computePracticeTimings(100); // 24 beats × 100 = 2400
+    expect(out.beats).toBe(24);
+    expect(out.countInMs).toBe(2400);
+    expect(out.countInMs / out.beats).toBe(100);
   });
 
-  it('honors custom beat count', () => {
-    const out = computePracticeTimings(500, { countInBeats: 2 });
-    expect(out.countInMs).toBe(2400); // 2×500=1000 → still floored
+  it('drops beats below the ceiling — very slow tempo', () => {
+    // 2500 ms beat: 3 beats = 7500 > 7000 cap → 2 beats = 5000, one beat apart.
+    const out = computePracticeTimings(2500);
+    expect(out.beats).toBe(2);
+    expect(out.countInMs).toBe(5000);
+    expect(out.countInMs / out.beats).toBe(2500);
+  });
+
+  it('honors a feasible custom beat count', () => {
+    // 1500 ms beat: window [2400,7000] allows 2..4 beats; target 2 fits.
+    const out = computePracticeTimings(1500, { countInBeats: 2 });
+    expect(out.beats).toBe(2);
+    expect(out.countInMs).toBe(3000);
   });
 
   it('honors custom min / max', () => {
@@ -796,11 +815,18 @@ describe('computePracticeTimings', () => {
       maxCountInMs: 10000,
     });
     expect(out.countInMs).toBe(2000); // 4×500 within [1000, 10000]
+    expect(out.beats).toBe(4);
+  });
+
+  it('never returns fewer than one beat', () => {
+    // Beat longer than the whole ceiling window.
+    const out = computePracticeTimings(9000);
+    expect(out.beats).toBeGreaterThanOrEqual(1);
+    expect(Number.isInteger(out.countInMs)).toBe(true);
   });
 
   it('rounds to integer ms', () => {
     const out = computePracticeTimings(333.333);
-    // 4×333.333 = 1333.33; below floor 2400 → clamped to 2400
     expect(Number.isInteger(out.countInMs)).toBe(true);
   });
 });

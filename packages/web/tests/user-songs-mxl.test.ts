@@ -181,4 +181,40 @@ describe('unzipMxlToXmlText', () => {
     const out = await unzipMxlToXmlText(makeBlob('z'), { jszip });
     expect(out).toBe(score);
   });
+
+  it('falls back to a .musicxml file when no container.xml is present', async () => {
+    const score = '<score-partwise/>';
+    const jszip = makeJSZip({
+      'score.musicxml': { body: score },
+    });
+    const out = await unzipMxlToXmlText(makeBlob('z'), { jszip });
+    expect(out).toBe(score);
+  });
+
+  it('matches an uppercase .XML extension in the fallback scan', async () => {
+    const score = '<score-partwise/>';
+    const jszip = makeJSZip({
+      'SCORE.XML': { body: score },
+    });
+    const out = await unzipMxlToXmlText(makeBlob('z'), { jszip });
+    expect(out).toBe(score);
+  });
+
+  it('honors a single-quoted full-path in container.xml', async () => {
+    const score = '<score-partwise><foo/></score-partwise>';
+    const jszip = makeJSZip({
+      'META-INF/container.xml': {
+        body: "<container><rootfiles><rootfile full-path='my-score.xml'/></rootfiles></container>",
+      },
+      'my-score.xml': { body: score },
+    });
+    const out = await unzipMxlToXmlText(makeBlob('z'), { jszip });
+    expect(out).toBe(score);
+  });
+
+  it('rejects when the unzipped XML text exceeds the size cap (zip bomb guard)', async () => {
+    const huge = 'a'.repeat(50 * 1024 * 1024 + 1);
+    const jszip = makeJSZip({ 'score.xml': { body: huge } });
+    await expect(unzipMxlToXmlText(makeBlob('z'), { jszip })).rejects.toThrow(/too large/i);
+  });
 });

@@ -88,7 +88,13 @@ export interface PracticeToneAudioDeps {
   /** Read at call time so a tempo change between section starts
    *  uses the fresh count-in length. */
   getCountInMs: () => number;
-  /** Beats per count-in. Default 4 ("4, 3, 2, 1, GO!"). */
+  /** Read at call time — the tempo-derived count-in beat count from
+   *  computePracticeTimings. When present, overrides `beats` so the
+   *  clicks stay one real beat apart (a fast song counts in more beats,
+   *  a slow one fewer). Falls back to `beats` for older call sites. */
+  getCountInBeats?: () => number;
+  /** Fallback beats per count-in when getCountInBeats is absent.
+   *  Default 4 ("4, 3, 2, 1, GO!"). */
   beats?: number;
 }
 
@@ -146,7 +152,7 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     if (!deps.Tone) return;
     deps.audioScheduler.scheduleCountInBeeps({ metronome, piano }, startAudioTime, {
       countInMs: deps.getCountInMs(),
-      beats,
+      beats: deps.getCountInBeats?.() ?? beats,
     });
   }
 

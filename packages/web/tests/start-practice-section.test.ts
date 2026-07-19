@@ -11,8 +11,8 @@
 //   • Full-song listen mode → fullSongMode timeline + sectionIdx=0 +
 //     song-title banner + tempoPct shown as 100.
 //   • Cursor position + scroll-throttle reset.
-//   • Guided mode → no Transport.start; rhythm/listen → schedules +
-//     starts Transport.
+//   • Guided mode → starts Transport for cancelable count-in beeps but
+//     schedules no section timeline; rhythm/listen → schedules + starts.
 //   • Audio-offset probe writes practice.audioOffsetMs via pickAudioOffsetMs.
 //   • Tone failure → falls back to user override / default.
 //   • alertScoreLoadFailedFmt on score-load error.
@@ -481,11 +481,14 @@ describe('startPracticeSection — cursor + scroll', () => {
 // ─── audio mode branching ─────────────────────────────────────────
 
 describe('startPracticeSection — audio mode branching', () => {
-  it('guided: schedules count-in but NOT Transport.start', async () => {
+  it('guided: schedules count-in + starts Transport (cancelable beeps), no section playback', async () => {
     const fx = makeFixture({ practice: { mode: 'guided' } });
     await fx.start(0);
     expect(fx.spies.scheduleCountInBeeps).toHaveBeenCalledOnce();
-    expect(fx.tone!.Transport.start).not.toHaveBeenCalled();
+    // Guided now starts the Transport so the count-in beeps (scheduled on
+    // the Transport) are killable via Transport.cancel() on quit.
+    expect(fx.tone!.Transport.start).toHaveBeenCalled();
+    // But still no section timeline scheduling in guided (wait-mode).
     expect(fx.spies.scheduleSectionPlayback).not.toHaveBeenCalled();
   });
 

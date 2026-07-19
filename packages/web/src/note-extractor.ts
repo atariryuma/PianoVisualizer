@@ -407,6 +407,11 @@ export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}):
       }
       cursorStep++;
     }
+    // ステップ上限に到達＝endReached 前に打ち切った＝楽譜が途中で切れて
+    // いる。collectDiag の有無に関わらず警告し、切り詰めに気付けるようにする。
+    if (!it.endReached && cursorStep >= 20000 && typeof console !== 'undefined') {
+      console.warn('[OSMD] step cap reached — score truncated (' + cursorStep + ' steps)');
+    }
   }
   try {
     osmd.cursor.reset();
