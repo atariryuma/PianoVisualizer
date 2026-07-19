@@ -126,6 +126,12 @@ export interface KeyboardDrawOptions {
    *  real press is never visually competed-against. Pass null in listen mode
    *  / free play so the keyboard renders as before. */
   hintNotes?: ReadonlyMap<number, KeyboardHintNote> | null;
+  /** Guided 練習: いま期待している和音クラスタ全体（正解済み含む）の
+   *  midi 集合。指定時、点灯中だが集合外のキー（= ちがう指）はテーマ色
+   *  ではなく淡いスレート色 + 控えめな輪郭で塗る — 「和音のどのキーが
+   *  違うのか」を手元（鍵盤）で直接見せる。叱り色（赤）は使わない。
+   *  null / 省略で従来挙動（フリープレイ・listen・rhythm）。 */
+  expectedNotes?: ReadonlySet<number> | null;
   /** Animation clock (ms, monotonic). Drives the 1.4 Hz breathing of hint
    *  keys. Ignored when `hintNotes` is empty. */
   nowMs?: number;
@@ -201,9 +207,13 @@ export function drawMidiKeyboard(
     const lit = !!note;
     const sustained = midi.sustainedNotes.has(m);
     const hint = lit || sustained ? null : (hints?.get(m) ?? null);
+    // 期待クラスタ指定時のみ: 点灯中だが期待外 = ちがう指。淡色で示す。
+    const wrongPress = lit && !!opts.expectedNotes && !opts.expectedNotes.has(m);
 
     if (lit || sustained) {
-      ctx.fillStyle = (note && note.synColor) || opts.noteThemeColor(m);
+      ctx.fillStyle = wrongPress
+        ? 'rgba(150, 158, 175, 0.9)'
+        : (note && note.synColor) || opts.noteThemeColor(m);
     } else {
       ctx.fillStyle = restingFill;
     }
@@ -218,7 +228,11 @@ export function drawMidiKeyboard(
       ctx.fillRect(x, kbY, w, h);
     }
 
-    if (lit) {
+    if (lit && wrongPress) {
+      // 正解キーの白リングと差をつける控えめな輪郭。
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(200, 205, 215, 0.6)';
+    } else if (lit) {
       ctx.lineWidth = 2;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     } else if (sustained) {

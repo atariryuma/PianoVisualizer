@@ -173,6 +173,79 @@ describe('drawMidiKeyboard', () => {
   });
 });
 
+describe('drawMidiKeyboard with expectedNotes (guided ちがう指の淡色化)', () => {
+  let midi: KeyboardMidiView;
+  let opts: KeyboardDrawOptions;
+
+  beforeEach(() => {
+    midi = {
+      activeNotes: new Map(),
+      sustainedNotes: new Set(),
+      sustainOn: false,
+    };
+    opts = {
+      screenW: 800,
+      screenH: 600,
+      kbHeight: 50,
+      kbSafeBottom: 4,
+      noteThemeColor: () => '#deadbeef',
+      sustainLabel: 'SUSTAIN',
+      expectedNotes: new Set([60, 64, 67]),
+    };
+  });
+
+  const fillsOf = (stub: ReturnType<typeof makeCanvasStub>) =>
+    stub.calls.filter((c) => c.method === 'set fillStyle').map((c) => c.args[0] as string);
+  const strokesOf = (stub: ReturnType<typeof makeCanvasStub>) =>
+    stub.calls.filter((c) => c.method === 'set strokeStyle').map((c) => c.args[0] as string);
+
+  it('期待外の点灯キーは淡スレート塗り + 控えめ輪郭（白リング無し）', () => {
+    midi.activeNotes.set(69, { synColor: null }); // A4 — 期待 {C,E,G} の外
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(fillsOf(stub)).toContain('rgba(150, 158, 175, 0.9)');
+    expect(strokesOf(stub)).toContain('rgba(200, 205, 215, 0.6)');
+    expect(strokesOf(stub)).not.toContain('rgba(255, 255, 255, 0.9)');
+    expect(fillsOf(stub)).not.toContain('#deadbeef');
+  });
+
+  it('期待内の点灯キーは従来どおりテーマ色 + 白リング', () => {
+    midi.activeNotes.set(60, { synColor: null });
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(fillsOf(stub)).toContain('#deadbeef');
+    expect(strokesOf(stub)).toContain('rgba(255, 255, 255, 0.9)');
+    expect(fillsOf(stub)).not.toContain('rgba(150, 158, 175, 0.9)');
+  });
+
+  it('正解 2 + まちがい 1 の同時押し: まちがいだけ淡色', () => {
+    midi.activeNotes.set(60, { synColor: null });
+    midi.activeNotes.set(64, { synColor: null });
+    midi.activeNotes.set(69, { synColor: null }); // これだけ期待外
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    const fills = fillsOf(stub);
+    expect(fills.filter((f) => f === '#deadbeef')).toHaveLength(2);
+    expect(fills.filter((f) => f === 'rgba(150, 158, 175, 0.9)')).toHaveLength(1);
+  });
+
+  it('expectedNotes 無し（フリープレイ / rhythm）は従来挙動のまま', () => {
+    delete opts.expectedNotes;
+    midi.activeNotes.set(69, { synColor: null });
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(fillsOf(stub)).toContain('#deadbeef');
+    expect(fillsOf(stub)).not.toContain('rgba(150, 158, 175, 0.9)');
+  });
+
+  it('sustained のみ（押していない）キーは期待外でも淡色化しない', () => {
+    midi.sustainedNotes.add(69);
+    const stub = makeCanvasStub();
+    drawMidiKeyboard(stub.ctx, midi, opts);
+    expect(fillsOf(stub)).not.toContain('rgba(150, 158, 175, 0.9)');
+  });
+});
+
 describe('drawMidiKeyboard with hint notes', () => {
   let midi: KeyboardMidiView;
   let opts: KeyboardDrawOptions;

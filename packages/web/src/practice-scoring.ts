@@ -246,6 +246,38 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       }
     }
 
+    // 和音の弾き直し救済: 部分正解の和音を「まるごと弾き直す」のは子どもの
+    // いちばん自然なリトライだが、正解済みメンバーはカーソルの後ろにいる
+    // ため、従来は youPlayed（まちがい）チップで叱られていた。現在の
+    // クラスタ内に解決済みの同音があれば静かに無視する — チップ無し・
+    // 減点無し・二重加点も無し。
+    if (!matched) {
+      const tol = deps.tuning.chordMateToleranceMs;
+      let repress = false;
+      for (let i = idx - 1; i >= 0; i--) {
+        const m = notes[i];
+        if (m.timeMs == null || cur.timeMs - m.timeMs > tol) break;
+        if (m.midi === detectedMidi) {
+          repress = true;
+          break;
+        }
+      }
+      if (!repress) {
+        for (let i = idx + 1; i < notes.length; i++) {
+          const m = notes[i];
+          if (m.timeMs == null || m.timeMs - cur.timeMs > tol) break;
+          if (m.midi === detectedMidi && (m.hit || m.missed)) {
+            repress = true;
+            break;
+          }
+        }
+      }
+      if (repress) {
+        log('[Match] in=' + detectedMidi + ' re-press of resolved chord mate (ignored)');
+        return false;
+      }
+    }
+
     log(
       '[Match] in=' +
         detectedMidi +
@@ -298,10 +330,29 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const ts = deps.practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
     deps.practice.timingScoreSum += ts;
     const isPerfect = deps.practice.mode === 'guided' || dt < deps.tuning.perfectMs;
-    deps.showHitChip(
-      isPerfect ? 'perfect' : 'good',
-      isPerfect ? deps.t('perfect') : deps.t('nice')
-    );
+    // Guided の和音: メンバー1音ごとに Perfect を出すと、まちがいチップと
+    // 100ms スロットル（intro-hint-ui）を取り合い、「止まっているのに
+    // Perfect だけ見える」が起きる。押下確認は鍵盤の点灯とレーンの緑
+    // タイルが担うので、チップは和音クラスタが完成した瞬間に 1 回だけ
+    // 出す（単音クラスタは従来どおり即時）。rhythm は音楽が進み続ける
+    // ので従来どおり毎音出す。
+    let showChip = true;
+    if (deps.practice.mode === 'guided') {
+      for (let i = idx; i < notes.length; i++) {
+        const m = notes[i];
+        if (m.timeMs == null || m.timeMs - cur.timeMs > deps.tuning.chordMateToleranceMs) break;
+        if (!m.hit && !m.missed) {
+          showChip = false;
+          break;
+        }
+      }
+    }
+    if (showChip) {
+      deps.showHitChip(
+        isPerfect ? 'perfect' : 'good',
+        isPerfect ? deps.t('perfect') : deps.t('nice')
+      );
+    }
     deps.state.flow = Math.min(100, deps.state.flow + 6 + ts * 4);
     deps.state.combo++;
     if (deps.state.combo > deps.state.bestCombo) deps.state.bestCombo = deps.state.combo;

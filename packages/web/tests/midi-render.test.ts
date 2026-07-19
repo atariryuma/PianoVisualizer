@@ -3,6 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   buildKeyboardHintNotes,
+  buildExpectedClusterSet,
   createMidiRender,
   type MidiRenderDeps,
   type MidiRenderMidiState,
@@ -188,6 +189,60 @@ describe('buildKeyboardHintNotes', () => {
   });
 });
 
+// ─── buildExpectedClusterSet ─────────────────────────────────────────
+
+describe('buildExpectedClusterSet (guided ちがう指の淡色化用)', () => {
+  it('practice off / listen / 残ノーツ無しは null', () => {
+    expect(buildExpectedClusterSet(makePractice({ enabled: false }), 50)).toBeNull();
+    expect(buildExpectedClusterSet(makePractice({ enabled: true, mode: 'listen' }), 50)).toBeNull();
+    expect(
+      buildExpectedClusterSet(makePractice({ enabled: true, sectionNotes: [] }), 50)
+    ).toBeNull();
+  });
+
+  it('和音クラスタ全体（未解決 + 解決済み）を含む — 押し続けている正解の鍵を淡色化しないため', () => {
+    // C(hit 済) + E(現在) + G(未解決) の 3 音和音。ユーザー報告の核心:
+    // 正解して押している C が「期待外」扱いで淡色化されてはいけない。
+    const p = makePractice({
+      enabled: true,
+      mode: 'guided',
+      sectionNotes: [
+        { timeMs: 1000, midi: 60, hit: true },
+        { timeMs: 1000, midi: 64 },
+        { timeMs: 1010, midi: 67 },
+      ],
+      currentNoteIdx: 0,
+    });
+    const set = buildExpectedClusterSet(p, 50)!;
+    expect(set).not.toBeNull();
+    expect([...set].sort((a, b) => a - b)).toEqual([60, 64, 67]);
+  });
+
+  it('許容窓の外（次の和音）は含めない', () => {
+    const p = makePractice({
+      enabled: true,
+      mode: 'guided',
+      sectionNotes: [
+        { timeMs: 1000, midi: 60 },
+        { timeMs: 2000, midi: 72 },
+      ],
+      currentNoteIdx: 0,
+    });
+    const set = buildExpectedClusterSet(p, 50)!;
+    expect([...set]).toEqual([60]);
+  });
+
+  it('全ノーツ解決済みなら null', () => {
+    const p = makePractice({
+      enabled: true,
+      mode: 'guided',
+      sectionNotes: [{ timeMs: 1000, midi: 60, hit: true }],
+      currentNoteIdx: 0,
+    });
+    expect(buildExpectedClusterSet(p, 50)).toBeNull();
+  });
+});
+
 // ─── createMidiRender ────────────────────────────────────────────────
 
 describe('createMidiRender — drawKeyboard', () => {
@@ -206,6 +261,38 @@ describe('createMidiRender — drawKeyboard', () => {
         sustainLabel: 'SUSTAIN',
       })
     );
+  });
+
+  it('guided では expectedNotes（クラスタ集合）を渡す', () => {
+    const deps = makeDeps({
+      practice: makePractice({
+        enabled: true,
+        mode: 'guided',
+        sectionNotes: [
+          { timeMs: 1000, midi: 60, hit: true },
+          { timeMs: 1000, midi: 64 },
+        ],
+        currentNoteIdx: 0,
+      }),
+    });
+    createMidiRender(deps).drawKeyboard();
+    const opts = (deps.drawMidiKeyboard as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(opts.expectedNotes).not.toBeNull();
+    expect([...opts.expectedNotes].sort((a: number, b: number) => a - b)).toEqual([60, 64]);
+  });
+
+  it('rhythm では expectedNotes を渡さない（誤淡色化防止で guided 限定）', () => {
+    const deps = makeDeps({
+      practice: makePractice({
+        enabled: true,
+        mode: 'rhythm',
+        sectionNotes: [{ timeMs: 1000, midi: 60 }],
+        currentNoteIdx: 0,
+      }),
+    });
+    createMidiRender(deps).drawKeyboard();
+    const opts = (deps.drawMidiKeyboard as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(opts.expectedNotes).toBeNull();
   });
 
   it('setLabels updates sustainLabel for next draw', () => {

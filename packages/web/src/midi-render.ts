@@ -94,6 +94,36 @@ export function buildKeyboardHintNotes(
   return out;
 }
 
+/** Guided 用: いま押すべき和音クラスタ全体の midi 集合（正解済み含む）。
+ *  鍵盤レンダラが「点灯中だが期待外 = このキーがちがう」を淡色化する
+ *  ために使う。正解して押し続けている鍵が誤って淡色化されないよう、
+ *  解決済みのクラスタメンバー（カーソルの後ろ）も含める。
+ *  練習外 / listen / 残ノーツ無しは null。 */
+export function buildExpectedClusterSet(
+  practice: MidiRenderPracticeRef,
+  chordMateToleranceMs: number
+): Set<number> | null {
+  if (!practice.enabled || practice.mode === 'listen') return null;
+  const notes = practice.sectionNotes;
+  if (!notes || typeof (notes as { length?: number }).length !== 'number') return null;
+  let idx = practice.currentNoteIdx | 0;
+  while (idx < notes.length && (notes[idx].hit || notes[idx].missed)) idx++;
+  if (idx >= notes.length) return null;
+  const cur = notes[idx];
+  const out = new Set<number>([cur.midi]);
+  for (let i = idx + 1; i < notes.length; i++) {
+    const m = notes[i];
+    if (m.timeMs - cur.timeMs > chordMateToleranceMs) break;
+    out.add(m.midi);
+  }
+  for (let i = idx - 1; i >= 0; i--) {
+    const m = notes[i];
+    if (cur.timeMs - m.timeMs > chordMateToleranceMs) break;
+    out.add(m.midi);
+  }
+  return out;
+}
+
 /** PianoCore.drawMidiKeyboard forwarder type. */
 export type DrawMidiKeyboardFn = (ctx: CanvasRenderingContext2D, midiState: any, opts: any) => void;
 
@@ -157,6 +187,12 @@ export function createMidiRender(deps: MidiRenderDeps): MidiRender {
       noteThemeColor: deps.noteThemeColor,
       sustainLabel,
       hintNotes: buildKeyboardHintNotes(deps.practice, deps.chordMateToleranceMs),
+      // ちがう指の淡色化は guided のみ — rhythm は音楽が進むので「期待」
+      // の境界が刻々と動き、正しく弾いた直後のキーを誤淡色化しやすい。
+      expectedNotes:
+        deps.practice.mode === 'guided'
+          ? buildExpectedClusterSet(deps.practice, deps.chordMateToleranceMs)
+          : null,
       nowMs: performance.now(),
     });
   }

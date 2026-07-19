@@ -372,6 +372,69 @@ describe('matchNoteOnset — guided mode', () => {
     expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M64)');
   });
 
+  it('和音の弾き直し: 正解済みメンバーの再打鍵は「まちがい」にしない（後方）', () => {
+    // ユーザー報告の核心: C(済)+E(済)+G(待ち) で和音をまるごと弾き直すと、
+    // C と E が youPlayed チップで叱られていた。静かに無視する。
+    const notes = [
+      note({ midi: 60, timeMs: 5000, hit: true }),
+      note({ midi: 64, timeMs: 5000, hit: true }),
+      note({ midi: 67, timeMs: 5010 }),
+    ];
+    const fx = setup({ notes });
+    const ok = fx.scoring.matchNoteOnset(60, true); // 正解済み C の再打鍵
+    expect(ok).toBe(false);
+    expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
+    expect(fx.practice.hits).toBe(0); // 二重加点も無し
+    expect(notes[2].hit).toBeFalsy();
+  });
+
+  it('和音の弾き直し: 前方の解決済みメンバーの再打鍵も無視（先に G を弾いた場合）', () => {
+    const notes = [
+      note({ midi: 60, timeMs: 5000 }),
+      note({ midi: 67, timeMs: 5010, hit: true }), // 先に弾いて解決済み
+    ];
+    const fx = setup({ notes });
+    const ok = fx.scoring.matchNoteOnset(67, true);
+    expect(ok).toBe(false);
+    expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
+  });
+
+  it('クラスタ外の解決済み音の再打鍵は従来どおり「まちがい」表示', () => {
+    // 救済は現在の和音クラスタ内限定 — 前の小節の音を弾いたら情報は出す。
+    const notes = [
+      note({ midi: 48, timeMs: 3000, hit: true }), // 前のクラスタ
+      note({ midi: 60, timeMs: 5000 }),
+    ];
+    const fx = setup({ notes });
+    const ok = fx.scoring.matchNoteOnset(48, true);
+    expect(ok).toBe(false);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M48)');
+  });
+
+  it('guided の和音: 途中メンバーはチップ無し、完成の瞬間に Perfect 1 回', () => {
+    const notes = [
+      note({ midi: 60, timeMs: 5000 }),
+      note({ midi: 64, timeMs: 5000 }),
+      note({ midi: 67, timeMs: 5010 }),
+    ];
+    const fx = setup({ notes });
+    fx.scoring.matchNoteOnset(60, true); // 1/3 — チップ無し
+    fx.scoring.matchNoteOnset(64, true); // 2/3 — チップ無し
+    expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
+    fx.scoring.matchNoteOnset(67, true); // 3/3 — 完成
+    expect(fx.mocks.showHitChip).toHaveBeenCalledTimes(1);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    // flow/combo/バーストは従来どおり毎メンバー発火（押下確認）
+    expect(fx.mocks.spawnBurst).toHaveBeenCalledTimes(3);
+    expect(fx.practice.hits).toBe(3);
+  });
+
+  it('guided の単音は従来どおり即 Perfect', () => {
+    const fx = setup();
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+  });
+
   it('chord-mate match: out-of-order note within tolerance hits', () => {
     const notes = [
       note({ midi: 60, timeMs: 5000 }),
