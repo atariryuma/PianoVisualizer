@@ -10,16 +10,40 @@ user request points at it.
 
 Immediate maintenance queue:
 
-1. **Work through [docs/REVIEW-2026-07-19.md](docs/REVIEW-2026-07-19.md)** — the
-   consolidated industry-standard review (UX / audio-timing / MusicXML import,
-   all findings verified against real code with file:line). P0 first:
-   COUNT_IN_MS snapshot bug, repeat-section boundary drift, volta comma
-   notation. Each entry is written as a self-contained task instruction.
+1. **[docs/REVIEW-2026-07-19.md](docs/REVIEW-2026-07-19.md) — P0 + P1 all landed
+   (2026-07-19).** All 3 P0 correctness bugs and all 8 P1 items are fixed +
+   tested; 6 P2 gaps also landed (see the status table at the top of the doc).
+   The remaining P2s are UI/audio-experience features that want real-iPad
+   verification before landing (loop practice, ⏸ toolbar button, result-card
+   "retry slower", practice-minute tracking, XML part-index fix, latency-
+   calibration wizard, sampler ghost audio). Each has a self-contained task
+   instruction in the doc.
 2. Keep documentation synchronized with the Phase 0e runtime shape.
 3. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
    with regression tests before each behavioral change.
 4. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
    Vitest may need approval because Vite/esbuild spawns a child process.
+
+Recent landings (2026-07-19, review fixes):
+
+- **P0 bugs (all 3)** — COUNT_IN_MS getter (guided clock/early-gate followed a
+  4000ms snapshot); repeat-section boundary drift (sections sliced expanded
+  notes on the source clock → new `expandedMeasureStartSec`); volta
+  `number="1,2"` comma notation dropping the rest of the song from the playback
+  order.
+- **P1 (all 8)** — count-in click interval now tracks tempo (beat count absorbs
+  the clamp); count-in beeps go through the Transport so quit cancels them +
+  song-start double-tap guard; settings-panel now freezes the practice clock
+  (shared pause/resume machinery, tick paused-gate) — the documented "settings =
+  paused" invariant is now real; D.C./D.S. final-measure length uses XML
+  durations; coda/segno symbol-only jumps + measure-level `<sound>`; .mxl
+  inner-name variants + size-limit defense; mic-mode chord relaxation
+  (`relaxChordsForMic`); mic detection-latency compensation.
+- **P2 gaps landed** — 50% tempo (support, always unlocked); metronome accent
+  follows the time signature; rhythm wrong-note chip (throttled, no penalty);
+  per-song settings persistence (`lastSettings`); grace/cue skip; PolySynth
+  polyphony bump. Pause MECHANISM done (⏸ toolbar button deferred to device
+  verification).
 
 Recent landings (2026-07-19):
 
