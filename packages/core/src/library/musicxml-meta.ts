@@ -7,8 +7,9 @@
 export interface MusicXmlMetadata {
   title: string;
   composer: string;
-  /** Number of measures in the FIRST part. Multi-part scores typically share
-   *  this count; we don't validate cross-part consistency. */
+  /** Number of measures in the selected part (opts.partIndex, default the
+   *  FIRST part). Multi-part scores typically share this count; we don't
+   *  validate cross-part consistency. */
   measureCount: number;
 }
 
@@ -16,6 +17,9 @@ export interface MetaParseOptions {
   /** Inject a DOMParser implementation (e.g. linkedom in node tests).
    *  Defaults to globalThis.DOMParser. */
   parser?: { parseFromString(text: string, type: string): Document };
+  /** measureCount を数えるパートの index（part-list 順、既定 0）。
+   *  範囲外は 0 にフォールバック。 */
+  partIndex?: number;
 }
 
 /**
@@ -44,7 +48,10 @@ export function parseMusicXmlMetadata(
     dom.querySelector('identification > creator');
 
   const parts = dom.querySelectorAll('part');
-  const measureCount = parts.length > 0 ? parts[0].querySelectorAll('measure').length : 0;
+  // 範囲外の partIndex は 0（先頭パート）にフォールバック。
+  const rawIdx = opts.partIndex ?? 0;
+  const partIdx = rawIdx >= 0 && rawIdx < parts.length ? rawIdx : 0;
+  const measureCount = parts.length > 0 ? parts[partIdx].querySelectorAll('measure').length : 0;
 
   return {
     title: (titleEl?.textContent ?? '').trim(),

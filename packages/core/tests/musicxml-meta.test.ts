@@ -56,3 +56,29 @@ describe('parseMusicXmlMetadata', () => {
     expect(meta.title).toBe('Movement One');
   });
 });
+
+// ─── partIndex（多パート譜、P2-21） ───────────────────────────────
+
+/** パートごとに小節数が違う2パート譜（P1=2小節, P2=3小節）。 */
+const TWO_PART_META = `<?xml version="1.0"?><score-partwise>
+<part-list><score-part id="P1"/><score-part id="P2"/></part-list>
+<part id="P1"><measure number="1"/><measure number="2"/></part>
+<part id="P2"><measure number="1"/><measure number="2"/><measure number="3"/></part>
+</score-partwise>`;
+
+describe('parseMusicXmlMetadata — partIndex（多パート譜）', () => {
+  it('partIndex=1 で選択パートの小節数を数える', () => {
+    const meta = parseMusicXmlMetadata(TWO_PART_META, { parser, partIndex: 1 });
+    expect(meta.measureCount).toBe(3);
+  });
+
+  it('partIndex 省略時は従来どおり先頭パート', () => {
+    const meta = parseMusicXmlMetadata(TWO_PART_META, { parser });
+    expect(meta.measureCount).toBe(2);
+  });
+
+  it('範囲外の partIndex は part 0 にフォールバックする', () => {
+    const meta = parseMusicXmlMetadata(TWO_PART_META, { parser, partIndex: 7 });
+    expect(meta.measureCount).toBe(2);
+  });
+});

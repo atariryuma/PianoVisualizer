@@ -312,6 +312,127 @@ describe('parseScoreTimingFromXml — robustness', () => {
   });
 });
 
+// ─── partIndex（多パート譜、P2-21） ───────────────────────────────
+
+/** 2パート譜（P1=Voice, P2=Piano）を組む。 */
+function buildTwoPartScore(p1Measures: string[], p2Measures: string[]): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<score-partwise version="4.0">\n` +
+    `<part-list>` +
+    `<score-part id="P1"><part-name>Voice</part-name></score-part>` +
+    `<score-part id="P2"><part-name>Piano</part-name></score-part>` +
+    `</part-list>\n` +
+    `<part id="P1">${p1Measures.join('\n')}</part>\n` +
+    `<part id="P2">${p2Measures.join('\n')}</part>\n` +
+    `</score-partwise>`
+  );
+}
+
+describe('parseScoreTimingFromXml — partIndex（多パート譜）', () => {
+  it('partIndex=1 でピアノパート（P2）側にだけあるテンポを拾う', () => {
+    const xml = buildTwoPartScore(
+      [
+        makeMeasure({ num: 1, divisions: 4, time: { beats: 4, beatType: 4 }, notes: [4, 4, 4, 4] }),
+        makeMeasure({ num: 2, notes: [4, 4, 4, 4] }),
+      ],
+      [
+        makeMeasure({
+          num: 1,
+          divisions: 4,
+          time: { beats: 4, beatType: 4 },
+          metronome: { beatUnit: 'quarter', perMinute: 100 },
+          notes: [4, 4, 4, 4],
+        }),
+        makeMeasure({ num: 2, notes: [4, 4, 4, 4] }),
+      ]
+    );
+    const r = parseScoreTimingFromXml(xml, { parser, partIndex: 1 })!;
+    expect(r.leadingQuarterBpm).toBe(100);
+    // partIndex 省略（先頭パート = Voice、テンポ無し）は従来どおり既定 72。
+    const r0 = parseScoreTimingFromXml(xml, { parser })!;
+    expect(r0.leadingQuarterBpm).toBe(72);
+  });
+
+  it('選択パートにテンポが皆無なら part 0 のテンポにフォールバックする', () => {
+    const xml = buildTwoPartScore(
+      [
+        makeMeasure({
+          num: 1,
+          divisions: 4,
+          time: { beats: 4, beatType: 4 },
+          metronome: { beatUnit: 'quarter', perMinute: 88 },
+          notes: [4, 4, 4, 4],
+        }),
+      ],
+      [makeMeasure({ num: 1, divisions: 4, time: { beats: 4, beatType: 4 }, notes: [4, 4, 4, 4] })]
+    );
+    const r = parseScoreTimingFromXml(xml, { parser, partIndex: 1 })!;
+    expect(r.leadingQuarterBpm).toBe(88);
+    expect(r.measures[0].tempoEvents[0].qBpm).toBe(88);
+    expect(r.measures[0].tempoEvents[0].src).toMatch(/part 0 fallback/);
+  });
+
+  it('divisions / 拍子は選択パートの値を使う（パートごとに独立）', () => {
+    const xml = buildTwoPartScore(
+      [
+        makeMeasure({
+          num: 1,
+          divisions: 2,
+          time: { beats: 3, beatType: 4 },
+          metronome: { beatUnit: 'quarter', perMinute: 60 },
+          notes: [2, 2, 2],
+        }),
+      ],
+      [makeMeasure({ num: 1, divisions: 8, time: { beats: 4, beatType: 4 }, notes: [8, 8, 8, 8] })]
+    );
+    const r = parseScoreTimingFromXml(xml, { parser, partIndex: 1 })!;
+    // divisions / 拍子は P2 の値（8, 4/4）で、P1（2, 3/4）ではない。
+    expect(r.measures[0].divisions).toBe(8);
+    expect(r.measures[0].timeSig).toEqual({ beats: 4, beatType: 4 });
+    expect(r.measures[0].durationDiv).toBe(32);
+    expect(r.measures[0].actualDiv).toBe(32);
+  });
+
+  it('テンポフォールバック時、inBarDiv は選択パートの divisions に換算される', () => {
+    // P1: divisions=2、2拍目のあと（inBarDiv=4）にテンポ変更。
+    // P2: divisions=8 → 換算後は 4 × (8/2) = 16 になるはず。
+    const xml = buildTwoPartScore(
+      [
+        makeMeasure({
+          num: 1,
+          divisions: 2,
+          time: { beats: 4, beatType: 4 },
+          notes: [2, 2, 2, 2],
+          midBarTempo: { afterNote: 2, perMinute: 90 },
+        }),
+      ],
+      [makeMeasure({ num: 1, divisions: 8, time: { beats: 4, beatType: 4 }, notes: [8, 8, 8, 8] })]
+    );
+    const r = parseScoreTimingFromXml(xml, { parser, partIndex: 1 })!;
+    expect(r.measures[0].tempoEvents[0].inBarDiv).toBe(16);
+    expect(r.measures[0].tempoEvents[0].qBpm).toBe(90);
+  });
+
+  it('範囲外の partIndex は part 0 にフォールバックする', () => {
+    const xml = buildTwoPartScore(
+      [
+        makeMeasure({
+          num: 1,
+          divisions: 4,
+          time: { beats: 4, beatType: 4 },
+          metronome: { beatUnit: 'quarter', perMinute: 66 },
+          notes: [4, 4, 4, 4],
+        }),
+      ],
+      [makeMeasure({ num: 1, divisions: 4, time: { beats: 4, beatType: 4 }, notes: [4, 4, 4, 4] })]
+    );
+    const r = parseScoreTimingFromXml(xml, { parser, partIndex: 5 })!;
+    expect(r.leadingQuarterBpm).toBe(66);
+    expect(r.leadingSource).not.toMatch(/fallback/);
+  });
+});
+
 const meas = (over: Partial<MeasureTiming> = {}): MeasureTiming => ({
   tempoEvents: [],
   timeSig: { beats: 4, beatType: 4 },

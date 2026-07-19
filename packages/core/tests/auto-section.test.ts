@@ -104,3 +104,45 @@ describe('autoSectionDefs', () => {
     expect(defs[2].startMeasure).toBeLessThan(8);
   });
 });
+
+// ─── partIndex（多パート譜、P2-21） ───────────────────────────────
+
+/** 30小節×2パート。リハーサルマークは P2（index 1）側の 10, 20 のみ。 */
+function measuresXml(marks: Record<number, string>, count: number): string {
+  return Array.from({ length: count }, (_, i) => {
+    const d = marks[i]
+      ? `<direction><direction-type><rehearsal>${marks[i]}</rehearsal></direction-type></direction>`
+      : '';
+    return `<measure number="${i + 1}">${d}</measure>`;
+  }).join('');
+}
+const TWO_PART_REHEARSAL = `<?xml version="1.0"?><score-partwise>
+<part-list><score-part id="P1"/><score-part id="P2"/></part-list>
+<part id="P1">${measuresXml({}, 30)}</part>
+<part id="P2">${measuresXml({ 10: 'B', 20: 'A2' }, 30)}</part>
+</score-partwise>`;
+
+describe('collectSectionCandidates / autoSectionDefs — partIndex（多パート譜）', () => {
+  it('partIndex=1 で選択パート側のリハーサルマークを拾う', () => {
+    const c = collectSectionCandidates(TWO_PART_REHEARSAL, { parser, partIndex: 1 });
+    expect(c.rehearsal).toEqual([10, 20]);
+    expect(c.total).toBe(30);
+  });
+
+  it('partIndex 省略時は従来どおり先頭パート（マーク無し）', () => {
+    const c = collectSectionCandidates(TWO_PART_REHEARSAL, { parser });
+    expect(c.rehearsal).toEqual([]);
+  });
+
+  it('autoSectionDefs も partIndex を貫通してマークにスナップする', () => {
+    const defs = autoSectionDefs(TWO_PART_REHEARSAL, undefined, { parser, partIndex: 1 });
+    expect(defs[1].startMeasure).toBe(10);
+    expect(defs[2].startMeasure).toBe(20);
+  });
+
+  it('範囲外の partIndex は part 0 にフォールバックする', () => {
+    const c = collectSectionCandidates(TWO_PART_REHEARSAL, { parser, partIndex: 4 });
+    expect(c.rehearsal).toEqual([]);
+    expect(c.total).toBe(30);
+  });
+});

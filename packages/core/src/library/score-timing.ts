@@ -72,6 +72,13 @@ export interface ScoreTimingOptions {
   /** Inject a DOMParser implementation (e.g. linkedom in node tests).
    *  Defaults to a fresh `globalThis.DOMParser` instance. */
   parser?: DOMParserLike;
+  /** 走査対象パートの index（part-list 順、既定 0）。範囲外は 0 に
+   *  フォールバック。テンポ記号は慣例的に先頭パートへ書かれることが
+   *  多いため、選択パートにテンポイベントが 1 つも無く part 0 には
+   *  有る場合は part 0 のテンポだけを取り込む（テンポは全パート共通の
+   *  グローバル情報）。divisions / 拍子はパートごとに異なり得るので
+   *  常に選択パートの値を使う。 */
+  partIndex?: number;
 }
 
 /** beat-unit name → fraction-of-quarter-note. eighth = 0.5 means
@@ -139,82 +146,89 @@ export function parseScoreTimingFromXml(
     const dom = parser.parseFromString(xmlText, 'text/xml');
     const partEls = dom.querySelectorAll('part');
     if (!partEls.length) return null;
-    const measureEls = partEls[0].querySelectorAll('measure');
+    // 範囲外の partIndex は 0（先頭パート）にフォールバック。
+    const rawIdx = opts.partIndex ?? 0;
+    const partIdx = rawIdx >= 0 && rawIdx < partEls.length ? rawIdx : 0;
 
-    const out: MeasureTiming[] = [];
-    let curDivisions = 1;
-    let curBeats = 4;
-    let curBeatType = 4;
-    let leadingQuarterBpm: number | null = null;
-    let leadingSource: string | null = null;
+    /** 1 パート分の <measure> 群を MeasureTiming[] に変換する。
+     *  leading テンポの決定はマージ（part 0 フォールバック）後に行う。 */
+    const collectPartMeasures = (partEl: Element): MeasureTiming[] => {
+      const collected: MeasureTiming[] = [];
+      let curDivisions = 1;
+      let curBeats = 4;
+      let curBeatType = 4;
 
-    measureEls.forEach((m) => {
-      const implicit = m.getAttribute('implicit') === 'yes';
-      const tempoEvents: TempoEvent[] = [];
-      let inBarDiv = 0;
-      let maxExtent = 0;
+      partEl.querySelectorAll('measure').forEach((m) => {
+        const implicit = m.getAttribute('implicit') === 'yes';
+        const tempoEvents: TempoEvent[] = [];
+        let inBarDiv = 0;
+        let maxExtent = 0;
 
-      for (const ch of Array.from(m.children)) {
-        const name = ch.tagName.toLowerCase();
-        if (name === 'attributes') {
-          const div = childByTag(ch, 'divisions');
-          if (div) {
-            const v = parseInt(div.textContent ?? '', 10);
-            if (Number.isFinite(v) && v > 0) curDivisions = v;
-          }
-          const tm = childByTag(ch, 'time');
-          if (tm) {
-            const b = parseInt(childByTag(tm, 'beats')?.textContent ?? '', 10);
-            const bt = parseInt(childByTag(tm, 'beat-type')?.textContent ?? '', 10);
-            if (Number.isFinite(b) && b > 0) curBeats = b;
-            if (Number.isFinite(bt) && bt > 0) curBeatType = bt;
-          }
-        } else if (name === 'direction') {
-          const met = ch.querySelector('direction-type metronome');
-          if (met) {
-            const r = metronomeToQBpm(met);
-            if (r) {
-              tempoEvents.push({ inBarDiv, qBpm: r.qBpm, src: r.src });
-              if (leadingQuarterBpm == null) {
-                leadingQuarterBpm = r.qBpm;
-                leadingSource = r.src;
-              }
+        for (const ch of Array.from(m.children)) {
+          const name = ch.tagName.toLowerCase();
+          if (name === 'attributes') {
+            const div = childByTag(ch, 'divisions');
+            if (div) {
+              const v = parseInt(div.textContent ?? '', 10);
+              if (Number.isFinite(v) && v > 0) curDivisions = v;
             }
-          } else {
-            const sn = childByTag(ch, 'sound');
-            if (sn?.hasAttribute('tempo')) {
-              const tempoVal = parseFloat(sn.getAttribute('tempo') ?? '');
-              if (Number.isFinite(tempoVal) && tempoVal > 0) {
-                tempoEvents.push({
-                  inBarDiv,
-                  qBpm: tempoVal,
-                  src: 'sound tempo=' + tempoVal,
-                });
-                if (leadingQuarterBpm == null) {
-                  leadingQuarterBpm = tempoVal;
-                  leadingSource = 'sound tempo=' + tempoVal;
+            const tm = childByTag(ch, 'time');
+            if (tm) {
+              const b = parseInt(childByTag(tm, 'beats')?.textContent ?? '', 10);
+              const bt = parseInt(childByTag(tm, 'beat-type')?.textContent ?? '', 10);
+              if (Number.isFinite(b) && b > 0) curBeats = b;
+              if (Number.isFinite(bt) && bt > 0) curBeatType = bt;
+            }
+          } else if (name === 'direction') {
+            const met = ch.querySelector('direction-type metronome');
+            if (met) {
+              const r = metronomeToQBpm(met);
+              if (r) {
+                tempoEvents.push({ inBarDiv, qBpm: r.qBpm, src: r.src });
+              }
+            } else {
+              const sn = childByTag(ch, 'sound');
+              if (sn?.hasAttribute('tempo')) {
+                const tempoVal = parseFloat(sn.getAttribute('tempo') ?? '');
+                if (Number.isFinite(tempoVal) && tempoVal > 0) {
+                  tempoEvents.push({
+                    inBarDiv,
+                    qBpm: tempoVal,
+                    src: 'sound tempo=' + tempoVal,
+                  });
                 }
               }
             }
-          }
-        } else if (name === 'sound') {
-          // Score-level <sound> outside <direction>.
-          const tempoVal = parseFloat(ch.getAttribute('tempo') ?? '');
-          if (Number.isFinite(tempoVal) && tempoVal > 0) {
-            tempoEvents.push({
-              inBarDiv,
-              qBpm: tempoVal,
-              src: 'sound tempo=' + tempoVal,
-            });
-            if (leadingQuarterBpm == null) {
-              leadingQuarterBpm = tempoVal;
-              leadingSource = 'sound tempo=' + tempoVal;
+          } else if (name === 'sound') {
+            // Score-level <sound> outside <direction>.
+            const tempoVal = parseFloat(ch.getAttribute('tempo') ?? '');
+            if (Number.isFinite(tempoVal) && tempoVal > 0) {
+              tempoEvents.push({
+                inBarDiv,
+                qBpm: tempoVal,
+                src: 'sound tempo=' + tempoVal,
+              });
             }
-          }
-        } else if (name === 'note') {
-          const isGrace = childByTag(ch, 'grace') != null;
-          const isChord = childByTag(ch, 'chord') != null;
-          if (!isGrace && !isChord) {
+          } else if (name === 'note') {
+            const isGrace = childByTag(ch, 'grace') != null;
+            const isChord = childByTag(ch, 'chord') != null;
+            if (!isGrace && !isChord) {
+              const dEl = childByTag(ch, 'duration');
+              if (dEl) {
+                const dv = parseInt(dEl.textContent ?? '', 10);
+                if (Number.isFinite(dv) && dv > 0) {
+                  inBarDiv += dv;
+                  if (inBarDiv > maxExtent) maxExtent = inBarDiv;
+                }
+              }
+            }
+          } else if (name === 'backup') {
+            const dEl = childByTag(ch, 'duration');
+            if (dEl) {
+              const dv = parseInt(dEl.textContent ?? '', 10);
+              if (Number.isFinite(dv) && dv > 0) inBarDiv -= dv;
+            }
+          } else if (name === 'forward') {
             const dEl = childByTag(ch, 'duration');
             if (dEl) {
               const dv = parseInt(dEl.textContent ?? '', 10);
@@ -224,38 +238,54 @@ export function parseScoreTimingFromXml(
               }
             }
           }
-        } else if (name === 'backup') {
-          const dEl = childByTag(ch, 'duration');
-          if (dEl) {
-            const dv = parseInt(dEl.textContent ?? '', 10);
-            if (Number.isFinite(dv) && dv > 0) inBarDiv -= dv;
-          }
-        } else if (name === 'forward') {
-          const dEl = childByTag(ch, 'duration');
-          if (dEl) {
-            const dv = parseInt(dEl.textContent ?? '', 10);
-            if (Number.isFinite(dv) && dv > 0) {
-              inBarDiv += dv;
-              if (inBarDiv > maxExtent) maxExtent = inBarDiv;
-            }
-          }
+        }
+
+        const durationDiv = Math.round((curBeats * curDivisions * 4) / curBeatType);
+        collected.push({
+          tempoEvents,
+          timeSig: { beats: curBeats, beatType: curBeatType },
+          divisions: curDivisions,
+          implicit,
+          durationDiv,
+          actualDiv: maxExtent,
+        });
+      });
+      return collected;
+    };
+
+    const out = collectPartMeasures(partEls[partIdx]);
+
+    // テンポのグローバル・フォールバック: テンポ記号は慣例的に先頭パート
+    // にだけ書かれることが多い（歌+伴奏譜で P1=Voice 側だけ等）。選択
+    // パートにテンポイベントが皆無で part 0 には有る場合、part 0 の
+    // テンポを小節単位で取り込む。divisions はパートごとに異なり得る
+    // ため、inBarDiv は選択パートの divisions に換算し直す。
+    if (partIdx !== 0 && !out.some((m) => m.tempoEvents.length > 0)) {
+      const p0 = collectPartMeasures(partEls[0]);
+      if (p0.some((m) => m.tempoEvents.length > 0)) {
+        const n = Math.min(out.length, p0.length);
+        for (let i = 0; i < n; i++) {
+          if (!p0[i].tempoEvents.length) continue;
+          const scale = out[i].divisions / (p0[i].divisions || 1);
+          out[i].tempoEvents = p0[i].tempoEvents.map((ev) => ({
+            inBarDiv: ev.inBarDiv * scale,
+            qBpm: ev.qBpm,
+            src: ev.src + ' [part 0 fallback]',
+          }));
         }
       }
+    }
 
-      const durationDiv = Math.round((curBeats * curDivisions * 4) / curBeatType);
-      out.push({
-        tempoEvents,
-        timeSig: { beats: curBeats, beatType: curBeatType },
-        divisions: curDivisions,
-        implicit,
-        durationDiv,
-        actualDiv: maxExtent,
-      });
-    });
-
-    if (leadingQuarterBpm == null) {
-      leadingQuarterBpm = 72;
-      leadingSource = 'default (no marking)';
+    // 先頭テンポ（leading）はマージ後の最初のテンポイベントから導出する。
+    // 旧実装（走査中に最初の push を記録）と等価 — snap 前の src を使う。
+    let leadingQuarterBpm = 72;
+    let leadingSource = 'default (no marking)';
+    for (const meas of out) {
+      if (meas.tempoEvents.length) {
+        leadingQuarterBpm = meas.tempoEvents[0].qBpm;
+        leadingSource = meas.tempoEvents[0].src;
+        break;
+      }
     }
 
     // Tempo-direction snap to measure boundary. MusicXML exporters often
@@ -287,8 +317,8 @@ export function parseScoreTimingFromXml(
 
     return {
       measures: out,
-      leadingQuarterBpm: leadingQuarterBpm as number,
-      leadingSource: leadingSource as string,
+      leadingQuarterBpm,
+      leadingSource,
     };
   } catch {
     // Production: return null and let the caller fall back to OSMD's

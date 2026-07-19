@@ -43,8 +43,9 @@ export interface PlaybackOrderMeasure {
 }
 
 export interface PlaybackOrderCoreFns<TBaseNote, TExpandedNote, TOrder> {
-  /** Owns the XML → playback-order parse. */
-  parsePlaybackOrderFromXml(text: string): TOrder;
+  /** Owns the XML → playback-order parse. opts.partIndex で走査パートを
+   *  指定できる（省略時は core 既定 = 先頭パート）。 */
+  parsePlaybackOrderFromXml(text: string, opts?: { partIndex?: number }): TOrder;
   /** Owns the actual note re-timing math. */
   expandNotesByPlaybackOrder(
     baseNotes: TBaseNote[],
@@ -67,7 +68,9 @@ export interface PlaybackOrderDeps<TBaseNote, TExpandedNote, TOrder> {
 }
 
 export interface PlaybackOrder<TBaseNote, TExpandedNote, TOrder> {
-  fetchPlaybackOrder(forSong: PlaybackOrderSong): Promise<TOrder>;
+  /** partIndex: 走査対象の XML パート index（省略時は先頭パート）。
+   *  多パート譜でリピート等がピアノパート側にだけある場合に指定する。 */
+  fetchPlaybackOrder(forSong: PlaybackOrderSong, partIndex?: number): Promise<TOrder>;
   expandNotesByPlaybackOrder(
     baseNotes: TBaseNote[],
     order: TOrder,
@@ -88,14 +91,20 @@ export interface PlaybackOrder<TBaseNote, TExpandedNote, TOrder> {
 export function createPlaybackOrder<TBaseNote, TExpandedNote, TOrder>(
   deps: PlaybackOrderDeps<TBaseNote, TExpandedNote, TOrder>
 ): PlaybackOrder<TBaseNote, TExpandedNote, TOrder> {
-  async function fetchPlaybackOrder(forSong: PlaybackOrderSong): Promise<TOrder> {
+  async function fetchPlaybackOrder(
+    forSong: PlaybackOrderSong,
+    partIndex?: number
+  ): Promise<TOrder> {
     let text = forSong._xmlText;
     if (!text) {
       const res = await deps.fetch(forSong.xmlUrl);
       if (!res.ok) throw new Error('XML fetch failed: ' + res.status);
       text = await res.text();
     }
-    return deps.fns.parsePlaybackOrderFromXml(text);
+    // partIndex 未指定時は従来どおり第2引数なしで呼ぶ（既存呼び出しと完全互換）。
+    return partIndex != null
+      ? deps.fns.parsePlaybackOrderFromXml(text, { partIndex })
+      : deps.fns.parsePlaybackOrderFromXml(text);
   }
 
   /** Resolve the per-source-measure { startSec, durSec } table used by

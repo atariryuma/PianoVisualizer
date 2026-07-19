@@ -268,6 +268,54 @@ describe('parsePlaybackOrderFromXml — safety', () => {
   });
 });
 
+// ─── partIndex（多パート譜、P2-21） ───────────────────────────────
+
+/** 2パート譜（P1=Voice, P2=Piano）を組む。 */
+function buildTwoPartScore(p1Measures: MeasureSpec[], p2Measures: MeasureSpec[]): string {
+  const p1 = p1Measures.map((m, i) => makeMeasure(i + 1, m)).join('\n');
+  const p2 = p2Measures.map((m, i) => makeMeasure(i + 1, m)).join('\n');
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<score-partwise version="4.0">\n` +
+    `<part-list>` +
+    `<score-part id="P1"><part-name>Voice</part-name></score-part>` +
+    `<score-part id="P2"><part-name>Piano</part-name></score-part>` +
+    `</part-list>\n` +
+    `<part id="P1">${p1}</part>\n` +
+    `<part id="P2">${p2}</part>\n` +
+    `</score-partwise>`
+  );
+}
+
+describe('parsePlaybackOrderFromXml — partIndex（多パート譜）', () => {
+  it('partIndex=1 でピアノパート（P2）側にだけあるリピートを拾う', () => {
+    const xml = buildTwoPartScore([{}, {}, {}], [{ fwdRepeat: true }, { bwdRepeat: true }, {}]);
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([0, 1, 0, 1, 2]);
+    // partIndex 省略（先頭パート = Voice、マーカー無し）は従来どおり線形。
+    expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 2]);
+  });
+
+  it('選択パートにマーカーが皆無なら part 0 にフォールバックする', () => {
+    // リピートを先頭パートにだけ書く譜面（慣例）。partIndex=1 でも取りこぼさない。
+    const xml = buildTwoPartScore([{ fwdRepeat: true }, { bwdRepeat: true }, {}], [{}, {}, {}]);
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([0, 1, 0, 1, 2]);
+  });
+
+  it('両パートにマーカーがあるときは選択パートを使う（フォールバックしない）', () => {
+    const xml = buildTwoPartScore(
+      [{ fwdRepeat: true }, { bwdRepeat: true }, {}, {}],
+      [{}, {}, { fwdRepeat: true }, { bwdRepeat: true }]
+    );
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([0, 1, 2, 3, 2, 3]);
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 0 })).toEqual([0, 1, 0, 1, 2, 3]);
+  });
+
+  it('範囲外の partIndex は part 0 にフォールバックする', () => {
+    const xml = buildTwoPartScore([{ fwdRepeat: true }, { bwdRepeat: true }, {}], [{}, {}, {}]);
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 9 })).toEqual([0, 1, 0, 1, 2]);
+  });
+});
+
 describe('expandNotesByPlaybackOrder — linear', () => {
   it('no jumps → notes pass through with cursorJump=null', () => {
     const notes: PlaybackOrderNote[] = [

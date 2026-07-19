@@ -41,8 +41,9 @@ export interface ShellOsmd {
   osmdAdapter: import('@piano/core').OsmdAdapter;
   /** Shell shim around NoteExtractor — needed by start-practice-section deps. */
   extractNotesFromOsmd: (xmlMeasureTiming: any, scoreTiming: any) => any;
-  /** PlaybackOrder + measure-timing exposes — needed by start-practice-section. */
-  fetchPlaybackOrder: (forSong?: any) => Promise<any>;
+  /** PlaybackOrder + measure-timing exposes — needed by start-practice-section.
+   *  partIndex 省略時は練習パート（getPracticePartIndex）で解決する。 */
+  fetchPlaybackOrder: (forSong?: any, partIndex?: number) => Promise<any>;
   expandNotesByPlaybackOrder: (
     baseNotes: any,
     order: any,
@@ -70,6 +71,15 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
       collectDiag: deps.remoteLogEnabled,
     });
 
+  // 練習パート（ピアノ）の XML パート index。OSMD の Instruments は
+  // part-list 順なので、pickPracticeStaffPlan の practiceInstrumentIdx が
+  // そのまま XML の part index に対応する。判別不能（単一パート等）や
+  // OSMD 未初期化時は 0（先頭パート = 従来挙動）。
+  const getPracticePartIndex = (): number => {
+    const plan = NoteExtractor.pickPracticeStaffPlan(osmd?.Sheet?.Instruments ?? []);
+    return plan.practiceInstrumentIdx ?? 0;
+  };
+
   const _playbackOrder = PlaybackOrder.createPlaybackOrder({
     fns: {
       parsePlaybackOrderFromXml: PianoCore.parsePlaybackOrderFromXml,
@@ -80,8 +90,11 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     },
     fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
   });
-  const fetchPlaybackOrder = async (forSong?: any) =>
-    _playbackOrder.fetchPlaybackOrder(forSong || deps.getCurrentSong());
+  const fetchPlaybackOrder = async (forSong?: any, partIndex?: number) =>
+    _playbackOrder.fetchPlaybackOrder(
+      forSong || deps.getCurrentSong(),
+      partIndex ?? getPracticePartIndex()
+    );
   const expandNotesByPlaybackOrder = (
     baseNotes: any,
     order: any,
@@ -119,6 +132,7 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
     parseScoreTimingFromXml: PianoCore.parseScoreTimingFromXml,
     buildMeasureTimingFromXml: PianoCore.buildMeasureTimingFromXml,
     extractNotesFromOsmd,
+    getPracticePartIndex,
     fetchPlaybackOrder: fetchPlaybackOrder as any,
     expandNotesByPlaybackOrder: expandNotesByPlaybackOrder as any,
     expandedMeasureStartSec: expandedMeasureStartSec as any,

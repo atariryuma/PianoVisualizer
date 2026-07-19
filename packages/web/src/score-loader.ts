@@ -102,14 +102,20 @@ export interface ScoreLoaderDeps {
    *  lib's instance + we don't introspect it deeply. */
   getOsmd: () => { Sheet?: { SourceMeasures?: OsmdMeasure[] } } | null;
 
-  parseScoreTimingFromXml: (text: string) => ScoreTiming | null;
+  parseScoreTimingFromXml: (text: string, opts?: { partIndex?: number }) => ScoreTiming | null;
   buildMeasureTimingFromXml: (scoreTiming: ScoreTiming | null) => MeasureTimingResult | null;
   extractNotesFromOsmd: (
     xmlMeasureTiming: MeasureTimingResult | null,
     scoreTiming: ScoreTiming | null
   ) => ExtractResult;
 
-  fetchPlaybackOrder: (forSong: ScoreLoaderSong) => Promise<number[]>;
+  /** initOsmd 後に呼ばれ、練習パート（ピアノ）の XML パート index
+   *  （part-list 順）を返す。未指定なら 0（先頭パート = 従来挙動）。
+   *  歌+伴奏譜でテンポ/リピートがピアノパート側にだけ書かれていても
+   *  取りこぼさないための貫通口（P2-21）。 */
+  getPracticePartIndex?: () => number;
+
+  fetchPlaybackOrder: (forSong: ScoreLoaderSong, partIndex?: number) => Promise<number[]>;
   expandNotesByPlaybackOrder: (
     baseNotes: OsmdLikeNote[],
     order: number[],
@@ -190,6 +196,11 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
       await deps.initOsmd();
       if (!stillCurrent()) return;
 
+      // 練習パート（ピアノ）の XML パート index。initOsmd 後でないと
+      // OSMD の Instruments が読めないため、ここで確定して timing /
+      // playback-order の両パースに貫通させる（P2-21）。
+      const partIndex = deps.getPracticePartIndex ? deps.getPracticePartIndex() : 0;
+
       // Parse the raw XML for the authoritative timing model.
       let scoreTiming: ScoreTiming | null = null;
       try {
@@ -204,7 +215,7 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
           // downloading (Android Chrome was occasionally hanging on
           // the second blob: fetch).
           song._xmlText = text;
-          scoreTiming = deps.parseScoreTimingFromXml(text);
+          scoreTiming = deps.parseScoreTimingFromXml(text, { partIndex });
         }
       } catch {
         /* non-fatal — extractNotesFromOsmd will fall back */
@@ -252,7 +263,7 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
       // Parse the raw XML to discover the actual playback order.
       let order: number[];
       try {
-        order = await deps.fetchPlaybackOrder(song);
+        order = await deps.fetchPlaybackOrder(song, partIndex);
         if (!stillCurrent()) return;
         if (!order.length) order = measures.map((_, i) => i);
       } catch (e) {

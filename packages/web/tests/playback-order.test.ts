@@ -104,6 +104,12 @@ describe('createPlaybackOrder — fetchPlaybackOrder', () => {
     const out = await fx.pb.fetchPlaybackOrder({ _xmlText: '<x/>', xmlUrl: '' });
     expect(out).toEqual({ measureIndices: [9, 8, 7] });
   });
+
+  it('partIndex 指定時は { partIndex } としてパーサに貫通する（P2-21）', async () => {
+    const fx = makeFixture();
+    await fx.pb.fetchPlaybackOrder({ _xmlText: '<two-part/>', xmlUrl: '' }, 2);
+    expect(fx.parsePlaybackOrderFromXml).toHaveBeenCalledWith('<two-part/>', { partIndex: 2 });
+  });
 });
 
 describe('createPlaybackOrder — expandNotesByPlaybackOrder pre-built table', () => {

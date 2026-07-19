@@ -64,6 +64,7 @@ function makeFixture(
     measures?: { TempoInBPM?: number }[];
     order?: number[];
     remoteLogEnabled?: boolean;
+    getPracticePartIndex?: () => number;
   } = {}
 ) {
   const song: ScoreLoaderSong = over.song ?? {
@@ -111,6 +112,7 @@ function makeFixture(
       spies.buildMeasureTimingFromXml as unknown as ScoreLoaderDeps['buildMeasureTimingFromXml'],
     extractNotesFromOsmd:
       spies.extractNotesFromOsmd as unknown as ScoreLoaderDeps['extractNotesFromOsmd'],
+    getPracticePartIndex: over.getPracticePartIndex,
     fetchPlaybackOrder:
       spies.fetchPlaybackOrder as unknown as ScoreLoaderDeps['fetchPlaybackOrder'],
     expandNotesByPlaybackOrder:
@@ -268,7 +270,8 @@ describe('loadCurrentScore — XML caching', () => {
     fx.song._xmlText = '<cached/>';
     await fx.loader.loadCurrentScore();
     expect(fx.spies.fetch).not.toHaveBeenCalled();
-    expect(fx.spies.parseScoreTimingFromXml).toHaveBeenCalledWith('<cached/>');
+    // getPracticePartIndex 未指定時は partIndex=0（先頭パート = 従来挙動）。
+    expect(fx.spies.parseScoreTimingFromXml).toHaveBeenCalledWith('<cached/>', { partIndex: 0 });
   });
 
   it('fetches xmlUrl when no cached text', async () => {
@@ -379,6 +382,28 @@ describe('loadCurrentScore — bpm source priority', () => {
     });
     await fx.loader.loadCurrentScore();
     expect(fx.song._bpmRescaled).toBe(false);
+  });
+});
+
+// ─── partIndex 貫通（多パート譜、P2-21） ──────────────────────────
+
+describe('loadCurrentScore — partIndex threading', () => {
+  it('getPracticePartIndex の値が parseScoreTimingFromXml / fetchPlaybackOrder に貫通する', async () => {
+    const fx = makeFixture({ getPracticePartIndex: () => 1 });
+    fx.song._xmlText = '<two-part/>';
+    await fx.loader.loadCurrentScore();
+    expect(fx.spies.parseScoreTimingFromXml).toHaveBeenCalledWith('<two-part/>', {
+      partIndex: 1,
+    });
+    expect(fx.spies.fetchPlaybackOrder).toHaveBeenCalledWith(fx.song, 1);
+  });
+
+  it('getPracticePartIndex 未指定なら partIndex=0（従来挙動）', async () => {
+    const fx = makeFixture();
+    fx.song._xmlText = '<single/>';
+    await fx.loader.loadCurrentScore();
+    expect(fx.spies.parseScoreTimingFromXml).toHaveBeenCalledWith('<single/>', { partIndex: 0 });
+    expect(fx.spies.fetchPlaybackOrder).toHaveBeenCalledWith(fx.song, 0);
   });
 });
 

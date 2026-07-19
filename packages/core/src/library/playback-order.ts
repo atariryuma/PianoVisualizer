@@ -22,6 +22,11 @@ export interface PlaybackOrderOptions {
   /** Inject a DOMParser implementation (e.g. linkedom in node tests).
    *  Defaults to `globalThis.DOMParser`. */
   parser?: DOMParserLike;
+  /** 走査対象パートの index（part-list 順、既定 0）。範囲外は 0 に
+   *  フォールバック。リピート / volta / D.C. 等の構造マーカーは全パート
+   *  共通が慣例で、先頭パートにだけ書く譜面も多いため、選択パートに
+   *  マーカーが皆無で part 0 には有る場合は part 0 のマーカーを使う。 */
+  partIndex?: number;
 }
 
 /** Per-measure structural marker bag — what the parser collected from
@@ -99,85 +104,116 @@ export function parsePlaybackOrderFromXml(
   const dom = parser.parseFromString(xmlText, 'text/xml');
   const partEls = dom.querySelectorAll('part');
   if (!partEls.length) return [];
-  const measureEls = partEls[0].querySelectorAll('measure');
+  // 範囲外の partIndex は 0（先頭パート）にフォールバック。
+  const rawIdx = opts.partIndex ?? 0;
+  const partIdx = rawIdx >= 0 && rawIdx < partEls.length ? rawIdx : 0;
 
-  const info: MeasureMarkers[] = [];
-  measureEls.forEach((m) => {
-    const startsEnding: Record<string, boolean> = {};
-    const stopsEnding: Record<string, boolean> = {};
-    for (const e of Array.from(m.querySelectorAll('ending'))) {
-      const num = e.getAttribute('number');
-      const type = e.getAttribute('type');
-      if (num == null) continue;
-      // `<ending number="1,2">` は正規の MusicXML（複数括弧の共有）。カンマ区切りを
-      // 番号ごとに正規化し、番号単位で startsEnding / stopsEnding を立てる。
-      // これを怠ると raw キー完全一致になり、2周目の括弧探索が失敗して曲が途中で切れる。
-      const nums = num
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      for (const n of nums) {
-        if (type === 'start') startsEnding[n] = true;
-        if (type === 'stop' || type === 'discontinue') stopsEnding[n] = true;
+  /** 1 パート分の <measure> 群から構造マーカーを収集する。 */
+  const collectMarkers = (partEl: Element): MeasureMarkers[] => {
+    const info: MeasureMarkers[] = [];
+    partEl.querySelectorAll('measure').forEach((m) => {
+      const startsEnding: Record<string, boolean> = {};
+      const stopsEnding: Record<string, boolean> = {};
+      for (const e of Array.from(m.querySelectorAll('ending'))) {
+        const num = e.getAttribute('number');
+        const type = e.getAttribute('type');
+        if (num == null) continue;
+        // `<ending number="1,2">` は正規の MusicXML（複数括弧の共有）。カンマ区切りを
+        // 番号ごとに正規化し、番号単位で startsEnding / stopsEnding を立てる。
+        // これを怠ると raw キー完全一致になり、2周目の括弧探索が失敗して曲が途中で切れる。
+        const nums = num
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        for (const n of nums) {
+          if (type === 'start') startsEnding[n] = true;
+          if (type === 'stop' || type === 'discontinue') stopsEnding[n] = true;
+        }
       }
-    }
-    let fwdRepeat = false;
-    let bwdRepeat = false;
-    for (const r of Array.from(m.querySelectorAll('barline repeat'))) {
-      const dir = r.getAttribute('direction');
-      if (dir === 'forward') fwdRepeat = true;
-      if (dir === 'backward') bwdRepeat = true;
-    }
-    // D.C. / D.S. / Coda / Fine markers. MusicXML places these on
-    // <direction><sound dacapo|dalsegno|tocoda|coda|segno|fine="..."/>;
-    // some engravers omit the <sound> and use <words> only, so check
-    // both. Jumps fire at most once each so safety can't loop.
-    let dacapo = false;
-    let fine = false;
-    let tocoda = false;
-    let coda = false;
-    let segno = false;
-    let dalsegno = false;
-    // <direction><sound .../> と measure 直下 <sound .../> の両方を走査する。
-    // 後者は <direction> を介さない書式で、score-timing.ts では既に対応済み
-    // （この非対称を解消しないと同じ譜面でテンポは読めるのにジャンプだけ不発になる）。
-    const soundEls = [
-      ...Array.from(m.querySelectorAll('direction sound')),
-      ...Array.from(m.children).filter((c) => c.tagName.toLowerCase() === 'sound'),
-    ];
-    for (const s of soundEls) {
-      if (s.getAttribute('dacapo') === 'yes') dacapo = true;
-      if (s.getAttribute('fine') === 'yes') fine = true;
-      if (s.getAttribute('tocoda')) tocoda = true;
-      if (s.getAttribute('coda')) coda = true;
-      if (s.getAttribute('segno')) segno = true;
-      if (s.getAttribute('dalsegno')) dalsegno = true;
-    }
-    // 着地点を <sound> 属性ではなく記号要素だけで書く譜面も普通に存在する
-    // （<direction-type><coda/> / <segno/>）。この場合 segnoIdx / codaIdx が
-    // 立たず D.S. / To Coda が不発になるため、記号要素も拾う。
-    if (m.querySelector('direction direction-type coda')) coda = true;
-    if (m.querySelector('direction direction-type segno')) segno = true;
-    for (const w of Array.from(m.querySelectorAll('direction words'))) {
-      const text = (w.textContent || '').trim();
-      if (/^D\.?C\./i.test(text) || /Da\s*Capo/i.test(text)) dacapo = true;
-      if (/^Fine\b/i.test(text)) fine = true;
-      if (/^To\s*Coda/i.test(text)) tocoda = true;
-      if (/^D\.?S\./i.test(text) || /Dal\s*Segno/i.test(text)) dalsegno = true;
-    }
-    info.push({
-      startsEnding,
-      stopsEnding,
-      fwdRepeat,
-      bwdRepeat,
-      dacapo,
-      fine,
-      tocoda,
-      coda,
-      segno,
-      dalsegno,
+      let fwdRepeat = false;
+      let bwdRepeat = false;
+      for (const r of Array.from(m.querySelectorAll('barline repeat'))) {
+        const dir = r.getAttribute('direction');
+        if (dir === 'forward') fwdRepeat = true;
+        if (dir === 'backward') bwdRepeat = true;
+      }
+      // D.C. / D.S. / Coda / Fine markers. MusicXML places these on
+      // <direction><sound dacapo|dalsegno|tocoda|coda|segno|fine="..."/>;
+      // some engravers omit the <sound> and use <words> only, so check
+      // both. Jumps fire at most once each so safety can't loop.
+      let dacapo = false;
+      let fine = false;
+      let tocoda = false;
+      let coda = false;
+      let segno = false;
+      let dalsegno = false;
+      // <direction><sound .../> と measure 直下 <sound .../> の両方を走査する。
+      // 後者は <direction> を介さない書式で、score-timing.ts では既に対応済み
+      // （この非対称を解消しないと同じ譜面でテンポは読めるのにジャンプだけ不発になる）。
+      const soundEls = [
+        ...Array.from(m.querySelectorAll('direction sound')),
+        ...Array.from(m.children).filter((c) => c.tagName.toLowerCase() === 'sound'),
+      ];
+      for (const s of soundEls) {
+        if (s.getAttribute('dacapo') === 'yes') dacapo = true;
+        if (s.getAttribute('fine') === 'yes') fine = true;
+        if (s.getAttribute('tocoda')) tocoda = true;
+        if (s.getAttribute('coda')) coda = true;
+        if (s.getAttribute('segno')) segno = true;
+        if (s.getAttribute('dalsegno')) dalsegno = true;
+      }
+      // 着地点を <sound> 属性ではなく記号要素だけで書く譜面も普通に存在する
+      // （<direction-type><coda/> / <segno/>）。この場合 segnoIdx / codaIdx が
+      // 立たず D.S. / To Coda が不発になるため、記号要素も拾う。
+      if (m.querySelector('direction direction-type coda')) coda = true;
+      if (m.querySelector('direction direction-type segno')) segno = true;
+      for (const w of Array.from(m.querySelectorAll('direction words'))) {
+        const text = (w.textContent || '').trim();
+        if (/^D\.?C\./i.test(text) || /Da\s*Capo/i.test(text)) dacapo = true;
+        if (/^Fine\b/i.test(text)) fine = true;
+        if (/^To\s*Coda/i.test(text)) tocoda = true;
+        if (/^D\.?S\./i.test(text) || /Dal\s*Segno/i.test(text)) dalsegno = true;
+      }
+      info.push({
+        startsEnding,
+        stopsEnding,
+        fwdRepeat,
+        bwdRepeat,
+        dacapo,
+        fine,
+        tocoda,
+        coda,
+        segno,
+        dalsegno,
+      });
     });
-  });
+    return info;
+  };
+
+  /** マーカー（リピート/volta/D.C./D.S./Coda/Segno/Fine）が 1 つでも有るか。 */
+  const hasAnyMarker = (list: MeasureMarkers[]): boolean =>
+    list.some(
+      (m) =>
+        m.fwdRepeat ||
+        m.bwdRepeat ||
+        m.dacapo ||
+        m.fine ||
+        m.tocoda ||
+        m.coda ||
+        m.segno ||
+        m.dalsegno ||
+        Object.keys(m.startsEnding).length > 0 ||
+        Object.keys(m.stopsEnding).length > 0
+    );
+
+  let info = collectMarkers(partEls[partIdx]);
+  // マーカーのグローバル・フォールバック: リピート等の構造マーカーを
+  // 先頭パートにだけ書く譜面（歌+伴奏譜等）向け。選択パートにマーカーが
+  // 皆無で part 0 には有る場合、part 0 のマーカーで再収集する。
+  if (partIdx !== 0 && !hasAnyMarker(info)) {
+    const p0 = collectMarkers(partEls[0]);
+    if (hasAnyMarker(p0)) info = p0;
+  }
 
   // Pre-scan for segno / coda landing positions (used by D.S. and
   // To Coda jumps). First occurrence wins — multi-segno scores are

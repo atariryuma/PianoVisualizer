@@ -33,6 +33,9 @@ export interface SectionCandidates {
 
 export interface AutoSectionOptions {
   parser?: { parseFromString(text: string, type: string): Document };
+  /** 走査対象パートの index（part-list 順、既定 0）。範囲外は 0 に
+   *  フォールバック。 */
+  partIndex?: number;
 }
 
 /**
@@ -58,7 +61,10 @@ export function collectSectionCandidates(
   const partEls = dom.querySelectorAll('part');
   if (partEls.length === 0) return out;
 
-  const measures = partEls[0].querySelectorAll('measure');
+  // 範囲外の partIndex は 0（先頭パート）にフォールバック。
+  const rawIdx = opts.partIndex ?? 0;
+  const partIdx = rawIdx >= 0 && rawIdx < partEls.length ? rawIdx : 0;
+  const measures = partEls[partIdx].querySelectorAll('measure');
   out.total = measures.length;
 
   let prevKey: string | null = null;
