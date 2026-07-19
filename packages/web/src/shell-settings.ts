@@ -34,6 +34,8 @@ export interface ShellSettingsDeps {
   /** Freeze/resume the practice session while the panel is open (P1-6). */
   pausePractice: () => void;
   resumePractice: () => void;
+  /** パネルが閉じるときの後始末（レイテンシ較正の中断など）。 */
+  onPanelClose?: () => void;
 }
 
 export interface ShellSettings {
@@ -73,6 +75,7 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     showSessionSummary: deps.showSessionSummary,
     pausePractice: deps.pausePractice,
     resumePractice: deps.resumePractice,
+    onClose: deps.onPanelClose,
   } as any);
 
   // Boot-time seed — honor the persisted-prefs debug overlay state

@@ -98,6 +98,9 @@ export interface SettingsPanelDeps {
   pausePractice?(): void;
   /** Resume after the panel closes. Paired with pausePractice. */
   resumePractice?(): void;
+  /** パネルが閉じるとき（closeBtn / backdrop / rescan 等すべての経路）に
+   *  呼ばれる後始末フック — レイテンシ較正の中断などに使う。 */
+  onClose?(): void;
 }
 
 export interface SettingsPanel {
@@ -173,6 +176,7 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     deps.modalFocus.close(deps.dom.panel);
     // Rebase the clock + resume Transport after the panel is gone.
     deps.resumePractice?.();
+    deps.onClose?.();
   }
 
   // ─── event wiring ─────────────────────────────────────────────────
