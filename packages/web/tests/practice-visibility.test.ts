@@ -111,4 +111,71 @@ describe('createPracticeVisibilityController', () => {
     expect(practice.startAudioTime).toBeCloseTo(now + 0.05 - 4.858, 5);
     expect(start).toHaveBeenCalledOnce();
   });
+
+  // ─── explicit pause / resume (P1-6 settings-panel, P2-13 ⏸) ────────
+
+  it('pause() freezes + sets practice.paused; resume() rebases + clears it', () => {
+    const practice = { enabled: true, startAudioTime: 2, paused: false };
+    const pause = vi.fn();
+    const start = vi.fn();
+    let now = 12;
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: now },
+        Transport: { state: 'started', pause, start },
+      }),
+      log: vi.fn(),
+    });
+
+    ctrl.pause();
+    expect(practice.paused).toBe(true);
+    expect(ctrl.isPaused()).toBe(true);
+    expect(pause).toHaveBeenCalledOnce(); // Transport paused
+
+    now = 42;
+    ctrl.resume();
+    expect(practice.paused).toBe(false);
+    expect(ctrl.isPaused()).toBe(false);
+    expect(practice.startAudioTime).toBeCloseTo(32.05, 5); // elapsed 10s preserved
+    expect(start).toHaveBeenCalledOnce();
+  });
+
+  it('a tab refocus during an explicit pause does NOT resume', () => {
+    const practice = { enabled: true, startAudioTime: 2, paused: false };
+    const start = vi.fn();
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: 12 },
+        Transport: { state: 'started', pause: vi.fn(), start },
+      }),
+      log: vi.fn(),
+    });
+
+    ctrl.pause(); // settings panel opens
+    ctrl.onVisible(); // tab refocus while the panel is still up
+    expect(practice.paused).toBe(true); // still paused
+    expect(start).not.toHaveBeenCalled(); // Transport NOT resumed
+
+    ctrl.resume(); // panel closes
+    expect(practice.paused).toBe(false);
+    expect(start).toHaveBeenCalledOnce();
+  });
+
+  it('pause() is idempotent (double-open guard)', () => {
+    const practice = { enabled: true, startAudioTime: 2, paused: false };
+    const pause = vi.fn();
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: 12 },
+        Transport: { state: 'started', pause, start: vi.fn() },
+      }),
+      log: vi.fn(),
+    });
+    ctrl.pause();
+    ctrl.pause();
+    expect(pause).toHaveBeenCalledOnce(); // second pause is a no-op
+  });
 });

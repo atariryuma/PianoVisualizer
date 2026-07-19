@@ -91,6 +91,13 @@ export interface SettingsPanelDeps {
   /** Show the session-summary modal (Reset button). Only fires when
    *  `state.running` is true. */
   showSessionSummary?(): void;
+  /** Pause the practice session while the panel is open (freeze clock +
+   *  pause Transport). Called from open(); resume from close(). Optional
+   *  so tests / non-practice contexts can omit it. Without this, a kid who
+   *  opens ⚙ mid-section watches every note auto-miss behind the modal. */
+  pausePractice?(): void;
+  /** Resume after the panel closes. Paired with pausePractice. */
+  resumePractice?(): void;
 }
 
 export interface SettingsPanel {
@@ -153,6 +160,9 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
   }
 
   function open(): void {
+    // Freeze the practice clock BEFORE showing the panel so no note is
+    // auto-missed in the frame the modal appears.
+    deps.pausePractice?.();
     deps.dom.panel.classList.add('visible');
     refresh();
     deps.modalFocus.open(deps.dom.panel);
@@ -161,6 +171,8 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
   function close(): void {
     deps.dom.panel.classList.remove('visible');
     deps.modalFocus.close(deps.dom.panel);
+    // Rebase the clock + resume Transport after the panel is gone.
+    deps.resumePractice?.();
   }
 
   // ─── event wiring ─────────────────────────────────────────────────

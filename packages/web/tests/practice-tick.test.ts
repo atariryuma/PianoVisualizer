@@ -81,6 +81,34 @@ describe('createPracticeTick — enabled gate', () => {
     expect(deps.matchNoteOnset).not.toHaveBeenCalled();
     expect(deps.completePracticeSection).not.toHaveBeenCalled();
   });
+
+  it('does nothing while paused — no auto-miss behind a modal (P1-6)', () => {
+    // The AudioContext clock keeps ticking while the settings panel is
+    // open; if the tick ran, elapsed would be way past every note and the
+    // whole rhythm section would auto-miss. The paused gate prevents that.
+    const note = makeNote({ timeMs: 100 });
+    const deps = makeDeps({
+      practiceElapsedMs: () => 999999, // clock ran far ahead during pause
+      practice: {
+        enabled: true,
+        paused: true,
+        mode: 'rhythm',
+        sectionNotes: [note],
+        currentNoteIdx: 0,
+        hits: 0,
+        misses: 0,
+        sectionCombo: 0,
+        _completing: false,
+        _completionTimer: null,
+        _lastProgUpdate: 0,
+      } as unknown as PracticeTickDeps['practice'],
+    });
+    const tick = createPracticeTick(deps);
+    tick(0, false, null);
+    expect(note.missed).toBeUndefined();
+    expect(deps.practice.misses).toBe(0);
+    expect(deps.completePracticeSection).not.toHaveBeenCalled();
+  });
 });
 
 // ─── auto-mark (rhythm mode) ─────────────────────────────────────────

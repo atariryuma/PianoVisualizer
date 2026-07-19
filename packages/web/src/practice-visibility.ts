@@ -9,6 +9,11 @@
 export interface PracticeVisibilityPracticeRef {
   enabled: boolean;
   startAudioTime: number;
+  /** Set true while an explicit pause (settings panel / ⏸ button) holds
+   *  the session. practice-tick reads this to skip auto-miss + cursor
+   *  advance so the AudioContext clock (which keeps ticking) can't drain
+   *  the section behind a modal. */
+  paused?: boolean;
   _cursorScanIdx?: number;
   _lastCursorNoteIdx?: number;
 }
@@ -31,8 +36,20 @@ export interface PracticeVisibilityDeps {
 }
 
 export interface PracticeVisibilityController {
+  /** Tab hidden — freeze the clock + pause Transport. No-op if already frozen. */
   onHidden(): void;
+  /** Tab visible — resume, UNLESS an explicit pause still holds the
+   *  session (a tab refocus mid-settings-panel must not un-pause). */
   onVisible(): void;
+  /** Explicit pause (settings panel opened / ⏸ pressed). Freezes like
+   *  onHidden AND sets practice.paused + an explicit-hold latch so a
+   *  tab-visible event can't resume until resume() is called. */
+  pause(): void;
+  /** Explicit resume (settings panel closed / ▶ pressed). Clears the
+   *  latch, rebases the clock, restarts Transport, clears practice.paused. */
+  resume(): void;
+  /** True while an explicit pause holds the session. */
+  isPaused(): boolean;
 }
 
 const DEFAULT_RESUME_LEAD_SEC = 0.05;
@@ -46,6 +63,9 @@ export function createPracticeVisibilityController(
     elapsedSec: number;
     transportWasStarted: boolean;
   } | null = null;
+  /** Latch set by pause(); an explicit pause survives tab visibility
+   *  events (a refocus while the settings panel is open must not resume). */
+  let explicitHold = false;
 
   function toneNowSec(tone: PracticeVisibilityToneRef | undefined | null): number {
     const ctxNow = tone?.context?.currentTime;
@@ -55,7 +75,9 @@ export function createPracticeVisibilityController(
     return performance.now() / 1000;
   }
 
-  function onHidden(): void {
+  /** Freeze the practice timeline + pause Transport. Idempotent (guarded
+   *  by `frozen`). Shared by tab-hidden and explicit pause. */
+  function freeze(reason: string): void {
     if (!deps.practice.enabled || frozen) return;
     const tone = deps.getTone();
     const nowSec = toneNowSec(tone);
@@ -73,7 +95,9 @@ export function createPracticeVisibilityController(
     }
 
     log(
-      '[PRACTICE-VISIBILITY] hidden freeze ' +
+      '[PRACTICE-VISIBILITY] ' +
+        reason +
+        ' freeze ' +
         JSON.stringify({
           elapsedMs: Math.round(elapsedSec * 1000),
           transportWasStarted,
@@ -81,7 +105,9 @@ export function createPracticeVisibilityController(
     );
   }
 
-  function onVisible(): void {
+  /** Rebase the clock from the frozen elapsed + restart Transport.
+   *  Idempotent (guarded by `frozen`). Shared by tab-visible and resume. */
+  function thaw(reason: string): void {
     if (!frozen) return;
     const tone = deps.getTone();
     const leadSec = frozen.transportWasStarted ? resumeLeadSec : 0;
@@ -101,7 +127,9 @@ export function createPracticeVisibilityController(
     }
 
     log(
-      '[PRACTICE-VISIBILITY] visible resume ' +
+      '[PRACTICE-VISIBILITY] ' +
+        reason +
+        ' resume ' +
         JSON.stringify({
           elapsedMs: Math.round(frozen.elapsedSec * 1000),
           leadMs: Math.round(leadSec * 1000),
@@ -111,5 +139,30 @@ export function createPracticeVisibilityController(
     frozen = null;
   }
 
-  return { onHidden, onVisible };
+  function onHidden(): void {
+    freeze('hidden');
+  }
+
+  function onVisible(): void {
+    // A tab refocus while an explicit pause holds the session must NOT
+    // resume — the settings panel / ⏸ is still up.
+    if (explicitHold) return;
+    thaw('visible');
+  }
+
+  function pause(): void {
+    if (explicitHold) return;
+    explicitHold = true;
+    deps.practice.paused = true;
+    freeze('pause');
+  }
+
+  function resume(): void {
+    if (!explicitHold) return;
+    explicitHold = false;
+    deps.practice.paused = false;
+    thaw('resume');
+  }
+
+  return { onHidden, onVisible, pause, resume, isPaused: () => explicitHold };
 }

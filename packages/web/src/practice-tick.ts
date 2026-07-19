@@ -26,6 +26,10 @@
 /** Practice slice the tick reads + writes. */
 export interface PracticeTickPracticeRef {
   enabled: boolean;
+  /** True while an explicit pause (settings panel / ⏸) holds the session.
+   *  The tick skips entirely so the still-ticking AudioContext clock can't
+   *  auto-miss the whole section behind a modal. */
+  paused?: boolean;
   mode: string;
   sectionNotes: PracticeTickNote[];
   currentNoteIdx: number;
@@ -118,7 +122,7 @@ export function createPracticeTick(
     isOnsetNote: boolean,
     pitchHz: number | null
   ): void {
-    if (!deps.practice.enabled) return;
+    if (!deps.practice.enabled || deps.practice.paused) return;
     const elapsed = deps.practiceElapsedMs();
     const notes = deps.practice.sectionNotes;
     const len = notes.length;

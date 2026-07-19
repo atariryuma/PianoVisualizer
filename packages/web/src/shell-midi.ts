@@ -97,6 +97,12 @@ export interface ShellMidi {
   connectBleMidi(): Promise<void>;
   /** Drain the dispatch redelivery dedupe — called from session-reset. */
   resetMidiDispatch(): void;
+  /** Freeze the practice clock + pause Transport (settings panel / ⏸). */
+  pausePractice(): void;
+  /** Rebase the clock + resume Transport. */
+  resumePractice(): void;
+  /** True while an explicit pause holds the session. */
+  isPracticePaused(): boolean;
 }
 
 export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
@@ -129,7 +135,10 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
   const _dispatch = MidiDispatch.createMidiDispatch({
     midiInput,
     practice,
-    isSessionRunning: () => !!state.running,
+    // False while an explicit pause holds the session (settings panel / ⏸)
+    // so a MIDI press behind the modal can't phantom-advance the cursor or
+    // score — matching the documented "settings-panel = paused" invariant.
+    isSessionRunning: () => !!state.running && !practice.paused,
     pulseMidiBadge: () => _indicator.pulseBadge(),
     onMidiNoteOn: (m: number, v: number) => deps.getOnMidiNoteOn()(m, v),
     onMidiNoteOff: (m: number) => deps.getOnMidiNoteOff()(m),
@@ -288,5 +297,11 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
       await _bleConnect.connect();
     },
     resetMidiDispatch: () => _dispatch.reset(),
+    // Explicit practice pause/resume (settings panel, ⏸ button) — shares
+    // the freeze/resume machinery with tab-visibility so the two can't
+    // fight (a tab refocus mid-pause won't un-pause).
+    pausePractice: () => _practiceVisibility.pause(),
+    resumePractice: () => _practiceVisibility.resume(),
+    isPracticePaused: () => _practiceVisibility.isPaused(),
   };
 }

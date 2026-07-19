@@ -50,6 +50,10 @@ export type PracticeHandFilter = 'L' | 'R' | null;
  *  reducers); the shell adds the UI fields below. */
 export interface InitialPracticeState {
   enabled: boolean;
+  /** True while an explicit pause (settings panel open / ⏸ button) holds
+   *  the session. The practice-tick skips while set so the AudioContext
+   *  clock can't drain the section behind a modal. */
+  paused: boolean;
   sectionIdx: number;
   /** Tempo as a percentage of the score's notated BPM. 60 / 75 / 90 / 100 —
    *  slower percentages produce a bigger speedFactor in the practice clock. */
@@ -109,6 +113,7 @@ export interface InitialPracticeState {
 export function createInitialPractice(audioOffsetMs: number): InitialPracticeState {
   return {
     enabled: false,
+    paused: false,
     sectionIdx: 0,
     tempoPct: 60,
     mode: 'guided',

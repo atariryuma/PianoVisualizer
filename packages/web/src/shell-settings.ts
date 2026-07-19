@@ -31,6 +31,9 @@ export interface ShellSettingsDeps {
   rescanMidi: () => void;
   connectBleMidi: () => void;
   showSessionSummary: () => void;
+  /** Freeze/resume the practice session while the panel is open (P1-6). */
+  pausePractice: () => void;
+  resumePractice: () => void;
 }
 
 export interface ShellSettings {
@@ -68,6 +71,8 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     rescanMidi: deps.rescanMidi,
     connectBleMidi: deps.connectBleMidi,
     showSessionSummary: deps.showSessionSummary,
+    pausePractice: deps.pausePractice,
+    resumePractice: deps.resumePractice,
   } as any);
 
   // Boot-time seed — honor the persisted-prefs debug overlay state

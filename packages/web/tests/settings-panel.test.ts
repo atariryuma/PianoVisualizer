@@ -97,6 +97,18 @@ describe('createSettingsPanel — open/close', () => {
     expect(deps.modalFocus.close).toHaveBeenCalledWith(deps.dom.panel);
   });
 
+  it('open() pauses practice, close() resumes it (P1-6)', () => {
+    const pausePractice = vi.fn();
+    const resumePractice = vi.fn();
+    const deps = makeDeps({ pausePractice, resumePractice });
+    const panel = createSettingsPanel(deps);
+    panel.open();
+    expect(pausePractice).toHaveBeenCalledOnce();
+    expect(resumePractice).not.toHaveBeenCalled();
+    panel.close();
+    expect(resumePractice).toHaveBeenCalledOnce();
+  });
+
   it('clicking the open button opens the panel', () => {
     const deps = makeDeps();
     createSettingsPanel(deps);

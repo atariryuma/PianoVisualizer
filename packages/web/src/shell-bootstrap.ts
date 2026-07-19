@@ -450,6 +450,8 @@ export function boot(): void {
     },
     connectBleMidi: () => _midi.connectBleMidi(),
     showSessionSummary: () => showSessionSummary(),
+    pausePractice: () => _midi.pausePractice(),
+    resumePractice: () => _midi.resumePractice(),
   });
   ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 
