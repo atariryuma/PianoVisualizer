@@ -504,7 +504,24 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     return notesRect ?? cursorRect;
   }
 
+  /** R2-1: paint 内メモ。paintCustomCursor が X レンジ用に、
+   *  findStaffSystemYRange がアンカー用に同じノートの rect を求めるため、
+   *  1 回の paint 中は Map で共有する（paint 跨ぎのキャッシュはレイアウト
+   *  変化で古くなるので持たない — paint 境界で必ず破棄）。 */
+  let noteRectMemo: Map<OsmdGraphicalNote, RectLike | null> | null = null;
+
   function noteToViewportRect(note: OsmdGraphicalNote): RectLike | null {
+    if (noteRectMemo) {
+      const hit = noteRectMemo.get(note);
+      if (hit !== undefined) return hit;
+      const r = noteToViewportRectUncached(note);
+      noteRectMemo.set(note, r);
+      return r;
+    }
+    return noteToViewportRectUncached(note);
+  }
+
+  function noteToViewportRectUncached(note: OsmdGraphicalNote): RectLike | null {
     let g: SVGGElement | null | undefined;
     try {
       g = typeof note?.getSVGGElement === 'function' ? note.getSVGGElement() : null;
@@ -628,6 +645,10 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
           /* invalid selector on this browser — bail */
           break;
         }
+        // R2-1: svg ルートに達したら打ち切り — stave は svg 内にしか存在
+        // しないので、それより上の div を querySelectorAll しても結果は
+        // 同一のまま全譜面スキャンを繰り返すだけ。
+        if (parent.tagName && parent.tagName.toLowerCase() === 'svg') break;
         parent = parent.parentElement;
       }
       if (bestStaves.length === 0) continue;
@@ -769,6 +790,16 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
    *  (verified on La Campanella's 78 octave-shifts). Safe to call on
    *  every cursor change; idempotent + cheap. */
   function paintCustomCursor(osmd: OsmdInstanceRef): void {
+    // R2-1: この paint の間だけ note→rect をメモ化（finally で必ず破棄）。
+    noteRectMemo = new Map();
+    try {
+      paintCustomCursorInner(osmd);
+    } finally {
+      noteRectMemo = null;
+    }
+  }
+
+  function paintCustomCursorInner(osmd: OsmdInstanceRef): void {
     const cursor = osmd.cursor;
     if (!cursor) return;
     const ce = cursor.cursorElement;
