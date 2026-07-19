@@ -74,7 +74,18 @@ const DEFAULT_ENDPOINT_URL = '/log';
  *  reads only the storage override (if any) and location. */
 export function isRemoteLogEnabled(deps: RemoteLogDeps = {}): boolean {
   if (deps.forceEnabled !== undefined) return deps.forceEnabled;
-  const storage = deps.storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
+  // localStorage のグローバルアクセサ評価は、Cookie 全ブロック環境や
+  // sandbox iframe で SecurityError を投げる（typeof でも発火）。boot の
+  // 最初の呼び出しがここなので、握りつぶさないと全リスナー未設置の
+  // 死画面になる。
+  let storage = deps.storage;
+  if (storage === undefined) {
+    try {
+      storage = typeof localStorage !== 'undefined' ? localStorage : null;
+    } catch {
+      storage = null;
+    }
+  }
   const key = deps.storageKey ?? DEFAULT_STORAGE_KEY;
   if (storage) {
     try {

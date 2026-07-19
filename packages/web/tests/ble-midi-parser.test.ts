@@ -164,3 +164,44 @@ describe('parseBleMidiPacket — defensive paths', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 });
+
+// ─── System Realtime / System Common (Roland Active Sensing regression) ──
+
+describe('parseBleMidiPacket — System Realtime bytes', () => {
+  it('Active Sensing (0xFE) coalesced before a note-on does not eat the note', () => {
+    // [hdr, ts, FE, ts, 90, nn, vv] — Roland sends FE ~every 250ms and the
+    // BLE stack merges it with note traffic. The old parser adopted FE as
+    // runningStatus and consumed the rest of the packet silently.
+    const buf = new Uint8Array([0x80, 0x80, 0xfe, 0x80, 0x90, 60, 100]).buffer;
+    const events: Array<[number, number, number]> = [];
+    parseBleMidiPacket(buf, (s, a, b) => events.push([s, a, b]));
+    expect(events).toEqual([[0x90, 60, 100]]);
+  });
+
+  it('MIDI Clock (0xF8) between events preserves running status', () => {
+    // note-on, then clock, then a running-status note-off pair.
+    const buf = new Uint8Array([0x80, 0x80, 0x90, 60, 100, 0x80, 0xf8, 0x80, 0x90, 60, 0]).buffer;
+    const events: Array<[number, number, number]> = [];
+    parseBleMidiPacket(buf, (s, a, b) => events.push([s, a, b]));
+    expect(events).toEqual([
+      [0x90, 60, 100],
+      [0x90, 60, 0],
+    ]);
+  });
+
+  it('note-off after Active Sensing is not dropped (stuck-note regression)', () => {
+    const buf = new Uint8Array([0x80, 0x80, 0xfe, 0x80, 0x80, 60, 0]).buffer;
+    const events: Array<[number, number, number]> = [];
+    parseBleMidiPacket(buf, (s, a, b) => events.push([s, a, b]));
+    expect(events).toEqual([[0x80, 60, 0]]);
+  });
+
+  it('System Common (0xF2 song position) clears running status and skips its data', () => {
+    // F2 has 2 data bytes; a following data pair without a fresh status
+    // must NOT dispatch (running status was cleared per spec).
+    const buf = new Uint8Array([0x80, 0x80, 0x90, 60, 100, 0x80, 0xf2, 0x10, 0x20, 61, 100]).buffer;
+    const events: Array<[number, number, number]> = [];
+    parseBleMidiPacket(buf, (s, a, b) => events.push([s, a, b]));
+    expect(events).toEqual([[0x90, 60, 100]]);
+  });
+});

@@ -52,7 +52,30 @@ export function parseBleMidiPacket(buf: ArrayBuffer, dispatch: DispatchMidiMessa
       if (i >= data.length) break;
       // Now data[i] should be a status or running data
       if (data[i] & 0x80) {
-        runningStatus = data[i];
+        const st = data[i];
+        if (st >= 0xf8) {
+          // System Realtime (0xF8–0xFE: clock / active sensing / reset):
+          // standalone 1-byte message — carries NO data and must NOT
+          // alter running status (MIDI 1.0 spec). Roland keyboards send
+          // Active Sensing (0xFE) every ~250ms and BLE stacks coalesce
+          // it into packets alongside note events; treating it as a
+          // status byte used to poison runningStatus and consume the
+          // rest of the packet, silently dropping note-on/off (stuck
+          // notes on the user's GO:PIANO88).
+          i++;
+          continue;
+        }
+        if (st >= 0xf1 && st <= 0xf7) {
+          // System Common (MTC quarter-frame / song position / song
+          // select / tune request / stray EOX): clears running status
+          // per spec. Skip its data bytes: F1/F3 = 1, F2 = 2, rest = 0.
+          runningStatus = 0;
+          i++;
+          i += st === 0xf2 ? 2 : st === 0xf1 || st === 0xf3 ? 1 : 0;
+          continue;
+        }
+        // Channel status (0x80–0xEF) or SysEx start (0xF0).
+        runningStatus = st;
         i++;
       }
     }

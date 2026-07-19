@@ -18,6 +18,7 @@ import * as PianoCore from '@piano/core';
 import * as UserSongsMxl from './user-songs-mxl';
 import * as UserSongsStore from './user-songs-store';
 import * as OnlineLibrary from './online-library';
+import { safeLocalStorage } from './prefs-storage';
 
 export interface ShellUserLibraryDeps {
   /** Built-in SONGS registry — user imports merge in by id. */
@@ -95,7 +96,9 @@ export function createShellUserLibrary(deps: ShellUserLibraryDeps): ShellUserLib
   const _onlineLibrary = OnlineLibrary.createOnlineLibrary({
     libraryEntryFromGhFile: PianoCore.libraryEntryFromGhFile,
     fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
-    localStorage,
+    // ストレージ封鎖環境（SecurityError）ではカタログキャッシュなしの
+    // メモリのみで動く no-op スタブに degrade。
+    localStorage: safeLocalStorage() ?? { getItem: () => null, setItem: () => {} },
     now: () => Date.now(),
   } as any);
 

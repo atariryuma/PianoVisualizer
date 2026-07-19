@@ -92,4 +92,23 @@ if (typeof caches !== 'undefined') {
     .catch(() => {});
 }
 
-ShellBootstrap.boot();
+// boot() が同期 throw すると全リスナー未設置の「見えるのに押せない」
+// 死画面になる。最低限の可視エラー + コンソール出力に degrade する。
+try {
+  ShellBootstrap.boot();
+} catch (e) {
+  console.error('[boot] fatal:', e);
+  try {
+    const el = document.createElement('div');
+    el.setAttribute(
+      'style',
+      'position:fixed;inset:auto 12px 12px 12px;z-index:9999;padding:12px 16px;' +
+        'background:rgba(180,40,60,.92);color:#fff;font:14px system-ui;border-radius:10px'
+    );
+    el.textContent =
+      'アプリの起動に失敗しました。ページを再読み込みしてください / Failed to start — please reload.';
+    document.body.appendChild(el);
+  } catch {
+    /* DOM さえ使えない環境では console のみ */
+  }
+}

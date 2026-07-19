@@ -142,46 +142,12 @@ export function createBleMidiConnect(deps: BleMidiConnectDeps): BleMidiConnect {
       if (!device.gatt) throw new Error('BLE device exposes no GATT server');
 
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
-      const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
-      await ch.startNotifications();
 
-      ch.addEventListener('characteristicvaluechanged', (e) => {
-        // The double-cast through `unknown` is needed because TS
-        // doesn't think EventTarget overlaps with the
-        // BluetoothCharacteristic shape — they're nominally distinct
-        // interfaces. DataView.buffer is `ArrayBufferLike` (covers
-        // SharedArrayBuffer); BLE packets always come from a real
-        // ArrayBuffer (the GATT stack doesn't ship shared memory).
-        // Safe to narrow.
-        const target = e.target as unknown as { value: DataView };
-        deps.parsePacket(target.value.buffer as ArrayBuffer);
-      });
-
-      deps.bleMidi.device = device;
-      deps.bleMidi.characteristic = ch;
-      deps.bleMidi.connected = true;
-
-      deps.midiInput.enabled = true;
-      deps.midiInput.port = { name: device.name || 'BLE-MIDI' };
-      // Sentinel 0 so it matches the Web MIDI attach path
-      // (midi-ports.ts attach also writes 0). Nothing now reads
-      // `lastEventTime` as a gating value — mic-pipeline and
-      // game-state-update both moved to `enabled`-only checks —
-      // but keeping it consistent simplifies future debug log
-      // interpretation.
-      deps.midiInput.lastEventTime = 0;
-      if (deps.hasAudioCtx() && !deps.state.micSuspended) {
-        deps.suspendMic();
-      }
-      deps.setInputIndicator();
-      deps.refreshIntroHint?.();
-      deps.micMeter?.classList.remove('visible');
-      deps.showHitChip?.('good', deps.t('midiConnectedFmt', { v: device.name || 'BLE-MIDI' }));
-      console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
-
-      // Track the disconnect handler so reconnect attempts don't
-      // stack multiple listeners on the same device instance.
+      // 切断リスナーは**ハンドシェイク前**に登録する。従来は接続状態を
+      // 立てた後に登録しており、その僅かな窓で切断されると
+      // connected=true / enabled=true のままイベントを取りこぼし、
+      // リロードまで入力ゼロ＋マイク封印のゾンビ状態になった。
+      // ハンドラは全て冪等（未フリップ状態で発火しても片付けのみ）。
       const onGattDisconnect = (): void => {
         deps.bleMidi.connected = false;
         deps.bleMidi.characteristic = null;
@@ -202,14 +168,68 @@ export function createBleMidiConnect(deps: BleMidiConnectDeps): BleMidiConnect {
           }
         }
         deps.bleMidi._disconnectHandler = null;
+        deps.bleMidi.device = null;
         console.log('[BLE-MIDI] disconnected');
         // Restart Web MIDI auto-rescan so a fallback USB keyboard
         // (or a Web MIDI Browser BLE pair re-established outside this
         // page) auto-attaches without the user touching the settings.
         deps.startMidiAutoRescan();
       };
+      deps.bleMidi.device = device;
       deps.bleMidi._disconnectHandler = onGattDisconnect;
       device.addEventListener('gattserverdisconnected', onGattDisconnect);
+      // 登録前に切断済みならここで検出して失敗パスへ（イベントは来ない）。
+      if (!server.connected) throw new Error('BLE connection dropped during handshake');
+
+      const service = await server.getPrimaryService(BLE_MIDI_SERVICE);
+      const ch = await service.getCharacteristic(BLE_MIDI_CHAR);
+      await ch.startNotifications();
+
+      ch.addEventListener('characteristicvaluechanged', (e) => {
+        // The double-cast through `unknown` is needed because TS
+        // doesn't think EventTarget overlaps with the
+        // BluetoothCharacteristic shape — they're nominally distinct
+        // interfaces. DataView.buffer is `ArrayBufferLike` (covers
+        // SharedArrayBuffer); BLE packets always come from a real
+        // ArrayBuffer (the GATT stack doesn't ship shared memory).
+        // Safe to narrow.
+        const target = e.target as unknown as { value: DataView };
+        deps.parsePacket(target.value.buffer as ArrayBuffer);
+      });
+
+      // 逆方向の attach 対称性: すでに Web MIDI ポートが attach 済み
+      // （USB 接続中に BLE を繋いだ等）の場合、port の上書きだけだと旧
+      // ポートの onmidimessage が生きたままになり USB+BLE の二重入力に
+      // なる（midi-ports.ts attach は旧ハンドラを外している — その対）。
+      const prevPort = deps.midiInput.port as { onmidimessage?: unknown } | null;
+      if (prevPort && 'onmidimessage' in prevPort) {
+        try {
+          (prevPort as { onmidimessage: null | unknown }).onmidimessage = null;
+        } catch {
+          /* detached port — best effort */
+        }
+      }
+
+      deps.bleMidi.characteristic = ch;
+      deps.bleMidi.connected = true;
+
+      deps.midiInput.enabled = true;
+      deps.midiInput.port = { name: device.name || 'BLE-MIDI' };
+      // Sentinel 0 so it matches the Web MIDI attach path
+      // (midi-ports.ts attach also writes 0). Nothing now reads
+      // `lastEventTime` as a gating value — mic-pipeline and
+      // game-state-update both moved to `enabled`-only checks —
+      // but keeping it consistent simplifies future debug log
+      // interpretation.
+      deps.midiInput.lastEventTime = 0;
+      if (deps.hasAudioCtx() && !deps.state.micSuspended) {
+        deps.suspendMic();
+      }
+      deps.setInputIndicator();
+      deps.refreshIntroHint?.();
+      deps.micMeter?.classList.remove('visible');
+      deps.showHitChip?.('good', deps.t('midiConnectedFmt', { v: device.name || 'BLE-MIDI' }));
+      console.log('[BLE-MIDI] connected: ' + (device.name || 'unknown'));
     } catch (e) {
       const err = e as Error;
       // Cleanup on partial-failure path: if gatt.connect() succeeded

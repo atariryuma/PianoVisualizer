@@ -162,6 +162,14 @@ export function createSessionReset(deps: SessionResetDeps): SessionReset {
       s.prevSpectrum = null;
       s.lastOnsetTimeMs = -9999;
       s.smoothEnergy = 0;
+      // マイク照合の median リング — 前セッション最後の音高が次セッション
+      // 最初の照合に混入するのを防ぐ。
+      s.recentPitches = [];
+      // voice 抑制カウンタ — 5 に達したまま残るとリセット後もヘアトリガー
+      // 状態（voice様フレーム1発で500ms抑制）が持続する。
+      s.agcVoiceRejectCount = 0;
+      s.comboDecayAccum = 0;
+      s.lastNoisePenaltyMs = 0;
       deps.reducers.resetWakeUpFlashState(s);
       s.glowPulseIntensity = 0;
       s.shimmerPhase = -1;

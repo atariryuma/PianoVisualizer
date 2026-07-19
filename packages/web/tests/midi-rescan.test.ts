@@ -141,6 +141,7 @@ function makeFixture(over: Partial<MidiRescanDeps> = {}): Fixture {
       next.cb();
       return delay;
     },
+    pendingTimerCount: () => queue.length,
   };
 }
 
@@ -531,5 +532,62 @@ describe('startAutoRescan + ramped cadence', () => {
     fx.flushTimer();
     await Promise.resolve();
     expect(requestSpy).toHaveBeenCalled();
+  });
+});
+
+// ─── inflight dedupe + poller latch + access cache API (調査所見の回帰) ──
+
+describe('createMidiRescan — ensureAccess inflight dedupe', () => {
+  it('concurrent ensureAccess calls share ONE requestMIDIAccess', async () => {
+    const fx = makeFixture();
+    const reqSpy = vi.fn().mockResolvedValue(fx.access);
+    fx.setRequest(reqSpy);
+    const [a, b] = await Promise.all([fx.rescan.ensureAccess(), fx.rescan.ensureAccess()]);
+    expect(a).toBe(b);
+    expect(reqSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('force + immediate plain call share the same in-flight request (force tick pattern)', async () => {
+    const fx = makeFixture();
+    const reqSpy = vi.fn().mockResolvedValue(fx.access);
+    fx.setRequest(reqSpy);
+    // The poller's force tick fires ensureAccess(true) without awaiting,
+    // then rescan() calls ensureAccess() — previously TWO requests, one
+    // leaking with a live onstatechange.
+    const p1 = fx.rescan.ensureAccess(true);
+    const p2 = fx.rescan.ensureAccess();
+    await Promise.all([p1, p2]);
+    expect(reqSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createMidiRescan — getAccess / dropAccessCache', () => {
+  it('getAccess exposes the cached access; dropAccessCache unhooks + clears', async () => {
+    const fx = makeFixture();
+    await fx.rescan.ensureAccess();
+    expect(fx.rescan.getAccess()).toBe(fx.access);
+    expect(fx.access.fireStateChange).toBeTruthy(); // handler wired
+    fx.rescan.dropAccessCache();
+    expect(fx.rescan.getAccess()).toBeNull();
+    expect(fx.access.fireStateChange).toBeNull(); // handler unhooked before drop
+  });
+});
+
+describe('createMidiRescan — poller zombie prevention', () => {
+  it('an in-flight tick resolving after stopAutoRescan does not reschedule', async () => {
+    // Attach never succeeds → the tick's rescan resolves false and would
+    // normally reschedule.
+    const fx = makeFixture();
+    fx.mocks.attachMidiPort.mockReturnValue(false);
+    fx.rescan.startAutoRescan();
+    fx.advanceNow(1000);
+    fx.flushTimer(); // run the tick — rescan(true) promise now in flight
+    // Stop the poller BEFORE the tick's promise resolves (returnToTitle).
+    fx.rescan.stopAutoRescan();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // No new timer may have been scheduled after the stop.
+    expect(fx.pendingTimerCount()).toBe(0);
   });
 });

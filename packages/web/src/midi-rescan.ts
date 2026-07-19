@@ -106,6 +106,12 @@ export interface MidiRescan {
   startAutoRescan(): void;
   /** Stop the ramped poller (idempotent). */
   stopAutoRescan(): void;
+  /** Currently cached MIDIAccess (or null) — the single source of truth
+   *  for visibility-resume health checks (verifyAlive). */
+  getAccess(): MidiAccessRef | null;
+  /** Drop the cached MIDIAccess safely (unhooks onstatechange first).
+   *  Used by the devicechange force-fresh path. */
+  dropAccessCache(): void;
   /** True when the auto-rescan poller is alive — drives the
    *  midi-indicator's hourglass "waiting" state. */
   isRescanRunning(): boolean;
@@ -117,17 +123,21 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
   const clearT = deps.clearTimeout ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
 
   let cachedAccess: MidiAccessRef | null = null;
+  /** requestMIDIAccess の in-flight promise。force tick が「投げっぱなし
+   *  force + 直後の rescan」で二重リクエストし、敗者の MIDIAccess が
+   *  onstatechange 付きでリークしていたのを、同一 promise の共有で排除。 */
+  let inflightAccess: Promise<MidiAccessRef> | null = null;
   let timer: unknown = 0;
   let tickCount = 0;
   let startedAt = 0;
+  /** stopAutoRescan 後に in-flight tick が resolve して poller が
+   *  ゾンビ復活するのを防ぐラッチ。 */
+  let pollerActive = false;
 
-  // ─── ensureAccess ────────────────────────────────────────────────
-  async function ensureAccess(force?: boolean): Promise<MidiAccessRef> {
-    if (force && cachedAccess) {
-      // Drop the stale MIDIAccess's listener BEFORE losing the
-      // reference, so the old object can't keep firing into our
-      // handler after a forced rescan (Web MIDI Browser keeps the
-      // dead access alive).
+  /** キャッシュ済み MIDIAccess を安全に破棄する（onstatechange を外して
+   *  から参照を失う）。ensureAccess(force) と手動 rescan の両方で使う。 */
+  function dropAccessCache(): void {
+    if (cachedAccess) {
       try {
         (cachedAccess as { onstatechange?: unknown }).onstatechange = null;
       } catch {
@@ -135,61 +145,77 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
       }
       cachedAccess = null;
     }
+  }
+
+  // ─── ensureAccess ────────────────────────────────────────────────
+  async function ensureAccess(force?: boolean): Promise<MidiAccessRef> {
+    if (force) dropAccessCache();
     if (cachedAccess) return cachedAccess;
-    if (!deps.navigator.requestMIDIAccess) {
+    // 二重リクエスト排除: force → 即 rescan の並走は同じ promise を共有
+    // （force 直後の in-flight は「今まさに取得中の新鮮な access」）。
+    if (inflightAccess) return inflightAccess;
+    const requestAccess = deps.navigator.requestMIDIAccess;
+    if (!requestAccess) {
       throw new Error('Web MIDI API not available');
     }
-
-    // sysex policy:
-    //   - Apple mobile (iPad / iPhone Web MIDI Browser): try sysex:true
-    //     first because WMB only exposes BLE-MIDI when sysex is granted.
-    //     Fall back to sysex:false on rejection so a sysex-denied WMB
-    //     session can still see USB-class devices.
-    //   - Desktop Chrome / Android Chrome: sysex:false only. We don't
-    //     need SysEx for note + CC events, and asking sysex:true here
-    //     would surface an unrelated permission prompt (the "Allow MIDI
-    //     devices with SysEx?" dialog) on every page load.
-    let access: MidiAccessRef;
-    if (deps.isAppleMobile()) {
-      let sysexErr: Error | null = null;
-      try {
-        access = await deps.navigator.requestMIDIAccess({ sysex: true });
-      } catch (e) {
-        sysexErr = e as Error;
+    const req = requestAccess.bind(deps.navigator);
+    inflightAccess = (async () => {
+      // sysex policy:
+      //   - Apple mobile (iPad / iPhone Web MIDI Browser): try sysex:true
+      //     first because WMB only exposes BLE-MIDI when sysex is granted.
+      //     Fall back to sysex:false on rejection so a sysex-denied WMB
+      //     session can still see USB-class devices.
+      //   - Desktop Chrome / Android Chrome: sysex:false only. We don't
+      //     need SysEx for note + CC events, and asking sysex:true here
+      //     would surface an unrelated permission prompt (the "Allow MIDI
+      //     devices with SysEx?" dialog) on every page load.
+      let access: MidiAccessRef;
+      if (deps.isAppleMobile()) {
+        let sysexErr: Error | null = null;
         try {
-          access = await deps.navigator.requestMIDIAccess({ sysex: false });
-        } catch (e2) {
-          const err2 = e2 as Error;
-          const reason =
-            '[sysex:true] ' +
-            (sysexErr.name || 'Err') +
-            ': ' +
-            sysexErr.message +
-            ' / [sysex:false] ' +
-            (err2.name || 'Err') +
-            ': ' +
-            err2.message;
-          throw new Error(reason);
+          access = await req({ sysex: true });
+        } catch (e) {
+          sysexErr = e as Error;
+          try {
+            access = await req({ sysex: false });
+          } catch (e2) {
+            const err2 = e2 as Error;
+            const reason =
+              '[sysex:true] ' +
+              (sysexErr.name || 'Err') +
+              ': ' +
+              sysexErr.message +
+              ' / [sysex:false] ' +
+              (err2.name || 'Err') +
+              ': ' +
+              err2.message;
+            throw new Error(reason);
+          }
         }
+      } else {
+        access = await req({ sysex: false });
       }
-    } else {
-      access = await deps.navigator.requestMIDIAccess({ sysex: false });
+
+      // Wire the statechange handler — desktop-Chrome path that
+      // handles hot-replug without the poller.
+      (access as { onstatechange?: (e: { port?: MidiPortRef | null }) => void }).onstatechange = (
+        e
+      ) => {
+        const port = e.port;
+        if (!port || port.type !== 'input') return;
+        console.log('[MIDI] state change: "' + port.name + '" → ' + port.state);
+        if (port.state === 'connected' && !deps.midiInput.enabled) deps.attachMidiPort(port);
+        else if (port.state === 'disconnected') deps.detachMidiPort(port);
+      };
+
+      cachedAccess = access;
+      return access;
+    })();
+    try {
+      return await inflightAccess;
+    } finally {
+      inflightAccess = null;
     }
-
-    // Wire the statechange handler — desktop-Chrome path that
-    // handles hot-replug without the poller.
-    (access as { onstatechange?: (e: { port?: MidiPortRef | null }) => void }).onstatechange = (
-      e
-    ) => {
-      const port = e.port;
-      if (!port || port.type !== 'input') return;
-      console.log('[MIDI] state change: "' + port.name + '" → ' + port.state);
-      if (port.state === 'connected' && !deps.midiInput.enabled) deps.attachMidiPort(port);
-      else if (port.state === 'disconnected') deps.detachMidiPort(port);
-    };
-
-    cachedAccess = access;
-    return access;
   }
 
   // ─── rescan ──────────────────────────────────────────────────────
@@ -203,7 +229,7 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
     // A user-initiated rescan (silent=false) drops the cached
     // MIDIAccess so a stale enumeration (e.g. WMB or post-sleep) can
     // be refreshed.
-    if (!silent) cachedAccess = null;
+    if (!silent) dropAccessCache();
 
     try {
       const access = await ensureAccess();
@@ -265,6 +291,7 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
   // ─── auto-rescan poller (ramped cadence) ────────────────────────
   function startAutoRescan(): void {
     if (timer) return;
+    pollerActive = true;
     tickCount = 0;
     startedAt = now();
     scheduleNext();
@@ -272,6 +299,7 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
   }
 
   function scheduleNext(): void {
+    if (!pollerActive) return;
     const elapsed = now() - startedAt;
     let delay: number;
     if (elapsed < 30_000) delay = 1_000;
@@ -302,7 +330,9 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
       rescan(true).then((ok) => {
         if (ok) {
           stopAutoRescan();
-        } else if (!deps.midiInput.enabled) {
+        } else if (pollerActive && !deps.midiInput.enabled) {
+          // pollerActive 再確認 — tick 走行中に外部から stopAutoRescan
+          // されたら再スケジュールしない（ゾンビ復活防止）。
           scheduleNext();
         }
       });
@@ -310,6 +340,7 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
   }
 
   function stopAutoRescan(): void {
+    pollerActive = false;
     if (timer) {
       clearT(timer);
       timer = 0;
@@ -330,5 +361,9 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
     startAutoRescan,
     stopAutoRescan,
     isRescanRunning,
+    /** 現在キャッシュ中の MIDIAccess（visibility 復帰の verifyAlive 用）。
+     *  shell 側ミラーの分裂バグを解消するため、実キャッシュを一元公開。 */
+    getAccess: () => cachedAccess,
+    dropAccessCache,
   };
 }

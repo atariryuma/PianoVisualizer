@@ -11,10 +11,12 @@ import {
 
 interface FakeTrack {
   stop: ReturnType<typeof vi.fn>;
+  addEventListener: ReturnType<typeof vi.fn>;
   __id: string;
 }
 interface FakeStream {
   getTracks(): FakeTrack[];
+  active: boolean;
   __id: string;
 }
 interface FakeSourceNode {
@@ -24,9 +26,10 @@ interface FakeSourceNode {
 }
 
 function makeStream(id: string): FakeStream {
-  const track1: FakeTrack = { stop: vi.fn(), __id: id + '-t1' };
+  const track1: FakeTrack = { stop: vi.fn(), addEventListener: vi.fn(), __id: id + '-t1' };
   return {
     __id: id,
+    active: true,
     getTracks: () => [track1],
   };
 }
@@ -37,6 +40,8 @@ function makeFixture(over: { hasAudioCtx?: boolean; gumReject?: Error } = {}) {
     micPermissionFailed: false,
     adaptiveSilenceRms: 0.1,
     recentPitches: [440],
+    agcGain: 12,
+    agcSmoothedRms: 0.4,
   };
   const setValueAtTime = vi.fn();
   const cancelScheduledValues = vi.fn();
@@ -480,5 +485,45 @@ describe('createMicLifecycle — decideInitialInputMode', () => {
     // not needed; just confirm the existing fixture's flow works without
     // calling probe (we already do above). This test pins the contract.
     expect(fx.initWebMIDISpy).toBeDefined();
+  });
+});
+
+// ─── mic recovery hardening (調査所見【高】の回帰) ────────────────────
+
+describe('createMicLifecycle — dead-stream recovery', () => {
+  it('re-acquires when the held stream is inactive (revoked / device lost)', async () => {
+    const fx = makeFixture();
+    const dead = makeStream('dead');
+    dead.active = false;
+    fx.setMicStreamSpy(dead as unknown as MediaStream);
+    fx.setMicStreamSpy.mockClear();
+    await fx.lc.acquire();
+    // Dead stream dropped, fresh getUserMedia ran, new stream installed.
+    expect(dead.getTracks()[0].stop).toHaveBeenCalled();
+    expect((fx.getMicStream() as unknown as FakeStream | null)?.__id).toBe('gum1');
+  });
+
+  it('track "ended" cleans up refs + flags micPermissionFailed', async () => {
+    const fx = makeFixture();
+    await fx.lc.acquire();
+    const stream = fx.getMicStream() as unknown as FakeStream;
+    const track = stream.getTracks()[0];
+    // Grab the 'ended' listener our acquire installed and fire it.
+    const call = track.addEventListener.mock.calls.find((c) => c[0] === 'ended');
+    expect(call).toBeTruthy();
+    (call![1] as () => void)();
+    expect(fx.getMicStream()).toBeNull();
+    expect(fx.state.micPermissionFailed).toBe(true);
+  });
+
+  it('suspend resets the AGC model (no gain-step jump on next acquire)', async () => {
+    const fx = makeFixture();
+    await fx.lc.acquire();
+    fx.state.agcGain = 33;
+    fx.state.agcSmoothedRms = 0.9;
+    fx.state.micSuspended = false;
+    fx.lc.suspend();
+    expect(fx.state.agcGain).toBe(1.0);
+    expect(fx.state.agcSmoothedRms).toBe(0);
   });
 });

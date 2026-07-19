@@ -44,13 +44,24 @@ export interface JSONStorage {
   setItem(key: string, value: string): void;
 }
 
+/** Storage access itself can throw in locked-down contexts (Chrome の
+ *  「すべての Cookie をブロック」・sandbox iframe）: localStorage の
+ *  **グローバルアクセサ評価自体**が SecurityError を投げるため、
+ *  `typeof localStorage` すら安全でない。try/catch で包んで null に
+ *  落とし、boot がメモリのみで degrade できるようにする。 */
+export function safeLocalStorage(): JSONStorage | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Build a {load, save} pair against a given storage. The factory
  *  closes over the one-shot quota warning so the same storage can be
  *  silently re-tried throughout the session without console spam. */
 export function createJSONStore(
-  storage: JSONStorage = typeof localStorage !== 'undefined'
-    ? localStorage
-    : (null as unknown as JSONStorage),
+  storage: JSONStorage = safeLocalStorage() ?? (null as unknown as JSONStorage),
   warn: (msg: string) => void = (m) => console.warn(m)
 ): {
   loadJSON<T>(key: string, fallback: T): T;

@@ -45,6 +45,10 @@ export interface MicLifecycleStateRef {
   micIntentionallySkipped?: boolean;
   adaptiveSilenceRms: number | null;
   recentPitches: number[] | null;
+  /** AGC モデル値 — suspend 時にリセットして GainNode(1.0) との段差
+   *  ジャンプを防ぐ。 */
+  agcGain: number;
+  agcSmoothedRms: number;
 }
 
 /** Subset of `midiInput` we read for the input-mode decision. */
@@ -149,7 +153,29 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
   let acquiring: Promise<unknown> | null = null;
 
   async function acquire(): Promise<unknown> {
-    if (deps.getMicStream()) return;
+    // 死んだストリーム（許可剥奪・デバイス消失・iOS 復帰失敗）を「取得済み」
+    // と誤認すると再取得経路が恒久封鎖される。active でなければ片付けて
+    // 再取得に進む。
+    const existing = deps.getMicStream();
+    if (existing) {
+      if (existing.active !== false) return;
+      try {
+        existing.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* already dead */
+      }
+      deps.setMicStream(null);
+      const deadSource = deps.getMicSourceNode();
+      if (deadSource) {
+        try {
+          deadSource.disconnect();
+        } catch {
+          /* already disconnected */
+        }
+        deps.setMicSourceNode(null);
+      }
+      console.warn('[AUDIO] Stale inactive mic stream dropped — re-acquiring');
+    }
     if (acquiring) return acquiring;
     acquiring = (async () => {
       try {
@@ -171,6 +197,30 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
           return;
         }
         deps.setMicStream(stream);
+        // トラック死活監視: 許可の途中剥奪やデバイス消失では 'ended' が
+        // 飛ぶ（自前の track.stop() では発火しない）。放置すると
+        // 「聞いているのに反応しない」まま復帰不能になるので、参照を
+        // 片付けてフラグ + ヒントを出す。次の acquire()/回復パスが再取得
+        // できる状態に戻すのが目的。
+        for (const track of stream.getTracks()) {
+          track.addEventListener('ended', () => {
+            if (deps.getMicStream() !== stream) return; // 既に交換/解放済み
+            deps.setMicStream(null);
+            const src = deps.getMicSourceNode();
+            if (src) {
+              try {
+                src.disconnect();
+              } catch {
+                /* already disconnected */
+              }
+              deps.setMicSourceNode(null);
+            }
+            deps.state.micPermissionFailed = true;
+            deps.refreshIntroHint?.();
+            if (deps.micMeterEl) deps.micMeterEl.classList.remove('visible');
+            console.warn('[AUDIO] Mic track ended unexpectedly (revoked / device lost)');
+          });
+        }
         const sourceNode = audioCtx.createMediaStreamSource(stream);
         sourceNode.connect(gainNode as unknown as AudioNode);
         deps.setMicSourceNode(sourceNode);
@@ -224,6 +274,11 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
     // cleanly.
     deps.state.adaptiveSilenceRms = null;
     deps.state.recentPitches = [];
+    // AGC モデルもリセット — 保持したままだと mic 復帰時に GainNode 1.0 と
+    // モデル値（最大40）の段差ジャンプが起き、直後の tick で誤オンセット/
+    // メーター振り切りが出る（ヘッダの「clear mic-derived state」対象）。
+    deps.state.agcGain = 1.0;
+    deps.state.agcSmoothedRms = 0;
 
     console.log('[AUDIO] Mic suspended (MIDI active)');
   }

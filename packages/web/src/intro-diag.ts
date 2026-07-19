@@ -56,13 +56,23 @@ export interface IntroDiag {
 export function createIntroDiag(deps: IntroDiagDeps): IntroDiag {
   const setDiagnostic = (line1: string, line2?: string): void => {
     if (!deps.introHintEl) return;
-    const sub = line2
-      ? '<br><span style="font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em">' +
-        line2 +
-        '</span>'
-      : '';
-    deps.introHintEl.innerHTML = line1 + sub;
-    deps.introHintEl.classList.add('visible');
+    // DOM 組み立てで描画（innerHTML 連結をやめる）。line1/line2 には
+    // MIDI/BLE の**デバイス名やエラーメッセージ**が流れ込む — BLE の
+    // アドバタイズ名は任意文字列を名乗れる外部入力なので、HTML として
+    // 解釈させない（子ども向けアプリの defense-in-depth）。
+    const el = deps.introHintEl;
+    el.textContent = line1;
+    if (line2) {
+      el.appendChild(document.createElement('br'));
+      const span = document.createElement('span');
+      span.setAttribute(
+        'style',
+        'font-size:.78rem;color:rgba(255,255,255,.55);letter-spacing:.04em'
+      );
+      span.textContent = line2;
+      el.appendChild(span);
+    }
+    el.classList.add('visible');
   };
 
   const showDiag = (thunk: () => void): void => {

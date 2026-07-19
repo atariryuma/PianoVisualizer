@@ -185,7 +185,15 @@ export function createOsmdInit(deps: OsmdInitDeps): OsmdInit {
       // .mxl at import time and stores a blob URL of the plain XML
       // in `xmlUrl`).
       const inst = instance;
-      await inst.load(url);
+      try {
+        await inst.load(url);
+      } catch (e) {
+        // 失敗した load は instance 内部を部分的に書き換えている可能性が
+        // ある。loadedUrl を残すと旧曲の再選択がキャッシュヒットして壊れた
+        // instance を返し得るので落とす（0-measure ガードの兄弟穴）。
+        loadedUrl = null;
+        throw e;
+      }
       loadedUrl = url;
 
       // Activate Repetition objects so the iterator performs back-

@@ -186,7 +186,6 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     return _ports.attach(port);
   }
 
-  let _midiAccess: any = null;
   const _rescan = MidiRescan.createMidiRescan({
     midiInput,
     attachMidiPort: (port: any) => attachMidiPort(port),
@@ -218,10 +217,11 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     navigator: nav,
     isAppleMobile: () => _indicator.isAppleMobile(),
     setInputIndicator: () => _indicator.setInputIndicator(),
-    ensureMidiAccess: async (force?: any) => {
-      _midiAccess = await _rescan.ensureAccess(force);
-      return _midiAccess;
-    },
+    // MIDIAccess のキャッシュは midi-rescan が唯一の保有者。以前は shell 側
+    // ミラー _midiAccess に分裂しており、verifyAlive が rescan 経由の attach を
+    // 常に「死んだ」と誤判定 / clearMidiAccessCache が実キャッシュを消せない
+    // という visibility 復帰系の実バグになっていた。
+    ensureMidiAccess: (force?: any) => _rescan.ensureAccess(force),
     gatherMidiInputs: (access: any) => MidiPorts.gatherMidiInputs(access),
     attachMidiPort: (port: any) => attachMidiPort(port),
     showMidiWaitingHint: () => _diag.showMidiWaitingHint(),
@@ -247,10 +247,10 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     },
     navigator: nav as any,
     midiInput,
-    verifyMidiAlive: () => _ports.verifyAlive(_midiAccess),
-    clearMidiAccessCache: () => {
-      _midiAccess = null;
-    },
+    verifyMidiAlive: () => _ports.verifyAlive(_rescan.getAccess()),
+    // devicechange の force-fresh: rescan の実キャッシュを onstatechange
+    // ごと安全に破棄（次の enumerate が死んだ参照を読まないように）。
+    clearMidiAccessCache: () => _rescan.dropAccessCache(),
     rescanMidi: (silent: any) => _rescan.rescan(silent),
     startMidiAutoRescan: () => _rescan.startAutoRescan(),
     onHidden: () => _practiceVisibility.onHidden(),
