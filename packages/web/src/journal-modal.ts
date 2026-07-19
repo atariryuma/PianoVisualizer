@@ -477,6 +477,29 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
 
     // Lifetime + best summary — loss-frame-free framing (Hanus & Fox 2015).
     const lifetimeDays = progress.streakDays?.length ?? 0;
+    // Practice minutes — today + lifetime, cumulative-only (no goals, no
+    // shortfall copy — banned-list). Hidden until the first minute lands
+    // so a fresh install doesn't open on a row of zeros.
+    const minutesByDay = progress.minutesByDay ?? {};
+    const todayMin = Math.round(minutesByDay[deps.formatDateKey(today)] ?? 0);
+    let lifetimeMin = 0;
+    for (const v of Object.values(minutesByDay)) {
+      if (Number.isFinite(v) && v > 0) lifetimeMin += v;
+    }
+    lifetimeMin = Math.round(lifetimeMin);
+    const minuteStats =
+      lifetimeMin >= 1
+        ? '<div class="jr-cal-stat"><span class="jr-cal-stat-label">' +
+          deps.t('calendarTodayMinutes') +
+          '</span><span class="jr-cal-stat-value">' +
+          deps.t('minutesValueFmt', { v: todayMin }) +
+          '</span></div>' +
+          '<div class="jr-cal-stat"><span class="jr-cal-stat-label">' +
+          deps.t('calendarLifetimeMinutes') +
+          '</span><span class="jr-cal-stat-value">' +
+          deps.t('minutesValueFmt', { v: lifetimeMin }) +
+          '</span></div>'
+        : '';
     const summary = document.createElement('div');
     summary.className = 'jr-cal-summary';
     summary.innerHTML =
@@ -489,7 +512,8 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       deps.t('calendarCurrentStreak') +
       '</span><span class="jr-cal-stat-value">' +
       (progress.streakCount ?? 0) +
-      '</span></div>';
+      '</span></div>' +
+      minuteStats;
     activity.appendChild(summary);
 
     if (lifetimeDays === 0) {

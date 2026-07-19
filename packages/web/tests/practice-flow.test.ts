@@ -24,6 +24,7 @@ function makeDom(): PracticeFlowDom {
     <button id="ptbToggleOsmd"></button>
     <button id="resQuit"></button>
     <button id="resRetry"></button>
+    <button id="resRetrySlow" style="display: none"></button>
     <button id="resTryPlay"></button>
     <button id="resNext"></button>
     <button id="sumClose"></button>
@@ -45,6 +46,7 @@ function makeDom(): PracticeFlowDom {
     ptbToggleOsmd: document.getElementById('ptbToggleOsmd') as HTMLElement,
     resQuit: document.getElementById('resQuit') as HTMLElement,
     resRetry: document.getElementById('resRetry') as HTMLElement,
+    resRetrySlow: document.getElementById('resRetrySlow'),
     resTryPlay: document.getElementById('resTryPlay'),
     resNext: document.getElementById('resNext') as HTMLElement,
     sumClose: document.getElementById('sumClose') as HTMLElement,
@@ -359,5 +361,56 @@ describe('createPracticeFlow — returnToTitle', () => {
     createPracticeFlow(deps);
     deps.dom.homeBtn.click();
     expect(deps.stopMidiAutoRescan).toHaveBeenCalled();
+  });
+});
+
+// ─── resRetrySlow (retry-with-support, P2-18) ────────────────────────
+
+describe('createPracticeFlow — resRetrySlow', () => {
+  function clickWithStrategy(strategy: string, tempo?: string) {
+    const deps = makeDeps();
+    createPracticeFlow(deps);
+    const btn = deps.dom.resRetrySlow as HTMLElement;
+    btn.dataset.strategy = strategy;
+    if (tempo != null) btn.dataset.tempo = tempo;
+    deps.dom.sectionResult.classList.add('visible');
+    btn.click();
+    return deps;
+  }
+
+  it('listen strategy switches mode to listen (fullSong off) and retries', async () => {
+    const deps = clickWithStrategy('listen');
+    await Promise.resolve();
+    expect(deps.practice.mode).toBe('listen');
+    expect(deps.practice.fullSongMode).toBe(false);
+    expect(deps.startPracticeSection).toHaveBeenCalledWith(deps.practice.sectionIdx);
+    expect(deps.dom.sectionResult.classList.contains('visible')).toBe(false);
+  });
+
+  it('oneHand strategy sets handFilter=R and retries', async () => {
+    const deps = clickWithStrategy('oneHand');
+    await Promise.resolve();
+    expect(deps.practice.handFilter).toBe('R');
+    expect(deps.startPracticeSection).toHaveBeenCalled();
+  });
+
+  it('slowTempo strategy applies the dataset tempo and retries', async () => {
+    const deps = clickWithStrategy('slowTempo', '50');
+    await Promise.resolve();
+    expect(deps.practice.tempoPct).toBe(50);
+    expect(deps.startPracticeSection).toHaveBeenCalled();
+  });
+
+  it('slowTempo with a bogus tempo leaves tempoPct untouched but still retries', async () => {
+    const deps = makeDeps();
+    createPracticeFlow(deps);
+    const before = deps.practice.tempoPct;
+    const btn = deps.dom.resRetrySlow as HTMLElement;
+    btn.dataset.strategy = 'slowTempo';
+    btn.dataset.tempo = 'not-a-number';
+    btn.click();
+    await Promise.resolve();
+    expect(deps.practice.tempoPct).toBe(before);
+    expect(deps.startPracticeSection).toHaveBeenCalled();
   });
 });

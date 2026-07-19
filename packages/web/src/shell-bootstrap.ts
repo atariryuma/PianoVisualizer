@@ -572,6 +572,22 @@ export function boot(): void {
     loadPracticeProgress,
     savePracticeProgress,
     recordPracticeDay,
+    // 練習時間（分）の累積 (P2-19)。所要 = practiceRealElapsedMs（ポーズ・
+    // タブ非表示中は clock rebase で除外済み）。累積のみ・目標/未達表示なし。
+    recordPracticeMinutes: () => {
+      try {
+        const prog = (practice.progress ?? loadPracticeProgress()) as PianoCore.PracticeProgress;
+        practice.progress = prog as never;
+        PianoCore.recordPracticeMinutes(
+          prog,
+          PianoCore.formatDateKey(new Date()),
+          practiceRealElapsedMs() / 60000
+        );
+        savePracticeProgress();
+      } catch {
+        /* 時間記録は非クリティカル — 完了フローを止めない */
+      }
+    },
     startPracticeSection,
     stopPracticeAudio,
     initAudio: _audio.initAudio,

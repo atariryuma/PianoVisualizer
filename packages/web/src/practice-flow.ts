@@ -38,6 +38,12 @@ export interface PracticeFlowPracticeRef {
   enabled: boolean;
   sectionIdx: number;
   mode: string;
+  /** Written by the retry-with-support button (listen strategy). */
+  fullSongMode?: boolean;
+  /** Written by the retry-with-support button (one-hand strategy). */
+  handFilter?: 'L' | 'R' | null;
+  /** Written by the retry-with-support button (slow-tempo strategy). */
+  tempoPct?: number;
   _completing: boolean;
   _completionTimer: ReturnType<typeof setTimeout> | null;
   /** Map<midi, OsmdLikeNote> — held notes; cleared on quit. */
@@ -76,6 +82,9 @@ export interface PracticeFlowDom {
   ptbToggleOsmd: HTMLElement;
   resQuit: HTMLElement;
   resRetry: HTMLElement;
+  /** "Retry with support" — applies the scaffold strategy published by
+   *  result-card (dataset.strategy/tempo), then retries the section. */
+  resRetrySlow?: HTMLElement | null;
   resTryPlay: HTMLElement | null;
   resNext: HTMLElement;
   sumClose: HTMLElement;
@@ -224,6 +233,24 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
     deps.renderSongPanel();
   });
   deps.dom.resRetry.addEventListener('click', () => {
+    deps.dom.sectionResult.classList.remove('visible');
+    void transitionToSection(deps.practice.sectionIdx);
+  });
+  // "Retry with support" (0★のみ表示) — result-card が dataset に載せた
+  // スキャフォールド戦略を適用して同セクションを再開。song-panel の手動
+  // 行と同じ副作用フリーな書き込みなので、子どもは後から自由に変えられる。
+  deps.dom.resRetrySlow?.addEventListener('click', () => {
+    const btn = deps.dom.resRetrySlow as HTMLElement & { dataset: DOMStringMap };
+    const strategy = btn.dataset.strategy;
+    if (strategy === 'listen') {
+      deps.practice.mode = 'listen';
+      deps.practice.fullSongMode = false;
+    } else if (strategy === 'oneHand') {
+      deps.practice.handFilter = 'R';
+    } else if (strategy === 'slowTempo') {
+      const tempo = parseInt(btn.dataset.tempo || '', 10);
+      if (Number.isFinite(tempo) && tempo > 0) deps.practice.tempoPct = tempo;
+    }
     deps.dom.sectionResult.classList.remove('visible');
     void transitionToSection(deps.practice.sectionIdx);
   });

@@ -4,17 +4,21 @@ import {
   defaultSongProgress,
   getSongProgress,
   migrateAndDefaultProgress,
+  recordPracticeMinutes,
+  lifetimePracticeMinutes,
+  MAX_MINUTES_PER_ATTEMPT,
   type PracticeProgress,
 } from '../src/state/practice-progress';
 
 describe('defaultPracticeProgress', () => {
-  it('starts with no streak, no songs, and no stamps', () => {
+  it('starts with no streak, no songs, no stamps, no minutes', () => {
     expect(defaultPracticeProgress()).toEqual({
       schemaVersion: 2,
       streakDays: [],
       streakCount: 0,
       songs: {},
       earnedStamps: {},
+      minutesByDay: {},
     });
   });
 });
@@ -197,5 +201,49 @@ describe('earnedStamps migration', () => {
     };
     const r = migrateAndDefaultProgress(raw);
     expect(r.earnedStamps).toEqual({});
+  });
+});
+
+// ─── practice minutes (P2-19) ────────────────────────────────────────
+
+describe('recordPracticeMinutes / lifetimePracticeMinutes', () => {
+  it('accumulates onto the day bucket and totals across days', () => {
+    const p = defaultPracticeProgress();
+    recordPracticeMinutes(p, '2026-07-19', 3.5);
+    recordPracticeMinutes(p, '2026-07-19', 2.5);
+    recordPracticeMinutes(p, '2026-07-20', 4);
+    expect(p.minutesByDay['2026-07-19']).toBe(6);
+    expect(lifetimePracticeMinutes(p)).toBe(10);
+  });
+
+  it('rejects non-finite / non-positive input', () => {
+    const p = defaultPracticeProgress();
+    recordPracticeMinutes(p, '2026-07-19', NaN);
+    recordPracticeMinutes(p, '2026-07-19', -5);
+    recordPracticeMinutes(p, '2026-07-19', 0);
+    expect(p.minutesByDay['2026-07-19']).toBeUndefined();
+    expect(lifetimePracticeMinutes(p)).toBe(0);
+  });
+
+  it('clamps a single attempt to MAX_MINUTES_PER_ATTEMPT (clock weirdness guard)', () => {
+    const p = defaultPracticeProgress();
+    recordPracticeMinutes(p, '2026-07-19', 9999);
+    expect(p.minutesByDay['2026-07-19']).toBe(MAX_MINUTES_PER_ATTEMPT);
+  });
+
+  it('migrator fills minutesByDay on older payloads', () => {
+    const raw = {
+      schemaVersion: 2,
+      streakDays: [],
+      streakCount: 0,
+      songs: {},
+      earnedStamps: {},
+      // no minutesByDay — pre-P2-19 payload
+    };
+    const p = migrateAndDefaultProgress(raw);
+    expect(p.minutesByDay).toEqual({});
+    // and it's writable immediately
+    recordPracticeMinutes(p, '2026-07-19', 1);
+    expect(lifetimePracticeMinutes(p)).toBe(1);
   });
 });

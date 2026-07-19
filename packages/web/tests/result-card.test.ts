@@ -57,6 +57,7 @@ function makeDom(): ResultCardDom {
       </div>
       <button id="resNext"></button>
       <button id="resTryPlay"></button>
+      <button id="resRetrySlow" style="display: none"></button>
     </div>
   `;
   return {
@@ -81,6 +82,7 @@ function makeDom(): ResultCardDom {
     resHistoryChart: document.getElementById('resHistoryChart') as HTMLCanvasElement,
     resNext: document.getElementById('resNext') as HTMLElement,
     resTryPlay: document.getElementById('resTryPlay'),
+    resRetrySlow: document.getElementById('resRetrySlow'),
   };
 }
 
@@ -756,5 +758,106 @@ describe('createResultCard — self-assessment', () => {
     deps.practice._lastResult = null;
     deps.dom.resFeelGreat!.click();
     expect(deps.dom.resFeelResult!.textContent).toBe('');
+  });
+});
+
+// ─── retry-with-support (P2-18) ──────────────────────────────────────
+
+describe('createResultCard — retry-with-support button', () => {
+  const scaffold = (strategy: 'listen' | 'oneHand' | 'slowTempo', depth = 1) =>
+    vi.fn(() => ({ show: depth >= 2, depth, strategy }));
+
+  function completeWithStars(
+    stars: number,
+    over: Partial<ResultCardDeps> = {}
+  ): ReturnType<typeof makeDeps> {
+    const deps = makeDeps({
+      computeStars: vi.fn(() => stars),
+      resolveResultTier: vi.fn(() => ({ titleKey: 'tier0Title', msgKey: 'tier0Msg' })),
+      planSectionScaffold: scaffold('listen'),
+      tempoTiers: [50, 60, 75, 90, 100],
+      ...over,
+    });
+    const card = createResultCard(deps);
+    card.completePracticeSection();
+    return deps;
+  }
+
+  it('0★ → button visible with the listen strategy (shallow struggle)', () => {
+    const deps = completeWithStars(0);
+    const btn = deps.dom.resRetrySlow as HTMLElement;
+    expect(btn.style.display).not.toBe('none');
+    expect(btn.dataset.strategy).toBe('listen');
+    expect(deps.practice._lastResult?.retryStrategy).toBe('listen');
+  });
+
+  it('slowTempo strategy resolves the slowest unlocked tempo below current', () => {
+    const deps = completeWithStars(0, { planSectionScaffold: scaffold('slowTempo', 3) });
+    const btn = deps.dom.resRetrySlow as HTMLElement;
+    // makeProg unlocks 60/75; current tempo 75 → retry at 60.
+    expect(btn.dataset.strategy).toBe('slowTempo');
+    expect(btn.dataset.tempo).toBe('60');
+    expect(deps.practice._lastResult?.retryTempo).toBe(60);
+  });
+
+  it('slowTempo at the slowest unlocked tempo falls back to one-hand', () => {
+    const deps = makeDeps({
+      computeStars: vi.fn(() => 0),
+      resolveResultTier: vi.fn(() => ({ titleKey: 'tier0Title', msgKey: 'tier0Msg' })),
+      planSectionScaffold: scaffold('slowTempo', 3),
+      tempoTiers: [50, 60, 75, 90, 100],
+    });
+    deps.practice.tempoPct = 60; // == slowest unlocked in makeProg
+    createResultCard(deps).completePracticeSection();
+    expect((deps.dom.resRetrySlow as HTMLElement).dataset.strategy).toBe('oneHand');
+  });
+
+  it('oneHand while already one-handed falls back to listen', () => {
+    const deps = makeDeps({
+      computeStars: vi.fn(() => 0),
+      resolveResultTier: vi.fn(() => ({ titleKey: 'tier0Title', msgKey: 'tier0Msg' })),
+      planSectionScaffold: scaffold('oneHand', 3),
+      tempoTiers: [50, 60, 75, 90, 100],
+    });
+    deps.practice.handFilter = 'R';
+    createResultCard(deps).completePracticeSection();
+    expect((deps.dom.resRetrySlow as HTMLElement).dataset.strategy).toBe('listen');
+  });
+
+  it('1★+ → button hidden, no strategy in snapshot', () => {
+    const deps = completeWithStars(1);
+    expect((deps.dom.resRetrySlow as HTMLElement).style.display).toBe('none');
+    expect(deps.practice._lastResult?.retryStrategy ?? null).toBeNull();
+  });
+
+  it('langchange re-render keeps the button painted from the snapshot', () => {
+    const deps = completeWithStars(0);
+    const card = createResultCard(deps);
+    // Simulate langchange: re-render from the retained snapshot.
+    (deps.dom.resRetrySlow as HTMLElement).style.display = 'none';
+    card.renderResultCard();
+    expect((deps.dom.resRetrySlow as HTMLElement).style.display).not.toBe('none');
+    expect((deps.dom.resRetrySlow as HTMLElement).dataset.strategy).toBe('listen');
+  });
+});
+
+// ─── practice-minute hook (P2-19) ────────────────────────────────────
+
+describe('createResultCard — recordPracticeMinutes hook', () => {
+  it('fires once per completion in every mode', () => {
+    for (const mode of ['rhythm', 'guided', 'listen'] as const) {
+      const recordPracticeMinutes = vi.fn();
+      const deps = makeDeps({ recordPracticeMinutes });
+      deps.practice.mode = mode;
+      createResultCard(deps).completePracticeSection();
+      expect(recordPracticeMinutes).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('does not fire when the song/section guard bails', () => {
+    const recordPracticeMinutes = vi.fn();
+    const deps = makeDeps({ recordPracticeMinutes, getCurrentSong: () => null });
+    createResultCard(deps).completePracticeSection();
+    expect(recordPracticeMinutes).not.toHaveBeenCalled();
   });
 });

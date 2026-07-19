@@ -87,6 +87,11 @@ export interface PracticeProgress extends StreakState {
    *  before 0.14; `migrateAndDefaultProgress` fills an empty object so
    *  callers can write into it without a presence check. */
   earnedStamps: Record<string, number>;
+  /** dateKey (YYYY-MM-DD) → practice minutes that day (float). Cumulative,
+   *  monotonically non-decreasing — no daily goals, no decay, never shown
+   *  as a shortfall (banned-list). Missing on older payloads; the migrator
+   *  fills an empty object. */
+  minutesByDay: Record<string, number>;
 }
 
 /** Build a fresh per-song progress bucket — empty sections at 0 stars,
@@ -116,6 +121,7 @@ export function defaultPracticeProgress(): PracticeProgress {
     streakCount: 0,
     songs: {},
     earnedStamps: {},
+    minutesByDay: {},
   };
 }
 
@@ -141,7 +147,46 @@ export function migrateAndDefaultProgress(raw: unknown): PracticeProgress {
   if (!merged.earnedStamps || typeof merged.earnedStamps !== 'object') {
     merged.earnedStamps = {};
   }
+  if (!merged.minutesByDay || typeof merged.minutesByDay !== 'object') {
+    merged.minutesByDay = {};
+  }
   return merged;
+}
+
+// =====================================================================
+// Practice minutes (lifetime-accumulating; banned-list-safe by design)
+// =====================================================================
+
+/** Per-section clamp: a single completion can't add more than this many
+ *  minutes (guards clock weirdness — tab sleep, Tone context resets). */
+export const MAX_MINUTES_PER_ATTEMPT = 30;
+
+/** Accumulate practice minutes onto today's bucket. Pure mutation helper —
+ *  the caller persists. Rejects non-finite / non-positive input, clamps a
+ *  single attempt to MAX_MINUTES_PER_ATTEMPT. Never decrements. */
+export function recordPracticeMinutes(
+  progress: PracticeProgress,
+  dateKey: string,
+  minutes: number
+): void {
+  if (!Number.isFinite(minutes) || minutes <= 0) return;
+  const add = Math.min(minutes, MAX_MINUTES_PER_ATTEMPT);
+  if (!progress.minutesByDay || typeof progress.minutesByDay !== 'object') {
+    progress.minutesByDay = {};
+  }
+  progress.minutesByDay[dateKey] = (progress.minutesByDay[dateKey] ?? 0) + add;
+}
+
+/** Lifetime total practice minutes (float — callers round for display). */
+export function lifetimePracticeMinutes(progress: PracticeProgress): number {
+  const byDay = progress.minutesByDay;
+  if (!byDay || typeof byDay !== 'object') return 0;
+  let total = 0;
+  for (const k of Object.keys(byDay)) {
+    const v = byDay[k];
+    if (Number.isFinite(v) && v > 0) total += v;
+  }
+  return total;
 }
 
 /**

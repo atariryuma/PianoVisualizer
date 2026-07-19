@@ -203,6 +203,17 @@ export const T_STRINGS: TranslationTable = {
     en: 'Many kids struggle here. Try Listen mode to hear it first.',
     jp: 'ここは多くの人がつまずく場所。まずリッスンで聴いてみよう。',
   },
+  // One-tap "retry with support" button on a 0-star result — applies the
+  // scaffold strategy (listen / one-hand / slower tempo) and restarts the
+  // same section. Always available, no time pressure (banned-list safe).
+  resRetryListen: { en: '🎧 Listen, then retry', jp: '🎧 きいてから もう一度' },
+  resRetryOneHand: { en: '👉 Retry right hand only', jp: '👉 右手だけで もう一度' },
+  resRetrySlowFmt: { en: '🐢 Retry at {v}%', jp: '🐢 {v}%で もう一度' },
+  // Practice-minute stats (journal calendar tab). Cumulative-only — never
+  // framed as a goal or a shortfall (banned-list).
+  calendarTodayMinutes: { en: 'Today', jp: 'きょうの練習' },
+  calendarLifetimeMinutes: { en: 'Total time', jp: 'これまでの合計' },
+  minutesValueFmt: { en: '{v} min', jp: '{v}分' },
   tier1Title: { en: 'Clear!', jp: 'クリア！' },
   tier1Msg: {
     en: 'Clear! Keep practicing to get even better.',

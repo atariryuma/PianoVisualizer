@@ -29,6 +29,9 @@ export interface ResultCardPracticeRef {
   sectionIdx: number;
   fullSongMode: boolean;
   tempoPct: number;
+  /** One-hand filter — read so the retry-with-support button doesn't
+   *  suggest "right hand only" when a hand filter is already active. */
+  handFilter?: 'L' | 'R' | null;
   hits: number;
   misses: number;
   sectionCombo: number;
@@ -61,6 +64,12 @@ export interface ResultSnapshot {
    *  coach) and on listen/guided. Retained so a langchange re-render keeps
    *  the tip without re-scoring. */
   focus?: SectionFocus | null;
+  /** One-tap "retry with support" strategy shown on a 0-star scored run
+   *  (listen-first / one-hand / slower tempo — from planSectionScaffold).
+   *  null/undefined hides the button. Snapshot-retained for langchange. */
+  retryStrategy?: 'listen' | 'oneHand' | 'slowTempo' | null;
+  /** Resolved slower tempo (%) when retryStrategy === 'slowTempo'. */
+  retryTempo?: number | null;
 }
 
 export interface ResultCardSection {
@@ -124,6 +133,10 @@ export interface ResultCardDom {
   resNext: HTMLElement;
   resStretch: HTMLElement | null;
   resTryPlay: HTMLElement | null;
+  /** "Retry with support" one-tap button (0-star scored runs). Optional so
+   *  partial-DOM tests degrade gracefully. Click is wired in practice-flow;
+   *  this module only sets label + dataset.strategy/tempo + visibility. */
+  resRetrySlow?: HTMLElement | null;
 }
 
 export interface ResultCardDeps {
@@ -143,6 +156,11 @@ export interface ResultCardDeps {
   releaseWakeLock(): void;
   /** Record a practice day for the streak counter. */
   recordPracticeDay(): void;
+  /** Accumulate this attempt's practice time onto today's minutes bucket
+   *  (shell computes elapsed + persists). Called once per completion, all
+   *  modes — listening time is practice time too. Optional so older
+   *  shells / partial tests degrade to no tracking. */
+  recordPracticeMinutes?(): void;
   /** Persist progress to localStorage. */
   savePracticeProgress(): void;
   /** Compute the star count from accPct / timingPct / durPct
@@ -159,6 +177,18 @@ export interface ResultCardDeps {
     durPct: number | null,
     stars: number
   ): SectionFocus | null;
+  /** Scaffold planner (PianoCore.planSectionScaffold) — drives the
+   *  "retry with support" strategy on a 0-star run. Optional so older
+   *  shells / partial tests degrade to no button. */
+  planSectionScaffold?(history: ReadonlyArray<{ a: number; s: number }>): {
+    show: boolean;
+    depth: number;
+    strategy: 'listen' | 'oneHand' | 'slowTempo';
+  };
+  /** Tempo tiers (PianoCore.TEMPO_TIERS, slowest first) + unlock check —
+   *  used to resolve the slower-tempo retry target. Optional with
+   *  planSectionScaffold. */
+  tempoTiers?: readonly number[];
   /** Decide which unlocks fire (PianoCore.computeUnlocks — pure). */
   computeUnlocks(args: {
     stars: number;
@@ -314,6 +344,31 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     });
   }
 
+  /** Paint the "retry with support" one-tap button from the snapshot.
+   *  Shown only on a 0-star scored run (retryStrategy set). The CLICK is
+   *  wired in practice-flow — this module publishes the strategy via
+   *  dataset so a langchange re-render keeps label + behavior in sync. */
+  const renderRetrySupport = (r: ResultSnapshot): void => {
+    const btn = deps.dom.resRetrySlow as (HTMLElement & { dataset: DOMStringMap }) | null;
+    if (!btn) return;
+    const strat = r.mode === 'rhythm' ? (r.retryStrategy ?? null) : null;
+    if (!strat) {
+      btn.style.display = 'none';
+      delete btn.dataset.strategy;
+      delete btn.dataset.tempo;
+      return;
+    }
+    btn.style.display = '';
+    btn.dataset.strategy = strat;
+    btn.dataset.tempo = r.retryTempo != null ? String(r.retryTempo) : '';
+    btn.textContent =
+      strat === 'slowTempo'
+        ? deps.t('resRetrySlowFmt', { v: r.retryTempo ?? '' })
+        : strat === 'oneHand'
+          ? deps.t('resRetryOneHand')
+          : deps.t('resRetryListen');
+  };
+
   function renderResultCard(): void {
     const r = deps.practice._lastResult;
     if (!r) return;
@@ -362,6 +417,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // Stretch button: handled per-mode in completePracticeSection
       // (the listen branch hides it; guided + rhythm set it via stretchId).
       if (deps.dom.resStretch) deps.dom.resStretch.style.display = 'none';
+      renderRetrySupport(r); // hides — never shown for listen/guided
       renderSelfAssess(r);
       return;
     }
@@ -399,6 +455,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     clearFocus();
     if (r.focus) applyFocus(r.focus);
 
+    renderRetrySupport(r);
     renderSelfAssess(r);
   }
 
@@ -426,6 +483,9 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.practice._completing = false;
       return;
     }
+    // Practice-minute tracking — all modes (listening time is practice time
+    // too). Lifetime-accumulating only; never a goal, never a shortfall.
+    deps.recordPracticeMinutes?.();
     const isFullSong = deps.practice.mode === 'listen' && deps.practice.fullSongMode;
 
     // Listen mode: no scoring, no progress mutation, no unlocks. Hide
@@ -609,6 +669,30 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       else break;
     }
 
+    // "Retry with support" one-tap: on a 0-star run, offer the scaffold
+    // strategy right on the card (previously the kid had to go back to
+    // the song panel to find the pre-flight nudge). Strategy escalates
+    // with struggle depth via planSectionScaffold; slow-tempo resolves to
+    // the slowest unlocked tier (50/60 are always open), and falls back
+    // sideways when it can't apply (already slowest / already one-handed).
+    let retryStrategy: 'listen' | 'oneHand' | 'slowTempo' | null = null;
+    let retryTempo: number | null = null;
+    if (stars === 0 && deps.planSectionScaffold) {
+      const plan = deps.planSectionScaffold(histArr.map((h) => ({ a: h.a ?? 0, s: h.s ?? 0 })));
+      retryStrategy = plan.strategy;
+      if (retryStrategy === 'slowTempo') {
+        const slowest = (deps.tempoTiers ?? []).find((tier) => sp.unlockedTempos[tier]);
+        if (slowest != null && slowest < deps.practice.tempoPct) {
+          retryTempo = slowest;
+        } else {
+          retryStrategy = 'oneHand'; // already at the slowest tempo
+        }
+      }
+      if (retryStrategy === 'oneHand' && deps.practice.handFilter) {
+        retryStrategy = 'listen'; // already one-handed — suggest hearing it
+      }
+    }
+
     deps.practice._lastResult = {
       mode: deps.practice.mode,
       secId: sec.id,
@@ -618,6 +702,8 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       streakDays,
       zeroStarStreak,
       focus: deps.pickSectionFocus(accPct, timingPct, durPct, stars),
+      retryStrategy,
+      retryTempo,
     };
     renderResultCard();
     deps.dom.resStars.innerHTML = '';

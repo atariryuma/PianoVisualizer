@@ -195,6 +195,9 @@ export {
   defaultSongProgress,
   migrateAndDefaultProgress,
   getSongProgress,
+  recordPracticeMinutes,
+  lifetimePracticeMinutes,
+  MAX_MINUTES_PER_ATTEMPT,
 } from './state/practice-progress';
 export type {
   PracticeProgress,

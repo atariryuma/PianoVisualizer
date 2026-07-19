@@ -58,6 +58,9 @@ export interface ShellUiDeps {
   loadPracticeProgress: () => any;
   savePracticeProgress: () => void;
   recordPracticeDay: () => void;
+  /** Accumulate the just-finished attempt's elapsed time onto today's
+   *  practice-minute bucket + persist (P2-19). */
+  recordPracticeMinutes: () => void;
   startPracticeSection: (sectionIdx: number) => Promise<void>;
   stopPracticeAudio: () => void;
   /** Audio + boot. */
@@ -282,7 +285,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'resHistoryChart',
       'resNext',
       'resStretch',
-      'resTryPlay'
+      'resTryPlay',
+      'resRetrySlow'
     ) as any,
     practice: deps.practice,
     getCurrentSong: deps.getCurrentSong,
@@ -291,10 +295,13 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     stopPracticeAudio: deps.stopPracticeAudio,
     releaseWakeLock: deps.releaseWakeLock as any,
     recordPracticeDay: deps.recordPracticeDay,
+    recordPracticeMinutes: deps.recordPracticeMinutes,
     savePracticeProgress: deps.savePracticeProgress,
     computeStars: PianoCore.computeStars,
     resolveResultTier: PianoCore.resolveResultTier,
     pickSectionFocus: PianoCore.pickSectionFocus,
+    planSectionScaffold: PianoCore.planSectionScaffold,
+    tempoTiers: PianoCore.TEMPO_TIERS,
     computeUnlocks: PianoCore.computeUnlocks,
     effectGoldenBurst: deps.effectGoldenBurst,
     effectStarShower: deps.effectStarShower,
@@ -502,6 +509,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         'startScreen'
       ),
       resTryPlay: deps.byId('resTryPlay'),
+      resRetrySlow: deps.byId('resRetrySlow'),
     } as any,
     practice: deps.practice,
     state: deps.state,
