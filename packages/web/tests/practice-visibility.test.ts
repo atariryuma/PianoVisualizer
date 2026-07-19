@@ -201,3 +201,55 @@ describe('createPracticeVisibilityController', () => {
     expect(pause).toHaveBeenCalledOnce(); // second pause is a no-op
   });
 });
+
+// ─── enabled ガード（2026-07-19 再入ライフサイクル監査 発見3/4） ───
+
+describe('createPracticeVisibilityController — セッション終了後の stale 凍結', () => {
+  it('凍結中に practice が無効化されたら、復帰時にクロックを触らず凍結を破棄する', () => {
+    // 再現列: タブ非表示で freeze → 背面で 600ms 完了タイマーが発火して
+    // enabled=false → タブ復帰。ここで stale な凍結時刻でリベースすると
+    // 次セッションの startAudioTime が破壊される。
+    const practice = { enabled: true, startAudioTime: 2 };
+    let now = 12;
+    const start = vi.fn();
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: now },
+        Transport: { state: 'started', pause: vi.fn(), start },
+      }),
+      log: vi.fn(),
+    });
+    ctrl.onHidden(); // freeze (elapsed=10s)
+    practice.enabled = false; // 背面で完了
+    now = 42;
+    ctrl.onVisible();
+    expect(practice.startAudioTime).toBe(2); // クロック不変
+    expect(start).not.toHaveBeenCalled(); // 空 Transport を再開しない
+  });
+
+  it('明示ポーズ後に無効化されても resume() でラッチと凍結が確実に消える', () => {
+    const practice = { enabled: true, startAudioTime: 2, paused: false };
+    const start = vi.fn();
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: 12 },
+        Transport: { state: 'started', pause: vi.fn(), start },
+      }),
+      log: vi.fn(),
+    });
+    ctrl.pause();
+    expect(ctrl.isPaused()).toBe(true);
+    practice.enabled = false; // 猶予タイマー発火で完了した想定
+    ctrl.resume();
+    expect(ctrl.isPaused()).toBe(false);
+    expect(practice.paused).toBe(false);
+    expect(practice.startAudioTime).toBe(2);
+    expect(start).not.toHaveBeenCalled();
+    // ラッチが消えているので次セッションの pause は普通に効く
+    practice.enabled = true;
+    ctrl.pause();
+    expect(ctrl.isPaused()).toBe(true);
+  });
+});

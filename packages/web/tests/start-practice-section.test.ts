@@ -667,3 +667,45 @@ describe('startPracticeSection — small details', () => {
     expect(fx.tone!.Transport.stop).toHaveBeenCalled();
   });
 });
+
+// ─── 再入ライフサイクル（2026-07-19 実機バグ「たまにノーツが出ない」） ───
+
+describe('startPracticeSection — 再入ライフサイクル', () => {
+  it('enabled を立てる前にクロックを未来センチネルへ先置きする（await 窓の全ノーツ自動消費を防ぐ）', async () => {
+    const fx = makeFixture();
+    fx.practice.startAudioTime = 120; // 前セッションの残骸
+    // await せず同期部だけ走らせる — enabled=true の時点でセンチネルが
+    // 入っていなければ、この瞬間の tick が elapsed 巨大値で全ノーツを消費する。
+    const pending = fx.start(0);
+    expect(fx.practice.enabled).toBe(true);
+    expect(fx.practice.startAudioTime).toBe(Number.MAX_SAFE_INTEGER);
+    await pending;
+    // 完了後は実アンカー（Tone クロック秒 ≈ 1.0 + lead）に置き換わる。
+    expect(fx.practice.startAudioTime).toBeLessThan(10);
+  });
+
+  it('前セッションの完了猶予タイマーを開始時に回収する', async () => {
+    vi.useFakeTimers();
+    try {
+      const fx = makeFixture();
+      const stale = vi.fn();
+      fx.practice._completing = true;
+      fx.practice._completionTimer = setTimeout(stale, 600);
+      await fx.start(0);
+      expect(fx.practice._completionTimer).toBeNull();
+      expect(fx.practice._completing).toBe(false);
+      vi.advanceTimersByTime(1000);
+      expect(stale).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('開始時に明示ポーズラッチの解除（clearPracticePause）を必ず呼ぶ', async () => {
+    const clearPracticePause = vi.fn();
+    const fx = makeFixture();
+    (fx.deps as { clearPracticePause?: () => void }).clearPracticePause = clearPracticePause;
+    await fx.start(0);
+    expect(clearPracticePause).toHaveBeenCalledOnce();
+  });
+});

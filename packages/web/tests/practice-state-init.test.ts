@@ -128,6 +128,7 @@ describe('createInitialPractice', () => {
       'audioOffsetMs',
       'progress',
       '_completing',
+      '_completionTimer',
       '_lastProgUpdate',
     ];
     for (const k of required) {

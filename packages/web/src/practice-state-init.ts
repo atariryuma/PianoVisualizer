@@ -97,6 +97,10 @@ export interface InitialPracticeState {
   audioOffsetMs: number;
   progress: unknown;
   _completing: boolean;
+  /** セクション完了の 600ms 猶予タイマー。practice-tick が arm、
+   *  practice-flow（quit）と start-practice-section（再入）が回収する。
+   *  hidden-class 安定化と型検査のため初期状態で宣言しておく。 */
+  _completionTimer: ReturnType<typeof setTimeout> | null;
   _lastProgUpdate: number;
   /** Dynamically attached at section start by start-practice-section.ts
    *  — pre-declare here so a write doesn't trigger a V8 hidden-class
@@ -140,6 +144,7 @@ export function createInitialPractice(audioOffsetMs: number): InitialPracticeSta
     audioOffsetMs,
     progress: null,
     _completing: false,
+    _completionTimer: null,
     _lastProgUpdate: 0,
   };
 }

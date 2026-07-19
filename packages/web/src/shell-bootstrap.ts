@@ -417,6 +417,10 @@ export function boot(): void {
     // ループ周回でも1周分の練習時間を記録する (P2-12 × P2-19)。関数宣言で
     // 巻き上げ — 実際の呼び出しはセクション完了時なので前方参照でも安全。
     recordPracticeMinutes: () => recordPracticeMinutesImpl(),
+    // セクション開始時の明示ポーズラッチ回収。resume() は enabled=false
+    // なら凍結を破棄するだけなのでクロックには触れない（practice-visibility）。
+    // _midi は後方定義だが呼び出しはユーザー操作時なので TDZ 安全。
+    clearPracticePause: () => _midi.resumePractice(),
   });
   const {
     practice,

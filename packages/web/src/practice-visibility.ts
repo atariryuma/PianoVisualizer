@@ -109,6 +109,14 @@ export function createPracticeVisibilityController(
    *  Idempotent (guarded by `frozen`). Shared by tab-visible and resume. */
   function thaw(reason: string): void {
     if (!frozen) return;
+    // セッションが既に終わっている（完了/quit 済み）なら、stale な凍結
+    // 時刻で startAudioTime をリベースしたり空の Transport を再開したり
+    // しない。凍結スナップショットは黙って破棄する。
+    if (!deps.practice.enabled) {
+      frozen = null;
+      log('[PRACTICE-VISIBILITY] ' + reason + ' thaw skipped (practice disabled)');
+      return;
+    }
     const tone = deps.getTone();
     const leadSec = frozen.transportWasStarted ? resumeLeadSec : 0;
     const resumeAtSec = toneNowSec(tone) + leadSec;
@@ -164,6 +172,7 @@ export function createPracticeVisibilityController(
     if (!explicitHold) return;
     explicitHold = false;
     deps.practice.paused = false;
+    // enabled=false のとき thaw は凍結を破棄するだけ（クロック不変）。
     thaw('resume');
   }
 

@@ -98,6 +98,8 @@ export interface PracticePartial {
   sectionCombo: number;
   sectionBestCombo: number;
   _completing?: boolean;
+  /** 完了猶予タイマー — 再入時に回収する（practice-state-init 参照）。 */
+  _completionTimer?: ReturnType<typeof setTimeout> | null;
   _lastProgUpdate?: number;
   _sectionTargetCount?: number;
   _cursorScanIdx?: number;
@@ -223,7 +225,9 @@ export interface StartPracticeSectionDeps {
 
   // Score / notes
   loadCurrentScore: () => Promise<void>;
-  recomputePracticeTimings: () => void;
+  /** sectionIdx: 開始するセクション。practice.sectionIdx はこの時点で
+   *  まだ旧値のため、拍子・弱起アンカーの解決に明示引数で渡す（最小差分）。 */
+  recomputePracticeTimings: (sectionIdx?: number) => void;
   buildSectionNotes: (idx: number) => OsmdLikeNote[];
   buildFullSongNotes: () => OsmdLikeNote[];
   /** おともパート（Voice 等）の再生タイムライン。null = 全曲。 */
@@ -245,9 +249,25 @@ export interface StartPracticeSectionDeps {
   getInstruments: () => { piano: unknown; metronome: unknown; melody?: unknown };
   practiceBeatMs: () => number;
   pickAudioOffsetMs: (opts: PickAudioOffsetOptions) => number;
+  /** 明示ポーズ（practice-visibility の explicitHold / frozen）の解除。
+   *  完了猶予中ポーズ → 結果カード → 再開の経路でラッチが残ると、次の
+   *  ポーズ解除が stale な凍結時刻で startAudioTime を破壊するため、
+   *  セクション開始で必ず解除する（唯一の強制ポイント）。 */
+  clearPracticePause?: () => void;
 }
 
 const AUDIO_START_LEAD_SEC = 0.05;
+
+/** enabled=true 〜 audio セットアップ完了までのクロック先置きセンチネル
+ *  （秒）。enabled を立てた直後から await Tone.start() 解決までの間も
+ *  レンダーループは毎フレーム tick を呼ぶ。前セッションの startAudioTime
+ *  が残っていると elapsed が巨大な正値になり、その 1 フレームで全ノーツが
+ *  auto-miss / auto-advance されて「レーンが空 + 即完了」になる（iPad の
+ *  AudioContext suspend→resume で await が 1 フレームを超えるときだけ
+ *  発症 = 「たまにノーツが出ない」）。未来センチネルなら elapsed は大きな
+ *  負値になり、tick・レーン・採点のすべてが「まだ始まっていない」として
+ *  自然に無視する。実アンカーは audio セットアップ後に上書きされる。 */
+const PRE_AUDIO_ANCHOR_SEC = Number.MAX_SAFE_INTEGER;
 
 export function createStartPracticeSection(
   deps: StartPracticeSectionDeps
@@ -286,8 +306,9 @@ export function createStartPracticeSection(
     }
 
     // Lock in count-in / lookahead lengths BEFORE buildSectionNotes
-    // — note timeMs bakes in COUNT_IN_MS.
-    deps.recomputePracticeTimings();
+    // — note timeMs bakes in COUNT_IN_MS. sectionIdx を渡すのは
+    // 開始セクションの拍子/弱起（GO アンカー）を解決するため。
+    deps.recomputePracticeTimings(sectionIdx);
 
     const sec = song.sections?.[sectionIdx];
     if (!sec) return;
@@ -295,6 +316,11 @@ export function createStartPracticeSection(
     const isFullSong = deps.practice.mode === 'listen' && !!deps.practice.fullSongMode;
 
     // ── reset per-section state ──────────────────────────────────
+    // 前セッションの明示ポーズラッチを必ず解除（deps コメント参照）。
+    deps.clearPracticePause?.();
+    // クロックを未来センチネルへ先置きしてから enabled を立てる
+    // （PRE_AUDIO_ANCHOR_SEC のコメント参照 — 順序が本質）。
+    deps.practice.startAudioTime = PRE_AUDIO_ANCHOR_SEC;
     deps.practice.enabled = true;
     // Belt-and-suspenders: a fresh section must never start paused. All
     // settings-panel exit paths already resume(), but a stray paused=true
@@ -356,6 +382,13 @@ export function createStartPracticeSection(
     deps.midiState.lastChordTimeMs = 0;
     deps.midiState.recentOnsets.length = 0;
     deps.practice.sectionBestCombo = 0;
+    // 前セッションの完了猶予タイマーを回収。quit 経路は practice-flow が
+    // 回収するが、Retry / Next / ループ再開 / 曲切替の直接遷移では残った
+    // タイマーが 600ms 後に新セッションを誤完了させうる。
+    if (deps.practice._completionTimer) {
+      clearTimeout(deps.practice._completionTimer);
+      deps.practice._completionTimer = null;
+    }
     deps.practice._completing = false;
     deps.practice._lastProgUpdate = 0;
 
@@ -462,6 +495,15 @@ export function createStartPracticeSection(
         deps.Tone.Transport.start(deps.practice.startAudioTime);
         deps.osmdAdapter.showCursor();
       }
+
+      // 多重防御: await 窓の間に（センチネルをすり抜ける何かで）完了
+      // タイマーが arm されていてもここで回収する。enabled は既に true
+      // なので、発火時ガード（enabled && _completing）では防げない。
+      if (deps.practice._completionTimer) {
+        clearTimeout(deps.practice._completionTimer);
+        deps.practice._completionTimer = null;
+      }
+      deps.practice._completing = false;
 
       // Audio-latency probe.
       try {
