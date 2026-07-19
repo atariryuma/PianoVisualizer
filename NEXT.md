@@ -24,6 +24,35 @@ Immediate maintenance queue:
 4. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
    Vitest may need approval because Vite/esbuild spawns a child process.
 
+Recent landings (2026-07-19, deep-investigation round 2):
+
+- **Features**: P2-18 retry-with-support button on 0-star results (scaffold
+  strategy one-tap: listen-first / one-hand / slower tempo, with sideways
+  fallbacks); P2-19 practice-minute tracking (minutesByDay, journal calendar
+  today/total, cumulative-only — banned-list safe).
+- **Perf (iPad)**: lane shadowBlur now PERF_PROFILE-gated (biggest practice
+  frame cost on low tier); particle/ripple draw allocations eliminated (~210k
+  objs/sec → 0); same-size resize early-return (no more 15MB canvas realloc on
+  URL-bar bursts); playTime/mic-meter DOM writes deduped; re-import blob URL
+  leak fixed.
+- **MIDI/BLE correctness**: BLE-MIDI parser mishandled System Realtime
+  (0xF8–0xFE) — Roland Active Sensing poisoned running status and silently
+  dropped coalesced note-on/off (stuck notes on GO:PIANO88). Fixed per MIDI
+  spec + System Common handling. Also: BLE↔USB double-input on connect, GATT
+  disconnect listener registered pre-handshake, MIDIAccess cache unified into
+  midi-rescan (verifyAlive / clearMidiAccessCache actually work now), in-flight
+  requestMIDIAccess dedupe, poller zombie latch, device-name HTML injection
+  sealed, osmd-init stale loadedUrl on load failure.
+- **Mic resilience**: dead-stream detection + track 'ended' watch (mic was
+  permanently unrecoverable after permission revocation); AGC model reset on
+  suspend; session-reset gaps (recentPitches / agcVoiceRejectCount / combo decay
+  / noise penalty).
+- **Boot resilience**: localStorage SecurityError environments (cookie-block,
+  sandboxed iframe) no longer kill boot — safeLocalStorage ×3 + boot try/catch
+  with a visible error toast.
+- Deferred round-2 items (device-verify or product decisions) are filed in
+  docs/REVIEW-2026-07-19.md §徹底調査ラウンド2 (R2-1..R2-6).
+
 Recent landings (2026-07-19, review fixes):
 
 - **P0 bugs (all 3)** — COUNT_IN_MS getter (guided clock/early-gate followed a
