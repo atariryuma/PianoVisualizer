@@ -294,8 +294,15 @@ export function boot(): void {
   }
 
   const formatTime = PianoCore.formatTime;
+  // 秒が変わったときだけ DOM を書く（値は1回/秒しか変わらないのに毎フレーム
+  // textContent 置換すると WebKit がレイアウト無効化する — iPad の無駄コスト）。
+  let lastPlayTimeSec = -1;
   function updatePlayTime(timeMs: number): void {
-    if (DOM.playTime) DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
+    if (!DOM.playTime) return;
+    const sec = Math.floor((timeMs - state.sessionStartTimeMs) / 1000);
+    if (sec === lastPlayTimeSec) return;
+    lastPlayTimeSec = sec;
+    DOM.playTime.textContent = formatTime(timeMs - state.sessionStartTimeMs);
   }
   // ── Session summary + reset — moved to packages/web/src/shell-session-state.ts (batch 111).
   const _sess = ShellSessionState.createShellSessionState({

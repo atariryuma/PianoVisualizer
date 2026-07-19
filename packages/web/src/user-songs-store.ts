@@ -187,6 +187,14 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
         /* fallthrough */
       }
     }
+    // Re-register of an existing id (JSON re-import): revoke the previous
+    // blob URLs before overwriting, or the multi-MB XML blobs leak for the
+    // page's lifetime (remove() revokes; register was asymmetric).
+    const prev = deps.songs[record.id];
+    if (prev) {
+      if (prev.xmlUrl?.startsWith('blob:')) deps.url.revokeObjectURL(prev.xmlUrl);
+      if (prev.mxlUrl?.startsWith('blob:')) deps.url.revokeObjectURL(prev.mxlUrl);
+    }
     // Always present OSMD with a plain-XML blob URL when we could
     // read xmlText; fall back to the raw blob URL only if unzip
     // failed.

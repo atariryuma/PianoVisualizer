@@ -101,8 +101,16 @@ export function createShellViewport(deps: ShellViewportDeps): ShellViewport {
       new ResizeObserver(() => _viewportLayout.refreshOsmdRect()).observe(deps.osmdContainerEl);
   }
 
+  // getScreen はパーティクル draw 等の最深ホットパスから毎フレーム大量に
+  // 呼ばれる。安定した1オブジェクトを使い回して呼び出しごとのアロケーションを
+  // 排除する（呼び出し側は全て即時 read / 分割代入で、参照を長期保持しない）。
+  const _screen = { W: 0, H: 0 };
   return {
-    getScreen: () => ({ W, H }),
+    getScreen: () => {
+      _screen.W = W;
+      _screen.H = H;
+      return _screen;
+    },
     getKbHeight: () => kbHeight,
     getKbSafeBottom: () => kbSafeBottom,
     getSafeRight: () => safeRight,

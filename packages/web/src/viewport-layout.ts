@@ -305,11 +305,24 @@ export function createCanvasResize(deps: CanvasResizeDeps): CanvasResize {
     }
   }
 
+  let prevDpr = 0;
   function resize(): ViewportDimensions {
     const win = deps.win ?? window;
     const dpr = win.devicePixelRatio || 1;
     const beforeW = prevW;
     const beforeH = prevH;
+    // 同値リサイズの早期 return — iPad の URL バー伸縮やソフトキーボードで
+    // resize がバースト発火するたび、canvas.width 代入（同値でも全消去＋
+    // バッキングストア再確保 ≈ 15MB）が走っていた。寸法も dpr も不変なら
+    // キャンバス再確保をスキップ（safe-area は寸法変化に随伴するので同時
+    // スキップで問題ない）。bg-star の初回シード判定だけは通す — 「最初の
+    // running resize で星をまく」契約を壊さないため（同寸法なら scale=1 の
+    // 無害な走査）。
+    if (win.innerWidth === prevW && win.innerHeight === prevH && dpr === prevDpr) {
+      if (deps.isRunning()) maybeReinitBgStars(prevW, prevH);
+      return dim;
+    }
+    prevDpr = dpr;
     dim.W = win.innerWidth;
     dim.H = win.innerHeight;
     deps.canvas.width = dim.W * dpr;

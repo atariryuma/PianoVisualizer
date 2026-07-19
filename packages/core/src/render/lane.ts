@@ -108,6 +108,12 @@ export interface LaneDrawOptions {
   midiToPitchName: (midi: number) => string;
   /** midi → resting note color (used for un-hit, un-missed notes). */
   noteRestingColor: (midi: number) => string;
+  /** Enable shadowBlur glow on tiles / hit line / count-in text. Wire from
+   *  PERF_PROFILE.shadowBlur — low-tier iPads fall to software raster with
+   *  per-tile shadows (up to 25 shadowed roundRects × 60fps), which was the
+   *  single biggest practice-mode frame cost on iPad 10. Default true so
+   *  older callers keep the glow. */
+  useShadow?: boolean;
 }
 
 /**
@@ -124,6 +130,7 @@ export function drawPracticeLane(
 
   const W = opts.screenW;
   const H = opts.screenH;
+  const useShadow = opts.useShadow ?? true;
 
   const laneTop = opts.laneTopOverride ?? (opts.osmdVisible ? 332 : 50);
   const laneHeight = Math.max(280, H - laneTop - opts.kbReserve);
@@ -221,7 +228,7 @@ export function drawPracticeLane(
   // Hit line — thick + glow so it reads over the score area
   ctx.save();
   ctx.shadowColor = 'rgba(255, 220, 230, 0.8)';
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur = useShadow ? 8 : 0;
   ctx.strokeStyle = 'rgba(255, 240, 245, 0.95)';
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -280,7 +287,7 @@ export function drawPracticeLane(
     const tileX = x - noteW / 2;
     const tileY = y - noteH;
     const tileR = Math.min(10, noteH / 2);
-    ctx.shadowBlur = n.hit ? 22 : 10;
+    ctx.shadowBlur = useShadow ? (n.hit ? 22 : 10) : 0;
     ctx.shadowColor = fill;
 
     // Base fill.
@@ -375,7 +382,7 @@ export function drawPracticeLane(
     ctx.scale(pop, pop);
     ctx.textAlign = 'center';
     ctx.font = 'bold ' + (isGo ? '72' : '120') + 'px sans-serif';
-    ctx.shadowBlur = 30;
+    ctx.shadowBlur = useShadow ? 30 : 0;
     ctx.shadowColor = isGo ? 'rgba(255, 220, 130, .9)' : 'rgba(255, 180, 220, .9)';
     ctx.fillStyle = isGo
       ? 'rgba(255, 230, 130, ' + alpha + ')'

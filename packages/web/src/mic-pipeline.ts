@@ -194,6 +194,10 @@ export interface MicPipelineDeps {
   };
 }
 
+/** 直近に描いたマイクメーター幅（%）— 同値スキップ用のモジュール状態。
+ *  メーターは単一 DOM 要素なのでモジュールスコープで十分。 */
+let lastMeterPct = -1;
+
 /** Tick one frame's mic pipeline. Returns `{ isGoodNote }` so the
  *  caller can route follow-up work (e.g. hide intro hint, log).
  *
@@ -255,8 +259,13 @@ export function tickMicPipeline(
 
     // Mic level meter — visible feedback that audio is being captured.
     if (deps.micMeter && deps.micMeter.classList.contains('visible') && deps.micMeterFill) {
-      const lvl = Math.min(1, pitchResult.rms * 25);
-      deps.micMeterFill.style.width = (lvl * 100).toFixed(1) + '%';
+      // 1% 量子化 + 同値スキップ（flow ゲージと同パターン）— 毎フレームの
+      // style.width 書き込みを実変化時のみに落とす。
+      const lvlPct = Math.round(Math.min(1, pitchResult.rms * 25) * 100);
+      if (lvlPct !== lastMeterPct) {
+        lastMeterPct = lvlPct;
+        deps.micMeterFill.style.width = lvlPct + '%';
+      }
     }
 
     isGoodNote = deps.updateGameState(timeMs, dt, pitchResult);

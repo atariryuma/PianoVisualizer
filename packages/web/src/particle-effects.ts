@@ -243,30 +243,39 @@ export function createParticleEffects(deps: ParticleEffectsDeps): ParticleEffect
   //      drives the kid's audio focus — they need stutter-free playback,
   //      not shadow halos. Free-play / title screen keep the halos
   //      because the particle effects are the visual draw there.
+  // GC 圧対策: draw はパーティクル毎×毎フレーム呼ばれる最深ホットパス。
+  // 以前は draw ごとに getScreen()（新オブジェクト）+ opts リテラルを生成し
+  // 最大 1200個 × 3オブジェクト × 60fps ≈ 21万個/秒の短命アロケーションに
+  // なっていた。opts はモジュール寿命の scratch を使い回し、W/H/useShadow は
+  // フレーム内では実質不変なので draw ごとの再計算は同値上書きのみ（安価）。
+  const _particleDrawOpts = { screenW: 0, screenH: 0, useShadow: false };
   const _coreParticleDraw = pianoCore.Particle.prototype.draw;
   pianoCore.Particle.prototype.draw = function (this: any, c: any) {
-    const { W, H } = deps.getScreen();
-    return _coreParticleDraw.call(this, c, {
-      screenW: W,
-      screenH: H,
-      useShadow: config.SHADOW_BLUR_ENABLED && particles.length < 300 && !practice.enabled,
-    });
+    const s = deps.getScreen();
+    _particleDrawOpts.screenW = s.W;
+    _particleDrawOpts.screenH = s.H;
+    _particleDrawOpts.useShadow =
+      config.SHADOW_BLUR_ENABLED && particles.length < 300 && !practice.enabled;
+    return _coreParticleDraw.call(this, c, _particleDrawOpts);
   };
 
   // ─── Ripple prototype monkey-patches (update + draw) ─────────────
+  const _rippleUpdateOpts = { flow: 0 };
   const _coreRippleUpdate = pianoCore.Ripple.prototype.update;
   pianoCore.Ripple.prototype.update = function (this: any) {
-    return _coreRippleUpdate.call(this, { flow: state.flow });
+    _rippleUpdateOpts.flow = state.flow;
+    return _coreRippleUpdate.call(this, _rippleUpdateOpts);
   };
+  const _rippleDrawOpts = { flow: 0, useShadow: false };
   const _coreRippleDraw = pianoCore.Ripple.prototype.draw;
   pianoCore.Ripple.prototype.draw = function (this: any, c: any) {
     // Same shadowBlur gate as Particle.draw above. Ripples spawn 1-3
     // per note hit; with shadowBlur on each ripple costs 2-4ms;
     // multi-ripple frames push past the 16.7ms budget.
-    return _coreRippleDraw.call(this, c, {
-      flow: state.flow,
-      useShadow: config.SHADOW_BLUR_ENABLED && ripples.length < 15 && !practice.enabled,
-    });
+    _rippleDrawOpts.flow = state.flow;
+    _rippleDrawOpts.useShadow =
+      config.SHADOW_BLUR_ENABLED && ripples.length < 15 && !practice.enabled;
+    return _coreRippleDraw.call(this, c, _rippleDrawOpts);
   };
 
   // ─── getNoteColor wrapper ─────────────────────────────────────────

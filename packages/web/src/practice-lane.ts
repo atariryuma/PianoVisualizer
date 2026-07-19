@@ -124,6 +124,8 @@ export interface PracticeLaneDeps {
   noteNames: readonly string[];
   /** Layout constants (CONFIG-derived). */
   laneLookaheadMs: number;
+  /** PERF_PROFILE.shadowBlur — low-tier iPads skip the tile glow. */
+  useShadow: boolean;
   countInMs: number;
   hitWindowEarlyMs: number;
   hitWindowMs: number;
@@ -194,6 +196,7 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     countInGoLabel: deps.countInGoLabel,
     midiToPitchName: deps.midiToPitchName,
     noteRestingColor,
+    useShadow: deps.useShadow,
   };
 
   function setLabels(labels: {

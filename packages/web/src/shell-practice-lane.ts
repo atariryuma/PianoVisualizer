@@ -91,6 +91,9 @@ export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPract
     hitWindowEarlyMs: PianoCore.HIT_WINDOW_EARLY_MS,
     hitWindowMs: PianoCore.HIT_WINDOW_MS,
     perfectMs: PianoCore.PERFECT_MS,
+    // Low-tier iPads (PERF_PROFILE.shadowBlur=false) skip the tile glow —
+    // up to 25 shadowed roundRects/frame forced software rasterization.
+    useShadow: deps.config.SHADOW_BLUR_ENABLED,
     drawPracticeLane: deps.drawPracticeLane,
     laneLabelL: t('laneLeft'),
     laneLabelR: t('laneRight'),
