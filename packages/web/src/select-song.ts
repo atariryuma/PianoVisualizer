@@ -33,6 +33,13 @@ export interface SelectSongPracticeRef {
   fullSongMode?: boolean;
 }
 
+/** Last-used practice settings for a song (persisted per-song). */
+export interface RememberedSongSettings {
+  mode?: string;
+  tempoPct?: number;
+  handFilter?: 'L' | 'R' | null;
+}
+
 export interface SelectSongDom {
   osmdContainer: HTMLElement;
   songTitle: HTMLElement;
@@ -65,6 +72,12 @@ export interface SelectSongDeps {
 
   /** Lazy load — practice.progress is set on first read. */
   loadPracticeProgress: () => unknown;
+
+  /** Restore the just-selected song's remembered settings onto
+   *  `practice` (mode / tempoPct / handFilter). Returns the applied
+   *  mode, or undefined when nothing was remembered (caller defaults to
+   *  guided). Optional so older callers / tests can omit it. */
+  restoreSongSettings?: () => RememberedSongSettings | undefined;
 
   /** Forward-declared shell helpers — passed as thunks because the
    *  factory builds before they're declared. */
@@ -141,7 +154,10 @@ export function createSelectSong(deps: SelectSongDeps): SelectSong {
       deps.dom.songTitle.textContent = deps.t(song.titleKey);
       deps.dom.songComposer.textContent = deps.t(song.composerKey);
       deps.practice.progress = deps.practice.progress || deps.loadPracticeProgress();
-      deps.practice.mode = 'guided';
+      // Restore this song's last-used settings (tempo / hand / mode). On
+      // the FIRST play there's nothing remembered → default to guided.
+      const restored = deps.restoreSongSettings?.();
+      if (!restored?.mode) deps.practice.mode = 'guided';
       // Bug fix (2026-05-08): reset the fullSong toggle on every
       // song switch as a defense in depth against stale state
       // surviving the result-card fix in result-card.ts. A user who

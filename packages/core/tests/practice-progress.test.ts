@@ -157,6 +157,21 @@ describe('getSongProgress', () => {
     expect(p.songs).toBeDefined();
     expect(sp).toBe(p.songs.fur_elise);
   });
+
+  it('preserves a saved lastSettings across the defaults merge (P2-20)', () => {
+    const p = {
+      streakDays: [],
+      streakCount: 0,
+      songs: {
+        fur_elise: {
+          sections: { A1: { stars: 2, bestPct: 60 } },
+          lastSettings: { mode: 'rhythm', tempoPct: 90, handFilter: 'R' },
+        },
+      },
+    } as unknown as PracticeProgress;
+    const sp = getSongProgress(p, 'fur_elise');
+    expect(sp.lastSettings).toEqual({ mode: 'rhythm', tempoPct: 90, handFilter: 'R' });
+  });
 });
 
 describe('earnedStamps migration', () => {

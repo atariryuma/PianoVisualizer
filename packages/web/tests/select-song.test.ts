@@ -10,7 +10,12 @@ interface OsmdStub {
 }
 
 function makeFixture(
-  over: { running?: boolean; loadResult?: 'ok' | 'fail'; failError?: unknown } = {}
+  over: {
+    running?: boolean;
+    loadResult?: 'ok' | 'fail';
+    failError?: unknown;
+    restoreSongSettings?: () => { mode?: string } | undefined;
+  } = {}
 ) {
   const songs: Record<string, SelectSongRecord> = {
     fur_elise: { titleKey: 'furElise', composerKey: 'beethoven' },
@@ -65,6 +70,7 @@ function makeFixture(
     clearHighlights,
     t,
     loadPracticeProgress,
+    restoreSongSettings: over.restoreSongSettings,
     showRunningUI,
     renderSongPanel,
     initWebMIDI,
@@ -146,11 +152,32 @@ describe('createSelectSong — basic switching', () => {
     expect(fx.practice.progress).toBe(existing);
   });
 
-  it('forces practice.mode to "guided"', () => {
+  it('defaults practice.mode to "guided" on first play (nothing remembered)', () => {
     const fx = makeFixture();
     fx.practice.mode = 'rhythm';
     fx.ss.selectSong('fur_elise');
     expect(fx.practice.mode).toBe('guided');
+  });
+
+  it('restores remembered settings instead of forcing guided (P2-20)', () => {
+    let mode = 'guided';
+    const fx = makeFixture({
+      restoreSongSettings: () => {
+        mode = 'rhythm'; // the real hook writes practice.mode
+        return { mode: 'rhythm' };
+      },
+    });
+    // Point practice.mode at our tracked value by mutating after construction.
+    Object.defineProperty(fx.practice, 'mode', {
+      get: () => mode,
+      set: (v) => {
+        mode = v;
+      },
+      configurable: true,
+    });
+    fx.ss.selectSong('fur_elise');
+    // restoreSongSettings returned a mode → select-song must NOT reset to guided.
+    expect(fx.practice.mode).toBe('rhythm');
   });
 });
 

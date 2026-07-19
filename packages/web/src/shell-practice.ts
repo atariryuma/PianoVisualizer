@@ -283,6 +283,22 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
 
   const startPracticeSection = async (sectionIdx: number) => {
     await _startPracticeSection(sectionIdx);
+    // Remember this song's settings so re-selecting it restores tempo /
+    // hand / mode instead of resetting to guided (P2-20). Best-effort.
+    try {
+      const song = deps.getCurrentSong();
+      if (song?.id) {
+        const sp = _practiceProgress.songProg(song.id);
+        sp.lastSettings = {
+          mode: practice.mode,
+          tempoPct: practice.tempoPct,
+          handFilter: practice.handFilter,
+        };
+        _practiceProgress.save();
+      }
+    } catch {
+      /* persistence is non-critical — never block the section start */
+    }
   };
   const stopPracticeAudio = () => _practiceToneAudio.stopPracticeAudio();
 

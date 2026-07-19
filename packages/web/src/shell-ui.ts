@@ -440,6 +440,29 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     clearHighlights: deps.clearHighlights,
     t,
     loadPracticeProgress: deps.loadPracticeProgress,
+    restoreSongSettings: () => {
+      // Apply the just-selected song's remembered tempo / hand / mode
+      // (P2-20). Returns undefined on the first play so select-song
+      // defaults to guided.
+      const song = deps.getCurrentSong() as { id?: string } | null;
+      if (!song?.id) return undefined;
+      const progress =
+        (deps.practice as { progress?: unknown }).progress ?? deps.loadPracticeProgress();
+      const sp = PianoCore.getSongProgress(progress as never, song.id) as {
+        lastSettings?: { mode?: string; tempoPct?: number; handFilter?: 'L' | 'R' | null };
+      };
+      const ls = sp.lastSettings;
+      if (!ls) return undefined;
+      const p = deps.practice as {
+        mode: string;
+        tempoPct?: number;
+        handFilter?: 'L' | 'R' | null;
+      };
+      if (ls.mode) p.mode = ls.mode;
+      if (typeof ls.tempoPct === 'number') p.tempoPct = ls.tempoPct;
+      if ('handFilter' in ls) p.handFilter = ls.handFilter ?? null;
+      return ls;
+    },
     showRunningUI: () => _introHintUi.showRunningUI(),
     renderSongPanel: () => renderSongPanel(),
     initWebMIDI: () => {
