@@ -49,7 +49,7 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
 composition layer. `pnpm verify` currently covers lint, typecheck, 863 core
-tests, 1524 web tests, and the Vite web build.
+tests, 1542 web tests, and the Vite web build.
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -543,6 +543,36 @@ background star count are overridden at runtime by the detected `PERF_PROFILE`.
 Enable in the settings panel (⚙ → その他 → デバッグ表示) to toggle a debug
 overlay showing real-time values for all detection layers (flux, flatness,
 crest, harmonicity, AGC gain, session state, pitch, RMS, etc.).
+
+### Multi-part scores — backing-part playback（おともパート, 2026-07-19）
+
+Multi-part MusicXML (e.g. P1=Voice + P2=Piano 歌+伴奏譜) auto-splits into "your
+part" and "backing parts" at extraction time — the SmartMusic My
+Part/Accompaniment model, deliberately without a mixer UI (kid-simple):
+
+- **Part classification**: `pickPracticeStaffPlan`
+  ([note-extractor.ts](packages/web/src/note-extractor.ts)) reads
+  `osmd.Sheet.Instruments` and scores each part (2 staves +4, keyboard-ish name
+  +2, GM program 1–8 +2). Best keyboard-ish part = practice part (hand from
+  staff order **within** that part); all other parts = backing. No keyboard-ish
+  part or single-part score → everything is practice (legacy behavior, zero
+  regression).
+- **Data**: backing notes live in `song.backingNotes` (tie-merged separately,
+  repeat-expanded via the same playback order). They never enter
+  `practice.sectionNotes`, the lane, scoring, or progress counts.
+- **Playback**: `buildBackingNotes(sectionIdx | null)` (section-notes.ts) builds
+  the timeline (same tempo scaling + count-in anchor as practice notes;
+  full-song mode shares `fullSongAnchorSec` so a vocal pickup before the piano
+  shifts both timelines consistently). `scheduleSectionPlayback` plays it on a
+  dedicated `melody` PolySynth (soft sine, -17dB ≈ 70% of the ghost piano) in
+  **listen AND rhythm** modes, independent of the ghost toggle — the kid plays
+  the piano part, the app sings the melody. Guided (wait) mode has no transport,
+  so no backing there. Voice timbre is piano-family on purpose: GM 53/54 synth
+  voices sound worse than a clean pitched tone (SmartMusic precedent).
+- **Extraction invariants**: the extraction walk temporarily sets
+  `EngravingRules.CursorIgnoreRepetitions = true` (restored in finally) so
+  `|: :|` doesn't double-extract; tie ends are detected via `Tie.Notes[last]`
+  (OSMD 1.9 has no `Tie.EndNote`).
 
 ## User-added songs
 

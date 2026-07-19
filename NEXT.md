@@ -10,11 +10,38 @@ user request points at it.
 
 Immediate maintenance queue:
 
-1. Keep documentation synchronized with the Phase 0e runtime shape.
-2. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
+1. **Work through [docs/REVIEW-2026-07-19.md](docs/REVIEW-2026-07-19.md)** — the
+   consolidated industry-standard review (UX / audio-timing / MusicXML import,
+   all findings verified against real code with file:line). P0 first:
+   COUNT_IN_MS snapshot bug, repeat-section boundary drift, volta comma
+   notation. Each entry is written as a self-contained task instruction.
+2. Keep documentation synchronized with the Phase 0e runtime shape.
+3. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
    with regression tests before each behavioral change.
-3. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
+4. For every feature or bug fix, run `pnpm verify`; on this Windows sandbox,
    Vitest may need approval because Vite/esbuild spawns a child process.
+
+Recent landings (2026-07-19):
+
+- **Backing-part playback（おともパート再生）** — multi-part scores (e.g.
+  Voice + Piano) now auto-split into "your part" (keyboard) and "backing parts".
+  `pickPracticeStaffPlan` (note-extractor.ts) scores instruments (2 staves +4 /
+  keyboard-ish name +2 / GM piano program +2); non-keyboard parts extract into
+  `song.backingNotes` and play on a dedicated soft-sine PolySynth (-3dB vs
+  ghost) during listen/rhythm — never in the lane, never scored. Modeled on
+  SmartMusic My Part/Accompaniment + kid-simple no-mixer pattern. Verified
+  end-to-end against a real Voice+Piano MusicXML (53 measures, repeats, playback
+  order 92). +18 web tests.
+- **Repeat double-extraction fix** — the OSMD iterator was following `|: :|`
+  back-jumps during extraction (CursorIgnoreRepetitions=false), duplicating
+  every repeated-section note at identical timeSec (the source of phantom ×2
+  badges). Extraction now sets the flag true for the walk and restores it in a
+  finally (cursor-follow behavior untouched).
+- **Tie end-note detection fix** — OSMD 1.9's `Tie` has no `EndNote`; the end is
+  `Tie.Notes[last]`. End notes were getting both flags, so `mergeTiedNotes`
+  over-merged same-pitch consecutive tie chains.
+- **stopPracticeAudio releaseAll** — quit no longer leaves already-triggered
+  envelopes (long notes, backing legato) ringing.
 
 Recent landings (2026-05-30):
 
