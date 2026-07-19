@@ -25,7 +25,9 @@ interface ModuleSpies {
   runRenderLate: ReturnType<typeof vi.fn>;
 }
 
-function makeFixture(over: { spectrumDeps?: unknown | null; running?: boolean } = {}) {
+function makeFixture(
+  over: { spectrumDeps?: unknown | null; running?: boolean; isTitleVisible?: () => boolean } = {}
+) {
   const theme = { colors: ['#aaa'], bg: '#000', glow: '#fff' };
   const spies: ModuleSpies = {
     runRenderFramePrelude: vi.fn().mockReturnValue({ dt: 16, theme }),
@@ -77,6 +79,7 @@ function makeFixture(over: { spectrumDeps?: unknown | null; running?: boolean } 
     },
 
     raf: raf as any,
+    isTitleVisible: over.isTitleVisible,
   };
 
   return {
@@ -239,6 +242,86 @@ describe('tick — builder freshness', () => {
     fx.state.running = false;
     fx.loop.tick(16);
     expect(fx.spies.runRenderLate).toHaveBeenCalledOnce(); // still one
+  });
+});
+
+// ─── [R2-5] タイトル表示中の描画スキップ ──────────────────────────
+
+describe('tick — title-visible draw skip', () => {
+  it('タイトル表示中: prelude と late へ skipDraw=true が渡る', () => {
+    const fx = makeFixture({ isTitleVisible: () => true });
+    fx.loop.tick(100);
+    const frameDeps = fx.spies.runRenderFramePrelude.mock.calls[0][1] as { skipDraw?: boolean };
+    expect(frameDeps.skipDraw).toBe(true);
+    const lateDeps = fx.spies.runRenderLate.mock.calls[0][1] as { skipDraw?: boolean };
+    expect(lateDeps.skipDraw).toBe(true);
+  });
+
+  it('タイトル表示中: マイク処理・note-fade・rAF は止まらない', () => {
+    const fx = makeFixture({ isTitleVisible: () => true });
+    fx.loop.tick(100);
+    expect(fx.spies.tickMicPipeline).toHaveBeenCalledOnce();
+    expect(fx.spies.tickNoteDisplayFade).toHaveBeenCalledOnce();
+    expect(fx.spies.runRenderLate).toHaveBeenCalledOnce(); // update+cull は継続
+    expect(fx.raf).toHaveBeenCalledOnce(); // rAF 自体は継続（復帰即時性）
+  });
+
+  it('タイトル表示中: 描画系のアンビエント湧き + スペクトラムはスキップ', () => {
+    const fx = makeFixture({ isTitleVisible: () => true });
+    fx.loop.tick(100);
+    expect(fx.builders.buildAmbientDeps).not.toHaveBeenCalled();
+    expect(fx.spies.spawnAmbientParticle).not.toHaveBeenCalled();
+    expect(fx.builders.buildSpectrumDeps).not.toHaveBeenCalled();
+    expect(fx.spies.runSpectrumBars).not.toHaveBeenCalled();
+  });
+
+  it('タイトル非表示（practice / フリープレイ中）: 挙動は従来と不変', () => {
+    const fx = makeFixture({ isTitleVisible: () => false });
+    fx.loop.tick(100);
+    const frameDeps = fx.spies.runRenderFramePrelude.mock.calls[0][1] as { skipDraw?: boolean };
+    expect(frameDeps.skipDraw).toBeUndefined();
+    const lateDeps = fx.spies.runRenderLate.mock.calls[0][1] as { skipDraw?: boolean };
+    expect(lateDeps.skipDraw).toBeUndefined();
+    expect(fx.spies.spawnAmbientParticle).toHaveBeenCalledOnce();
+    expect(fx.spies.runSpectrumBars).toHaveBeenCalledOnce();
+  });
+
+  it('述語がフレームごとに評価される（タイトル→復帰で描画が再開する）', () => {
+    let title = true;
+    const fx = makeFixture({ isTitleVisible: () => title });
+    fx.loop.tick(0);
+    expect(fx.spies.spawnAmbientParticle).not.toHaveBeenCalled();
+    title = false; // ▶ で復帰
+    fx.loop.tick(16);
+    expect(fx.spies.spawnAmbientParticle).toHaveBeenCalledOnce();
+  });
+
+  it('isTitleVisible 省略時は常に描画（従来挙動）', () => {
+    const fx = makeFixture();
+    fx.loop.tick(100);
+    expect(fx.spies.spawnAmbientParticle).toHaveBeenCalledOnce();
+    expect(fx.spies.runSpectrumBars).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── dtNorm 貫通 ─────────────────────────────────────────────────
+
+describe('tick — dtNorm plumbing', () => {
+  it('dt/16.67 を ambient spawn と runRenderLate へ渡す', () => {
+    const fx = makeFixture();
+    fx.spies.runRenderFramePrelude.mockReturnValue({ dt: 33.34, theme: fx.theme });
+    fx.loop.tick(100);
+    const ambientDtNorm = fx.spies.spawnAmbientParticle.mock.calls[0][1] as number;
+    expect(ambientDtNorm).toBeCloseTo(2, 5);
+    const lateDtNorm = fx.spies.runRenderLate.mock.calls[0][2] as number;
+    expect(lateDtNorm).toBeCloseTo(2, 5);
+  });
+
+  it('60fps（dt=16.67）では dtNorm=1 — 従来と同値', () => {
+    const fx = makeFixture();
+    fx.spies.runRenderFramePrelude.mockReturnValue({ dt: 16.67, theme: fx.theme });
+    fx.loop.tick(100);
+    expect(fx.spies.runRenderLate.mock.calls[0][2] as number).toBeCloseTo(1, 5);
   });
 });
 

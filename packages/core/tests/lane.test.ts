@@ -287,4 +287,52 @@ describe('drawPracticeLane', () => {
     );
     expect(stub.countCalls('save')).toBe(stub.countCalls('restore'));
   });
+
+  // ─── グロスグラデーションの正規化1本キャッシュ（R2-5） ────────────
+
+  describe('gloss gradient cache', () => {
+    // グロス対象ノート（未ヒット・noteH > 14）を1個含むフレームを描く。
+    function drawGlossFrame(s: ReturnType<typeof makeCanvasStub>): void {
+      const note = makeNote({ midi: 64, timeMs: 5500, durMs: 400 });
+      drawPracticeLane(s.ctx, baseView({ sectionNotes: [note] }), baseTiming(), baseOpts());
+    }
+    const isGlossCreate = (c: { method: string; args: unknown[] }): boolean =>
+      c.method === 'createLinearGradient' &&
+      (c.args as number[])[0] === 0 &&
+      (c.args as number[])[1] === 0 &&
+      (c.args as number[])[2] === 0 &&
+      (c.args as number[])[3] === 1;
+
+    it('正規化 (0,0)→(0,1) の1本だけを生成し、2フレーム目以降は再生成しない', () => {
+      drawGlossFrame(stub);
+      expect(stub.calls.filter(isGlossCreate)).toHaveLength(1);
+      drawGlossFrame(stub);
+      drawGlossFrame(stub);
+      // 同一 ctx ではキャッシュヒット — 生成は1本のまま
+      expect(stub.calls.filter(isGlossCreate)).toHaveLength(1);
+    });
+
+    it('色ストップは従来と同一（白 0.35 → 白 0）', () => {
+      drawGlossFrame(stub);
+      const stops = stub.calls
+        .filter((c) => c.method === 'gradient.addColorStop')
+        .map((c) => c.args[1] as string);
+      expect(stops).toContain('rgba(255, 255, 255, 0.35)');
+      expect(stops).toContain('rgba(255, 255, 255, 0)');
+    });
+
+    it('fill 時に translate + scale で実寸へ引き伸ばす（パス記録後なので形状は不変）', () => {
+      drawGlossFrame(stub);
+      expect(stub.countCalls('translate')).toBeGreaterThanOrEqual(1);
+      expect(stub.countCalls('scale')).toBeGreaterThanOrEqual(1);
+      expect(stub.countCalls('save')).toBe(stub.countCalls('restore'));
+    });
+
+    it('ctx が変わる（コンテキスト再生成）と作り直す', () => {
+      drawGlossFrame(stub);
+      const stub2 = makeCanvasStub();
+      drawGlossFrame(stub2);
+      expect(stub2.calls.filter(isGlossCreate)).toHaveLength(1);
+    });
+  });
 });

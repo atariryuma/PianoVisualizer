@@ -125,6 +125,29 @@ describe('spawnAmbientParticle', () => {
     expect(p.args[9]).toBe('circle'); // kind
   });
 
+  it('dtNorm 化 — 湧き確率が dtNorm 倍にスケールする（dtNorm=1 は従来と同値）', () => {
+    // chance=0.1, flow=0 → p=0.1。roll=0.75:
+    //   dtNorm=1 → threshold=0.9 → 0.75 <= 0.9 → 湧かない（従来と同じ）
+    //   dtNorm=3 → threshold=0.7 → 0.75 > 0.7 → 湧く
+    const rand = vi.spyOn(Math, 'random');
+    rand.mockReturnValue(0.75);
+
+    const deps1 = makeDeps({
+      state: { noteShowTimeMs: 0, smoothEnergy: 0.02, flow: 0 } as RenderMidStateRef,
+      ambientChance: 0.1,
+    });
+    spawnAmbientParticle(deps1, 1);
+    expect(deps1.particles.push).not.toHaveBeenCalled();
+
+    const deps3 = makeDeps({
+      state: { noteShowTimeMs: 0, smoothEnergy: 0.02, flow: 0 } as RenderMidStateRef,
+      ambientChance: 0.1,
+    });
+    spawnAmbientParticle(deps3, 3);
+    expect(deps3.particles.push).toHaveBeenCalledTimes(1);
+    rand.mockRestore();
+  });
+
   it('honors flow boost — higher flow → larger spawn density window', () => {
     // We can't easily assert this without mocking Math.random, but we can
     // at least confirm the threshold formula's flow term reads correctly.

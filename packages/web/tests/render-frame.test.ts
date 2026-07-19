@@ -93,13 +93,24 @@ describe('runRenderFramePrelude — theme + energy', () => {
     expect(result.theme.glow).toBe('theme1');
   });
 
-  it('lerps smoothEnergy 15% toward the probed energy', () => {
+  it('lerps smoothEnergy 15% toward the probed energy (60fps = dtNorm 1)', () => {
+    // dtNorm 化に伴い 16.67ms（= dtNorm 1）フレームで従来の 0.15 と同値。
     const deps = makeDeps({
-      state: makeState({ smoothEnergy: 0 }),
+      state: makeState({ smoothEnergy: 0, lastFrameTimeMs: 100 }),
       getEnergy: () => 1.0,
     });
-    runRenderFramePrelude(100, deps);
+    runRenderFramePrelude(116.67, deps);
     expect(deps.state.smoothEnergy).toBeCloseTo(0.15, 5);
+  });
+
+  it('dtNorm 化 — 33.34ms フレーム（120Hz の2フレーム相当）は 1-(0.85)^2 の lerp', () => {
+    const deps = makeDeps({
+      state: makeState({ smoothEnergy: 0, lastFrameTimeMs: 100 }),
+      getEnergy: () => 1.0,
+    });
+    runRenderFramePrelude(133.34, deps);
+    // dtNorm = 2 → 係数 1 - 0.85^2 = 0.2775
+    expect(deps.state.smoothEnergy).toBeCloseTo(0.2775, 4);
   });
 });
 
@@ -173,10 +184,20 @@ describe('runRenderFramePrelude — wake-up flash', () => {
 // ─── glow pulse ──────────────────────────────────────────────────────
 
 describe('runRenderFramePrelude — glow pulse', () => {
-  it('decays glowPulseIntensity by 4% per frame when above 0.01', () => {
-    const deps = makeDeps({ state: makeState({ glowPulseIntensity: 0.5 }) });
-    runRenderFramePrelude(100, deps);
+  it('decays glowPulseIntensity by 4% per frame when above 0.01 (60fps = dtNorm 1)', () => {
+    const deps = makeDeps({
+      state: makeState({ glowPulseIntensity: 0.5, lastFrameTimeMs: 100 }),
+    });
+    runRenderFramePrelude(116.67, deps);
     expect(deps.state.glowPulseIntensity).toBeCloseTo(0.48, 5);
+  });
+
+  it('dtNorm 化 — 33.34ms フレームでは 0.96^2 の減衰', () => {
+    const deps = makeDeps({
+      state: makeState({ glowPulseIntensity: 0.5, lastFrameTimeMs: 100 }),
+    });
+    runRenderFramePrelude(133.34, deps);
+    expect(deps.state.glowPulseIntensity).toBeCloseTo(0.5 * 0.96 * 0.96, 4);
   });
 
   it('does not decay glowPulseIntensity below 0.01', () => {
@@ -197,9 +218,14 @@ describe('runRenderFramePrelude — glow pulse', () => {
 describe('runRenderFramePrelude — center glow', () => {
   it('forwards screen + state + theme to drawCenterGlow', () => {
     const deps = makeDeps({
-      state: makeState({ smoothEnergy: 0.3, flow: 60, glowPulseIntensity: 0.2 }),
+      state: makeState({
+        smoothEnergy: 0.3,
+        flow: 60,
+        glowPulseIntensity: 0.2,
+        lastFrameTimeMs: 100,
+      }),
     });
-    runRenderFramePrelude(100, deps);
+    runRenderFramePrelude(116.67, deps);
     expect(deps.drawCenterGlow).toHaveBeenCalledWith(
       deps.ctx,
       expect.objectContaining({
@@ -247,5 +273,64 @@ describe('runRenderFramePrelude — shimmer overlay', () => {
     });
     runRenderFramePrelude(2000, deps); // 2s past start
     expect(deps.state.shimmerPhase).toBe(-1);
+  });
+});
+
+// ─── [R2-5] skipDraw（タイトル表示中の描画スキップ） ─────────────────
+
+describe('runRenderFramePrelude — skipDraw', () => {
+  it('skipDraw=true は canvas 描画を一切行わない', () => {
+    const ctx = makeStubCtx();
+    const deps = makeDeps({
+      ctx,
+      state: makeState({ inputFlash: 0.5, shimmerPhase: 0, shimmerStartMs: 90 }),
+      skipDraw: true,
+    });
+    runRenderFramePrelude(100, deps);
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+    expect(deps.drawBgStars).not.toHaveBeenCalled();
+    expect(deps.drawAurora).not.toHaveBeenCalled();
+    expect(deps.drawGroundFlowers).not.toHaveBeenCalled();
+    expect(deps.drawCenterGlow).not.toHaveBeenCalled();
+  });
+
+  it('skipDraw=true でも状態更新（dt / lerp / 減衰 / シマー失効）は継続する', () => {
+    const deps = makeDeps({
+      state: makeState({
+        lastFrameTimeMs: 100,
+        smoothEnergy: 0,
+        glowPulseIntensity: 0.5,
+        shimmerPhase: 0,
+        shimmerStartMs: -5000, // とっくに寿命切れ
+      }),
+      getEnergy: () => 1.0,
+      skipDraw: true,
+    });
+    const result = runRenderFramePrelude(116.67, deps);
+    expect(result.dt).toBeCloseTo(16.67, 2);
+    expect(deps.state.lastFrameTimeMs).toBe(116.67);
+    expect(deps.state.smoothEnergy).toBeCloseTo(0.15, 5); // lerp は継続
+    expect(deps.state.glowPulseIntensity).toBeCloseTo(0.48, 5); // 減衰は継続
+    expect(deps.state.shimmerPhase).toBe(-1); // 失効フラグも継続
+    expect(deps.decayWakeUpFlash).toHaveBeenCalled();
+  });
+
+  it('skipDraw=true でも dt + theme を返す（下流フェーズは通常どおり動ける）', () => {
+    const themes = [makeTheme({ glow: 'theme0' })];
+    const deps = makeDeps({ themes, skipDraw: true });
+    const result = runRenderFramePrelude(100, deps);
+    expect(result.dt).toBe(16);
+    expect(result.theme.glow).toBe('theme0');
+  });
+
+  it('skipDraw 省略時は従来どおり全描画する（フリープレイ/practice 不変）', () => {
+    const ctx = makeStubCtx();
+    const deps = makeDeps({ ctx });
+    runRenderFramePrelude(100, deps);
+    expect(ctx.fillRect).toHaveBeenCalled();
+    expect(deps.drawBgStars).toHaveBeenCalled();
+    expect(deps.drawAurora).toHaveBeenCalled();
+    expect(deps.drawGroundFlowers).toHaveBeenCalled();
+    expect(deps.drawCenterGlow).toHaveBeenCalled();
   });
 });

@@ -212,6 +212,80 @@ describe('runRenderLate — tail', () => {
   });
 });
 
+// ─── [R2-5] skipDraw（タイトル表示中） ──────────────────────────────
+
+describe('runRenderLate — skipDraw', () => {
+  it('skipDraw=true: update+cull は継続、draw と canvas 描画は全スキップ', () => {
+    const alive = makeRipple(5);
+    const dead = makeRipple(0);
+    const p1 = makeParticle(2);
+    const pDead = makeParticle(0);
+    const deps = makeDeps({
+      ripples: [alive, dead] as unknown as RippleArray,
+      particles: [p1, pDead] as unknown as ParticleArray,
+      midiInput: { enabled: true },
+      practice: { enabled: true },
+      skipDraw: true,
+    });
+    runRenderLate(100, deps);
+    // 物理は進む + cull される（タイトル中の滞留防止）
+    expect(alive.update).toHaveBeenCalled();
+    expect(p1.update).toHaveBeenCalled();
+    expect(deps.ripples.length).toBe(1);
+    expect(deps.particles.length).toBe(1);
+    // 描画は一切走らない
+    expect(alive.draw).not.toHaveBeenCalled();
+    expect(p1.draw).not.toHaveBeenCalled();
+    expect(deps.drawMidiBeams).not.toHaveBeenCalled();
+    expect(deps.drawMidiChordDisplay).not.toHaveBeenCalled();
+    expect(deps.drawMidiKeyboard).not.toHaveBeenCalled();
+    expect(deps.drawPracticeLane).not.toHaveBeenCalled();
+  });
+
+  it('skipDraw=true でも playtime + debug overlay の状態更新は継続', () => {
+    const deps = makeDeps({ skipDraw: true });
+    runRenderLate(100, deps);
+    expect(deps.updatePlayTime).toHaveBeenCalledWith(100);
+    expect(deps.updateDebugOverlay).toHaveBeenCalled();
+  });
+
+  it('skipDraw 省略時は従来どおり全描画（practice / フリープレイ不変）', () => {
+    const r = makeRipple(1);
+    const deps = makeDeps({
+      ripples: [r] as unknown as RippleArray,
+      practice: { enabled: true },
+    });
+    runRenderLate(100, deps);
+    expect(r.draw).toHaveBeenCalledWith(deps.ctx);
+    expect(deps.drawMidiChordDisplay).toHaveBeenCalled();
+    expect(deps.drawMidiKeyboard).toHaveBeenCalled();
+    expect(deps.drawPracticeLane).toHaveBeenCalled();
+  });
+});
+
+// ─── dtNorm 貫通 ────────────────────────────────────────────────────
+
+describe('runRenderLate — dtNorm', () => {
+  it('dtNorm をリップル・パーティクルの update に貫通させる', () => {
+    const r = makeRipple(1);
+    const p = makeParticle(1);
+    const deps = makeDeps({
+      ripples: [r] as unknown as RippleArray,
+      particles: [p] as unknown as ParticleArray,
+    });
+    runRenderLate(100, deps, 2);
+    expect(r.update).toHaveBeenCalledWith(2);
+    expect(p.update).toHaveBeenCalledWith(2);
+  });
+
+  it('省略時は dtNorm=1（60fps の従来挙動）', () => {
+    const r = makeRipple(1);
+    const deps = makeDeps({ ripples: [r] as unknown as RippleArray });
+    runRenderLate(100, deps);
+    expect(r.update).toHaveBeenCalledWith(1);
+  });
+});
+
 // ─── ordering ───────────────────────────────────────────────────────
 
 describe('runRenderLate — ordering', () => {

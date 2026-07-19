@@ -45,7 +45,9 @@ export interface RenderLoopWireupDeps {
    *  keyboard highlights + chord detection. Optional so the wireup
    *  tests that don't care about midi visuals can omit it. */
   getMidiState?: () => any;
-  /** Chord-window options bag — paired with applyOnsetToWindow below. */
+  /** Chord-window options bag — paired with applyOnsetToWindow below.
+   *  R2-4: mic-pipeline 側で windowMs だけ MIC_CHORD_WINDOW_MS(400) に
+   *  差し替えて使う（MIDI 経路の 80ms とは独立）。 */
   cwOpts?: any;
   config: any;
   /** Per-frame fresh dimensions. */
@@ -111,6 +113,13 @@ export interface RenderLoopWireupDeps {
   getTone: () => any;
   /** Logger override — defaults to console.log. */
   log?: (msg: string) => void;
+  /** [R2-5] タイトル画面が前面かの述語 — render-loop の描画スキップ
+   *  ゲートへそのまま渡す。省略時は常に描画（従来挙動）。 */
+  isTitleVisible?: () => boolean;
+  /** 一期一会演出 — mic-pipeline へのパススルー（optional）。 */
+  freeplayMoments?: {
+    onNote(midi: number, x: number, y: number, color: string, t: number): void;
+  };
 }
 
 /** Build the render-loop. Returns the factory result so the shell
@@ -119,6 +128,7 @@ export function wireRenderLoop(deps: RenderLoopWireupDeps): { tick: (timeMs: num
   const log = deps.log ?? ((m: string) => console.log(m));
   return deps.renderLoop.createRenderLoop({
     state: deps.state,
+    isTitleVisible: deps.isTitleVisible,
     modules: {
       RenderFrame: deps.renderFrame,
       MicPipeline: deps.micPipeline,
@@ -159,7 +169,8 @@ export function wireRenderLoop(deps: RenderLoopWireupDeps): { tick: (timeMs: num
           midiInput: deps.getMidiInput(),
           // Mic → midiState bridge (Opt-2 + Opt-3, 2026-05-12). Lets
           // mic-only sessions light up the keyboard for detected
-          // pitches + drive chord detection on arpeggios.
+          // pitches + drive chord detection on arpeggios（R2-4 で
+          // マイク専用の 400ms 窓になり実際に発火するようになった）.
           midiState: deps.getMidiState?.(),
           applyOnsetToWindow: deps.pianoCore.applyOnsetToWindow,
           cwOpts: deps.cwOpts,
@@ -174,6 +185,7 @@ export function wireRenderLoop(deps: RenderLoopWireupDeps): { tick: (timeMs: num
           spawnStream: deps.spawnStream,
           ripples: deps.ripples,
           Ripple: deps.Ripple,
+          freeplayMoments: deps.freeplayMoments,
           showNoteDisplay: deps.showNoteDisplay,
           triggerWakeUpFlash: deps.pianoCore.triggerWakeUpFlash,
           wufOpts: deps.wufOpts,

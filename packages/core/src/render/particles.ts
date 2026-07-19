@@ -137,20 +137,26 @@ export class Particle {
     this.gravity = 0;
   }
 
-  /** One physics tick. Mutates self only. */
-  update(): void {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.z += this.vz;
+  /** One physics tick. Mutates self only.
+   *
+   *  dtNorm はフレーム時間の正規化係数（16.67ms = 60fps の1フレームを 1 とする）。
+   *  120Hz 端末で per-frame 積分が2倍速になるのを防ぐ。dtNorm=1 のとき従来の
+   *  per-frame 実装と完全に同値（摩擦 0.99 は一次近似 1-(1-0.99)*dtNorm で、
+   *  dtNorm=1 でちょうど 0.99）。 */
+  update(dtNorm: number = 1): void {
+    this.x += this.vx * dtNorm;
+    this.y += this.vy * dtNorm;
+    this.z += this.vz * dtNorm;
     // Type-based gravity bump — stars and notes float, others fall.
     if (this.type !== 'star' && this.type !== 'note') {
-      this.vy += 0.15;
+      this.vy += 0.15 * dtNorm;
     }
-    this.vx *= 0.99;
-    this.vy *= 0.99;
-    this.vz *= 0.99;
-    this.life--;
-    this.angle += this.spin;
+    const friction = 1 - (1 - 0.99) * dtNorm;
+    this.vx *= friction;
+    this.vy *= friction;
+    this.vz *= friction;
+    this.life -= dtNorm;
+    this.angle += this.spin * dtNorm;
   }
 
   /**

@@ -41,6 +41,32 @@ describe('Ripple.update', () => {
   });
 });
 
+// ─── dtNorm 正規化（リフレッシュレート非依存の拡大） ────────────────
+
+describe('Ripple.update — dtNorm', () => {
+  it('update(opts, 1) は従来の update(opts) と完全同値', () => {
+    const a = new Ripple(0, 0, '#fff', 100);
+    const b = new Ripple(0, 0, '#fff', 100);
+    a.update({ flow: 60 });
+    b.update({ flow: 60 }, 1);
+    expect(b.radius).toBe(a.radius);
+    expect(b.life).toBe(a.life);
+  });
+
+  it('dtNorm=2 で拡大量が2倍になる（life も radius 由来で追従）', () => {
+    const r = new Ripple(0, 0, '#fff', 100);
+    r.update({ flow: 100 }, 2);
+    expect(r.radius).toBeCloseTo((2.5 + 3) * 2, 5); // (2.5 + 100*0.03) * 2
+    expect(r.life).toBeCloseTo(1 - 11 / 100, 5);
+  });
+
+  it('dtNorm=0.5（120Hz 相当）で拡大量が半分になる', () => {
+    const r = new Ripple(0, 0, '#fff', 100);
+    r.update({ flow: 0 }, 0.5);
+    expect(r.radius).toBeCloseTo(1.25, 5);
+  });
+});
+
 describe('Ripple.draw', () => {
   it('no-ops when life ≤ 0', () => {
     const r = new Ripple(0, 0, '#fff', 1);

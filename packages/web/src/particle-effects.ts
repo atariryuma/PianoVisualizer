@@ -54,7 +54,8 @@ export interface PianoCoreLike {
   Particle: { prototype: { draw: (this: any, ctx: any, opts?: any) => unknown } };
   Ripple: {
     prototype: {
-      update: (this: any, opts?: any) => unknown;
+      /** core 実体は update(opts, dtNorm?) — dtNorm は 16.67ms=1 の正規化係数。 */
+      update: (this: any, opts?: any, dtNorm?: number) => unknown;
       draw: (this: any, ctx: any, opts?: any) => unknown;
     };
   };
@@ -260,11 +261,14 @@ export function createParticleEffects(deps: ParticleEffectsDeps): ParticleEffect
   };
 
   // ─── Ripple prototype monkey-patches (update + draw) ─────────────
+  // パッチ後のシグネチャは update(dtNorm?) — render-late が渡す dt 正規化
+  // 係数（16.67ms=1）を core の update(opts, dtNorm) 第2引数へ貫通させる。
+  // undefined ならデフォルト 1（従来の per-frame と同値）。
   const _rippleUpdateOpts = { flow: 0 };
   const _coreRippleUpdate = pianoCore.Ripple.prototype.update;
-  pianoCore.Ripple.prototype.update = function (this: any) {
+  pianoCore.Ripple.prototype.update = function (this: any, dtNorm?: number) {
     _rippleUpdateOpts.flow = state.flow;
-    return _coreRippleUpdate.call(this, _rippleUpdateOpts);
+    return _coreRippleUpdate.call(this, _rippleUpdateOpts, dtNorm);
   };
   const _rippleDrawOpts = { flow: 0, useShadow: false };
   const _coreRippleDraw = pianoCore.Ripple.prototype.draw;

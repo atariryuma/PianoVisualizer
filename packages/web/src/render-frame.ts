@@ -57,8 +57,11 @@ export interface RenderFrameDeps {
   getScreen(): { W: number; H: number };
   /** Theme palette (CONFIG.THEMES). */
   themes: ReadonlyArray<RenderFrameTheme>;
-  /** Atmospheric layers — own their own state via closures. */
-  drawBgStars(timeMs: number): void;
+  /** Atmospheric layers — own their own state via closures.
+   *  第2引数 dtNorm（16.67ms=1 の正規化係数）は星の twinkle 前進を
+   *  リフレッシュレート非依存にするための seam — 既存ラッパーは
+   *  1引数のままでも代入互換（余剰引数は無視される）。 */
+  drawBgStars(timeMs: number, dtNorm?: number): void;
   drawAurora(timeMs: number): void;
   drawGroundFlowers(timeMs: number): void;
   /** PianoCore helpers. */
@@ -79,6 +82,10 @@ export interface RenderFrameDeps {
   /** Mic / energy probe — typically `getEnergy()` from the audio
    *  module. Returns the current frame's onset-relative energy in [0..1]. */
   getEnergy(): number;
+  /** [R2-5] タイトル画面が前面のとき true — canvas への描画だけを
+   *  スキップする（dt 計算・エネルギー平滑・各種減衰などの状態更新は
+   *  継続）。復帰した瞬間に正しい状態から描画再開できる。省略時 false。 */
+  skipDraw?: boolean;
 }
 
 /** Per-frame return value — downstream loop phases consume these. */
@@ -93,62 +100,75 @@ export interface RenderFrameResult {
  *  `state.shimmerPhase`. Returns `{ dt, theme, glowExtra }` for the
  *  rest of the loop. */
 export function runRenderFramePrelude(timeMs: number, deps: RenderFrameDeps): RenderFrameResult {
+  // [R2-5] タイトル表示中は描画のみスキップ（状態更新は全て継続）。
+  const skipDraw = deps.skipDraw === true;
+
   // 1. dt — clamp at 50ms so a returning-from-tab-switch huge
   //    frame doesn't blow particle integrators apart.
   const dt =
     deps.state.lastFrameTimeMs > 0 ? Math.min(timeMs - deps.state.lastFrameTimeMs, 50) : 16;
   deps.state.lastFrameTimeMs = timeMs;
 
-  // 2. Theme + energy smoothing — 15% lerp keeps the visual response
-  //    frame-rate-independent enough to feel responsive without
-  //    being twitchy on instant transients.
+  // dt 正規化係数（16.67ms = 60fps の1フレームを 1 とする）。120Hz 端末で
+  // 平滑・減衰が2倍速になるのを防ぐ。60fps では従来と同値。
+  const dtNorm = dt / 16.67;
+
+  // 2. Theme + energy smoothing — 15%/frame(60fps) 相当の lerp。
+  //    係数は 1-(1-0.15)^dtNorm でリフレッシュレート非依存化
+  //    （dtNorm=1 でちょうど 0.15）。
   const theme = deps.themes[deps.state.currentTheme];
   const energy = deps.getEnergy();
-  deps.state.smoothEnergy += (energy - deps.state.smoothEnergy) * 0.15;
+  deps.state.smoothEnergy += (energy - deps.state.smoothEnergy) * (1 - Math.pow(0.85, dtNorm));
 
   // 3. Background fade. fadeRate is higher when flow is low so old
   //    trails dissolve faster on quiet sections (more "blank canvas"
   //    feel when the kid hasn't been playing).
   const { W, H } = deps.getScreen();
-  const [br, bg2, bb] = theme.bg;
-  const fadeRate = 0.08 + 0.06 * (1 - deps.state.flow / 100);
-  deps.ctx.fillStyle = 'rgba(' + br + ',' + bg2 + ',' + bb + ',' + fadeRate + ')';
-  deps.ctx.fillRect(0, 0, W, H);
+  if (!skipDraw) {
+    const [br, bg2, bb] = theme.bg;
+    const fadeRate = 0.08 + 0.06 * (1 - deps.state.flow / 100);
+    deps.ctx.fillStyle = 'rgba(' + br + ',' + bg2 + ',' + bb + ',' + fadeRate + ')';
+    deps.ctx.fillRect(0, 0, W, H);
 
-  // 4. Atmospheric layers (closures own their own state).
-  deps.drawBgStars(timeMs);
-  deps.drawAurora(timeMs);
-  deps.drawGroundFlowers(timeMs);
+    // 4. Atmospheric layers (closures own their own state).
+    deps.drawBgStars(timeMs, dtNorm);
+    deps.drawAurora(timeMs);
+    deps.drawGroundFlowers(timeMs);
+  }
 
   // 5. Wake-up flash overlay + decay.
-  if (deps.state.inputFlash > 0.01) {
+  if (!skipDraw && deps.state.inputFlash > 0.01) {
     deps.ctx.fillStyle = `rgba(255, 255, 255, ${deps.state.inputFlash})`;
     deps.ctx.fillRect(0, 0, W, H);
   }
   deps.decayWakeUpFlash(deps.state, dt / 1000, deps.wufOpts);
 
   // 6. Glow pulse decay (encouragement-driven center halo boost).
+  //    0.96/frame(60fps) 相当 — 0.96^dtNorm で正規化（dtNorm=1 で 0.96）。
   const glowExtra = deps.state.glowPulseIntensity;
   if (glowExtra > 0.01) {
-    deps.state.glowPulseIntensity *= 0.96;
+    deps.state.glowPulseIntensity *= Math.pow(0.96, dtNorm);
   }
 
   // 7. Center radial halo.
-  deps.drawCenterGlow(deps.ctx, {
-    screenW: W,
-    screenH: H,
-    smoothEnergy: deps.state.smoothEnergy,
-    flow: deps.state.flow,
-    glowExtra,
-    glowPrefix: theme.glow,
-  });
+  if (!skipDraw) {
+    deps.drawCenterGlow(deps.ctx, {
+      screenW: W,
+      screenH: H,
+      smoothEnergy: deps.state.smoothEnergy,
+      flow: deps.state.flow,
+      glowExtra,
+      glowPrefix: theme.glow,
+    });
+  }
 
   // 8. Shimmer overlay (sine-modulated white wash, 1.5s lifetime).
+  //    寿命の進行（timeMs 基準）と失効フラグはスキップ中も更新する。
   if (deps.state.shimmerPhase >= 0) {
     const shimmerAge = timeMs - deps.state.shimmerStartMs;
     if (shimmerAge < 1500) {
       const shimmerAlpha = 0.08 * Math.sin(shimmerAge * 0.02) * (1 - shimmerAge / 1500);
-      if (shimmerAlpha > 0) {
+      if (!skipDraw && shimmerAlpha > 0) {
         deps.ctx.fillStyle = 'rgba(255,255,255,' + shimmerAlpha + ')';
         deps.ctx.fillRect(0, 0, W, H);
       }

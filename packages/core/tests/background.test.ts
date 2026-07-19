@@ -77,6 +77,15 @@ describe('drawBgStars', () => {
     }
   });
 
+  it('dtNorm 指定時は twinkle 前進が dtNorm 倍（dtNorm=1 は省略時と同値）', () => {
+    const before = bg.stars.map((s) => s.twinkle);
+    const speeds = bg.stars.map((s) => s.speed);
+    drawBgStars(stub.ctx, bg, { flow: 50, themeColors, dtNorm: 2 });
+    for (let i = 0; i < bg.stars.length; i++) {
+      expect(bg.stars[i].twinkle).toBeCloseTo(before[i] + speeds[i] * 2, 6);
+    }
+  });
+
   it('star fill cycles through the injected theme palette', () => {
     drawBgStars(stub.ctx, bg, { flow: 50, themeColors });
     const fillStyles = stub.calls
@@ -134,6 +143,61 @@ describe('drawAurora', () => {
         timeMs: 1000,
       })
     ).not.toThrow();
+  });
+
+  // ─── グラデーションキャッシュ（R2-5） ─────────────────────────────
+
+  it('同一 ctx + H + 色なら2フレーム目以降グラデーションを再生成しない', () => {
+    const opts = { screenW: 800, screenH: 600, flow: 80, themeColors, timeMs: 1000 };
+    drawAurora(stub.ctx, opts);
+    expect(stub.countCalls('createLinearGradient')).toBe(3);
+    drawAurora(stub.ctx, { ...opts, timeMs: 1016 });
+    drawAurora(stub.ctx, { ...opts, timeMs: 1033 });
+    // キャッシュヒット — 生成は最初の3本のまま増えない
+    expect(stub.countCalls('createLinearGradient')).toBe(3);
+    // 描画自体は毎フレーム走る（3バンド × 3フレーム）
+    expect(stub.countCalls('fill')).toBe(9);
+  });
+
+  it('キャッシュヒット時も色ストップは初回と同一（同一色出力）', () => {
+    const opts = { screenW: 800, screenH: 600, flow: 100, themeColors, timeMs: 1000 };
+    drawAurora(stub.ctx, opts);
+    const firstStops = stub.calls
+      .filter((c) => c.method === 'gradient.addColorStop' && c.args[0] === 0)
+      .map((c) => c.args[1] as string);
+    expect(firstStops).toEqual([themeColors[0], themeColors[1], themeColors[2]]);
+    // 2フレーム目: addColorStop は増えない（= キャッシュ済みオブジェクトを
+    // fillStyle にそのまま使う → 出力色は初回と同一）
+    const stopCountAfterFirst = stub.countCalls('gradient.addColorStop');
+    drawAurora(stub.ctx, { ...opts, timeMs: 2000 });
+    expect(stub.countCalls('gradient.addColorStop')).toBe(stopCountAfterFirst);
+  });
+
+  it('H（画面高さ）が変わるとキャッシュを破棄して作り直す', () => {
+    const opts = { screenW: 800, screenH: 600, flow: 80, themeColors, timeMs: 1000 };
+    drawAurora(stub.ctx, opts);
+    expect(stub.countCalls('createLinearGradient')).toBe(3);
+    drawAurora(stub.ctx, { ...opts, screenH: 900 }); // リサイズ
+    expect(stub.countCalls('createLinearGradient')).toBe(6);
+  });
+
+  it('ctx が変わる（コンテキスト再生成）とキャッシュを破棄する', () => {
+    const opts = { screenW: 800, screenH: 600, flow: 80, themeColors, timeMs: 1000 };
+    drawAurora(stub.ctx, opts);
+    const stub2 = makeCanvasStub();
+    drawAurora(stub2.ctx, opts);
+    expect(stub2.countCalls('createLinearGradient')).toBe(3);
+  });
+
+  it('テーマ切替（別色）は色キーのミスとして新規生成される', () => {
+    const opts = { screenW: 800, screenH: 600, flow: 80, themeColors, timeMs: 1000 };
+    drawAurora(stub.ctx, opts);
+    expect(stub.countCalls('createLinearGradient')).toBe(3);
+    drawAurora(stub.ctx, { ...opts, themeColors: ['#111111', '#222222', '#333333'] });
+    expect(stub.countCalls('createLinearGradient')).toBe(6);
+    // 元テーマへ戻すとキャッシュヒット（生成は増えない）
+    drawAurora(stub.ctx, opts);
+    expect(stub.countCalls('createLinearGradient')).toBe(6);
   });
 });
 

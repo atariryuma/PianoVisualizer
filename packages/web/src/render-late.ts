@@ -38,17 +38,17 @@
 
 /** Ripple element shape — only the surface this module touches.
  *  Mirrors @piano/core/render/ripples `Ripple` (closure-deps patched
- *  onto the prototype in legacy-app.js); we just need .update / .draw
- *  / .life. */
+ *  onto the prototype in particle-effects.ts); we just need .update /
+ *  .draw / .life. update は dtNorm（16.67ms=1 の正規化係数）を受け取る。 */
 export interface RippleEl {
-  update: () => void;
+  update: (dtNorm?: number) => void;
   draw: (ctx: CanvasRenderingContext2D) => void;
   life: number;
 }
 
 /** Particle element shape — same approach. */
 export interface ParticleEl {
-  update: () => void;
+  update: (dtNorm?: number) => void;
   draw: (ctx: CanvasRenderingContext2D) => void;
   life: number;
 }
@@ -93,12 +93,22 @@ export interface RenderLateDeps {
   updateQuestState: (timeMs: number) => void;
   updatePlayTime: (timeMs: number) => void;
   updateDebugOverlay: () => void;
+  /** [R2-5] タイトル画面が前面のとき true — canvas 描画（beams / draw /
+   *  chord / keyboard / lane）だけをスキップする。リップル・パーティクルの
+   *  update + cull は継続するので、タイトル中にマイクが拾った音で湧いた
+   *  要素も自然に寿命切れで消え、復帰フレームに滞留プールが残らない。 */
+  skipDraw?: boolean;
 }
 
 /** Run the late-frame phase. No return value — pure side effects:
  *  ripples + particles arrays trimmed in place; canvas + DOM HUD
- *  mutated by the inner render helpers. */
-export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
+ *  mutated by the inner render helpers.
+ *
+ *  dtNorm はフレーム時間の正規化係数（16.67ms = 1、省略時 1）。リップル・
+ *  パーティクル物理へ貫通させ、120Hz 端末での2倍速を防ぐ。 */
+export function runRenderLate(timeMs: number, deps: RenderLateDeps, dtNorm: number = 1): void {
+  const skipDraw = deps.skipDraw === true;
+
   // 1. MIDI sustained beams — between background and particles.
   //    Skipped during practice (the lane takes over visual priority).
   //    No longer gated on `midiInput.enabled` because mic-pipeline now
@@ -106,7 +116,7 @@ export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
   //    drawMidiBeams renderer self-exits when activeNotes +
   //    sustainedNotes are both empty (the common pre-input frame), so
   //    this call stays cheap when nothing's playing.
-  if (!deps.practice.enabled) {
+  if (!deps.practice.enabled && !skipDraw) {
     deps.drawMidiBeams(timeMs);
   }
 
@@ -116,8 +126,8 @@ export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
   let alive = 0;
   for (let i = 0; i < deps.ripples.length; i++) {
     const r = deps.ripples[i];
-    r.update();
-    r.draw(deps.ctx);
+    r.update(dtNorm);
+    if (!skipDraw) r.draw(deps.ctx);
     if (r.life > 0) deps.ripples[alive++] = r;
   }
   deps.ripples.length = alive;
@@ -127,32 +137,35 @@ export function runRenderLate(timeMs: number, deps: RenderLateDeps): void {
   alive = 0;
   for (let i = 0; i < deps.particles.length; i++) {
     const p = deps.particles[i];
-    p.update();
-    p.draw(deps.ctx);
+    p.update(dtNorm);
+    if (!skipDraw) p.draw(deps.ctx);
     if (p.life > 0 && alive < deps.maxParticles) deps.particles[alive++] = p;
   }
   deps.particles.length = alive;
 
-  // 4. Chord-name display — the helper picks the layout per mode
-  //    (big-centered for free play, small-above-keyboard for
-  //    practice). No `midiInput.enabled` gate: mic-pipeline now also
-  //    feeds the chord-window detector via applyOnsetToWindow, so
-  //    arpeggiated chords on an acoustic piano can also surface a
-  //    chord name. The renderer self-exits when `lastChordName` is
-  //    empty or aged past CHORD_LIFE_MS.
-  deps.drawMidiChordDisplay(timeMs);
+  // 4-6. canvas 描画ブロック — タイトル表示中は丸ごとスキップ。
+  if (!skipDraw) {
+    // 4. Chord-name display — the helper picks the layout per mode
+    //    (big-centered for free play, small-above-keyboard for
+    //    practice). No `midiInput.enabled` gate: mic-pipeline now also
+    //    feeds the chord-window detector via applyOnsetToWindow, so
+    //    arpeggiated chords on an acoustic piano can also surface a
+    //    chord name. The renderer self-exits when `lastChordName` is
+    //    empty or aged past CHORD_LIFE_MS.
+    deps.drawMidiChordDisplay(timeMs);
 
-  // 5. Virtual keyboard at the bottom — always drawn during an active
-  //    session. MIDI presses light up keys, mic-detected notes light
-  //    up keys (via mic-pipeline → midiState.activeNotes with TTL),
-  //    and practice overlays the ▼ next-key hint marker. The runtime
-  //    loop only ticks while state.running is true (gate in
-  //    render-loop.ts), so `runRenderLate` always implies a session.
-  deps.drawMidiKeyboard();
+    // 5. Virtual keyboard at the bottom — always drawn during an active
+    //    session. MIDI presses light up keys, mic-detected notes light
+    //    up keys (via mic-pipeline → midiState.activeNotes with TTL),
+    //    and practice overlays the ▼ next-key hint marker. The runtime
+    //    loop only ticks while state.running is true (gate in
+    //    render-loop.ts), so `runRenderLate` always implies a session.
+    deps.drawMidiKeyboard();
 
-  // 6. Practice mode lane — drawn on top of background, under HUD.
-  if (deps.practice.enabled) {
-    deps.drawPracticeLane(timeMs);
+    // 6. Practice mode lane — drawn on top of background, under HUD.
+    if (deps.practice.enabled) {
+      deps.drawPracticeLane(timeMs);
+    }
   }
 
   // 7. Quest tracker — ONLY during active free-play. Otherwise the

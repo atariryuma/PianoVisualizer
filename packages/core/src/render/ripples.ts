@@ -39,9 +39,12 @@ export class Ripple {
     this.life = 1;
   }
 
-  /** One physics tick. Mutates self only. */
-  update(opts: RippleUpdateOptions): void {
-    this.radius += 2.5 + opts.flow * 0.03;
+  /** One physics tick. Mutates self only.
+   *
+   *  dtNorm はフレーム時間の正規化係数（16.67ms = 1）。120Hz 端末で
+   *  リップル拡大が2倍速になるのを防ぐ。dtNorm=1 のとき従来実装と同値。 */
+  update(opts: RippleUpdateOptions, dtNorm: number = 1): void {
+    this.radius += (2.5 + opts.flow * 0.03) * dtNorm;
     this.life = 1 - this.radius / this.maxRadius;
   }
 

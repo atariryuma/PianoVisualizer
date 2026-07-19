@@ -78,11 +78,11 @@ export interface RenderLoopModules {
   };
   RenderMid: {
     tickNoteDisplayFade(timeMs: number, deps: RenderMidNoteDisplayDeps): void;
-    spawnAmbientParticle(deps: RenderMidAmbientDeps): void;
+    spawnAmbientParticle(deps: RenderMidAmbientDeps, dtNorm?: number): void;
     runSpectrumBars(deps: RenderMidSpectrumDeps): void;
   };
   RenderLate: {
-    runRenderLate(timeMs: number, deps: RenderLateDeps): void;
+    runRenderLate(timeMs: number, deps: RenderLateDeps, dtNorm?: number): void;
   };
 }
 
@@ -152,6 +152,11 @@ export interface RenderLoopDeps {
   raf?: (cb: (timeMs: number) => void) => unknown;
   /** Optional dev/HTTPS-only watchdog — see FrameDropWatchDeps. */
   frameDropWatch?: FrameDropWatchDeps;
+  /** [R2-5] タイトル画面（不透明な startScreen）が前面のとき true を
+   *  返す述語。true のフレームは「描画フェーズのみ」スキップする —
+   *  マイク処理・状態更新・rAF は止めない（intro-hint のマイク反応と
+   *  ▶ 復帰の即時性を保つ）。省略時は常に描画（従来挙動）。 */
+  isTitleVisible?: () => boolean;
 }
 
 export interface RenderLoop {
@@ -214,11 +219,21 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     if (!deps.state.running) return;
     raf(tick);
 
+    // [R2-5] タイトル画面が前面のフレームは「描画フェーズのみ」スキップ
+    // （電池・発熱対策）。オーディオ処理・状態更新・rAF は継続するので、
+    // ▶ で戻った瞬間に正しい状態から描画が再開する。
+    const titleVisible = deps.isTitleVisible ? deps.isTitleVisible() : false;
+
     // 1. Frame prelude — atmosphere + glow + dt computation.
-    const { dt, theme } = deps.modules.RenderFrame.runRenderFramePrelude(
-      timeMs,
-      deps.builders.buildFrameDeps(timeMs)
-    );
+    //    skipDraw 時も dt 計算・平滑・減衰は続く（render-frame.ts 参照）。
+    const frameDeps = deps.builders.buildFrameDeps(timeMs);
+    if (titleVisible) frameDeps.skipDraw = true;
+    const { dt, theme } = deps.modules.RenderFrame.runRenderFramePrelude(timeMs, frameDeps);
+
+    // dt 正規化係数（16.67ms = 60fps の1フレームを 1 とする）。パーティクル・
+    // リップル物理とアンビエント湧き確率へ貫通させ、リフレッシュレート
+    // 非依存にする（dt は prelude で 50ms クランプ済み → dtNorm ≤ 3）。
+    const dtNorm = dt / 16.67;
 
     // Record dt + fire watchdog if this is a spike. Done immediately
     // after the prelude so the rest of the frame's work doesn't
@@ -226,6 +241,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     recordFrameDt(timeMs, dt);
 
     // 2. Mic pipeline — YIN throttle + AGC + practice tick + spawn.
+    //    タイトル中も止めない（intro-hint がマイク検出で自己消灯する
+    //    経路と、復帰時の AGC / セッション状態の連続性を保つ）。
     const { isGoodNote } = deps.modules.MicPipeline.tickMicPipeline(
       timeMs,
       dt,
@@ -235,15 +252,22 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
 
     // 3. Mid-frame effects — note display fade, ambient spawn,
     // spectrum bars (silence-gated by the builder).
+    // note-fade は DOM 状態のみなので常時。アンビエント湧き + スペクトラム
+    // は純粋な描画系なのでタイトル中はスキップ。
     deps.modules.RenderMid.tickNoteDisplayFade(timeMs, deps.builders.buildNoteFadeDeps(timeMs));
-    deps.modules.RenderMid.spawnAmbientParticle(deps.builders.buildAmbientDeps(theme));
-    const spectrumDeps = deps.builders.buildSpectrumDeps(theme);
-    if (spectrumDeps) {
-      deps.modules.RenderMid.runSpectrumBars(spectrumDeps);
+    if (!titleVisible) {
+      deps.modules.RenderMid.spawnAmbientParticle(deps.builders.buildAmbientDeps(theme), dtNorm);
+      const spectrumDeps = deps.builders.buildSpectrumDeps(theme);
+      if (spectrumDeps) {
+        deps.modules.RenderMid.runSpectrumBars(spectrumDeps);
+      }
     }
 
-    // 4. Late-frame draw + HUD.
-    deps.modules.RenderLate.runRenderLate(timeMs, deps.builders.buildLateDeps());
+    // 4. Late-frame draw + HUD. skipDraw 時も update + cull は継続
+    //    （タイトル中に湧いた要素の滞留防止 — render-late.ts 参照）。
+    const lateDeps = deps.builders.buildLateDeps();
+    if (titleVisible) lateDeps.skipDraw = true;
+    deps.modules.RenderLate.runRenderLate(timeMs, lateDeps, dtNorm);
   }
 
   return { tick };

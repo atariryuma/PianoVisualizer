@@ -55,11 +55,15 @@ export interface DrawBgStarsOptions {
   flow: number;
   /** Theme color palette — stars cycle through these tints over time. */
   themeColors: readonly string[];
+  /** フレーム時間の正規化係数（16.67ms = 60fps の1フレームを 1 とする）。
+   *  twinkle 位相の前進をリフレッシュレート非依存にする。省略時 1
+   *  （= 従来の per-frame 前進と同値）。 */
+  dtNorm?: number;
 }
 
 /**
  * Paint the twinkling star field. No-op when flow visibility is below ~1%.
- * Mutates `bg.stars[i].twinkle` forward by `speed` each frame.
+ * Mutates `bg.stars[i].twinkle` forward by `speed * dtNorm` each frame.
  */
 export function drawBgStars(
   ctx: CanvasRenderingContext2D,
@@ -69,9 +73,10 @@ export function drawBgStars(
   const visibility = Math.min(1, opts.flow / 30);
   if (visibility < 0.01) return;
   const cols = opts.themeColors;
+  const dtNorm = opts.dtNorm ?? 1;
   ctx.save();
   for (const s of bg.stars) {
-    s.twinkle += s.speed;
+    s.twinkle += s.speed * dtNorm;
     const a = visibility * (0.3 + 0.7 * (Math.sin(s.twinkle) * 0.5 + 0.5));
     ctx.globalAlpha = a;
     ctx.beginPath();
@@ -92,6 +97,15 @@ export interface DrawAuroraOptions {
   timeMs: number;
 }
 
+// オーロラ用グラデーションキャッシュ — lane.ts の寸法タプルキー方式と同型。
+// 3本のバンドが毎フレーム createLinearGradient していた（3個/フレーム × 60fps）
+// のを、(ctx, H) が同じ間は色文字列キーで再利用する。ctx / H が変わったら
+// （リサイズ・コンテキスト再生成）全キャッシュを破棄。テーマ切替は色キーの
+// ミスとして自然に新規作成される（テーマ数×色数で有界）。
+let _auroraGradCtx: CanvasRenderingContext2D | null = null;
+let _auroraGradH = -1;
+const _auroraGradByColor = new Map<string, CanvasGradient>();
+
 /**
  * Three sinusoidal aurora bands gradient-faded into the background. No-op
  * below flow 40. Each band uses a different theme color.
@@ -102,6 +116,11 @@ export function drawAurora(ctx: CanvasRenderingContext2D, opts: DrawAuroraOption
   const W = opts.screenW;
   const H = opts.screenH;
   const cols = opts.themeColors;
+  if (_auroraGradCtx !== ctx || _auroraGradH !== H) {
+    _auroraGradByColor.clear();
+    _auroraGradCtx = ctx;
+    _auroraGradH = H;
+  }
   ctx.save();
   ctx.globalAlpha = intensity * 0.15;
   for (let band = 0; band < 3; band++) {
@@ -118,9 +137,16 @@ export function drawAurora(ctx: CanvasRenderingContext2D, opts: DrawAuroraOption
     ctx.lineTo(W, H);
     ctx.lineTo(0, H);
     ctx.closePath();
-    const grad = ctx.createLinearGradient(0, H * 0.2, 0, H * 0.7);
-    grad.addColorStop(0, cols[band % cols.length] ?? '#fff');
-    grad.addColorStop(1, 'transparent');
+    // 色ごとに1回だけ生成（グラデーション座標は H のみ依存 — ctx/H の
+    // 変化は上のガードでキャッシュ全破棄済み）。
+    const color = cols[band % cols.length] ?? '#fff';
+    let grad = _auroraGradByColor.get(color);
+    if (!grad) {
+      grad = ctx.createLinearGradient(0, H * 0.2, 0, H * 0.7);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, 'transparent');
+      _auroraGradByColor.set(color, grad);
+    }
     ctx.fillStyle = grad;
     ctx.fill();
   }

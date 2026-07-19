@@ -70,6 +70,11 @@ export interface ShellRenderLoopDeps {
   spawnStream: any;
   hideIntroHint: () => void;
   isFreeplayActive: () => boolean;
+  /** [R2-5] タイトル画面が前面かの述語 — 描画スキップゲート用。
+   *  省略時は常に描画（従来挙動）。 */
+  isTitleVisible?: () => boolean;
+  /** 一期一会演出 — mic-pipeline へのパススルー（optional）。 */
+  freeplayMoments?: unknown;
   wufOpts: any;
   remoteLogEnabled: boolean;
   /** Tone — read at frame-drop watchdog time. */
@@ -145,6 +150,8 @@ export function createShellRenderLoop(deps: ShellRenderLoopDeps): ShellRenderLoo
     wufOpts: deps.wufOpts,
     remoteLogEnabled: deps.remoteLogEnabled,
     getTone: deps.getTone,
+    isTitleVisible: deps.isTitleVisible,
+    freeplayMoments: deps.freeplayMoments,
   } as any);
 
   return {

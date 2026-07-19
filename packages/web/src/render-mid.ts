@@ -97,11 +97,15 @@ export interface RenderMidAmbientDeps {
   Particle: ParticleCtor;
 }
 
-export function spawnAmbientParticle(deps: RenderMidAmbientDeps): void {
+export function spawnAmbientParticle(deps: RenderMidAmbientDeps, dtNorm: number = 1): void {
   if (deps.state.smoothEnergy >= 0.04) return;
   const roll = Math.random();
   // chance = base + flow-driven bonus (more flow → more ambient density)
-  const threshold = 1 - deps.ambientChance - deps.state.flow * 0.003;
+  // 1フレームあたりの湧き確率 p を dtNorm 倍して単位時間あたりの湧き数を
+  // リフレッシュレート非依存にする（1-(1-p)^dtNorm の一次近似 p*dtNorm。
+  // p*dtNorm ≥ 1 のとき threshold が負になり常時スポーン = 自然にクランプ）。
+  // dtNorm=1 のとき従来の threshold 式と完全同値。
+  const threshold = 1 - (deps.ambientChance + deps.state.flow * 0.003) * dtNorm;
   if (roll <= threshold) return;
   if (deps.particles.length >= deps.maxParticles) return;
 

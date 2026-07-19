@@ -21,6 +21,15 @@ let _lhGradCached: CanvasGradient | null = null;
 let _rhGradCached: CanvasGradient | null = null;
 let _divGradCached: CanvasGradient | null = null;
 
+// タイルのグロスハイライト用・正規化グラデーション（(0,0)→(0,1) の1本を
+// ctx 単位でキャッシュ）。以前はタイルごと毎フレーム createLinearGradient
+// していた（最大 25 タイル × 60fps ≈ 1500個/秒の短命アロケーション）。
+// fill 時に translate/scale で実寸へ引き伸ばす — パスは変換前に記録される
+// ため角丸形状は歪まず、グラデーションだけが CTM を通って伸びる。見た目は
+// 従来（tileY→tileY+noteH*0.55 の白 0.35→0）と同一。
+let _glossGradCtx: CanvasRenderingContext2D | null = null;
+let _glossGradCached: CanvasGradient | null = null;
+
 export interface LaneNoteView {
   /** Section-relative time in ms (already includes count-in offset). */
   timeMs: number;
@@ -296,14 +305,24 @@ export function drawPracticeLane(
     ctx.fill();
 
     // Glossy top highlight — only on un-hit / un-missed notes.
+    // 正規化1本キャッシュ + translate/scale（モジュール冒頭コメント参照）。
     if (!n.hit && !n.missed && noteH > 14) {
       ctx.shadowBlur = 0;
-      const gloss = ctx.createLinearGradient(0, tileY, 0, tileY + noteH * 0.55);
-      gloss.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
-      gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      ctx.fillStyle = gloss;
-      roundRect(ctx, tileX, tileY, noteW, noteH * 0.55, tileR);
+      if (_glossGradCtx !== ctx || !_glossGradCached) {
+        const g = ctx.createLinearGradient(0, 0, 0, 1);
+        g.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+        g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        _glossGradCached = g;
+        _glossGradCtx = ctx;
+      }
+      const glossH = noteH * 0.55;
+      roundRect(ctx, tileX, tileY, noteW, glossH, tileR); // パスは変換前に記録
+      ctx.save();
+      ctx.translate(0, tileY);
+      ctx.scale(1, glossH);
+      ctx.fillStyle = _glossGradCached;
       ctx.fill();
+      ctx.restore();
     }
     ctx.shadowBlur = 0;
 

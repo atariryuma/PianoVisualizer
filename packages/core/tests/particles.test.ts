@@ -122,6 +122,55 @@ describe('Particle.update', () => {
   });
 });
 
+// ─── dtNorm 正規化（リフレッシュレート非依存の物理） ────────────────
+
+describe('Particle.update — dtNorm', () => {
+  function makePair(): [Particle, Particle] {
+    const a = new Particle(1, 2, 3, '#fff', 10, 4, 5, 6, 100, 'circle');
+    const b = new Particle(1, 2, 3, '#fff', 10, 4, 5, 6, 100, 'circle');
+    b.angle = a.angle;
+    b.spin = a.spin;
+    return [a, b];
+  }
+
+  it('update(1) は引数なし update() と完全同値（60fps 従来挙動の固定）', () => {
+    const [a, b] = makePair();
+    a.update();
+    b.update(1);
+    expect(b.x).toBe(a.x);
+    expect(b.y).toBe(a.y);
+    expect(b.z).toBe(a.z);
+    expect(b.vx).toBe(a.vx);
+    expect(b.vy).toBe(a.vy);
+    expect(b.vz).toBe(a.vz);
+    expect(b.life).toBe(a.life);
+    expect(b.angle).toBe(a.angle);
+  });
+
+  it('update(2) は位置・重力・寿命・回転を2倍、摩擦は 1-(1-0.99)*2=0.98', () => {
+    const p = new Particle(0, 0, 0, '#fff', 10, 10, 0, 10, 100, 'circle');
+    p.spin = 0.1;
+    const angle0 = p.angle;
+    p.update(2);
+    expect(p.x).toBeCloseTo(20, 5); // 10 * 2
+    expect(p.z).toBeCloseTo(20, 5);
+    // 重力 0.15*2 が先、そのあと摩擦 0.98
+    expect(p.vy).toBeCloseTo(0.3 * 0.98, 5);
+    expect(p.vx).toBeCloseTo(10 * 0.98, 5);
+    expect(p.life).toBeCloseTo(98, 5);
+    expect(p.angle).toBeCloseTo(angle0 + 0.2, 5);
+  });
+
+  it('update(0.5)（120Hz 相当）は半分だけ進む', () => {
+    const p = new Particle(0, 0, 0, '#fff', 10, 10, 0, 0, 100, 'star');
+    p.update(0.5);
+    expect(p.x).toBeCloseTo(5, 5);
+    expect(p.life).toBeCloseTo(99.5, 5);
+    // star は重力なし、摩擦 1-(0.01*0.5)=0.995
+    expect(p.vx).toBeCloseTo(10 * 0.995, 5);
+  });
+});
+
 // =====================================================================
 // Particle.draw
 // =====================================================================
