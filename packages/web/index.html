@@ -630,6 +630,23 @@
             />
             <span data-i18n="addSongFilePick">Choose .mxl / .musicxml / .xml file</span>
           </label>
+          <!-- File-picker-free import paths for browsers that don't
+               support <input type=file> (e.g. Web MIDI Browser on iPad).
+               The drop zone handles .mxl (binary); the paste box handles
+               plain MusicXML text. Both honor the PD checkbox below. -->
+          <div id="addSongDropZone" class="add-song-dropzone" data-i18n="addSongDropHint">
+            …or drag a file here from the Files app
+          </div>
+          <textarea
+            id="addSongPasteInput"
+            class="add-song-paste"
+            rows="3"
+            data-i18n-placeholder="addSongPastePlaceholder"
+            placeholder="…or paste MusicXML text here (.musicxml / .xml)"
+          ></textarea>
+          <button class="settings-btn" id="addSongPasteBtn" data-i18n="addSongPasteBtn">
+            Add from pasted text
+          </button>
           <div class="settings-help" data-i18n="addSongFileHelp">
             Drop a MusicXML file. I confirm it is public domain or my own work.
           </div>

@@ -441,6 +441,26 @@ export const T_STRINGS: TranslationTable = {
     en: 'I confirm this score is public domain or my own work',
     jp: 'パブリックドメインまたは自作の曲です',
   },
+  // File-picker-free import (for browsers without <input type=file>, e.g.
+  // the Web MIDI Browser on iPad).
+  addSongDropHint: {
+    en: '…or drag a file here from the Files app',
+    jp: '…または Files アプリからここにドラッグ＆ドロップ',
+  },
+  addSongDropActive: { en: 'Drop to add', jp: 'ドロップで追加' },
+  addSongPastePlaceholder: {
+    en: '…or paste MusicXML text here (.musicxml / .xml)',
+    jp: '…または MusicXML のテキストをここに貼り付け（.musicxml / .xml）',
+  },
+  addSongPasteBtn: { en: 'Add from pasted text', jp: '貼り付けから追加' },
+  addSongPasteEmpty: {
+    en: 'Paste some MusicXML text first',
+    jp: 'MusicXML のテキストを貼り付けてください',
+  },
+  addSongPasteNotXml: {
+    en: "That doesn't look like MusicXML text (paste the .musicxml / .xml contents)",
+    jp: 'MusicXML のテキストではないようです（.musicxml / .xml の中身を貼り付けてください）',
+  },
   addSongUrlPlaceholder: { en: 'https://cdn.jsdelivr.net/.../score.mxl' },
   addSongUrlHelp: {
     en: 'Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).',

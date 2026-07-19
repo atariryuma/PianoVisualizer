@@ -65,6 +65,13 @@ export interface UserSongsUiDom {
   librarySearch: HTMLInputElement | null;
   fileInput: HTMLInputElement | null;
   pdCheckbox: HTMLInputElement | null;
+  /** File-picker-free import (for browsers without `<input type=file>`,
+   *  e.g. the Web MIDI Browser on iPad). Drop zone handles binary .mxl;
+   *  paste box handles plain MusicXML text. All optional so tests /
+   *  older shells can omit them. */
+  dropZone: HTMLElement | null;
+  pasteInput: HTMLTextAreaElement | null;
+  pasteBtn: HTMLButtonElement | null;
   urlInput: HTMLInputElement | null;
   fetchBtn: HTMLButtonElement | null;
   status: HTMLElement;
@@ -571,20 +578,20 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
   // Library search — debounce-free is fine, list is in-memory and small.
   deps.dom.librarySearch?.addEventListener('input', () => renderLibrary());
 
-  deps.dom.fileInput?.addEventListener('change', async (e) => {
-    const target = e.target as HTMLInputElement;
-    const file = target.files?.[0];
-    if (!file) return;
+  /** Shared "add this blob, then open it" path used by the file picker,
+   *  the drag-and-drop zone, and the paste box. Honors the PD attestation
+   *  gate. Returns true on success so callers can clear their input. */
+  async function addBlobAndSelect(
+    blob: Blob,
+    opts: { filename?: string; source?: string }
+  ): Promise<boolean> {
     if (!deps.dom.pdCheckbox?.checked) {
       setStatus(deps.t('addSongPdAttest'), true);
-      return;
+      return false;
     }
     setStatus(deps.t('addSongFetch') + '…');
     try {
-      const rec = await deps.addUserSongFromBlob(file, {
-        filename: file.name,
-        source: 'upload',
-      });
+      const rec = await deps.addUserSongFromBlob(blob, opts);
       setStatus(deps.t('addSongAdded'));
       renderMyList();
       renderUserSongButtons();
@@ -592,11 +599,74 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
         close();
         deps.selectSong(rec.id);
       }, 450);
+      return true;
     } catch (err) {
       setStatus(deps.t('addSongFailed', { v: (err as Error).message }), true);
+      return false;
+    }
+  }
+
+  deps.dom.fileInput?.addEventListener('change', async (e) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+    try {
+      await addBlobAndSelect(file, { filename: file.name, source: 'upload' });
     } finally {
       target.value = '';
     }
+  });
+
+  // ── Drag & drop (file-picker-free) ──────────────────────────────────
+  // Some iPad browsers (e.g. Web MIDI Browser) don't implement the native
+  // file-open panel for `<input type=file>`, so the picker never appears.
+  // A drop zone accepts a File dragged from the Files app instead, and —
+  // being a File — carries the raw bytes, so binary .mxl works too.
+  const dropZone = deps.dom.dropZone;
+  if (dropZone) {
+    const stop = (e: DragEvent): void => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    dropZone.addEventListener('dragenter', (e) => {
+      stop(e);
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragover', (e) => {
+      stop(e);
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+      stop(e);
+      dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', async (e) => {
+      stop(e);
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      await addBlobAndSelect(file, { filename: file.name, source: 'drop' });
+    });
+  }
+
+  // ── Paste MusicXML text (file-picker-free) ──────────────────────────
+  // Fallback for plain-text .musicxml / .xml when neither the file panel
+  // nor drag-and-drop is available: the user pastes the score's XML text.
+  // (Binary .mxl can't be pasted as text — that's what the drop zone is
+  // for.) A quick sanity check rejects obviously non-XML paste content.
+  deps.dom.pasteBtn?.addEventListener('click', async () => {
+    const raw = (deps.dom.pasteInput?.value || '').trim();
+    if (!raw) {
+      setStatus(deps.t('addSongPasteEmpty'), true);
+      return;
+    }
+    if (!raw.includes('<score-partwise') && !raw.includes('<score-timewise')) {
+      setStatus(deps.t('addSongPasteNotXml'), true);
+      return;
+    }
+    const blob = new Blob([raw], { type: 'application/vnd.recordare.musicxml+xml' });
+    const ok = await addBlobAndSelect(blob, { filename: 'pasted.musicxml', source: 'paste' });
+    if (ok && deps.dom.pasteInput) deps.dom.pasteInput.value = '';
   });
 
   deps.dom.fetchBtn?.addEventListener('click', async () => {

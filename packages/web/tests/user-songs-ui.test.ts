@@ -34,6 +34,9 @@ function makeDom(): UserSongsUiDom {
       <input id="lib-search" />
       <input id="file-input" type="file" />
       <input id="pd-checkbox" type="checkbox" />
+      <div id="drop-zone"></div>
+      <textarea id="paste-input"></textarea>
+      <button id="paste-btn"></button>
       <input id="url-input" />
       <button id="fetch-btn"></button>
       <span id="status"></span>
@@ -55,6 +58,9 @@ function makeDom(): UserSongsUiDom {
     librarySearch: document.getElementById('lib-search') as HTMLInputElement,
     fileInput: document.getElementById('file-input') as HTMLInputElement,
     pdCheckbox: document.getElementById('pd-checkbox') as HTMLInputElement,
+    dropZone: document.getElementById('drop-zone'),
+    pasteInput: document.getElementById('paste-input') as HTMLTextAreaElement,
+    pasteBtn: document.getElementById('paste-btn') as HTMLButtonElement,
     urlInput: document.getElementById('url-input') as HTMLInputElement,
     fetchBtn: document.getElementById('fetch-btn') as HTMLButtonElement,
     status: document.getElementById('status') as HTMLElement,
@@ -456,6 +462,105 @@ describe('createUserSongsUi — file + url fetch', () => {
       'https://x/test.mxl',
       expect.objectContaining({ source: 'url' })
     );
+  });
+});
+
+// ─── file-picker-free import (drop + paste) ──────────────────────────
+
+describe('createUserSongsUi — paste import (Web MIDI Browser fallback)', () => {
+  const validXml =
+    '<?xml version="1.0"?><score-partwise><part id="P1"><measure/></part></score-partwise>';
+
+  it('paste with valid MusicXML adds through addUserSongFromBlob', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    deps.dom.pdCheckbox!.checked = true;
+    deps.dom.pasteInput!.value = validXml;
+    deps.dom.pasteBtn!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(deps.addUserSongFromBlob).toHaveBeenCalledWith(
+      expect.any(Blob),
+      expect.objectContaining({ source: 'paste', filename: 'pasted.musicxml' })
+    );
+  });
+
+  it('paste requires PD attestation', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    // pdCheckbox unchecked
+    deps.dom.pasteInput!.value = validXml;
+    deps.dom.pasteBtn!.click();
+    await Promise.resolve();
+    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
+    expect(deps.dom.status.classList.contains('error')).toBe(true);
+  });
+
+  it('paste rejects non-MusicXML text', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    deps.dom.pdCheckbox!.checked = true;
+    deps.dom.pasteInput!.value = 'hello world, not a score';
+    deps.dom.pasteBtn!.click();
+    await Promise.resolve();
+    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
+    expect(deps.dom.status.classList.contains('error')).toBe(true);
+  });
+
+  it('empty paste is a no-op error', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    deps.dom.pdCheckbox!.checked = true;
+    deps.dom.pasteInput!.value = '   ';
+    deps.dom.pasteBtn!.click();
+    await Promise.resolve();
+    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
+  });
+});
+
+describe('createUserSongsUi — drag & drop import', () => {
+  function dropFile(zone: HTMLElement, file: File): void {
+    const dt = { files: [file] } as unknown as DataTransfer;
+    const ev = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent;
+    Object.defineProperty(ev, 'dataTransfer', { value: dt, configurable: true });
+    zone.dispatchEvent(ev);
+  }
+
+  it('dropping a file adds it through addUserSongFromBlob (handles binary .mxl)', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    deps.dom.pdCheckbox!.checked = true;
+    const file = new File([new Blob(['PK\x03\x04'])], 'song.mxl', {
+      type: 'application/vnd.recordare.musicxml+zip',
+    });
+    dropFile(deps.dom.dropZone!, file);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(deps.addUserSongFromBlob).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({ source: 'drop', filename: 'song.mxl' })
+    );
+  });
+
+  it('drop requires PD attestation', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    // pdCheckbox unchecked
+    const file = new File([new Blob(['<score/>'])], 'song.musicxml');
+    dropFile(deps.dom.dropZone!, file);
+    await Promise.resolve();
+    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
+    expect(deps.dom.status.classList.contains('error')).toBe(true);
+  });
+
+  it('dragover toggles the dragover class', () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    const zone = deps.dom.dropZone!;
+    zone.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+    expect(zone.classList.contains('dragover')).toBe(true);
+    zone.dispatchEvent(new Event('dragleave', { bubbles: true, cancelable: true }));
+    expect(zone.classList.contains('dragover')).toBe(false);
   });
 });
 
