@@ -5,7 +5,12 @@ the same web codebase.
 
 ## Status
 
-**Scaffold (Phase 1 not yet executed).** This package contains:
+**iOS: Mac 直前まで準備完了（2026-07-19）。** `ios/`
+生成済み・アイコン済み・Info.plist 済み・ビルドは web 本体を `--mode mobile`
+で丸ごと使用（旧スタブ `src/main.ts`
+は将来のネイティブ固有処理の参照用に残置、ビルドには不使用）。残りは Mac での
+`pod install` 以降 → [docs/IOS-BUILD.md](../../docs/IOS-BUILD.md)。This package
+contains:
 
 - `capacitor.config.ts` — production-ready config including iOS https-scheme fix
 - `vite.config.ts` — mobile build mode (no SW, predictable filenames)

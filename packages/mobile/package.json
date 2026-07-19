@@ -5,9 +5,9 @@
   "description": "Capacitor wrapper for Piano Visualizer (iOS + Android).",
   "type": "module",
   "scripts": {
-    "dev": "vite --mode mobile",
-    "build": "vite build --mode mobile && cap sync",
-    "build:web": "vite build --mode mobile",
+    "dev": "vite --config ../web/vite.config.ts",
+    "build": "pnpm run build:web && cap sync",
+    "build:web": "vite build --config ../web/vite.config.ts --mode mobile --outDir ../mobile/dist --emptyOutDir",
     "sync": "cap sync",
     "ios": "cap run ios",
     "android": "cap run android",

@@ -17,6 +17,12 @@ import * as opensheetmusicdisplay from 'opensheetmusicdisplay';
 import JSZipImpl from 'jszip';
 import * as PianoCore from '@piano/core';
 import * as ShellBootstrap from './shell-bootstrap';
+import { installNativeMidiPolyfill } from './native-midi-polyfill';
+
+// ネイティブ（Capacitor）実行時のみ: シェル起動より前に Web MIDI polyfill を
+// 設置する。initWebMIDI が navigator.requestMIDIAccess を見にいくため、
+// この順序が本質（Web 配信時は window.Capacitor が無く即 no-op）。
+installNativeMidiPolyfill();
 
 declare global {
   // Vite-injected build constants (see vite.config.ts `define`). Used by
