@@ -36,6 +36,8 @@
 // the legacy shell's `let`s remain the source of truth and other
 // shell code that reads them directly keeps working.
 
+import type { RecentPitchEntry } from './core-opts';
+
 export interface MicLifecycleStateRef {
   micSuspended: boolean;
   micPermissionFailed: boolean;
@@ -44,7 +46,8 @@ export interface MicLifecycleStateRef {
    *  ask" from "we asked and failed" — drives a friendlier UI. */
   micIntentionallySkipped?: boolean;
   adaptiveSilenceRms: number | null;
-  recentPitches: number[] | null;
+  /** R2-3: 時刻付きピッチリング（`{ hz, t }`）。suspend 時に空へ戻す。 */
+  recentPitches: RecentPitchEntry[] | null;
   /** AGC モデル値 — suspend 時にリセットして GainNode(1.0) との段差
    *  ジャンプを防ぐ。 */
   agcGain: number;

@@ -4,10 +4,14 @@
 // Three coupled concerns wrapped in one factory:
 //
 //   1. ensureAccess(force?) — lazy MIDIAccess request with cache.
-//      First tries `sysex:true` (Web MIDI Browser exposes BLE-MIDI
-//      only when sysex is granted), falls back to `sysex:false` on
-//      rejection. Force=true drops the cached access (used by the
-//      explicit user-rescan path). Wires the cached access's
+//      sysex ポリシーはプラットフォーム分岐（実装は ensureAccess 内）:
+//      Apple mobile（iPad/iPhone の Web MIDI Browser）のみ `sysex:true`
+//      を先に試し（WMB は sysex 許可時しか BLE-MIDI を公開しない）、
+//      拒否されたら `sysex:false` へフォールバック。デスクトップ /
+//      Android Chrome は常に `sysex:false` のみ — ノート+CC に SysEx は
+//      不要で、sysex:true を要求するとページ読込ごとに無関係な権限
+//      プロンプトが出るため。Force=true drops the cached access (used
+//      by the explicit user-rescan path). Wires the cached access's
 //      `onstatechange` so a desktop-Chrome hot-replug attaches the
 //      fresh port without going through the poller.
 //

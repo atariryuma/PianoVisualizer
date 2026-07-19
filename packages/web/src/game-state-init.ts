@@ -17,6 +17,8 @@
 // stops a release from shipping with V8 hidden-class drift in the
 // hot path.
 
+import type { RecentPitchEntry } from './core-opts';
+
 /** Mirror of the legacy GameStateShape declared in legacy-app.js's
  *  JSDoc typedef. Kept loose (`Record<string, unknown>`-shaped) so
  *  this module stays portable across the @piano/core type evolution
@@ -143,7 +145,8 @@ export interface InitialGameState {
   // lazy `state.x ||= 0` initializers scattered through
   // updateGameState / matchNoteOnset).
   adaptiveSilenceRms: number | null;
-  recentPitches: number[] | null;
+  /** R2-3: 時刻付きピッチリング（`{ hz, t }`）。median の時間失効用。 */
+  recentPitches: RecentPitchEntry[] | null;
   consecutiveOnsetFrames: number;
   lastDebugLogMs: number;
   debugMaxRms: number;

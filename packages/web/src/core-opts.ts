@@ -124,6 +124,21 @@ export const ONSET_HYSTERESIS_FRAMES = 1;
 /** Ring buffer length for octave-error correction. */
 export const PITCH_MEDIAN_FRAMES = 5;
 
+/** R2-3: マイク照合 median の時間窓（ms）。リング長（PITCH_MEDIAN_FRAMES）
+ *  だけでは「何秒ぶんの音高か」が YIN スロットルの頻度に依存して不定で、
+ *  休符明けや速いレガートで直前の音の音高を引きずり wrong-note 誤判定の
+ *  原因になっていた。median は直近この窓内のエントリのみで取る。 */
+export const PITCH_MEDIAN_WINDOW_MS = 150;
+
+/** recentPitches リングの 1 エントリ。`t` は書き込み時の tick 時刻
+ *  （rAF タイムスタンプ — performance.now() と同一起点）。 */
+export interface RecentPitchEntry {
+  /** 検出ピッチ（Hz）。 */
+  hz: number;
+  /** 書き込み時刻（ms）。 */
+  t: number;
+}
+
 /** Japanese note names (do/re/mi system) used when prefs.lang = 'jp'. */
 export const NOTE_NAMES_JP: ReadonlyArray<string> = [
   'ド',

@@ -6,6 +6,8 @@
 //   1. medianRecentPitch() — neutralizes YIN's single-frame octave
 //      errors at the moment of onset by taking the median of the
 //      recent high-confidence pitches the mic-pipeline accumulates.
+//      R2-3: 直近 PITCH_MEDIAN_WINDOW_MS（150ms）のエントリのみを対象に
+//      する（時間失効なしだと休符明けに直前の音の音高を引きずる）。
 //
 //   2. matchNoteOnset(detectedMidi, isExact) — the funnel point for
 //      both mic onsets (isExact=false) and MIDI presses (isExact=true).
@@ -35,10 +37,13 @@
 //      at the hit line waiting for the kid. Rhythm/listen always use
 //      real time (the song moves on its own).
 
+import { PITCH_MEDIAN_WINDOW_MS, type RecentPitchEntry } from './core-opts';
+
 /** Subset of the shell `state` we read/write. */
 export interface PracticeScoringStateRef {
-  /** Mic-onset pitch ring buffer the median walks. */
-  recentPitches?: number[];
+  /** Mic-onset pitch ring buffer the median walks.
+   *  R2-3: `{ hz, t }` エントリ — t は書き込み時の tick 時刻。 */
+  recentPitches?: RecentPitchEntry[];
   flow: number;
   combo: number;
   bestCombo: number;
@@ -151,8 +156,20 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
   function medianRecentPitch(): number {
     const arr = deps.state.recentPitches;
     if (!arr || arr.length === 0) return 0;
-    const sorted = arr.slice().sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
+    // R2-3: 直近 PITCH_MEDIAN_WINDOW_MS 以内のエントリだけで median を取る。
+    // リング長（PITCH_MEDIAN_FRAMES=5）は YIN スロットル頻度に依存して
+    // 「何秒ぶんか」が不定なので、時間失効が無いと休符明け・速いレガートで
+    // 直前の音の音高を引きずり wrong-note 誤判定になる。窓内が空なら 0 を
+    // 返し、呼び出し側（practice-tick の `|| pitchHz`）が生ピッチに
+    // フォールバックする。
+    const cutoff = performance.now() - PITCH_MEDIAN_WINDOW_MS;
+    const fresh: number[] = [];
+    for (const e of arr) {
+      if (e.t >= cutoff) fresh.push(e.hz);
+    }
+    if (fresh.length === 0) return 0;
+    fresh.sort((a, b) => a - b);
+    return fresh[Math.floor(fresh.length / 2)];
   }
 
   function practiceRealElapsedMs(): number {

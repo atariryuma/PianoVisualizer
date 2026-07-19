@@ -108,10 +108,11 @@ describe('dispatch — command routing', () => {
     expect(deps.midiInput.lastEventTime).toBe(1234);
   });
 
-  it('practice + running session + noteOn → matchNoteOnset(midi, true)', () => {
+  it('practice + running session + noteOn → matchNoteOnset(midi, true, 0)', () => {
     const { d, mocks } = makeDispatch({ practice: { enabled: true } });
     d.dispatch(0x90, 64, 100);
-    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true);
+    // P1-11: dispatch() 直呼び（BLE 経路相当）は timeStamp が無いので lag=0。
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 0);
   });
 
   it('!practice + noteOn → no matchNoteOnset', () => {
@@ -245,6 +246,63 @@ describe('onMessage', () => {
   it('accepts Uint8Array (the actual MIDIMessageEvent shape)', () => {
     const { d, mocks } = makeDispatch();
     d.onMessage({ data: new Uint8Array([0xb0, 64, 127]) });
+    expect(mocks.onMidiCC).toHaveBeenCalledWith(64, 127);
+  });
+});
+
+// ─── P1-11: event.timeStamp → inputLagMs 貫通 ──────────────────────
+
+describe('onMessage — P1-11 per-event 遅延補正', () => {
+  it('timeStamp からハンドラ遅延を算出して matchNoteOnset へ渡す', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    // イベント発生 960ms → ハンドラ実行 1000ms = 40ms 遅延。
+    d.onMessage({ data: [0x90, 64, 100], timeStamp: 960 });
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 40);
+  });
+
+  it('timeStamp が無いイベント（BLE ポリフィル等）は lag=0', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.onMessage({ data: [0x90, 64, 100] });
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 0);
+  });
+
+  it('負の lag（timeStamp が未来 = クロック不整合）は 0 にクランプ', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.onMessage({ data: [0x90, 64, 100], timeStamp: 1500 });
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 0);
+  });
+
+  it('1000ms 超の異常 lag（バックグラウンド復帰バースト等）は 0 にクランプ', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(5000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.onMessage({ data: [0x90, 64, 100], timeStamp: 3000 }); // lag=2000ms
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 0);
+  });
+
+  it('ちょうど 1000ms の lag は補正に使う（境界は inclusive）', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(2000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.onMessage({ data: [0x90, 64, 100], timeStamp: 1000 });
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 1000);
+  });
+
+  it('非有限 timeStamp（NaN/Infinity）は lag=0', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.onMessage({ data: [0x90, 64, 100], timeStamp: Number.NaN });
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 0);
+  });
+
+  it('noteOff / CC 経路は lag があっても従来どおり（matchNoteOnset を呼ばない）', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.onMessage({ data: [0x80, 64, 0], timeStamp: 960 });
+    d.onMessage({ data: [0xb0, 64, 127], timeStamp: 960 });
+    expect(mocks.matchNoteOnset).not.toHaveBeenCalled();
+    expect(mocks.onMidiNoteOff).toHaveBeenCalledWith(64);
     expect(mocks.onMidiCC).toHaveBeenCalledWith(64, 127);
   });
 });

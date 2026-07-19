@@ -6,7 +6,8 @@
 // energy, in [0, 1]. Higher = more piano-like.
 
 export interface HarmonicityOptions {
-  /** Number of partials to check (2× to (N+1)× the fundamental). */
+  /** Number of partials to check. 実装は基音（1×）を含めて
+   *  1×〜(N+1)× の整数倍ビンを走査する（旧記載の「2×〜」は誤り）。 */
   partials?: number;
   /** ± bins around each integer-multiple bin to consider as harmonic energy. */
   binTolerance?: number;

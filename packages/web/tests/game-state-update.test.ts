@@ -137,7 +137,8 @@ describe('updateGameState — pitch median ring', () => {
     const fx = makeFixture();
     updateGameState(0, 16, { pitch: 440, conf: 0.4, rms: 0.01 }, fx.deps); // low conf
     updateGameState(20, 16, { pitch: 440, conf: 0.8, rms: 0.01 }, fx.deps);
-    expect(fx.state.recentPitches).toEqual([440]);
+    // R2-3: エントリは時刻付き（t = その tick の timeMs）
+    expect(fx.state.recentPitches).toEqual([{ hz: 440, t: 20 }]);
   });
 
   it('trims to pitchMedianFrames length', () => {
@@ -146,6 +147,16 @@ describe('updateGameState — pitch median ring', () => {
       updateGameState(i * 20, 16, { pitch: 440 + i, conf: 0.9, rms: 0.01 }, fx.deps);
     }
     expect(fx.state.recentPitches!.length).toBe(5);
+  });
+
+  it('R2-3: 各エントリに書き込み tick の timeMs が刻まれる', () => {
+    const fx = makeFixture();
+    updateGameState(100, 16, { pitch: 440, conf: 0.9, rms: 0.01 }, fx.deps);
+    updateGameState(350, 16, { pitch: 220, conf: 0.9, rms: 0.01 }, fx.deps);
+    expect(fx.state.recentPitches).toEqual([
+      { hz: 440, t: 100 },
+      { hz: 220, t: 350 },
+    ]);
   });
 });
 

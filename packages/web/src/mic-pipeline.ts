@@ -49,6 +49,10 @@ export interface MicPipelineState extends WakeUpFlashState {
   flow: number;
   combo: number;
   lastNoteTimeMs: number;
+  /** R2-2: updateGameState が毎フレーム算出する「ピッチ確定 + オンセット
+   *  ゲート開」フラグ。持続音のあいだ既存ハイライトの onTimeMs を前進
+   *  させ、TTL プルーンに負けないようにするために読む。 */
+  debugIsActivePlay: boolean;
 }
 
 /** Practice-mode flag bag — when `enabled`, `updatePractice` runs
@@ -92,11 +96,23 @@ export interface MicPipelineMidiState {
 }
 
 /** How long a mic-detected note stays in `activeNotes` after its last
- *  refresh. YIN runs every 3rd frame, so at 60 fps a sustained note
- *  refreshes ~20× per second. 300 ms is comfortably longer than a
- *  single YIN gap, and short enough that a released note clears the
- *  keyboard highlight within a few hundred ms of silence. */
+ *  refresh. Mic doesn't emit note-off, so each entry auto-expires this
+ *  many ms after its last refresh.
+ *
+ *  R2-2: refresh は 2 系統 —
+ *    (a) オンセット時の set()（新規作成 + 前進）
+ *    (b) 持続中（isActivePlay = ピッチ確定 + ゲート開）の毎フレーム前進
+ *  (b) が入るまではオンセット時のみだったため、鍵盤を押しっぱなしでも
+ *  約 300ms でハイライトが消えていた。300ms は離鍵後にハイライトが
+ *  消えるまでの体感長として維持。 */
 export const MIC_NOTE_TTL_MS = 300;
+
+/** R2-4: マイク経路専用の和音検出窓（ms）。共有 cwOpts の windowMs=80 は
+ *  マイクのオンセット間隔の下限（ONSET_COOLDOWN_MS=60 + YIN 3フレーム
+ *  スロットル）と数理的に両立せず、minNotes=3 が同一窓に揃うことがない
+ *  デッド機能だった。アルペジオ気味の 3 音を 400ms 窓で拾う。
+ *  MIDI 経路（midi-handlers.ts）は従来どおり 80ms のまま。 */
+export const MIC_CHORD_WINDOW_MS = 400;
 
 /** Note descriptor returned by `freqToNote`. */
 export interface NoteDescriptor {
@@ -153,7 +169,10 @@ export interface MicPipelineDeps {
     timeMs: number,
     opts: unknown
   ) => { emitted: string | null };
-  /** Chord-window options bag (CONFIG.cwOpts). Opaque pass-through. */
+  /** Chord-window options bag (CONFIG.cwOpts). Opaque pass-through —
+   *  ただし R2-4: マイク経路では windowMs を MIC_CHORD_WINDOW_MS(400)
+   *  に広げて applyOnsetToWindow へ渡す（80ms は ONSET_COOLDOWN_MS=60
+   *  と両立せず和音判定が発火不能のため）。 */
   cwOpts?: unknown;
 
   // ─── DOM (mic meter, intro hint) ──────────────────────────────────
@@ -166,6 +185,10 @@ export interface MicPipelineDeps {
   updatePractice: (timeMs: number, isGoodNote: boolean, pitch: number) => void;
 
   // ─── Note spawn (mic-driven only) ─────────────────────────────────
+  /** 一期一会演出（フリープレイのみ）。旧シェル互換のため optional。 */
+  freeplayMoments?: {
+    onNote(midi: number, x: number, y: number, color: string, t: number): void;
+  };
   freqToNote: (freq: number) => NoteDescriptor | null;
   getNoteColor: (noteName: string) => string | null | undefined;
   spawnBurst: (x: number, y: number, count: number, energy: number, overrideColor?: string) => void;
@@ -279,6 +302,26 @@ export function tickMicPipeline(
       deps.updatePractice(timeMs, isGoodNote, pitchResult.pitch);
     }
 
+    // R2-2: 持続音のハイライト維持。オンセットは減衰後の再打鍵でしか
+    // 発火しないため、set() だけだと押しっぱなしの音が MIC_NOTE_TTL_MS
+    // (300ms) で必ず消えていた。updateGameState が算出した isActivePlay
+    // （ピッチ確定 + オンセットゲート開）のあいだは、同一 noteNum の
+    // **既存** mic エントリの onTimeMs を前進させて TTL プルーンに勝たせる。
+    // 新規エントリは作らない — 誤検出の音でハイライトが増えないように、
+    // 作成はオンセット（isGoodNote）経路だけに限定する。
+    if (
+      deps.midiState &&
+      !deps.midiInput.enabled &&
+      deps.state.debugIsActivePlay &&
+      pitchResult.pitch > deps.config.PITCH_MIN_HZ
+    ) {
+      const held = deps.freqToNote(pitchResult.pitch);
+      if (held) {
+        const entry = deps.midiState.activeNotes.get(held.noteNum);
+        if (entry && entry.source === 'mic') entry.onTimeMs = timeMs;
+      }
+    }
+
     // v13: When a MIDI keyboard is attached, MIDI events drive visuals
     // (polyphonic, velocity-aware). Skip the mic-derived single-pitch
     // path so we don't double-spawn or fight YIN's octave guesses.
@@ -328,6 +371,11 @@ export function tickMicPipeline(
 
           deps.state.lastNoteTimeMs = timeMs;
 
+          // 一期一会演出 — 練習中は出さない（練習の視覚は意図的に抑制）。
+          if (!deps.practice.enabled) {
+            deps.freeplayMoments?.onNote(note.noteNum, noteX, noteY, rippleColor, timeMs);
+          }
+
           // Wake-up flash — clear confirmation at low flow.
           if (deps.state.flow < 10) deps.triggerWakeUpFlash(deps.state, deps.wufOpts);
         }
@@ -343,9 +391,8 @@ export function tickMicPipeline(
         // Light up the virtual keyboard for the detected pitch + feed
         // the chord-window detector. Both used to only run for MIDI
         // input — leaving mic-only users with no key highlight and no
-        // chord readout when they played arpeggios. The refresh of an
-        // existing entry simply pushes `onTimeMs` forward, keeping the
-        // TTL prune from expiring it during sustained playing.
+        // chord readout when they played arpeggios. ここはオンセット時の
+        // 作成/前進のみ — 持続中の前進は上の R2-2 ブロックが毎フレーム担う。
         if (deps.midiState) {
           deps.midiState.activeNotes.set(note.noteNum, {
             // Mic doesn't expose true velocity. Map smoothEnergy
@@ -358,7 +405,14 @@ export function tickMicPipeline(
             source: 'mic',
           });
           if (deps.applyOnsetToWindow && deps.cwOpts !== undefined) {
-            deps.applyOnsetToWindow(deps.midiState, note.noteNum, timeMs, deps.cwOpts);
+            // R2-4: マイク専用の和音窓に差し替えて渡す。共有 cwOpts の
+            // 80ms 窓ではマイクのオンセット間隔（クールダウン60ms +
+            // YIN スロットル）で 3 音が同一窓に入らず一度も発火しない。
+            // detectChord / minNotes / repeatCooldownMs は共有値を継承。
+            deps.applyOnsetToWindow(deps.midiState, note.noteNum, timeMs, {
+              ...(deps.cwOpts as Record<string, unknown>),
+              windowMs: MIC_CHORD_WINDOW_MS,
+            });
           }
         }
       }

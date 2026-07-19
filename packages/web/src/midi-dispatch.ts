@@ -58,8 +58,11 @@ export interface MidiDispatchDeps {
    *  section, the cursor matcher needs the same event the mic path
    *  would have sent through `matchNoteOnset`. The 2nd arg is
    *  `isExact: true` because MIDI is sample-accurate (the mic onset
-   *  detector flips it false on the YIN-only fallback). */
-  matchNoteOnset: (midiNum: number, isExact: boolean) => void;
+   *  detector flips it false on the YIN-only fallback).
+   *  P1-11: 第3引数 `inputLagMs` は MIDIMessageEvent.timeStamp
+   *  （performance.now() 起点）からハンドラ実行までの遅延。判定側
+   *  （practice-scoring.matchNoteOnset）が elapsed クロックから減算する。 */
+  matchNoteOnset: (midiNum: number, isExact: boolean, inputLagMs?: number) => void;
 
   /** Optional override for the BLE-redelivery dedupe window.
    *  Defaults to 30 ms. */
@@ -67,12 +70,17 @@ export interface MidiDispatchDeps {
 }
 
 export interface MidiDispatch {
-  /** Raw 3-byte dispatcher. Status/data bytes per MIDI spec. */
-  dispatch(status: number, a: number, b: number): void;
+  /** Raw 3-byte dispatcher. Status/data bytes per MIDI spec.
+   *  P1-11: `inputLagMs`（省略時 0）はイベント発生→ハンドラ実行の遅延。
+   *  BLE 経路（ble-midi-parser 経由の直呼び）には timeStamp が無いので
+   *  常に 0 のまま。 */
+  dispatch(status: number, a: number, b: number, inputLagMs?: number): void;
 
   /** Browser-style `onmidimessage` handler. Wire as
-   *  `port.onmidimessage = midiDispatch.onMessage;`. */
-  onMessage(e: { data: ArrayLike<number> | null | undefined }): void;
+   *  `port.onmidimessage = midiDispatch.onMessage;`.
+   *  P1-11: `e.timeStamp`（MIDIMessageEvent — performance.now() 起点）が
+   *  あれば handler 遅延を算出して dispatch に貫通させる。 */
+  onMessage(e: { data: ArrayLike<number> | null | undefined; timeStamp?: number }): void;
 
   /** Clear the BLE-redelivery dedupe cache. Called from session
    *  reset so a long mic-only session followed by a MIDI reconnect
@@ -88,7 +96,7 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
   let lastNoteOnTime = 0;
   const dedupeWindowMs = deps.dedupeWindowMs ?? DEFAULT_DEDUPE_MS;
 
-  function dispatch(status: number, a: number, b: number): void {
+  function dispatch(status: number, a: number, b: number, inputLagMs = 0): void {
     const cmd = status & 0xf0;
     const now = performance.now();
 
@@ -110,7 +118,8 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
       deps.pulseMidiBadge();
       deps.onMidiNoteOn(a, b);
       if (deps.practice.enabled && deps.isSessionRunning()) {
-        deps.matchNoteOnset(a, true);
+        // P1-11: per-event 遅延を判定へ渡す（実際に鍵が押された時刻で採点）。
+        deps.matchNoteOnset(a, true, inputLagMs);
       }
     } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
       // 0x80 explicit note-off OR 0x90 with velocity 0 (running-status
@@ -121,10 +130,19 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
     }
   }
 
-  function onMessage(e: { data: ArrayLike<number> | null | undefined }): void {
+  function onMessage(e: { data: ArrayLike<number> | null | undefined; timeStamp?: number }): void {
     const d = e.data;
     if (d && d.length >= 2) {
-      dispatch(d[0], d[1], d.length > 2 ? d[2] : 0);
+      // P1-11: MIDIMessageEvent.timeStamp（performance.now() 起点）から
+      // ハンドラ実行までの遅延を算出。負値（クロック不整合・ポリフィルの
+      // 疑似値）や 1000ms 超（バックグラウンド復帰直後のバースト等）は
+      // 補正しない方が安全なので 0 にクランプする。
+      let lagMs = 0;
+      if (typeof e.timeStamp === 'number' && Number.isFinite(e.timeStamp)) {
+        const lag = performance.now() - e.timeStamp;
+        if (lag > 0 && lag <= 1000) lagMs = lag;
+      }
+      dispatch(d[0], d[1], d.length > 2 ? d[2] : 0, lagMs);
     }
   }
 

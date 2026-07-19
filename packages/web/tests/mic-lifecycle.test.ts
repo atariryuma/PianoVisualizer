@@ -39,7 +39,8 @@ function makeFixture(over: { hasAudioCtx?: boolean; gumReject?: Error } = {}) {
     micSuspended: true,
     micPermissionFailed: false,
     adaptiveSilenceRms: 0.1,
-    recentPitches: [440],
+    // R2-3: 時刻付きエントリ（{ hz, t }）
+    recentPitches: [{ hz: 440, t: 0 }],
     agcGain: 12,
     agcSmoothedRms: 0.4,
   };
@@ -262,7 +263,10 @@ describe('createMicLifecycle — suspend', () => {
     const fx = makeFixture();
     fx.state.micSuspended = false;
     fx.state.adaptiveSilenceRms = 0.42;
-    fx.state.recentPitches = [440, 880];
+    fx.state.recentPitches = [
+      { hz: 440, t: 0 },
+      { hz: 880, t: 16 },
+    ];
     fx.lc.suspend();
     expect(fx.state.adaptiveSilenceRms).toBe(null);
     expect(fx.state.recentPitches).toEqual([]);
@@ -319,7 +323,7 @@ function makeDecideFixture(over: DecideFixtureOver = {}) {
     micPermissionFailed: false,
     micIntentionallySkipped: false,
     adaptiveSilenceRms: 0.1,
-    recentPitches: [440],
+    recentPitches: [{ hz: 440, t: 0 }],
   };
   const audioCtx: MicLifecycleAudioCtx = {
     currentTime: 0,

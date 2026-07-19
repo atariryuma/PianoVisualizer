@@ -41,8 +41,12 @@ export interface MidiPortRef {
   connection?: string;
   type?: string;
   /** Set to bind / unbind the message handler. Per spec, assigning
-   *  also auto-opens the port. */
-  onmidimessage?: ((e: { data: ArrayLike<number> | null | undefined }) => void) | null;
+   *  also auto-opens the port.
+   *  P1-11: `timeStamp` は MIDIMessageEvent.timeStamp（performance.now()
+   *  起点）— dispatch 側で per-event 遅延補正に使う。 */
+  onmidimessage?:
+    | ((e: { data: ArrayLike<number> | null | undefined; timeStamp?: number }) => void)
+    | null;
   /** Web MIDI's `port.open()` returns a Promise. We call it
    *  unconditionally to work around Web MIDI Browser quirks where
    *  pre-paired BLE-MIDI keyboards arrive un-opened despite the
@@ -104,8 +108,11 @@ export interface MidiPortsDeps {
 
   /** The byte-router entry point — wired straight onto
    *  `port.onmidimessage`. Same signature as `onMidiMessageHandler`
-   *  in the shell. */
-  onMidiMessageHandler: (e: { data: ArrayLike<number> | null | undefined }) => void;
+   *  in the shell（P1-11: timeStamp 付きイベントをそのまま透過）。 */
+  onMidiMessageHandler: (e: {
+    data: ArrayLike<number> | null | undefined;
+    timeStamp?: number;
+  }) => void;
 
   /** Indicator + indicator-helper pair from midi-indicator.ts. */
   setInputIndicator: () => void;

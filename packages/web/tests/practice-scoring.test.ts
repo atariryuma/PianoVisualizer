@@ -112,31 +112,69 @@ beforeEach(() => {
 // ─── medianRecentPitch ─────────────────────────────────────────────
 
 describe('medianRecentPitch', () => {
+  // R2-3: median は直近 PITCH_MEDIAN_WINDOW_MS(150ms) のエントリのみ。
+  // `t` は performance.now() と同一起点の tick 時刻なので、now を固定して
+  // 年齢（ageMs）で相対指定する。
+  const NOW = 100_000;
+  function fresh(hz: number, ageMs = 0) {
+    return { hz, t: NOW - ageMs };
+  }
+
+  beforeEach(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(NOW);
+  });
+
   it('empty array → 0', () => {
     const fx = makeFixture({ state: { recentPitches: [] } });
     expect(fx.scoring.medianRecentPitch()).toBe(0);
   });
 
   it('single value → that value', () => {
-    const fx = makeFixture({ state: { recentPitches: [440] } });
+    const fx = makeFixture({ state: { recentPitches: [fresh(440)] } });
     expect(fx.scoring.medianRecentPitch()).toBe(440);
   });
 
   it('odd count → middle', () => {
-    const fx = makeFixture({ state: { recentPitches: [220, 440, 880] } });
+    const fx = makeFixture({
+      state: { recentPitches: [fresh(220, 40), fresh(440, 20), fresh(880, 0)] },
+    });
     expect(fx.scoring.medianRecentPitch()).toBe(440);
   });
 
   it('even count → upper of two middles (Math.floor of len/2)', () => {
-    const fx = makeFixture({ state: { recentPitches: [200, 400, 600, 800] } });
+    const fx = makeFixture({
+      state: {
+        recentPitches: [fresh(200, 60), fresh(400, 40), fresh(600, 20), fresh(800, 0)],
+      },
+    });
     expect(fx.scoring.medianRecentPitch()).toBe(600);
   });
 
   it('does not mutate the source array', () => {
-    const arr = [880, 220, 440];
+    const arr = [fresh(880, 20), fresh(220, 10), fresh(440, 0)];
     const fx = makeFixture({ state: { recentPitches: arr } });
     fx.scoring.medianRecentPitch();
-    expect(arr).toEqual([880, 220, 440]);
+    expect(arr).toEqual([fresh(880, 20), fresh(220, 10), fresh(440, 0)]);
+  });
+
+  it('R2-3: 150ms より古いエントリは median から除外される（直前の音を引きずらない）', () => {
+    // 休符前の 880Hz が 2 件残っていても、新しい 440Hz だけで決まる。
+    const fx = makeFixture({
+      state: { recentPitches: [fresh(880, 400), fresh(880, 300), fresh(440, 10)] },
+    });
+    expect(fx.scoring.medianRecentPitch()).toBe(440);
+  });
+
+  it('R2-3: 全エントリ失効 → 0（呼び出し側の `|| pitchHz` フォールバックが効く）', () => {
+    const fx = makeFixture({
+      state: { recentPitches: [fresh(440, 200), fresh(880, 500)] },
+    });
+    expect(fx.scoring.medianRecentPitch()).toBe(0);
+  });
+
+  it('R2-3: ちょうど 150ms 前のエントリは含まれる（境界は inclusive）', () => {
+    const fx = makeFixture({ state: { recentPitches: [fresh(440, 150)] } });
+    expect(fx.scoring.medianRecentPitch()).toBe(440);
   });
 });
 
@@ -464,6 +502,21 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     const ok = fx.scoring.matchNoteOnset(60, true); // MIDI → no compensation
     expect(ok).toBe(true);
     expect(fx.mocks.showHitChip).toHaveBeenCalledWith('good', 'T(nice)'); // 70>50, not perfect
+  });
+
+  it('P1-11: MIDI の per-event inputLagMs（event.timeStamp 由来）は elapsed から減算される', () => {
+    // 上のケースと同じ +70ms だが、その 70ms がハンドラ遅延（lag）だと
+    // 分かっている場合 — 実打鍵は dt≈0 → PERFECT に戻る。mic 定数
+    // （micInputLatencyMs=45）は isExact=true では加算されないことも同時に検証。
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0 },
+      tuning: { micInputLatencyMs: 45 },
+      Tone: { context: { currentTime: 5.07 } }, // elapsed=5070
+    });
+    const ok = fx.scoring.matchNoteOnset(60, true, 70);
+    expect(ok).toBe(true);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
   });
 
   it('wrong note inside the window → throttled fact-based chip (P2-17)', () => {

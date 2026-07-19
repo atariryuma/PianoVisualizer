@@ -23,10 +23,14 @@
 // Returns isOnsetNote so the caller can route follow-up work
 // (intro-hint hide, mic-driven note spawn).
 
+import type { RecentPitchEntry } from './core-opts';
+
 /** Subset of `state` we read + write. */
 export interface GameStateRef {
   // pitch median ring + adaptive floor
-  recentPitches?: number[];
+  // R2-3: `{ hz, t }` エントリ — 読む側（practice-scoring の
+  // medianRecentPitch）が直近 150ms に時間フィルタするための時刻付き。
+  recentPitches?: RecentPitchEntry[];
   adaptiveSilenceRms?: number | null;
   lastOnsetTimeMs: number;
   // debug snapshots
@@ -277,9 +281,12 @@ export function updateGameState(
   const t = deps.tuning;
 
   // 1. Pitch median ring (high-conf only).
+  // R2-3: 時刻付きエントリで積む。リング上限（PITCH_MEDIAN_FRAMES）は
+  // 従来どおり維持し、時間失効（直近150ms）は読む側の medianRecentPitch
+  // が担当する。`t` は同 tick の timeMs（rAF 時刻 = performance.now() 起点）。
   if (!s.recentPitches) s.recentPitches = [];
   if (pitch > t.pitchMinHz && conf > 0.5) {
-    s.recentPitches.push(pitch);
+    s.recentPitches.push({ hz: pitch, t: timeMs });
     if (s.recentPitches.length > deps.getPitchMedianFrames()) s.recentPitches.shift();
   }
 

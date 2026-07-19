@@ -74,7 +74,9 @@ export interface ShellMidiDeps {
   getOnMidiNoteOn: () => (m: number, v: number) => void;
   getOnMidiNoteOff: () => (m: number) => void;
   getOnMidiCC: () => (cc: number, v: number) => void;
-  getMatchNoteOnset: () => (m: number, exact: boolean) => any;
+  /** P1-11: 第3引数 inputLagMs（MIDI event.timeStamp 由来の per-event
+   *  遅延、省略時 0）まで貫通させる。 */
+  getMatchNoteOnset: () => (m: number, exact: boolean, inputLagMs?: number) => any;
   /** AudioInit lifecycle deps. */
   recover: () => Promise<unknown>;
   isRunning: () => boolean;
@@ -145,7 +147,9 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     onMidiNoteOn: (m: number, v: number) => deps.getOnMidiNoteOn()(m, v),
     onMidiNoteOff: (m: number) => deps.getOnMidiNoteOff()(m),
     onMidiCC: (cc: number, v: number) => deps.getOnMidiCC()(cc, v),
-    matchNoteOnset: (m: number, exact: boolean) => deps.getMatchNoteOnset()(m, exact),
+    // P1-11: dispatch が算出した per-event 遅延（inputLagMs）を判定へ貫通。
+    matchNoteOnset: (m: number, exact: boolean, lagMs?: number) =>
+      deps.getMatchNoteOnset()(m, exact, lagMs),
   });
 
   // Tap the input badge in the practice topbar to trigger a manual rescan.

@@ -16,6 +16,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   tickMicPipeline,
+  MIC_CHORD_WINDOW_MS,
   type MicPipelineDeps,
   type MicPipelineState,
   type PitchResult,
@@ -34,6 +35,7 @@ function makeState(over: Partial<MicPipelineState> = {}): MicPipelineState {
     flow: 30,
     combo: 5,
     lastNoteTimeMs: 0,
+    debugIsActivePlay: false, // R2-2: 持続リフレッシュのゲート
     inputFlash: 0, // WakeUpFlashState
     ...over,
   };
@@ -204,14 +206,31 @@ describe('tickMicPipeline — mic → midiState bridge', () => {
     expect(entry.velocity).toBeLessThanOrEqual(127);
   });
 
-  it('feeds applyOnsetToWindow when mic detects a pitch', () => {
+  it('feeds applyOnsetToWindow when mic detects a pitch (R2-4: windowMs はマイク専用値)', () => {
     const midiState = makeMidiState();
     const applyOnsetToWindow = vi.fn().mockReturnValue({ emitted: null });
     const cwOpts = { windowMs: 80, minNotes: 3, repeatCooldownMs: 600, detectChord: () => null };
     const { deps } = makeDeps({ midiState, applyOnsetToWindow, cwOpts });
     deps.state.yinSkipCounter = 2;
     tickMicPipeline(1000, 16, deps);
-    expect(applyOnsetToWindow).toHaveBeenCalledWith(midiState, 69, 1000, cwOpts);
+    // R2-4: 共有 cwOpts の 80ms はマイクのオンセット間隔と両立しないため、
+    // windowMs だけ MIC_CHORD_WINDOW_MS に差し替わる。他フィールドは継承。
+    expect(applyOnsetToWindow).toHaveBeenCalledWith(
+      midiState,
+      69,
+      1000,
+      expect.objectContaining({
+        windowMs: MIC_CHORD_WINDOW_MS,
+        minNotes: 3,
+        repeatCooldownMs: 600,
+      })
+    );
+  });
+
+  it('R2-4: MIC_CHORD_WINDOW_MS はマイクのオンセット間隔（60ms クールダウン×3音）を許容する', () => {
+    // ONSET_COOLDOWN_MS=60 で 3 音鳴らすと最短でも約 120ms スプレッド。
+    // 旧 80ms 窓では数理的に発火不能だった（デッド機能）。
+    expect(MIC_CHORD_WINDOW_MS).toBeGreaterThanOrEqual(300);
   });
 
   it('refreshes the existing entry on the next tick (no second insert)', () => {
@@ -301,8 +320,11 @@ describe('tickMicPipeline — mic-driven chord detection (E2E with real applyOns
     };
   }
 
-  it('three consecutive mic onsets within 80 ms → lastChordName populated', async () => {
+  it('R2-4: アルペジオ的な 3 オンセット（約290ms スプレッド）で lastChordName が立つ', async () => {
     const { applyOnsetToWindow, detectChord } = await import('@piano/core');
+    // 共有 cwOpts は MIDI 用の 80ms のまま渡す — mic-pipeline 側が
+    // windowMs だけ MIC_CHORD_WINDOW_MS(400) に差し替えるので、
+    // 80ms では数理的に不可能だったアルペジオ検出が成立する（R2-4 の核心）。
     const cwOpts = { windowMs: 80, minNotes: 3, repeatCooldownMs: 600, detectChord };
     const midiState = makeMidiState();
 
@@ -317,7 +339,9 @@ describe('tickMicPipeline — mic-driven chord detection (E2E with real applyOns
     fxC.deps.state.yinSkipCounter = 2;
     tickMicPipeline(1000, 16, fxC.deps);
 
-    // Onset 2: E4 (midi 64), 30 ms later.
+    // Onset 2: E4 (midi 64), 150 ms later — マイクの実オンセット間隔
+    // （ONSET_COOLDOWN_MS=60 + YIN スロットル）で現実的な値。旧 80ms 窓
+    // なら C4 は既に失効している。
     const fxE = makeDeps({
       midiState,
       applyOnsetToWindow,
@@ -327,13 +351,10 @@ describe('tickMicPipeline — mic-driven chord detection (E2E with real applyOns
     fxE.hooks.detectPitchYIN.mockReturnValue({ pitch: 329.63, conf: 0.95, rms: 0.1 });
     fxE.hooks.freqToNote.mockReturnValue({ name: 'E', octave: 4, noteNum: 64, freq: 329.63 });
     fxE.deps.state.yinSkipCounter = 2;
-    // MIN_NOTE_INTERVAL_MS=50 in the test config — bump time past it
-    // so the spawn block fires and the second onset registers.
-    tickMicPipeline(1060, 16, fxE.deps);
+    tickMicPipeline(1150, 16, fxE.deps);
 
-    // Onset 3: G4 (midi 67), another 30 ms later — still inside the
-    // 80 ms chord window (1060 - 1000 = 60 ms < 80 ms is the cw window
-    // we passed in).
+    // Onset 3: G4 (midi 67), さらに 140 ms 後 — 最初の C4 から 290ms。
+    // MIC_CHORD_WINDOW_MS=400 の窓内なので 3 音そろって和音判定が走る。
     const fxG = makeDeps({
       midiState,
       applyOnsetToWindow,
@@ -343,13 +364,98 @@ describe('tickMicPipeline — mic-driven chord detection (E2E with real applyOns
     fxG.hooks.detectPitchYIN.mockReturnValue({ pitch: 392.0, conf: 0.95, rms: 0.1 });
     fxG.hooks.freqToNote.mockReturnValue({ name: 'G', octave: 4, noteNum: 67, freq: 392.0 });
     fxG.deps.state.yinSkipCounter = 2;
-    tickMicPipeline(1078, 16, fxG.deps);
+    tickMicPipeline(1290, 16, fxG.deps);
 
     expect(midiState.lastChordName).not.toBe('');
     expect(midiState.activeNotes.size).toBe(3);
     expect(midiState.activeNotes.has(60)).toBe(true);
     expect(midiState.activeNotes.has(64)).toBe(true);
     expect(midiState.activeNotes.has(67)).toBe(true);
+  });
+});
+
+// ─── R2-2: 持続音のハイライト維持（isActivePlay リフレッシュ） ─────
+
+describe('tickMicPipeline — R2-2 持続音の activeNotes リフレッシュ', () => {
+  function makeMidiState(): MicPipelineDeps['midiState'] & {} {
+    return {
+      activeNotes: new Map<
+        number,
+        { velocity: number; onTimeMs: number; synColor?: string | null; source?: 'mic' | 'midi' }
+      >(),
+      recentOnsets: [] as Array<{ midi: number; timeMs: number }>,
+      lastChordName: '',
+      lastChordTimeMs: 0,
+    };
+  }
+
+  it('isActivePlay 中は既存 mic エントリの onTimeMs が毎フレーム前進し TTL(300ms) に勝つ', () => {
+    const midiState = makeMidiState();
+    const { deps, hooks } = makeDeps({ midiState });
+    // オンセット（isGoodNote=true）でエントリ作成。
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps);
+    expect(midiState.activeNotes.get(69)!.onTimeMs).toBe(1000);
+
+    // 以降はオンセット無し（減衰後の持続部）だがゲートは開いたまま。
+    hooks.updateGameState.mockReturnValue(false);
+    deps.state.debugIsActivePlay = true;
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1200, 16, deps);
+    expect(midiState.activeNotes.get(69)!.onTimeMs).toBe(1200);
+
+    // 作成から 400ms 経過 — 旧実装（オンセット時のみ refresh）なら
+    // プルーン済みのタイミングでも、リフレッシュ済みなので生きている。
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1400, 16, deps);
+    expect(midiState.activeNotes.has(69)).toBe(true);
+    expect(midiState.activeNotes.get(69)!.onTimeMs).toBe(1400);
+  });
+
+  it('isActivePlay でも既存エントリが無ければ新規作成しない（誤検出でハイライトを増やさない）', () => {
+    const midiState = makeMidiState();
+    const { deps, hooks } = makeDeps({ midiState });
+    hooks.updateGameState.mockReturnValue(false);
+    deps.state.debugIsActivePlay = true;
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps);
+    expect(midiState.activeNotes.size).toBe(0);
+  });
+
+  it('isActivePlay が落ちる（離鍵）と TTL 経過でハイライトが消える', () => {
+    const midiState = makeMidiState();
+    const { deps, hooks } = makeDeps({ midiState });
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps); // 作成
+    hooks.updateGameState.mockReturnValue(false);
+    deps.state.debugIsActivePlay = false; // 離鍵（ゲート閉）
+    tickMicPipeline(1350, 16, deps); // 350ms > 300ms → プルーン
+    expect(midiState.activeNotes.has(69)).toBe(false);
+  });
+
+  it('MIDI 接続中は持続リフレッシュしない（mic エントリは前進しない）', () => {
+    const midiState = makeMidiState();
+    midiState.activeNotes.set(69, { velocity: 80, onTimeMs: 1000, source: 'mic' });
+    const { deps, hooks } = makeDeps({
+      midiState,
+      midiInput: { enabled: true, lastEventTime: 0 },
+    });
+    hooks.updateGameState.mockReturnValue(false);
+    deps.state.debugIsActivePlay = true;
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1200, 16, deps);
+    expect(midiState.activeNotes.get(69)!.onTimeMs).toBe(1000);
+  });
+
+  it('source=midi のエントリは持続リフレッシュの対象外', () => {
+    const midiState = makeMidiState();
+    midiState.activeNotes.set(69, { velocity: 100, onTimeMs: 500, source: 'midi' });
+    const { deps, hooks } = makeDeps({ midiState });
+    hooks.updateGameState.mockReturnValue(false);
+    deps.state.debugIsActivePlay = true;
+    deps.state.yinSkipCounter = 2;
+    tickMicPipeline(1000, 16, deps);
+    expect(midiState.activeNotes.get(69)!.onTimeMs).toBe(500);
   });
 });
 
