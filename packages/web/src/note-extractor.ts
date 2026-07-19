@@ -187,9 +187,12 @@ export interface StaffPlan {
  * Pure: OSMD の Instruments 配列から練習対象（鍵盤）パートを推定する。
  *
  * - パートが 0/1 個 → 判別不要（全部練習対象、従来挙動）。
- * - 2 個以上 → 「2段譜 +4 / 鍵盤らしい名前 +2 / GM ピアノ族音色 +2」で
- *   採点し、最高点（同点は先頭側）を練習パートに。全パート 0 点なら
- *   分割しない（安全側フォールバック = 従来挙動）。
+ * - 「2段譜 +4 / 鍵盤らしい名前 +2 / GM ピアノ族音色 +2」で採点。
+ * - **鍵盤らしいパート（score>0）が 2 つ以上ある場合は分割しない**
+ *   （＝全譜表を練習対象。従来挙動）。ソロピアノを左手/右手の2パートに
+ *   分けた譜面や連弾を、片方だけ練習・片方 backing（＝ガイドで無音）に
+ *   誤分類しないため。分割するのは「鍵盤パートがちょうど1つ＋残りは
+ *   明確に非鍵盤（score 0、例: Voice/Violin）」の伴奏譜のときだけ。
  * - 練習パートの第1譜表 = R、以降 = L。他パートの譜表は 'B'。
  */
 export function pickPracticeStaffPlan(instruments: ReadonlyArray<OsmdInstrumentLike>): StaffPlan {
@@ -198,6 +201,7 @@ export function pickPracticeStaffPlan(instruments: ReadonlyArray<OsmdInstrumentL
 
   let bestIdx = -1;
   let bestScore = 0;
+  let keyboardishCount = 0;
   for (let i = 0; i < instruments.length; i++) {
     const inst = instruments[i];
     let score = 0;
@@ -205,12 +209,17 @@ export function pickPracticeStaffPlan(instruments: ReadonlyArray<OsmdInstrumentL
     if (inst.Name && KEYBOARD_NAME_RE.test(inst.Name)) score += 2;
     const prog = inst.MidiInstrumentId;
     if (typeof prog === 'number' && prog >= 0 && prog <= GM_KEYBOARD_MAX) score += 2;
+    if (score > 0) keyboardishCount++;
     if (score > bestScore) {
       bestScore = score;
       bestIdx = i;
     }
   }
-  if (bestIdx < 0) return none;
+  // No keyboard part, or more than one keyboard-like part (solo piano split
+  // into L/R parts, a duet, …): don't split — treat every staff as practice.
+  // Splitting is only safe when exactly one part is keyboard-like and the
+  // rest are clearly non-keyboard accompaniment (score 0).
+  if (bestIdx < 0 || keyboardishCount > 1) return none;
 
   const staffHand = new Map<number, 'R' | 'L' | 'B'>();
   for (let i = 0; i < instruments.length; i++) {

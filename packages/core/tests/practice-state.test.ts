@@ -787,11 +787,20 @@ describe('computePracticeTimings', () => {
     expect(out.countInMs / out.beats).toBe(500);
   });
 
-  it('adds many beats at very fast tempo, still one beat apart', () => {
-    const out = computePracticeTimings(100); // 24 beats × 100 = 2400
-    expect(out.beats).toBe(24);
-    expect(out.countInMs).toBe(2400);
+  it('caps the beat count on a pathological (absurdly fast) tempo', () => {
+    // beatMs=100 would nominally want 24 beats; the MAX_COUNT_IN_BEATS
+    // cap holds it at 16 so a malformed <sound tempo> can't schedule
+    // hundreds of near-continuous clicks. Interval stays == beatMs.
+    const out = computePracticeTimings(100);
+    expect(out.beats).toBe(16);
+    expect(out.countInMs).toBe(1600);
     expect(out.countInMs / out.beats).toBe(100);
+  });
+
+  it('caps even at an insane beatMs (defensive)', () => {
+    const out = computePracticeTimings(6); // ~9999 bpm import
+    expect(out.beats).toBe(16); // not ceil(2400/6)=400
+    expect(out.countInMs).toBe(96);
   });
 
   it('drops beats below the ceiling — very slow tempo', () => {

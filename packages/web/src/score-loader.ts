@@ -336,7 +336,13 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
           }
         }
       }
-      song.bpm = songBpm || 72;
+      // Clamp to a musically sane range so a malformed import (e.g.
+      // `<sound tempo="9999">`) can't push practiceBeatMs to a few ms and
+      // blow up count-in / lane timing. 20–320 BPM covers Grave→Prestissimo.
+      songBpm = songBpm || 72;
+      if (songBpm < 20) songBpm = 20;
+      if (songBpm > 320) songBpm = 320;
+      song.bpm = songBpm;
       // Quarter-note beats per bar from the leading time signature, for
       // the metronome accent. beats × 4 / beatType maps any simple/compound
       // meter onto the quarter-note metronome grid (4/4→4, 3/4→3, 6/8→3,

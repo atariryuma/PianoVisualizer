@@ -760,6 +760,12 @@ export interface PracticeTimingOptions {
  *  tempo whenever 4×beatMs fell outside the window), we keep the click
  *  interval equal to `beatMs` and pick the beat COUNT that lands the
  *  total inside [lo, hi] as close to the target (4) as possible. */
+/** Hard cap on count-in clicks. Real music (bpm ≤ ~208, tempo ≥ 50%)
+ *  needs ≤ ~9 beats to fill the clamp window; this only bites on a
+ *  malformed import with an absurd `<sound tempo>` (e.g. 9999), which
+ *  would otherwise schedule hundreds of near-continuous clicks. */
+export const MAX_COUNT_IN_BEATS = 16;
+
 export function computePracticeTimings(
   beatMs: number,
   opts: PracticeTimingOptions = {}
@@ -772,7 +778,11 @@ export function computePracticeTimings(
   const maxBeats = Math.max(1, Math.floor(hi / safeBeat));
   // When the window is narrower than a single beat (very slow tempo),
   // minBeats can exceed maxBeats — prefer staying under the upper clamp.
-  const beats = minBeats > maxBeats ? maxBeats : Math.max(minBeats, Math.min(maxBeats, target));
+  const raw = minBeats > maxBeats ? maxBeats : Math.max(minBeats, Math.min(maxBeats, target));
+  // Cap so a pathological (very fast) beatMs can't schedule hundreds of
+  // clicks. The click interval stays == beatMs (countInMs = beats*beatMs),
+  // just with fewer beats than the floor would nominally want.
+  const beats = Math.max(1, Math.min(MAX_COUNT_IN_BEATS, raw));
   const countInMs = Math.round(beats * safeBeat);
   return { countInMs, laneLookaheadMs: countInMs, beats };
 }

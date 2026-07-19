@@ -483,8 +483,10 @@ describe('pickPracticeStaffPlan — パート判別', () => {
     expect(plan.staffHand.get(1)).toBe('R');
   });
 
-  it('連弾（Piano 1 + Piano 2）は先頭のピアノが練習パート', () => {
-    const plan = pickPracticeStaffPlan([
+  it('鍵盤パートが2つ以上（連弾・左右分割）は分割せず全部練習対象', () => {
+    // 連弾（Piano 1 + Piano 2）や、ソロピアノを左右2パートに分けた譜面は、
+    // 片方を backing（ガイドで無音）に落とさず全譜表を練習対象にする。
+    const duet = pickPracticeStaffPlan([
       {
         Name: 'Piano 1',
         MidiInstrumentId: 0,
@@ -496,9 +498,17 @@ describe('pickPracticeStaffPlan — パート判別', () => {
         Staves: [{ idInMusicSheet: 2 }, { idInMusicSheet: 3 }],
       },
     ]);
-    expect(plan.practiceInstrumentIdx).toBe(0);
-    expect(plan.staffHand.get(2)).toBe('B');
-    expect(plan.staffHand.get(3)).toBe('B');
+    expect(duet.practiceInstrumentIdx).toBeNull();
+    expect(duet.staffHand.size).toBe(0);
+  });
+
+  it('ソロピアノを左手/右手の2パートに分けた譜面も全部練習対象（左手が backing 化しない）', () => {
+    const split = pickPracticeStaffPlan([
+      { Name: 'Piano (right hand)', MidiInstrumentId: 0, Staves: [{ idInMusicSheet: 0 }] },
+      { Name: 'Piano (left hand)', MidiInstrumentId: 0, Staves: [{ idInMusicSheet: 1 }] },
+    ]);
+    expect(split.practiceInstrumentIdx).toBeNull();
+    // 従来どおり staff 0 = R, staff 1 = L で両手とも練習対象。
   });
 });
 

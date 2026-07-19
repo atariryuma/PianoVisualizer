@@ -101,7 +101,9 @@ export interface ShellMidi {
   pausePractice(): void;
   /** Rebase the clock + resume Transport. */
   resumePractice(): void;
-  /** True while an explicit pause holds the session. */
+  /** True while an explicit pause holds the session. Exposed for the
+   *  future ⏸ toolbar button (P2-13) to reflect toggle state — not yet
+   *  wired to a caller. */
   isPracticePaused(): boolean;
 }
 

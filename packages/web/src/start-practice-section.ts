@@ -81,6 +81,9 @@ export interface StatePartial {
 
 export interface PracticePartial {
   enabled: boolean;
+  /** Explicit-pause flag — reset at section start as belt-and-suspenders
+   *  so a stray paused=true can't silence a whole fresh section. */
+  paused?: boolean;
   sectionIdx: number;
   sectionNotes: OsmdLikeNote[];
   handRanges?: HandRanges;
@@ -293,6 +296,10 @@ export function createStartPracticeSection(
 
     // ── reset per-section state ──────────────────────────────────
     deps.practice.enabled = true;
+    // Belt-and-suspenders: a fresh section must never start paused. All
+    // settings-panel exit paths already resume(), but a stray paused=true
+    // would hard-gate the entire section (silent — no scoring / cursor).
+    deps.practice.paused = false;
     deps.practice.sectionIdx = isFullSong ? 0 : sectionIdx;
     deps.practice.sectionNotes = isFullSong
       ? deps.buildFullSongNotes()

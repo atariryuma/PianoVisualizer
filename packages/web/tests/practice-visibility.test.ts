@@ -163,6 +163,28 @@ describe('createPracticeVisibilityController', () => {
     expect(start).toHaveBeenCalledOnce();
   });
 
+  it('pause() no-ops when practice is not active (settings opened on title)', () => {
+    // Opening the settings panel on the title / song-panel / result card
+    // (practice inactive) must not set stray paused / hold state.
+    const practice = { enabled: false, startAudioTime: 2, paused: false };
+    const pauseSpy = vi.fn();
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: 12 },
+        Transport: { state: 'stopped', pause: pauseSpy, start: vi.fn() },
+      }),
+      log: vi.fn(),
+    });
+    ctrl.pause();
+    expect(practice.paused).toBe(false);
+    expect(ctrl.isPaused()).toBe(false);
+    expect(pauseSpy).not.toHaveBeenCalled();
+    // And a subsequent resume() is a harmless no-op.
+    ctrl.resume();
+    expect(practice.paused).toBe(false);
+  });
+
   it('pause() is idempotent (double-open guard)', () => {
     const practice = { enabled: true, startAudioTime: 2, paused: false };
     const pause = vi.fn();

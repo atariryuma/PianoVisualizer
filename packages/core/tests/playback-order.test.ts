@@ -147,6 +147,21 @@ describe('parsePlaybackOrderFromXml — voltas (1st / 2nd ending)', () => {
     expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 0, 1, 2]);
   });
 
+  it('comma-shared ending WITH a stop marker plays on both passes (regression)', () => {
+    // |: m0  [1,2. m1 … m2 .stop] :| m3
+    // A multi-bar shared ending carries a stop marker on m2. The 2nd-pass
+    // 1st-ending skip must NOT fire for a shared ending (only pure "1"),
+    // or it would jump past the ending's second pass, dropping m1/m2.
+    const xml = buildScore([
+      { fwdRepeat: true },
+      { ending: [{ num: '1,2', type: 'start' }] },
+      { ending: [{ num: '1,2', type: 'stop' }], bwdRepeat: true },
+      {},
+    ]);
+    // Both passes play the shared ending: 0,1,2, back to 0, 1,2, then 3.
+    expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 2, 0, 1, 2, 3]);
+  });
+
   it('comma-shared 2nd ending: |: m1 [1.] :| [2,3. m3] m4 does not truncate', () => {
     // 2周目の再開点(2番括弧)が number="2,3" で書かれても、正規化後は '2'/'3' が
     // 立つので探索が成立し、以降の小節が脱落しない。旧実装は '2'/'3' 完全一致に

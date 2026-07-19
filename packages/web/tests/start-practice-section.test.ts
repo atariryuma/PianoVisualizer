@@ -335,6 +335,13 @@ describe('startPracticeSection — state reset', () => {
     expect(fx.practice.enabled).toBe(true);
   });
 
+  it('resets practice.paused to false (belt-and-suspenders)', async () => {
+    const fx = makeFixture();
+    (fx.practice as { paused?: boolean }).paused = true;
+    await fx.start(0);
+    expect((fx.practice as { paused?: boolean }).paused).toBe(false);
+  });
+
   it('records sectionIdx', async () => {
     const fx = makeFixture();
     await fx.start(1);

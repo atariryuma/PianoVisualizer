@@ -200,8 +200,12 @@ export function parsePlaybackOrderFromXml(
     safety++;
     const m = info[i];
     // Skip 1st-ending volta on the second pass: jump forward to 2nd / 3rd
-    // ending or out of the volta block.
-    if (m.startsEnding['1'] && repeatTaken.has(repeatStartIdx)) {
+    // ending or out of the volta block. Only a PURE 1st ending is skipped —
+    // a comma-shared ending (number="1,2") sounds on BOTH passes, so it must
+    // never enter the skip search (which, when the ending carries a stop
+    // marker, would drop its second pass).
+    const only1stEnding = !Object.keys(m.startsEnding).some((n) => n !== '1');
+    if (m.startsEnding['1'] && only1stEnding && repeatTaken.has(repeatStartIdx)) {
       // 再開点 = 「'1' 以外の番号で始まる括弧」か「1番括弧を抜けた小節（括弧外）」。
       // '2'/'3' 決め打ちだと `number="2,3"` のようなカンマ表記や、3番以降の括弧、
       // 明示的な2括弧の無い譜面で探索が末尾まで走り、以降の小節が丸ごと脱落する。

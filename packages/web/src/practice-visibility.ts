@@ -151,7 +151,10 @@ export function createPracticeVisibilityController(
   }
 
   function pause(): void {
-    if (explicitHold) return;
+    // Only hold a session that's actually running — the settings panel can
+    // also be opened on the title / song-panel / result card, where there's
+    // nothing to pause and setting practice.paused would be stray state.
+    if (explicitHold || !deps.practice.enabled) return;
     explicitHold = true;
     deps.practice.paused = true;
     freeze('pause');

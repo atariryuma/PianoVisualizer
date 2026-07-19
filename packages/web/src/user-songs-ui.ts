@@ -660,7 +660,9 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       setStatus(deps.t('addSongPasteEmpty'), true);
       return;
     }
-    if (!raw.includes('<score-partwise') && !raw.includes('<score-timewise')) {
+    // Quick pre-filter (the real validators run in addFromBlob). Allow an
+    // optional namespace prefix like <ns:score-partwise>.
+    if (!/<(?:\w+:)?score-(?:partwise|timewise)/.test(raw)) {
       setStatus(deps.t('addSongPasteNotXml'), true);
       return;
     }

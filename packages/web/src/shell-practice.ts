@@ -285,9 +285,12 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     await _startPracticeSection(sectionIdx);
     // Remember this song's settings so re-selecting it restores tempo /
     // hand / mode instead of resetting to guided (P2-20). Best-effort.
+    // Listen is a one-off "just hear it" action, not a practice setting —
+    // don't persist it, or re-selecting the song would drop the kid into
+    // listen mode instead of ready-to-play.
     try {
       const song = deps.getCurrentSong();
-      if (song?.id) {
+      if (song?.id && practice.mode !== 'listen') {
         const sp = _practiceProgress.songProg(song.id);
         sp.lastSettings = {
           mode: practice.mode,
