@@ -27,6 +27,8 @@ export interface ShellMidiHandlersDeps {
   /** spawnBurst / spawnStream / Ripple — particle pool + types. */
   spawnBurst: any;
   spawnStream: any;
+  /** 一期一会演出 — midi-handlers へのパススルー（optional）。 */
+  freeplayMoments?: any;
   ripples: any[];
   Ripple: any;
   hideIntroHint: () => void;
@@ -122,6 +124,7 @@ export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiH
     spawnStream: deps.spawnStream,
     ripples: deps.ripples,
     Ripple: deps.Ripple,
+    freeplayMoments: deps.freeplayMoments,
     hideIntroHint: deps.hideIntroHint,
     showNoteDisplay,
     effectGlowPulse: deps.effectGlowPulse,

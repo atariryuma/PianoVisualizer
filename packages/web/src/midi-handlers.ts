@@ -109,6 +109,8 @@ export interface MidiHandlersDeps {
   Ripple: RippleCtor;
 
   // ─── Side-effects called by the handlers ─────────────────────────
+  /** 一期一会演出（フリープレイのみ）。旧シェル互換のため optional。 */
+  freeplayMoments?: { onNote(midi: number, x: number, y: number, color: string, t: number): void };
   hideIntroHint: () => void;
   showNoteDisplay: (
     displayText: string,
@@ -192,6 +194,9 @@ export function spawnMidiNoteVisuals(
   const noteName = deps.config.NOTE_NAMES[midiNum % 12];
   deps.showNoteDisplay(noteName, noteName + (Math.floor(midiNum / 12) - 1), synColor, now);
   if (deps.state.flow < 10) deps.triggerWakeUpFlash(deps.state, deps.wufOpts);
+
+  // 一期一会演出 — 通常のバースト/リップルと同じ位置・色に上乗せする。
+  deps.freeplayMoments?.onNote(midiNum, noteX, noteY, color, now);
 }
 
 /** Note-on entry point. Split into two phases:
