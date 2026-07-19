@@ -94,6 +94,11 @@ interface OsmdIteratorLike {
   currentTimeStamp: { realValue: number };
   CurrentVoiceEntries: ReadonlyArray<{
     parentSourceStaffEntry?: { parentStaff?: { idInMusicSheet?: number } };
+    /** OSMD marks grace-note voice entries here. We skip them so the
+     *  kid isn't required to play ornaments — and to stay symmetric with
+     *  the XML timing reducer, which already excludes grace notes from
+     *  the measure clock. */
+    IsGrace?: boolean;
     Notes?: ReadonlyArray<unknown>;
     notes?: ReadonlyArray<unknown>;
   }> | null;
@@ -136,6 +141,9 @@ interface OsmdNoteLike {
   isRest?(): boolean;
   halfTone?: number;
   length?: { realValue: number };
+  /** Cue notes are small ossia/optional prompts — skipped like grace. */
+  IsCueNote?: boolean;
+  isCueNote?: boolean;
   NoteTie?: OsmdTieLike;
   Tie?: OsmdTieLike;
   notetie?: OsmdTieLike;
@@ -318,6 +326,10 @@ export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}):
         const voiceEntries = it.CurrentVoiceEntries;
         if (voiceEntries) {
           for (const ve of voiceEntries) {
+            // Skip grace-note voice entries — ornaments aren't required
+            // notes, and the XML timing reducer already excludes them, so
+            // extracting them would desync the note list from the clock.
+            if (ve.IsGrace) continue;
             let hand: 'L' | 'R' | undefined;
             let isBacking = false;
             try {
@@ -337,6 +349,7 @@ export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}):
                 const note = rawNote as OsmdNoteLike;
                 if (!note) continue;
                 if (note.isRest && note.isRest()) continue;
+                if (note.IsCueNote || note.isCueNote) continue; // optional prompt notes
                 if (note.halfTone == null) continue;
                 const midi = note.halfTone + 12;
                 if (!hand) hand = midi >= 60 ? 'R' : 'L';

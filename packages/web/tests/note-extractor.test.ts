@@ -152,6 +152,46 @@ describe('extractNotesFromOsmd — basic note walk', () => {
     expect(ret.notes.find((n) => n.midi === 48)?.hand).toBe('L');
   });
 
+  it('skips grace-note voice entries (ornaments not required)', () => {
+    const osmd = makeOsmd({
+      steps: [
+        {
+          measureIdx: 0,
+          tsWhole: 0,
+          voices: [
+            { IsGrace: true, Notes: [{ halfTone: 61, length: { realValue: 0.05 } }] }, // grace
+            voiceEntry(0, [{ halfTone: 48, length: { realValue: 0.25 } }]), // real note
+          ],
+        },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
+    });
+    const ret = extractNotesFromOsmd(osmd);
+    expect(ret.notes).toHaveLength(1);
+    expect(ret.notes[0]?.midi).toBe(60);
+  });
+
+  it('skips cue notes (optional prompt notes)', () => {
+    const osmd = makeOsmd({
+      steps: [
+        {
+          measureIdx: 0,
+          tsWhole: 0,
+          voices: [
+            voiceEntry(0, [
+              { IsCueNote: true, halfTone: 55, length: { realValue: 0.25 } },
+              { halfTone: 48, length: { realValue: 0.25 } },
+            ]),
+          ],
+        },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
+    });
+    const ret = extractNotesFromOsmd(osmd);
+    expect(ret.notes).toHaveLength(1);
+    expect(ret.notes[0]?.midi).toBe(60);
+  });
+
   it('skips notes that are rests', () => {
     const osmd = makeOsmd({
       steps: [

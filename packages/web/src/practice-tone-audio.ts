@@ -54,6 +54,9 @@ export type ToneMembraneOptions = any;
 export interface ToneInstrument {
   toDestination(): ToneInstrument;
   volume: { value: number };
+  /** PolySynth voice cap (default 32 in Tone 14). Set higher so dense
+   *  full-song listen playback doesn't drop notes. Absent on MembraneSynth. */
+  maxPolyphony?: number;
 
   triggerAttackRelease(...args: any[]): unknown;
 }
@@ -130,6 +133,9 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
       envelope: { attack: 0.005, decay: 0.18, sustain: 0.25, release: 0.6 },
     }).toDestination();
     piano.volume.value = -14;
+    // Raise the voice cap above Tone's default 32 so a dense full-song
+    // listen (chords + backing) doesn't steal/drop notes mid-playback.
+    piano.maxPolyphony = 64;
     // おともパート（Voice 等）用。GM の合成ボイス音は品質が低く違和感
     // が勝つため、練習系アプリの標準（SmartMusic「My Part はピアノ音で
     // 再生」）に合わせてピアノ系音色で統一。ゴーストより気持ち柔らかい
@@ -140,6 +146,7 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
       envelope: { attack: 0.02, decay: 0.25, sustain: 0.4, release: 0.8 },
     }).toDestination();
     melody.volume.value = -17;
+    melody.maxPolyphony = 48;
     metronome = new deps.Tone.MembraneSynth({
       pitchDecay: 0.008,
       octaves: 4,
