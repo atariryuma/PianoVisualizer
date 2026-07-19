@@ -132,9 +132,10 @@ describe('computeSongMastery', () => {
   });
 
   it('reports tempoTiersUnlocked', () => {
+    // 50 is unlocked by default (support), so 50 + 60 + 75 = 3 tiers.
     const sp = spWith({ tempos: { 60: true, 75: true, 90: false, 100: false } });
     const sm = computeSongMastery(FUR_ELISE, sp);
-    expect(sm.tempoTiersUnlocked).toBe(2);
+    expect(sm.tempoTiersUnlocked).toBe(3);
     expect(sm.highestTempoUnlocked).toBe(75);
   });
 });

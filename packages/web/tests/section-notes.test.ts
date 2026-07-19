@@ -18,6 +18,7 @@ import {
   fullSongAnchorSec,
   computeHandRanges,
   clusterAdjacentNotes,
+  relaxChordsForMic,
   type OsmdLikeNote,
   type SectionNotesDeps,
   type SongSection,
@@ -469,5 +470,98 @@ describe('fullSongAnchorSec', () => {
 
   it('backing の無い曲では従来どおり練習ノーツの最初のアタック', () => {
     expect(fullSongAnchorSec({ notes: [note({ timeSec: 1.25 })] })).toBe(1.25);
+  });
+});
+
+// ─── relaxChordsForMic (P1-10) ─────────────────────────────────────
+
+describe('relaxChordsForMic', () => {
+  const chordNote = (midi: number, timeMs: number, over: Partial<OsmdLikeNote> = {}) =>
+    note({ midi, timeMs, timeSec: timeMs / 1000, ...over });
+
+  it('keeps the top note of a chord, filters the rest', () => {
+    const notes = [
+      chordNote(60, 1000), // C4
+      chordNote(64, 1000), // E4
+      chordNote(67, 1000), // G4 (top)
+    ];
+    relaxChordsForMic(notes);
+    const g = notes.find((n) => n.midi === 67)!;
+    const c = notes.find((n) => n.midi === 60)!;
+    const e = notes.find((n) => n.midi === 64)!;
+    expect(g._filtered).toBeFalsy();
+    expect(c._filtered).toBe(true);
+    expect(c.hit).toBe(true);
+    expect(e._filtered).toBe(true);
+  });
+
+  it('leaves a single-note onset untouched', () => {
+    const notes = [chordNote(60, 1000)];
+    relaxChordsForMic(notes);
+    expect(notes[0]._filtered).toBeFalsy();
+  });
+
+  it('treats separate onsets as separate clusters', () => {
+    const notes = [chordNote(60, 1000), chordNote(64, 1000), chordNote(62, 2000)];
+    relaxChordsForMic(notes);
+    // First cluster: top is 64; 60 filtered. Second cluster: lone 62 kept.
+    expect(notes.find((n) => n.midi === 64)!._filtered).toBeFalsy();
+    expect(notes.find((n) => n.midi === 60)!._filtered).toBe(true);
+    expect(notes.find((n) => n.midi === 62)!._filtered).toBeFalsy();
+  });
+
+  it('composes with one-hand mode: only relaxes among still-active notes', () => {
+    const notes = [
+      chordNote(48, 1000, { hand: 'L', _filtered: true, hit: true }), // off-hand, pre-filtered
+      chordNote(60, 1000, { hand: 'R' }),
+      chordNote(64, 1000, { hand: 'R' }), // top active
+    ];
+    relaxChordsForMic(notes);
+    expect(notes.find((n) => n.midi === 64)!._filtered).toBeFalsy(); // kept
+    expect(notes.find((n) => n.midi === 60)!._filtered).toBe(true); // relaxed
+    expect(notes.find((n) => n.midi === 48)!._filtered).toBe(true); // still off-hand
+  });
+});
+
+describe('buildSectionNotes — mic mode chord relaxation', () => {
+  const song = {
+    notes: [
+      note({ midi: 60, timeSec: 0, hand: 'R' }),
+      note({ midi: 64, timeSec: 0, hand: 'R' }),
+      note({ midi: 67, timeSec: 0, hand: 'R' }),
+    ],
+    sections: [sec(0, 1)],
+  };
+
+  it('relaxes chords when micMode + rhythm', () => {
+    const deps = makeDeps({
+      song,
+      practice: { tempoPct: 100, handFilter: null, mode: 'rhythm' },
+      micMode: true,
+    });
+    const out = buildSectionNotes(0, deps);
+    const active = out.filter((n) => !n._filtered);
+    expect(active).toHaveLength(1);
+    expect(active[0].midi).toBe(67); // top note
+  });
+
+  it('does NOT relax in listen mode (no scoring)', () => {
+    const deps = makeDeps({
+      song,
+      practice: { tempoPct: 100, handFilter: null, mode: 'listen' },
+      micMode: true,
+    });
+    const out = buildSectionNotes(0, deps);
+    expect(out.filter((n) => !n._filtered)).toHaveLength(3);
+  });
+
+  it('does NOT relax when a MIDI keyboard is attached (micMode false)', () => {
+    const deps = makeDeps({
+      song,
+      practice: { tempoPct: 100, handFilter: null, mode: 'rhythm' },
+      micMode: false,
+    });
+    const out = buildSectionNotes(0, deps);
+    expect(out.filter((n) => !n._filtered)).toHaveLength(3);
   });
 });

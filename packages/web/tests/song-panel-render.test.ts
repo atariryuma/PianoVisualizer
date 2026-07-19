@@ -88,7 +88,7 @@ function makeSong(overrides: Partial<SongPanelSong> = {}): SongPanelSong {
 
 function makeProgress(overrides: Partial<SongPanelProgress> = {}): SongPanelProgress {
   return {
-    unlockedTempos: { 60: true, 75: true, 90: true, 100: true },
+    unlockedTempos: { 50: true, 60: true, 75: true, 90: true, 100: true },
     unlockedSections: { a1: true, b: true, a2: true },
     sections: { a1: { stars: 2 }, b: { stars: 1 } },
     history: {},
@@ -201,50 +201,62 @@ describe('createSongPanelRender — BPM hint', () => {
 // ─── tempo row ───────────────────────────────────────────────────────
 
 describe('createSongPanelRender — tempo row', () => {
-  it('renders 4 buttons (60 / 75 / 90 / 100)', () => {
+  it('renders 5 buttons (50 / 60 / 75 / 90 / 100)', () => {
     const deps = makeDeps();
     createSongPanelRender(deps).render();
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
-    expect(buttons.length).toBe(4);
-    expect(buttons[0].textContent).toBe('60%');
-    expect(buttons[3].textContent).toBe('100%');
+    expect(buttons.length).toBe(5);
+    expect(buttons[0].textContent).toBe('50%');
+    expect(buttons[4].textContent).toBe('100%');
   });
 
   it('marks the current tempo button active', () => {
     const deps = makeDeps();
     createSongPanelRender(deps).render();
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
-    expect(buttons[1].classList.contains('active')).toBe(true); // 75
+    expect(buttons[2].classList.contains('active')).toBe(true); // 75
     expect(buttons[0].classList.contains('active')).toBe(false);
   });
 
   it('locks tempos that are not in unlockedTempos', () => {
     const deps = makeDeps({
-      songProg: () => makeProgress({ unlockedTempos: { 60: true, 75: true } }),
+      songProg: () => makeProgress({ unlockedTempos: { 50: true, 60: true, 75: true } }),
     });
     createSongPanelRender(deps).render();
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
-    expect(buttons[0].classList.contains('locked')).toBe(false); // 60
-    expect(buttons[1].classList.contains('locked')).toBe(false); // 75
-    expect(buttons[2].classList.contains('locked')).toBe(true); // 90
-    expect(buttons[3].classList.contains('locked')).toBe(true); // 100
-    expect((buttons[2] as HTMLButtonElement).disabled).toBe(true);
+    expect(buttons[0].classList.contains('locked')).toBe(false); // 50 (always support)
+    expect(buttons[1].classList.contains('locked')).toBe(false); // 60
+    expect(buttons[2].classList.contains('locked')).toBe(false); // 75
+    expect(buttons[3].classList.contains('locked')).toBe(true); // 90
+    expect(buttons[4].classList.contains('locked')).toBe(true); // 100
+    expect((buttons[3] as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('clicking an unlocked tempo updates practice.tempoPct', () => {
     const deps = makeDeps();
     createSongPanelRender(deps).render();
-    const btn90 = deps.dom.tempoRow.querySelectorAll('button')[2] as HTMLButtonElement;
+    const btn90 = deps.dom.tempoRow.querySelectorAll('button')[3] as HTMLButtonElement;
     btn90.click();
     expect(deps.practice.tempoPct).toBe(90);
   });
 
-  it('clicking a locked tempo does NOT update', () => {
+  it('slowing to 50% is always available (support, not a reward)', () => {
     const deps = makeDeps({
-      songProg: () => makeProgress({ unlockedTempos: { 60: true } }),
+      songProg: () => makeProgress({ unlockedTempos: { 50: true, 60: true } }),
     });
     createSongPanelRender(deps).render();
-    const btn90 = deps.dom.tempoRow.querySelectorAll('button')[2] as HTMLButtonElement;
+    const btn50 = deps.dom.tempoRow.querySelectorAll('button')[0] as HTMLButtonElement;
+    expect(btn50.classList.contains('locked')).toBe(false);
+    btn50.click();
+    expect(deps.practice.tempoPct).toBe(50);
+  });
+
+  it('clicking a locked tempo does NOT update', () => {
+    const deps = makeDeps({
+      songProg: () => makeProgress({ unlockedTempos: { 50: true, 60: true } }),
+    });
+    createSongPanelRender(deps).render();
+    const btn90 = deps.dom.tempoRow.querySelectorAll('button')[3] as HTMLButtonElement;
     btn90.click();
     expect(deps.practice.tempoPct).toBe(75); // unchanged
   });
@@ -257,8 +269,8 @@ describe('createSongPanelRender — tempo row', () => {
     expect(deps.dom.tempoRow.style.opacity).toBe('0.55');
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
     expect(buttons[0].classList.contains('locked')).toBe(true);
-    expect(buttons[3].classList.contains('locked')).toBe(false); // 100 active
-    expect(buttons[3].classList.contains('active')).toBe(true);
+    expect(buttons[4].classList.contains('locked')).toBe(false); // 100 active
+    expect(buttons[4].classList.contains('active')).toBe(true);
   });
 
   it('guided mode locks the tempo row to 100 regardless of tempoPct', () => {
@@ -268,11 +280,12 @@ describe('createSongPanelRender — tempo row', () => {
     createSongPanelRender(deps).render();
     expect(deps.dom.tempoRow.style.opacity).toBe('0.55');
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
-    expect(buttons[0].classList.contains('locked')).toBe(true); // 60
-    expect(buttons[1].classList.contains('locked')).toBe(true); // 75
-    expect(buttons[2].classList.contains('locked')).toBe(true); // 90
-    expect(buttons[3].classList.contains('locked')).toBe(false); // 100 active
-    expect(buttons[3].classList.contains('active')).toBe(true);
+    expect(buttons[0].classList.contains('locked')).toBe(true); // 50
+    expect(buttons[1].classList.contains('locked')).toBe(true); // 60
+    expect(buttons[2].classList.contains('locked')).toBe(true); // 75
+    expect(buttons[3].classList.contains('locked')).toBe(true); // 90
+    expect(buttons[4].classList.contains('locked')).toBe(false); // 100 active
+    expect(buttons[4].classList.contains('active')).toBe(true);
   });
 });
 
@@ -519,7 +532,7 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
         }),
     });
     deps.practice.mode = 'rhythm';
-    deps.practice.tempoPct = 60;
+    deps.practice.tempoPct = 50; // slowest step — can't go lower, so one-hand
     createSongPanelRender(deps).render();
     expect(deps.dom.songPreflightText!.textContent).toBe('preflightHintOneHand');
   });

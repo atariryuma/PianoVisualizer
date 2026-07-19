@@ -624,8 +624,10 @@ export function planSectionScaffold(
 }
 
 /** Tempo speeds the practice flow gates: a section cleared at one tempo
- *  unlocks the next one (gated on stars >= 2). */
-export const TEMPO_TIERS: readonly number[] = Object.freeze([60, 75, 90, 100]);
+ *  unlocks the next one (gated on stars >= 2). 50 + 60 are unlocked from
+ *  the start (slowing down is support, not a reward); 75/90/100 are the
+ *  earned speed-up ladder. */
+export const TEMPO_TIERS: readonly number[] = Object.freeze([50, 60, 75, 90, 100]);
 
 export interface UnlockComputeInput {
   stars: number;

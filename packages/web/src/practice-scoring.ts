@@ -132,8 +132,14 @@ export interface PracticeScoring {
   practiceElapsedMs(): number;
 }
 
+/** Min gap between wrong-note chips so a kid mashing keys can't spam the
+ *  HUD. Visualization only — no score penalty, no shame copy. */
+const WRONG_NOTE_CHIP_THROTTLE_MS = 300;
+
 export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScoring {
   const log = deps.remoteLog ?? ((_l: string) => {});
+  /** Wall-clock of the last wrong-note chip (rhythm-mode throttle). */
+  let lastWrongChipMs = -Infinity;
 
   function medianRecentPitch(): number {
     const arr = deps.state.recentPitches;
@@ -227,7 +233,19 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     );
 
     if (!matched) {
+      // Wrong-note feedback. Guided always shows it (the score is
+      // frozen waiting for the right note). Rhythm shows a throttled,
+      // fact-based chip too so the kid SEES which key was off — the
+      // single most useful feedback in the moment. Visualization only:
+      // no score penalty (accuracy is hits/target), no shame copy.
+      const now = performance.now();
       if (deps.practice.mode === 'guided') {
+        deps.showHitChip('miss', deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }));
+      } else if (
+        deps.practice.mode === 'rhythm' &&
+        now - lastWrongChipMs >= WRONG_NOTE_CHIP_THROTTLE_MS
+      ) {
+        lastWrongChipMs = now;
         deps.showHitChip('miss', deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }));
       }
       return false;

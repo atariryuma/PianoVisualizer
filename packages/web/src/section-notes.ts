@@ -68,6 +68,12 @@ export interface OsmdLikeNote {
  *  tile with a `×N` badge. */
 export const CLUSTER_WINDOW_MS = 30;
 
+/** Notes whose scaled timeMs are within this window count as one chord
+ *  for the mic-mode relaxation. Chord notes share an identical source
+ *  onset (so an identical scaled timeMs), so any small tolerance works;
+ *  30 ms absorbs float rounding without merging distinct fast notes. */
+export const CHORD_CLUSTER_WINDOW_MS = 30;
+
 /** Section bounds (startSec, endSec) the slice walks. */
 export interface SongSection {
   startSec: number;
@@ -102,6 +108,8 @@ export interface SectionNotesPracticeRef {
   tempoPct: number;
   /** 'R' / 'L' for one-hand mode, null for both. */
   handFilter: 'R' | 'L' | null;
+  /** Gate for the mic-mode chord relaxation — skipped in listen mode. */
+  mode?: string;
 }
 
 /** Per-hand MIDI range bag returned by computeHandRanges. */
@@ -173,6 +181,48 @@ export function clusterAdjacentNotes(notes: OsmdLikeNote[]): OsmdLikeNote[] {
   });
 }
 
+/** Pure: in mic mode the YIN detector resolves a single pitch per
+ *  onset, so the non-top notes of a chord can NEVER be hit — they'd
+ *  pile up as structural misses and hand the kid an unfair 0★. This
+ *  relaxes each simultaneous cluster to its highest still-active note
+ *  (the one YIN is most likely to lock onto), pre-flagging the rest
+ *  `_filtered + hit` — the exact mechanism the off-hand filter already
+ *  uses, so the cursor skips them and the progress count excludes them.
+ *
+ *  Only already-active notes (not off-hand-`_filtered`) are considered,
+ *  so this composes cleanly with one-hand mode. Mutates in place and
+ *  returns the same array. */
+export function relaxChordsForMic(notes: OsmdLikeNote[]): OsmdLikeNote[] {
+  let i = 0;
+  while (i < notes.length) {
+    const head = notes[i];
+    const t0 = head.timeMs ?? 0;
+    // Gather the cluster [i, j) of notes sharing this onset.
+    let j = i + 1;
+    while (j < notes.length && (notes[j].timeMs ?? 0) - t0 <= CHORD_CLUSTER_WINDOW_MS) j++;
+    // Among the active (non-filtered) notes in the cluster, keep the
+    // highest MIDI; filter the rest.
+    let topIdx = -1;
+    let topMidi = -Infinity;
+    for (let k = i; k < j; k++) {
+      if (notes[k]._filtered) continue;
+      if (notes[k].midi > topMidi) {
+        topMidi = notes[k].midi;
+        topIdx = k;
+      }
+    }
+    if (topIdx >= 0) {
+      for (let k = i; k < j; k++) {
+        if (k === topIdx || notes[k]._filtered) continue;
+        notes[k]._filtered = true;
+        notes[k].hit = true;
+      }
+    }
+    i = j;
+  }
+  return notes;
+}
+
 /** Pure: pick the bigger MIDI from two notes, treating "no note" as
  *  the sentinel. Used by computeHandRanges. */
 function expandRange(midi: number, state: { min: number; max: number; count: number }): void {
@@ -216,6 +266,10 @@ export interface SectionNotesDeps {
   /** Count-in offset in ms — every note's timeMs is anchored to
    *  count-in end so the kid arrives on tempo. */
   countInMs: number;
+  /** True when scoring off the mic (no MIDI keyboard). Relaxes chords to
+   *  their top note so the single-pitch YIN detector can't rack up
+   *  structural misses. Ignored in listen mode (no scoring). */
+  micMode?: boolean;
 }
 
 /** Build the per-section timeline for guided / rhythm modes. */
@@ -249,7 +303,14 @@ export function buildSectionNotes(sectionIdx: number, deps: SectionNotesDeps): O
   // Collapse same-pitch + same-hand bursts (trill / tremolo / OSMD
   // grace expansion) so the lane shows a single tile with a ×N badge
   // instead of dozens overlapping at identical (x, y) coordinates.
-  return clusterAdjacentNotes(out);
+  const clustered = clusterAdjacentNotes(out);
+  // Mic mode (no MIDI): drop each chord to its top note so the
+  // single-pitch YIN detector can't rack up structural misses. Skipped
+  // in listen mode (no scoring — hiding notes would only confuse the lane).
+  if (deps.micMode && deps.practice.mode !== 'listen') {
+    return relaxChordsForMic(clustered);
+  }
+  return clustered;
 }
 
 /** 全曲再生のアンカー時刻（この timeSec がカウントイン明けに鳴る）。

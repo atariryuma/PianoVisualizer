@@ -203,6 +203,9 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       song: deps.getCurrentSong(),
       practice,
       countInMs: COUNT_IN_MS,
+      // Mic mode = no MIDI keyboard attached. Chords relax to their top
+      // note so the single-pitch detector can't rack up structural misses.
+      micMode: !deps.getMidiInput().enabled,
     }) as any;
   const buildSectionNotes = (sectionIdx: number) =>
     SectionNotes.buildSectionNotes(sectionIdx, _sectionNotesArgs());

@@ -116,7 +116,7 @@ export interface SongPanelRender {
   render(): void;
 }
 
-const TEMPO_STEPS = [60, 75, 90, 100] as const;
+const TEMPO_STEPS = [50, 60, 75, 90, 100] as const;
 
 /** Build the renderer closure. Returns `{ render }` — the shell stores
  *  it under the legacy `renderSongPanel` short name and hands the same

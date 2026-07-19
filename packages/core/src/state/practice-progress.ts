@@ -94,7 +94,11 @@ export function defaultSongProgress(): SongProgress {
       B: { stars: 0, bestPct: 0 },
       A2: { stars: 0, bestPct: 0 },
     },
-    unlockedTempos: { 60: true, 75: false, 90: false, 100: false },
+    // 50 + 60 unlocked from the start — slowing down is SUPPORT, never a
+    // reward to earn (banned-list). 75/90/100 are the earned speed-up
+    // ladder. getSongProgress merges this default so existing saves
+    // auto-gain the 50% step.
+    unlockedTempos: { 50: true, 60: true, 75: false, 90: false, 100: false },
     unlockedSections: { A1: true, B: false, A2: false },
     history: {},
   };

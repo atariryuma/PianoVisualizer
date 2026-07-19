@@ -436,6 +436,18 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     expect(ok).toBe(false);
   });
 
+  it('wrong note inside the window → throttled fact-based chip (P2-17)', () => {
+    // In the window (dt≈40) but wrong pitch — rhythm now shows a chip.
+    const fx = setup(5.04);
+    const ok = fx.scoring.matchNoteOnset(62, true); // expected 60, played 62
+    expect(ok).toBe(false);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M62)');
+    // A second wrong note within the throttle window is suppressed.
+    fx.mocks.showHitChip.mockClear();
+    fx.scoring.matchNoteOnset(63, true);
+    expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
+  });
+
   it('asymmetric: an early miss uses early window for ts', () => {
     // dt = -80 ms (within early window). ts = max(0, 1 - 80/100) = 0.2
     const fx = setup(4.92);
