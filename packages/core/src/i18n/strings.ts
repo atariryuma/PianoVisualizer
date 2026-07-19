@@ -442,25 +442,16 @@ export const T_STRINGS: TranslationTable = {
     jp: 'パブリックドメインまたは自作の曲です',
   },
   // File-picker-free import (for browsers without <input type=file>, e.g.
-  // the Web MIDI Browser on iPad).
+  // the Web MIDI Browser on iPad): drag a file from the Files app.
   addSongDropHint: {
     en: '…or drag a file here from the Files app',
     jp: '…または Files アプリからここにドラッグ＆ドロップ',
   },
-  addSongDropActive: { en: 'Drop to add', jp: 'ドロップで追加' },
-  addSongPastePlaceholder: {
-    en: '…or paste MusicXML text here (.musicxml / .xml)',
-    jp: '…または MusicXML のテキストをここに貼り付け（.musicxml / .xml）',
-  },
-  addSongPasteBtn: { en: 'Add from pasted text', jp: '貼り付けから追加' },
-  addSongPasteEmpty: {
-    en: 'Paste some MusicXML text first',
-    jp: 'MusicXML のテキストを貼り付けてください',
-  },
-  addSongPasteNotXml: {
-    en: "That doesn't look like MusicXML text (paste the .musicxml / .xml contents)",
-    jp: 'MusicXML のテキストではないようです（.musicxml / .xml の中身を貼り付けてください）',
-  },
+  // Two-tap delete + inline rename (native confirm()/prompt() don't work
+  // in constrained WKWebViews like the Web MIDI Browser).
+  addSongConfirmTap: { en: 'Tap again to delete', jp: 'もう一度タップで削除' },
+  addSongRenameSave: { en: 'Save', jp: '保存' },
+  addSongRenameCancel: { en: 'Cancel', jp: 'やめる' },
   addSongUrlPlaceholder: { en: 'https://cdn.jsdelivr.net/.../score.mxl' },
   addSongUrlHelp: {
     en: 'Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).',

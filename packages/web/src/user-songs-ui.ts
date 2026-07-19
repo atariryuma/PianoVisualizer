@@ -66,12 +66,10 @@ export interface UserSongsUiDom {
   fileInput: HTMLInputElement | null;
   pdCheckbox: HTMLInputElement | null;
   /** File-picker-free import (for browsers without `<input type=file>`,
-   *  e.g. the Web MIDI Browser on iPad). Drop zone handles binary .mxl;
-   *  paste box handles plain MusicXML text. All optional so tests /
-   *  older shells can omit them. */
+   *  e.g. the Web MIDI Browser on iPad) — a drop zone that accepts a file
+   *  dragged from the Files app (handles binary .mxl too). Optional so
+   *  tests / older shells can omit it. */
   dropZone: HTMLElement | null;
-  pasteInput: HTMLTextAreaElement | null;
-  pasteBtn: HTMLButtonElement | null;
   urlInput: HTMLInputElement | null;
   fetchBtn: HTMLButtonElement | null;
   status: HTMLElement;
@@ -175,6 +173,119 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
   function setStatus(msg: string, isError?: boolean): void {
     deps.dom.status.textContent = msg || '';
     deps.dom.status.classList.toggle('error', !!isError);
+  }
+
+  /** Two-tap delete that works WITHOUT a native `confirm()` dialog.
+   *  Constrained WKWebViews (e.g. the Web MIDI Browser on iPad) don't
+   *  implement `confirm()`, so it returns false and the delete silently
+   *  bailed — songs became un-deletable. First tap arms the ✕ (turns it
+   *  into a 🗑 with a red "tap again" state); a second tap within the
+   *  window deletes. Auto-disarms after the timeout. */
+  function wireTwoTapDelete(
+    btn: HTMLButtonElement,
+    songId: string,
+    onDeleted: () => void,
+    onError: (msg: string) => void
+  ): void {
+    let armed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const rest = (): void => {
+      armed = false;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      btn.classList.remove('armed');
+      btn.textContent = '✕';
+      btn.title = deps.t('addSongRemove');
+      btn.setAttribute('aria-label', deps.t('addSongRemove'));
+    };
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!armed) {
+        armed = true;
+        btn.classList.add('armed');
+        btn.textContent = '🗑';
+        btn.title = deps.t('addSongConfirmTap');
+        btn.setAttribute('aria-label', deps.t('addSongConfirmTap'));
+        timer = setTimeout(rest, 3500);
+        return;
+      }
+      rest();
+      try {
+        await deps.removeUserSong(songId);
+      } catch (err) {
+        console.error('removeUserSong failed', err);
+        onError((err as Error)?.message || 'delete failed');
+        return;
+      }
+      onDeleted();
+    });
+  }
+
+  /** Inline rename that works WITHOUT a native `prompt()` dialog (same
+   *  WKWebView limitation as delete). Swaps the row for a text field +
+   *  save/cancel; re-renders the list on either. Composer is preserved
+   *  (title is the field kids actually change). */
+  function startInlineRename(row: HTMLElement, song: UiSongRef): void {
+    row.innerHTML = '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'my-rename-input';
+    input.value = song._userTitle || '';
+    input.setAttribute('aria-label', deps.t('addSongRenamePromptTitle'));
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'my-action-btn my-rename-save';
+    save.textContent = '✓';
+    save.title = deps.t('addSongRenameSave');
+    save.setAttribute('aria-label', deps.t('addSongRenameSave'));
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'my-action-btn my-rename-cancel';
+    cancel.textContent = '✗';
+    cancel.title = deps.t('addSongRenameCancel');
+    cancel.setAttribute('aria-label', deps.t('addSongRenameCancel'));
+    row.appendChild(input);
+    row.appendChild(save);
+    row.appendChild(cancel);
+    input.focus();
+
+    const doSave = async (): Promise<void> => {
+      const title = input.value.trim();
+      if (!title) {
+        renderMyList();
+        return;
+      }
+      try {
+        await deps.renameUserSong(song.id, title, song._userComposer || '');
+      } catch (err) {
+        console.error('renameUserSong failed', err);
+        setStatus(deps.t('addSongFailed', { v: (err as Error)?.message || 'rename' }), true);
+        renderMyList();
+        return;
+      }
+      renderMyList();
+      renderUserSongButtons();
+      const cur = deps.getCurrentSong();
+      if (cur && cur.id === song.id) deps.refreshSongPanelHeader();
+    };
+    save.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void doSave();
+    });
+    cancel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renderMyList();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void doSave();
+      } else if (e.key === 'Escape') {
+        renderMyList();
+      }
+    });
   }
 
   function ensureLibraryLoaded(force?: boolean): Promise<unknown> {
@@ -326,44 +437,23 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       editBtn.setAttribute('aria-label', deps.t('addSongEditSections'));
       removeBtn.title = deps.t('addSongRemove');
       removeBtn.setAttribute('aria-label', deps.t('addSongRemove'));
-      renameBtn.addEventListener('click', async (e) => {
+      renameBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const newTitle = prompt(deps.t('addSongRenamePromptTitle'), song._userTitle || '');
-        if (newTitle == null) return;
-        const trimmedTitle = newTitle.trim();
-        if (!trimmedTitle) return;
-        const newComposer = prompt(deps.t('addSongRenamePromptComposer'), song._userComposer || '');
-        if (newComposer == null) return;
-        try {
-          await deps.renameUserSong(song.id, trimmedTitle, newComposer.trim());
-        } catch (err) {
-          console.error('renameUserSong failed', err);
-          setStatus(deps.t('addSongFailed', { v: (err as Error)?.message || 'rename' }), true);
-          return;
-        }
-        renderMyList();
-        renderUserSongButtons();
-        // If the renamed song is currently displayed, refresh the panel header.
-        const cur = deps.getCurrentSong();
-        if (cur && cur.id === song.id) deps.refreshSongPanelHeader();
+        startInlineRename(row, song);
       });
       editBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         void deps.openSectionEditor(song.id);
       });
-      removeBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!confirm(deps.t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
-        try {
-          await deps.removeUserSong(song.id);
-        } catch (err) {
-          console.error('removeUserSong failed', err);
-          setStatus(deps.t('addSongFailed', { v: (err as Error)?.message || 'delete' }), true);
-          return;
-        }
-        renderMyList();
-        renderUserSongButtons();
-      });
+      wireTwoTapDelete(
+        removeBtn,
+        song.id,
+        () => {
+          renderMyList();
+          renderUserSongButtons();
+        },
+        (m) => setStatus(deps.t('addSongFailed', { v: m }), true)
+      );
       deps.dom.myList.appendChild(row);
     }
   }
@@ -396,19 +486,15 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       removeBtn.setAttribute('aria-label', 'delete');
       removeBtn.textContent = '✕';
       removeBtn.title = deps.t('addSongRemove');
-      removeBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!confirm(deps.t('addSongConfirmRemove', { v: song._userTitle || song.id }))) return;
-        try {
-          await deps.removeUserSong(song.id);
-        } catch (err) {
-          console.error('removeUserSong failed', err);
-          alert((err as Error)?.message || 'Delete failed');
-          return;
-        }
-        renderUserSongButtons();
-        if (deps.dom.modal.classList.contains('visible')) renderMyList();
-      });
+      wireTwoTapDelete(
+        removeBtn,
+        song.id,
+        () => {
+          renderUserSongButtons();
+          if (deps.dom.modal.classList.contains('visible')) renderMyList();
+        },
+        (m) => console.error('[delete]', m)
+      );
 
       wrap.appendChild(btn);
       wrap.appendChild(removeBtn);
@@ -648,28 +734,6 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       await addBlobAndSelect(file, { filename: file.name, source: 'drop' });
     });
   }
-
-  // ── Paste MusicXML text (file-picker-free) ──────────────────────────
-  // Fallback for plain-text .musicxml / .xml when neither the file panel
-  // nor drag-and-drop is available: the user pastes the score's XML text.
-  // (Binary .mxl can't be pasted as text — that's what the drop zone is
-  // for.) A quick sanity check rejects obviously non-XML paste content.
-  deps.dom.pasteBtn?.addEventListener('click', async () => {
-    const raw = (deps.dom.pasteInput?.value || '').trim();
-    if (!raw) {
-      setStatus(deps.t('addSongPasteEmpty'), true);
-      return;
-    }
-    // Quick pre-filter (the real validators run in addFromBlob). Allow an
-    // optional namespace prefix like <ns:score-partwise>.
-    if (!/<(?:\w+:)?score-(?:partwise|timewise)/.test(raw)) {
-      setStatus(deps.t('addSongPasteNotXml'), true);
-      return;
-    }
-    const blob = new Blob([raw], { type: 'application/vnd.recordare.musicxml+xml' });
-    const ok = await addBlobAndSelect(blob, { filename: 'pasted.musicxml', source: 'paste' });
-    if (ok && deps.dom.pasteInput) deps.dom.pasteInput.value = '';
-  });
 
   deps.dom.fetchBtn?.addEventListener('click', async () => {
     if (!deps.dom.urlInput || !deps.dom.fetchBtn) return;

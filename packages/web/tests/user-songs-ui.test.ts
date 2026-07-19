@@ -35,8 +35,6 @@ function makeDom(): UserSongsUiDom {
       <input id="file-input" type="file" />
       <input id="pd-checkbox" type="checkbox" />
       <div id="drop-zone"></div>
-      <textarea id="paste-input"></textarea>
-      <button id="paste-btn"></button>
       <input id="url-input" />
       <button id="fetch-btn"></button>
       <span id="status"></span>
@@ -59,8 +57,6 @@ function makeDom(): UserSongsUiDom {
     fileInput: document.getElementById('file-input') as HTMLInputElement,
     pdCheckbox: document.getElementById('pd-checkbox') as HTMLInputElement,
     dropZone: document.getElementById('drop-zone'),
-    pasteInput: document.getElementById('paste-input') as HTMLTextAreaElement,
-    pasteBtn: document.getElementById('paste-btn') as HTMLButtonElement,
     urlInput: document.getElementById('url-input') as HTMLInputElement,
     fetchBtn: document.getElementById('fetch-btn') as HTMLButtonElement,
     status: document.getElementById('status') as HTMLElement,
@@ -285,7 +281,7 @@ describe('createUserSongsUi — renderMyList', () => {
     expect(buttons.length).toBe(3);
   });
 
-  it('rename button calls deps.renameUserSong with trimmed values', async () => {
+  it('rename via inline field (no native prompt) renames with the typed title', async () => {
     const deps = makeDeps({
       songs: {
         usr_a: {
@@ -296,33 +292,27 @@ describe('createUserSongsUi — renderMyList', () => {
         },
       },
     });
-    // happy-dom's prompt() defaults to null; stub on globalThis.window.
-    (globalThis as unknown as { prompt: (msg: string, def?: string) => string | null }).prompt = vi
-      .fn()
-      .mockReturnValueOnce('  New Title  ')
-      .mockReturnValueOnce('New Composer');
     const ui = createUserSongsUi(deps);
     ui.renderMyList();
-    const renameBtn = deps.dom.myList.querySelector('.my-rename') as HTMLButtonElement;
-    renameBtn.click();
+    (deps.dom.myList.querySelector('.my-rename') as HTMLButtonElement).click();
+    const input = deps.dom.myList.querySelector('.my-rename-input') as HTMLInputElement;
+    expect(input).toBeTruthy(); // inline field appears — no prompt() used
+    input.value = '  New Title  ';
+    (deps.dom.myList.querySelector('.my-rename-save') as HTMLButtonElement).click();
     await Promise.resolve();
     await Promise.resolve();
-    expect(deps.renameUserSong).toHaveBeenCalledWith('usr_a', 'New Title', 'New Composer');
+    // Composer preserved; title trimmed.
+    expect(deps.renameUserSong).toHaveBeenCalledWith('usr_a', 'New Title', 'Old Composer');
   });
 
-  it('rename button cancels gracefully if user dismisses prompt', async () => {
+  it('inline rename cancel does not rename', async () => {
     const deps = makeDeps({
-      songs: {
-        usr_a: { id: 'usr_a', _isUser: true, _userTitle: 'Old Title' },
-      },
+      songs: { usr_a: { id: 'usr_a', _isUser: true, _userTitle: 'Old Title' } },
     });
-    (globalThis as unknown as { prompt: () => string | null }).prompt = vi
-      .fn()
-      .mockReturnValue(null);
     const ui = createUserSongsUi(deps);
     ui.renderMyList();
-    const renameBtn = deps.dom.myList.querySelector('.my-rename') as HTMLButtonElement;
-    renameBtn.click();
+    (deps.dom.myList.querySelector('.my-rename') as HTMLButtonElement).click();
+    (deps.dom.myList.querySelector('.my-rename-cancel') as HTMLButtonElement).click();
     await Promise.resolve();
     expect(deps.renameUserSong).not.toHaveBeenCalled();
   });
@@ -338,32 +328,22 @@ describe('createUserSongsUi — renderMyList', () => {
     expect(deps.openSectionEditor).toHaveBeenCalledWith('usr_a');
   });
 
-  it('delete button calls deps.removeUserSong after confirm', async () => {
+  it('delete needs TWO taps (no native confirm) — first arms, second deletes', async () => {
     const deps = makeDeps({
       songs: { usr_a: { id: 'usr_a', _isUser: true, _userTitle: 'X' } },
     });
-    (globalThis as unknown as { confirm: (msg: string) => boolean }).confirm = vi
-      .fn()
-      .mockReturnValue(true);
     const ui = createUserSongsUi(deps);
     ui.renderMyList();
     const delBtn = deps.dom.myList.querySelector('.my-delete') as HTMLButtonElement;
-    delBtn.click();
-    await Promise.resolve();
-    expect(deps.removeUserSong).toHaveBeenCalledWith('usr_a');
-  });
-
-  it('delete button bails when user cancels confirm', async () => {
-    const deps = makeDeps({
-      songs: { usr_a: { id: 'usr_a', _isUser: true, _userTitle: 'X' } },
-    });
-    (globalThis as unknown as { confirm: () => boolean }).confirm = vi.fn().mockReturnValue(false);
-    const ui = createUserSongsUi(deps);
-    ui.renderMyList();
-    const delBtn = deps.dom.myList.querySelector('.my-delete') as HTMLButtonElement;
+    // First tap only arms — no delete yet.
     delBtn.click();
     await Promise.resolve();
     expect(deps.removeUserSong).not.toHaveBeenCalled();
+    expect(delBtn.classList.contains('armed')).toBe(true);
+    // Second tap deletes.
+    delBtn.click();
+    await Promise.resolve();
+    expect(deps.removeUserSong).toHaveBeenCalledWith('usr_a');
   });
 });
 
@@ -394,15 +374,15 @@ describe('createUserSongsUi — renderUserSongButtons', () => {
     expect(deps.selectSong).toHaveBeenCalledWith('usr_a');
   });
 
-  it('tile-remove button stops propagation + calls removeUserSong', async () => {
+  it('tile-remove stops propagation + deletes on the second tap (two-tap)', async () => {
     const deps = makeDeps({
       songs: { usr_a: { id: 'usr_a', _isUser: true, _userTitle: 'A' } },
     });
-    (globalThis as unknown as { confirm: () => boolean }).confirm = vi.fn().mockReturnValue(true);
     const ui = createUserSongsUi(deps);
     ui.renderUserSongButtons();
     const removeBtn = deps.dom.userSongList.querySelector('.my-remove') as HTMLButtonElement;
-    removeBtn.click();
+    removeBtn.click(); // arm
+    removeBtn.click(); // confirm
     await Promise.resolve();
     expect(deps.removeUserSong).toHaveBeenCalledWith('usr_a');
     // selectSong should NOT have fired (stopPropagation works)
@@ -465,58 +445,7 @@ describe('createUserSongsUi — file + url fetch', () => {
   });
 });
 
-// ─── file-picker-free import (drop + paste) ──────────────────────────
-
-describe('createUserSongsUi — paste import (Web MIDI Browser fallback)', () => {
-  const validXml =
-    '<?xml version="1.0"?><score-partwise><part id="P1"><measure/></part></score-partwise>';
-
-  it('paste with valid MusicXML adds through addUserSongFromBlob', async () => {
-    const deps = makeDeps();
-    createUserSongsUi(deps);
-    deps.dom.pdCheckbox!.checked = true;
-    deps.dom.pasteInput!.value = validXml;
-    deps.dom.pasteBtn!.click();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(deps.addUserSongFromBlob).toHaveBeenCalledWith(
-      expect.any(Blob),
-      expect.objectContaining({ source: 'paste', filename: 'pasted.musicxml' })
-    );
-  });
-
-  it('paste requires PD attestation', async () => {
-    const deps = makeDeps();
-    createUserSongsUi(deps);
-    // pdCheckbox unchecked
-    deps.dom.pasteInput!.value = validXml;
-    deps.dom.pasteBtn!.click();
-    await Promise.resolve();
-    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
-    expect(deps.dom.status.classList.contains('error')).toBe(true);
-  });
-
-  it('paste rejects non-MusicXML text', async () => {
-    const deps = makeDeps();
-    createUserSongsUi(deps);
-    deps.dom.pdCheckbox!.checked = true;
-    deps.dom.pasteInput!.value = 'hello world, not a score';
-    deps.dom.pasteBtn!.click();
-    await Promise.resolve();
-    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
-    expect(deps.dom.status.classList.contains('error')).toBe(true);
-  });
-
-  it('empty paste is a no-op error', async () => {
-    const deps = makeDeps();
-    createUserSongsUi(deps);
-    deps.dom.pdCheckbox!.checked = true;
-    deps.dom.pasteInput!.value = '   ';
-    deps.dom.pasteBtn!.click();
-    await Promise.resolve();
-    expect(deps.addUserSongFromBlob).not.toHaveBeenCalled();
-  });
-});
+// ─── file-picker-free import (drag & drop) ───────────────────────────
 
 describe('createUserSongsUi — drag & drop import', () => {
   function dropFile(zone: HTMLElement, file: File): void {
