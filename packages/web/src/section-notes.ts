@@ -74,9 +74,25 @@ export interface SongSection {
   endSec: number;
 }
 
+/** おともパート（Voice 等・再生専用）のノート。score-loader が
+ *  song.backingNotes に格納した形の、builder が読む最小サブセット。 */
+export interface BackingNoteLike {
+  midi: number;
+  timeSec: number;
+  durSec: number;
+}
+
+/** Tone.Transport にスケジュールするだけの再生専用ノート。 */
+export interface BackingSchedulerNote {
+  midi: number;
+  timeMs: number;
+  durMs: number;
+}
+
 /** Subset of the song record the builders read. */
 export interface SectionNotesSong {
   notes?: OsmdLikeNote[];
+  backingNotes?: BackingNoteLike[];
   sections?: SongSection[];
 }
 
@@ -236,6 +252,18 @@ export function buildSectionNotes(sectionIdx: number, deps: SectionNotesDeps): O
   return clusterAdjacentNotes(out);
 }
 
+/** 全曲再生のアンカー時刻（この timeSec がカウントイン明けに鳴る）。
+ *  練習ノーツとおともパートの両方の最初のアタックを見る — 歌い出しが
+ *  ピアノより先に来る曲では、伴奏側が正しく「待って」から入るため。
+ *  buildFullSongNotes と buildBackingNotes が同じ値を使うことで両
+ *  タイムラインの整合が保たれる。 */
+export function fullSongAnchorSec(song: SectionNotesSong): number {
+  let t0 = Infinity;
+  for (const n of song.notes ?? []) if (n.timeSec < t0) t0 = n.timeSec;
+  for (const n of song.backingNotes ?? []) if (n.timeSec < t0) t0 = n.timeSec;
+  return isFinite(t0) ? t0 : 0;
+}
+
 /** Build the full-song "全曲再生" timeline for listen mode. Tempo
  *  is hardcoded 100% (see header note). */
 export function buildFullSongNotes(deps: SectionNotesDeps): OsmdLikeNote[] {
@@ -248,9 +276,7 @@ export function buildFullSongNotes(deps: SectionNotesDeps): OsmdLikeNote[] {
   // Using sections[0].startSec instead would leave silence before
   // the first attack on songs whose first section header sits a
   // beat or two early.
-  let t0 = Infinity;
-  for (const n of songNotes) if (n.timeSec < t0) t0 = n.timeSec;
-  if (!isFinite(t0)) t0 = 0;
+  const t0 = fullSongAnchorSec(deps.song);
   for (const n of songNotes) {
     const filtered = !!handFilter && n.hand !== handFilter;
     out.push({
@@ -272,4 +298,48 @@ export function buildFullSongNotes(deps: SectionNotesDeps): OsmdLikeNote[] {
   // Same cluster step as buildSectionNotes — collapses the dense
   // trill bursts that fullSong listen would otherwise stack.
   return clusterAdjacentNotes(out);
+}
+
+/** おともパート（Voice 等）の再生タイムラインを作る。
+ *
+ *  - `sectionIdx` 指定時: そのセクションの [startSec, endSec) を
+ *    スライスし、練習ノーツと同じ speedFactor + countIn アンカーで
+ *    整列（テンポを落とすと伴奏も一緒に遅くなる）。
+ *  - `sectionIdx === null`: 全曲再生。テンポ 100% 固定・アンカーは
+ *    fullSongAnchorSec（buildFullSongNotes と共有）。
+ *
+ *  手フィルタは適用しない（おともパートは常に全部鳴る）。レーン・
+ *  採点・進捗には一切関与しない — Tone.Transport スケジュール専用。 */
+export function buildBackingNotes(
+  sectionIdx: number | null,
+  deps: SectionNotesDeps
+): BackingSchedulerNote[] {
+  const backing = deps.song.backingNotes ?? [];
+  if (!backing.length) return [];
+  const out: BackingSchedulerNote[] = [];
+  if (sectionIdx === null) {
+    const t0 = fullSongAnchorSec(deps.song);
+    for (const n of backing) {
+      out.push({
+        midi: n.midi,
+        timeMs: (n.timeSec - t0) * 1000 + deps.countInMs,
+        durMs: n.durSec * 1000,
+      });
+    }
+  } else {
+    const sec = deps.song.sections?.[sectionIdx];
+    if (!sec) return [];
+    const speedFactor = 100 / deps.practice.tempoPct;
+    for (const n of backing) {
+      if (n.timeSec >= sec.startSec && n.timeSec < sec.endSec) {
+        out.push({
+          midi: n.midi,
+          timeMs: (n.timeSec - sec.startSec) * 1000 * speedFactor + deps.countInMs,
+          durMs: n.durSec * 1000 * speedFactor,
+        });
+      }
+    }
+  }
+  out.sort((a, b) => a.timeMs - b.timeMs);
+  return out;
 }

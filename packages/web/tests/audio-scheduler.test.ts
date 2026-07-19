@@ -264,3 +264,62 @@ describe('scheduleSectionPlayback', () => {
     expect(transportSchedule).toHaveBeenCalledTimes(7);
   });
 });
+
+describe('scheduleSectionPlayback — おともパート (backingNotes)', () => {
+  function runScheduled() {
+    // Transport.schedule に積まれたコールバックを time=0 で全部発火する。
+    for (const call of transportSchedule.mock.calls) {
+      (call[0] as (t: number) => void)(0);
+    }
+  }
+
+  it('melody インストゥルメントに backingNotes がスケジュールされる', () => {
+    const melody = makeInstrumentStub();
+    scheduleSectionPlayback(
+      { metronome: null, piano: null, melody },
+      {
+        notes: [],
+        backingNotes: [{ midi: 69, timeMs: 4000, durMs: 1000 }],
+        metronomeOn: false,
+        beatMs: 500,
+        countInMs: 4000,
+      }
+    );
+    expect(transportSchedule).toHaveBeenCalledTimes(1);
+    expect(transportSchedule.mock.calls[0][1]).toBe(4); // 4000ms → 4s
+    runScheduled();
+    expect(melody.triggerAttackRelease).toHaveBeenCalledTimes(1);
+    // レガート係数 0.95: 1000ms → 0.95s
+    expect(melody.triggerAttackRelease.mock.calls[0][1]).toBeCloseTo(0.95);
+  });
+
+  it('ゴースト OFF（piano=null）でも backing は鳴る — 伴奏練習の分担', () => {
+    const melody = makeInstrumentStub();
+    scheduleSectionPlayback(
+      { metronome: null, piano: null, melody },
+      {
+        notes: [{ midi: 60, timeMs: 4000, durMs: 500 }],
+        backingNotes: [{ midi: 69, timeMs: 4000, durMs: 500 }],
+        metronomeOn: false,
+        beatMs: 500,
+        countInMs: 4000,
+      }
+    );
+    runScheduled();
+    expect(melody.triggerAttackRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('melody が無い（単一パート・テスト環境）なら何も積まれない', () => {
+    scheduleSectionPlayback(
+      { metronome: null, piano: null },
+      {
+        notes: [],
+        backingNotes: [{ midi: 69, timeMs: 0, durMs: 500 }],
+        metronomeOn: false,
+        beatMs: 500,
+        countInMs: 4000,
+      }
+    );
+    expect(transportSchedule).not.toHaveBeenCalled();
+  });
+});

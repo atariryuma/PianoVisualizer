@@ -139,12 +139,20 @@ export interface StartSectionToneRef {
   };
 }
 
+/** おともパートの再生専用ノート（section-notes の BackingSchedulerNote）。 */
+export interface BackingSchedulerNote {
+  midi: number;
+  timeMs: number;
+  durMs: number;
+}
+
 /** Audio-scheduler surface for the rhythm/listen branch. */
 export interface StartSectionAudioScheduler {
   scheduleSectionPlayback(
-    instruments: { metronome: unknown; piano: unknown },
+    instruments: { metronome: unknown; piano: unknown; melody?: unknown },
     opts: {
       notes: OsmdLikeNote[];
+      backingNotes?: BackingSchedulerNote[];
       metronomeOn?: boolean;
       beatMs: number;
       countInMs: number;
@@ -212,6 +220,8 @@ export interface StartPracticeSectionDeps {
   recomputePracticeTimings: () => void;
   buildSectionNotes: (idx: number) => OsmdLikeNote[];
   buildFullSongNotes: () => OsmdLikeNote[];
+  /** おともパート（Voice 等）の再生タイムライン。null = 全曲。 */
+  buildBackingNotes: (idx: number | null) => BackingSchedulerNote[];
   computeHandRanges: (notes: OsmdLikeNote[]) => HandRanges;
 
   // OSMD — `osmdAdapter.cursorTo()` advances the cursor; OSMD's own
@@ -226,7 +236,7 @@ export interface StartPracticeSectionDeps {
   /** Lazy access to the synth pair (created on demand by
    *  practice-tone-audio). Read at call time so the rhythm branch
    *  picks up the just-instantiated synths. */
-  getInstruments: () => { piano: unknown; metronome: unknown };
+  getInstruments: () => { piano: unknown; metronome: unknown; melody?: unknown };
   practiceBeatMs: () => number;
   pickAudioOffsetMs: (opts: PickAudioOffsetOptions) => number;
 }
@@ -409,13 +419,19 @@ export function createStartPracticeSection(
         // Rhythm / Listen: full timeline scheduling.
         const ghostActive = deps.practice.mode === 'listen' || !!deps.practice.ghostOn;
         const instruments = deps.getInstruments();
+        // おともパート（Voice 等）はゴースト設定と独立に常に鳴らす —
+        // 伴奏練習では「自分のパートは自分の楽器、歌のパートはアプリ」
+        // が業界標準の分担（SmartMusic / Synthesia Background）。
+        const backingNotes = deps.buildBackingNotes(isFullSong ? null : sectionIdx);
         deps.audioScheduler.scheduleSectionPlayback(
           {
             metronome: instruments.metronome,
             piano: ghostActive ? instruments.piano : null,
+            melody: instruments.melody ?? null,
           },
           {
             notes: deps.practice.sectionNotes,
+            backingNotes,
             metronomeOn: deps.practice.metronomeOn,
             beatMs: deps.practiceBeatMs(),
             countInMs: deps.countInMs(),

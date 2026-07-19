@@ -197,6 +197,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const buildSectionNotes = (sectionIdx: number) =>
     SectionNotes.buildSectionNotes(sectionIdx, _sectionNotesArgs());
   const buildFullSongNotes = () => SectionNotes.buildFullSongNotes(_sectionNotesArgs());
+  const buildBackingNotes = (sectionIdx: number | null) =>
+    SectionNotes.buildBackingNotes(sectionIdx, _sectionNotesArgs());
   const computeHandRanges = (sectionNotes: any[]) => SectionNotes.computeHandRanges(sectionNotes);
 
   const _startPracticeSection = StartPracticeSection.createStartPracticeSection({
@@ -253,6 +255,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     recomputePracticeTimings: () => _practiceTimings.recomputePracticeTimings(),
     buildSectionNotes,
     buildFullSongNotes,
+    buildBackingNotes,
     computeHandRanges: computeHandRanges as any,
     osmdAdapter: deps.osmdAdapter,
     Tone: deps.Tone,

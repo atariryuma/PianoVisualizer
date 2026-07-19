@@ -6,7 +6,11 @@
 // builds a focused stub for its scenario.
 
 import { describe, it, expect } from 'vitest';
-import { extractNotesFromOsmd } from '../src/note-extractor';
+import {
+  extractNotesFromOsmd,
+  pickPracticeStaffPlan,
+  type OsmdInstrumentLike,
+} from '../src/note-extractor';
 
 /** Build a minimal voice-entry mimicking OSMD's runtime shape. */
 function voiceEntry(staffIdx: number, notes: unknown[]) {
@@ -395,6 +399,150 @@ describe('extractNotesFromOsmd — telemetry', () => {
     const ret = extractNotesFromOsmd(osmd, { collectDiag: true });
     expect(ret.notes).toHaveLength(1); // good note still extracted
     expect(ret._diag?.skippedNotes).toBe(1);
+  });
+});
+
+describe('pickPracticeStaffPlan — パート判別', () => {
+  const voicePiano: OsmdInstrumentLike[] = [
+    { Name: 'Voice', MidiInstrumentId: 53, Staves: [{ idInMusicSheet: 0 }] },
+    {
+      Name: 'Piano',
+      MidiInstrumentId: 0,
+      Staves: [{ idInMusicSheet: 1 }, { idInMusicSheet: 2 }],
+    },
+  ];
+
+  it('単一パートは判別なし（従来挙動）', () => {
+    const plan = pickPracticeStaffPlan([voicePiano[1]]);
+    expect(plan.practiceInstrumentIdx).toBeNull();
+    expect(plan.staffHand.size).toBe(0);
+  });
+
+  it('Voice + Piano では Piano（2段譜+名前+GM音色）が練習パートになる', () => {
+    const plan = pickPracticeStaffPlan(voicePiano);
+    expect(plan.practiceInstrumentIdx).toBe(1);
+    expect(plan.staffHand.get(0)).toBe('B'); // Voice → おともパート
+    expect(plan.staffHand.get(1)).toBe('R'); // Piano 第1譜表
+    expect(plan.staffHand.get(2)).toBe('L'); // Piano 第2譜表
+  });
+
+  it('鍵盤らしいパートが1つもない多パート譜は分割しない（安全側）', () => {
+    const plan = pickPracticeStaffPlan([
+      { Name: 'Flute', MidiInstrumentId: 73, Staves: [{ idInMusicSheet: 0 }] },
+      { Name: 'Violin', MidiInstrumentId: 40, Staves: [{ idInMusicSheet: 1 }] },
+    ]);
+    expect(plan.practiceInstrumentIdx).toBeNull();
+  });
+
+  it('名前だけ鍵盤らしい1段パートでも練習パートに選ばれる', () => {
+    const plan = pickPracticeStaffPlan([
+      { Name: 'Voice', MidiInstrumentId: 53, Staves: [{ idInMusicSheet: 0 }] },
+      { Name: 'ピアノ', Staves: [{ idInMusicSheet: 1 }] },
+    ]);
+    expect(plan.practiceInstrumentIdx).toBe(1);
+    expect(plan.staffHand.get(1)).toBe('R');
+  });
+
+  it('連弾（Piano 1 + Piano 2）は先頭のピアノが練習パート', () => {
+    const plan = pickPracticeStaffPlan([
+      {
+        Name: 'Piano 1',
+        MidiInstrumentId: 0,
+        Staves: [{ idInMusicSheet: 0 }, { idInMusicSheet: 1 }],
+      },
+      {
+        Name: 'Piano 2',
+        MidiInstrumentId: 0,
+        Staves: [{ idInMusicSheet: 2 }, { idInMusicSheet: 3 }],
+      },
+    ]);
+    expect(plan.practiceInstrumentIdx).toBe(0);
+    expect(plan.staffHand.get(2)).toBe('B');
+    expect(plan.staffHand.get(3)).toBe('B');
+  });
+});
+
+describe('extractNotesFromOsmd — マルチパート譜（Voice + Piano）', () => {
+  const instruments: OsmdInstrumentLike[] = [
+    { Name: 'Voice', MidiInstrumentId: 53, Staves: [{ idInMusicSheet: 0 }] },
+    {
+      Name: 'Piano',
+      MidiInstrumentId: 0,
+      Staves: [{ idInMusicSheet: 1 }, { idInMusicSheet: 2 }],
+    },
+  ];
+
+  function makeMultiPartOsmd() {
+    const osmd = makeOsmd({
+      steps: [
+        {
+          measureIdx: 0,
+          tsWhole: 0,
+          voices: [
+            voiceEntry(0, [{ halfTone: 57, length: { realValue: 0.25 } }]), // Voice A4 (midi 69)
+            voiceEntry(1, [{ halfTone: 48, length: { realValue: 0.25 } }]), // Piano RH C4 (midi 60)
+            voiceEntry(2, [{ halfTone: 36, length: { realValue: 0.25 } }]), // Piano LH C3 (midi 48)
+          ],
+        },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
+    });
+    (osmd.Sheet as { Instruments?: OsmdInstrumentLike[] }).Instruments = instruments;
+    return osmd;
+  }
+
+  it('Voice パートは practice ノーツに混入せず backingNotes へ入る', () => {
+    const ret = extractNotesFromOsmd(makeMultiPartOsmd());
+    expect(ret.notes.map((n) => n.midi).sort()).toEqual([48, 60]);
+    expect(ret.backingNotes).toHaveLength(1);
+    expect(ret.backingNotes[0]?.midi).toBe(69);
+    expect(ret.backingNotes[0]?.timeSec).toBe(0);
+  });
+
+  it('Piano の手はパート内の譜表順で決まる（staff 1 = R, staff 2 = L）', () => {
+    const ret = extractNotesFromOsmd(makeMultiPartOsmd());
+    expect(ret.notes.find((n) => n.midi === 60)?.hand).toBe('R');
+    expect(ret.notes.find((n) => n.midi === 48)?.hand).toBe('L');
+  });
+
+  it('Instruments が無い旧来スタブでは backingNotes は空のまま', () => {
+    const osmd = makeOsmd({
+      steps: [
+        {
+          measureIdx: 0,
+          tsWhole: 0,
+          voices: [voiceEntry(0, [{ halfTone: 48, length: { realValue: 0.25 } }])],
+        },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
+    });
+    const ret = extractNotesFromOsmd(osmd);
+    expect(ret.notes).toHaveLength(1);
+    expect(ret.backingNotes).toEqual([]);
+  });
+
+  it('backingNotes 側もタイ結合される', () => {
+    const startNote: { halfTone: number; length: { realValue: number }; NoteTie?: object } = {
+      halfTone: 57,
+      length: { realValue: 0.25 },
+    };
+    const endNote: { halfTone: number; length: { realValue: number }; NoteTie?: object } = {
+      halfTone: 57,
+      length: { realValue: 0.25 },
+    };
+    const tie = { StartNote: startNote, EndNote: endNote };
+    startNote.NoteTie = tie;
+    endNote.NoteTie = tie;
+    const osmd = makeOsmd({
+      steps: [
+        { measureIdx: 0, tsWhole: 0, voices: [voiceEntry(0, [startNote])] },
+        { measureIdx: 0, tsWhole: 0.25, voices: [voiceEntry(0, [endNote])] },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.5 }, TempoInBPM: 120 }],
+    });
+    (osmd.Sheet as { Instruments?: OsmdInstrumentLike[] }).Instruments = instruments;
+    const ret = extractNotesFromOsmd(osmd);
+    expect(ret.backingNotes).toHaveLength(1);
   });
 });
 

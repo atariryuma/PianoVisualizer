@@ -232,7 +232,7 @@ describe('stopPracticeAudio', () => {
 describe('getInstruments', () => {
   it('returns nulls before ensureInstruments', () => {
     const fx = makeFixture();
-    expect(fx.audio.getInstruments()).toEqual({ piano: null, metronome: null });
+    expect(fx.audio.getInstruments()).toEqual({ piano: null, metronome: null, melody: null });
   });
 
   it('returns refs after ensureInstruments', () => {

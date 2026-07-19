@@ -30,6 +30,9 @@ export interface AudioSchedulerDeps {
   metronome: ToneInstrument | null;
   /** Sampler used for ghost-piano playback in Listen / rhythm-with-ghost. */
   piano: ToneInstrument | null;
+  /** おともパート（Voice 等の練習対象外パート）用の音源。null なら
+   *  backing はスケジュールされない（単一パート譜・テスト環境）。 */
+  melody?: ToneInstrument | null;
 }
 
 export interface CountInOptions {
@@ -81,6 +84,11 @@ export interface SectionPlaybackOptions {
   /** The section's notes. Pass an empty array to skip ghost scheduling
    *  entirely (e.g. rhythm mode with ghost OFF). */
   notes: ReadonlyArray<SchedulerNote>;
+  /** おともパート（Voice 等）の再生専用タイムライン。ゴースト ON/OFF
+   *  とは独立に、`deps.melody` があれば常にスケジュールされる —
+   *  伴奏練習では「自分のパートは鳴らさず、歌のパートだけ流れる」が
+   *  業界標準（SmartMusic の Accompaniment / Synthesia の Background）。 */
+  backingNotes?: ReadonlyArray<SchedulerNote>;
   /** When true, schedule the practice metronome (3-beat strong / weak
    *  pattern) starting after the count-in window. */
   metronomeOn: boolean;
@@ -112,6 +120,18 @@ export function scheduleSectionPlayback(
       const dur = Math.max(0.1, (n.durMs / 1000) * 0.85);
       Tone.Transport.schedule((time) => {
         piano.triggerAttackRelease(midiToFreq(n.midi), dur, time);
+      }, n.timeMs / 1000);
+    }
+  }
+  const backing = opts.backingNotes ?? [];
+  if (deps.melody && backing.length > 0) {
+    const melody = deps.melody;
+    for (const n of backing) {
+      // 歌のラインはレガート寄りに（0.95）— ピアノのゴーストより
+      // 減衰させない方がメロディとして聞き取りやすい。
+      const dur = Math.max(0.1, (n.durMs / 1000) * 0.95);
+      Tone.Transport.schedule((time) => {
+        melody.triggerAttackRelease(midiToFreq(n.midi), dur, time);
       }, n.timeMs / 1000);
     }
   }

@@ -63,6 +63,9 @@ export interface ScoreLoaderSong {
   _xmlText?: string;
   _bpmRescaled?: boolean;
   notes?: OsmdLikeNote[];
+  /** おともパート（Voice 等の練習対象外パート）の再生専用ノート。
+   *  単一パート譜では空配列。レーン・採点には一切使われない。 */
+  backingNotes?: OsmdLikeNote[];
   totalSec?: number;
   playbackOrder?: number[];
   sections?: unknown[];
@@ -73,6 +76,8 @@ export interface ScoreLoaderSong {
  *  introspect the inner notes — opaque pass-through. */
 export interface ExtractResult {
   notes: OsmdLikeNote[];
+  /** 練習対象外パートのノート（旧シム互換のため optional）。 */
+  backingNotes?: OsmdLikeNote[];
   measureStartSec: number[];
   measureBpm: number[];
 }
@@ -249,13 +254,25 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
         srcMeasureStartSec
       );
 
+      // おともパート（Voice 等）も同じ再生順で展開。空なら空のまま。
+      const baseBacking = extractRet.backingNotes ?? [];
+      const expandedBacking = baseBacking.length
+        ? deps.expandNotesByPlaybackOrder(baseBacking, order, measures, srcMeasureStartSec)
+        : [];
+
       let totalSec = 0;
       for (const n of expanded) {
         const end = n.timeSec + n.durSec;
         if (end > totalSec) totalSec = end;
       }
+      // メロディが伴奏より長く伸びる曲では backing の終端が全体長になる。
+      for (const n of expandedBacking) {
+        const end = n.timeSec + n.durSec;
+        if (end > totalSec) totalSec = end;
+      }
 
       song.notes = expanded;
+      song.backingNotes = expandedBacking;
       song.totalSec = totalSec;
       song.playbackOrder = order;
       // Pass per-source-measure start times so sections begin at the
@@ -291,6 +308,8 @@ export function createScoreLoader(deps: ScoreLoaderDeps): ScoreLoader {
           song.id +
           '] base=' +
           baseNotes.length +
+          ' backing=' +
+          expandedBacking.length +
           ' expanded=' +
           expanded.length +
           ' measures=' +

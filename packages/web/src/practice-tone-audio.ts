@@ -102,7 +102,11 @@ export interface PracticeToneAudio {
   stopPracticeAudio(): void;
   /** Read-only access to the lazy-built instruments. The shell hands
    *  these to AudioScheduler.scheduleSectionPlayback. */
-  getInstruments(): { piano: ToneInstrument | null; metronome: ToneInstrument | null };
+  getInstruments(): {
+    piano: ToneInstrument | null;
+    metronome: ToneInstrument | null;
+    melody: ToneInstrument | null;
+  };
 }
 
 const DEFAULT_BEATS = 4;
@@ -110,6 +114,7 @@ const DEFAULT_BEATS = 4;
 export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeToneAudio {
   let piano: ToneInstrument | null = null;
   let metronome: ToneInstrument | null = null;
+  let melody: ToneInstrument | null = null;
   const beats = deps.beats ?? DEFAULT_BEATS;
 
   function ensureInstruments(): void {
@@ -119,6 +124,16 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
       envelope: { attack: 0.005, decay: 0.18, sustain: 0.25, release: 0.6 },
     }).toDestination();
     piano.volume.value = -14;
+    // おともパート（Voice 等）用。GM の合成ボイス音は品質が低く違和感
+    // が勝つため、練習系アプリの標準（SmartMusic「My Part はピアノ音で
+    // 再生」）に合わせてピアノ系音色で統一。ゴーストより気持ち柔らかい
+    // sine + 長めのリリースでレガートな歌のラインに寄せ、音量はゴースト
+    // 比 約70%（-3dB）— お手本再生でも自分のパートが主役に聞こえる比率。
+    melody = new deps.Tone.PolySynth(deps.Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.02, decay: 0.25, sustain: 0.4, release: 0.8 },
+    }).toDestination();
+    melody.volume.value = -17;
     metronome = new deps.Tone.MembraneSynth({
       pitchDecay: 0.008,
       octaves: 4,
@@ -144,6 +159,16 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     } catch {
       /* Transport.stop can throw on a never-started Transport */
     }
+    // 発音済みの音は Transport と無関係にエンベロープが走るので、
+    // quit 直後の鳴り残り（遅テンポの全音符・おともパートのレガート音）
+    // を明示的に殺す。releaseAll は PolySynth のみ持つので optional 呼び。
+    for (const inst of [piano, melody]) {
+      try {
+        (inst as { releaseAll?: () => void } | null)?.releaseAll?.();
+      } catch {
+        /* disposed instrument etc. — 鳴り残り解消はベストエフォート */
+      }
+    }
     deps.cursor.hideCursor();
     // Drop the active notehead pink so a paused/ended section
     // doesn't leave a stale highlighted note glowing in the score.
@@ -154,6 +179,6 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     ensureInstruments,
     scheduleCountIn,
     stopPracticeAudio,
-    getInstruments: () => ({ piano, metronome }),
+    getInstruments: () => ({ piano, metronome, melody }),
   };
 }

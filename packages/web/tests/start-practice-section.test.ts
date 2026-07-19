@@ -83,6 +83,7 @@ interface Fixture {
     recomputePracticeTimings: ReturnType<typeof vi.fn>;
     buildSectionNotes: ReturnType<typeof vi.fn>;
     buildFullSongNotes: ReturnType<typeof vi.fn>;
+    buildBackingNotes: ReturnType<typeof vi.fn>;
     syncLayout: ReturnType<typeof vi.fn>;
     setInputIndicator: ReturnType<typeof vi.fn>;
     requestWakeLock: ReturnType<typeof vi.fn>;
@@ -167,6 +168,7 @@ function makeFixture(
     recomputePracticeTimings: vi.fn(),
     buildSectionNotes: vi.fn().mockReturnValue(notes),
     buildFullSongNotes: vi.fn().mockReturnValue(fullSongNotes),
+    buildBackingNotes: vi.fn().mockReturnValue([]),
     syncLayout: vi.fn(),
     setInputIndicator: vi.fn(),
     requestWakeLock: vi.fn(),
@@ -207,6 +209,7 @@ function makeFixture(
     recomputePracticeTimings: spies.recomputePracticeTimings,
     buildSectionNotes: spies.buildSectionNotes,
     buildFullSongNotes: spies.buildFullSongNotes,
+    buildBackingNotes: spies.buildBackingNotes,
     computeHandRanges: () => ({ lhMin: 36, lhMax: 60, rhMin: 60, rhMax: 84 }),
     osmdAdapter: {
       cursorTo: spies.cursorTo,
@@ -224,7 +227,11 @@ function makeFixture(
     ensureToneInstruments: spies.ensureToneInstruments,
     scheduleCountInBeeps: spies.scheduleCountInBeeps,
     audioScheduler: { scheduleSectionPlayback: spies.scheduleSectionPlayback },
-    getInstruments: () => ({ piano: { id: 'piano' }, metronome: { id: 'metro' } }),
+    getInstruments: () => ({
+      piano: { id: 'piano' },
+      metronome: { id: 'metro' },
+      melody: { id: 'melody' },
+    }),
     practiceBeatMs: spies.practiceBeatMs,
     pickAudioOffsetMs: spies.pickAudioOffsetMs,
   };
@@ -486,7 +493,7 @@ describe('startPracticeSection — audio mode branching', () => {
     const fx = makeFixture({ practice: { mode: 'rhythm', ghostOn: true } });
     await fx.start(0);
     expect(fx.spies.scheduleSectionPlayback).toHaveBeenCalledWith(
-      { metronome: { id: 'metro' }, piano: { id: 'piano' } },
+      { metronome: { id: 'metro' }, piano: { id: 'piano' }, melody: { id: 'melody' } },
       expect.objectContaining({ countInMs: 4000, beatMs: 500 })
     );
     expect(fx.tone!.Transport.start).toHaveBeenCalled();
@@ -496,7 +503,7 @@ describe('startPracticeSection — audio mode branching', () => {
     const fx = makeFixture({ practice: { mode: 'rhythm', ghostOn: false } });
     await fx.start(0);
     expect(fx.spies.scheduleSectionPlayback).toHaveBeenCalledWith(
-      { metronome: { id: 'metro' }, piano: null },
+      { metronome: { id: 'metro' }, piano: null, melody: { id: 'melody' } },
       expect.any(Object)
     );
   });
@@ -505,7 +512,7 @@ describe('startPracticeSection — audio mode branching', () => {
     const fx = makeFixture({ practice: { mode: 'listen', ghostOn: false } });
     await fx.start(0);
     expect(fx.spies.scheduleSectionPlayback).toHaveBeenCalledWith(
-      { metronome: { id: 'metro' }, piano: { id: 'piano' } },
+      { metronome: { id: 'metro' }, piano: { id: 'piano' }, melody: { id: 'melody' } },
       expect.any(Object)
     );
   });

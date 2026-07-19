@@ -14,6 +14,8 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSectionNotes,
   buildFullSongNotes,
+  buildBackingNotes,
+  fullSongAnchorSec,
   computeHandRanges,
   clusterAdjacentNotes,
   type OsmdLikeNote,
@@ -397,5 +399,75 @@ describe('clusterAdjacentNotes', () => {
     const out = buildSectionNotes(0, deps);
     expect(out).toHaveLength(1);
     expect(out[0].replayCount).toBe(8);
+  });
+});
+
+// ─── buildBackingNotes / fullSongAnchorSec ─────────────────────────
+
+describe('buildBackingNotes', () => {
+  const backing = [
+    { midi: 69, timeSec: 1.0, durSec: 0.5 },
+    { midi: 71, timeSec: 5.0, durSec: 1.0 },
+    { midi: 72, timeSec: 12.0, durSec: 0.5 },
+  ];
+
+  it('backingNotes が無い曲は空配列', () => {
+    const deps = makeDeps({ song: { notes: [note()], sections: [sec(0, 10)] } });
+    expect(buildBackingNotes(0, deps)).toEqual([]);
+    expect(buildBackingNotes(null, deps)).toEqual([]);
+  });
+
+  it('セクション指定時は [startSec, endSec) でスライスし countIn にアンカーする', () => {
+    const deps = makeDeps({
+      song: { notes: [note()], backingNotes: backing, sections: [sec(0, 10), sec(10, 20)] },
+    });
+    const out = buildBackingNotes(0, deps);
+    expect(out.map((n) => n.midi)).toEqual([69, 71]);
+    expect(out[0].timeMs).toBe(1000 + 4000); // (1.0 - 0) * 1000 + countIn
+    expect(out[1].timeMs).toBe(5000 + 4000);
+  });
+
+  it('テンポ % は練習ノーツと同じ speedFactor で伸長される', () => {
+    const deps = makeDeps({
+      song: { notes: [note()], backingNotes: backing, sections: [sec(0, 10)] },
+      practice: { tempoPct: 50, handFilter: null },
+    });
+    const out = buildBackingNotes(0, deps);
+    expect(out[0].timeMs).toBe(1000 * 2 + 4000);
+    expect(out[0].durMs).toBe(500 * 2);
+  });
+
+  it('全曲 (null) はテンポ 100% 固定・共有アンカー基準', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [note({ timeSec: 2.0 })],
+        backingNotes: backing,
+        sections: [sec(0, 20)],
+      },
+      practice: { tempoPct: 50, handFilter: null },
+    });
+    const out = buildBackingNotes(null, deps);
+    // アンカーは min(練習 2.0, backing 1.0) = 1.0
+    expect(out[0].timeMs).toBe(0 + 4000);
+    expect(out[1].timeMs).toBe(4000 * 1 + 4000); // (5.0-1.0)*1000 + countIn
+    expect(out[0].durMs).toBe(500); // 100% 固定
+  });
+});
+
+describe('fullSongAnchorSec', () => {
+  it('歌い出しがピアノより早い曲では backing 側が全曲アンカーになる', () => {
+    const song = {
+      notes: [note({ timeSec: 2.0 })],
+      backingNotes: [{ midi: 69, timeSec: 0.5, durSec: 1 }],
+    };
+    expect(fullSongAnchorSec(song)).toBe(0.5);
+    // buildFullSongNotes も同じアンカーを使う → ピアノ初音は countIn+1.5s
+    const deps = makeDeps({ song: { ...song, sections: [sec(0, 10)] } });
+    const full = buildFullSongNotes(deps);
+    expect(full[0].timeMs).toBe(1500 + 4000);
+  });
+
+  it('backing の無い曲では従来どおり練習ノーツの最初のアタック', () => {
+    expect(fullSongAnchorSec({ notes: [note({ timeSec: 1.25 })] })).toBe(1.25);
   });
 });
