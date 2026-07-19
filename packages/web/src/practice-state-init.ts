@@ -65,6 +65,10 @@ export interface InitialPracticeState {
   mode: 'guided' | 'rhythm' | 'listen';
   ghostOn: boolean;
   metronomeOn: boolean;
+  /** ループ練習 — ON のあいだセクション完了時に結果カードを出さず同じ
+   *  セクションを再スタートする（子ども発のトグル。banned-list: 強制
+   *  反復にしない）。ループ中も練習時間は記録される。 */
+  loopOn: boolean;
   /** Listen-only: when true, startPracticeSection builds a timeline that
    *  concatenates every section so the song plays straight through. */
   fullSongMode: boolean;
@@ -119,6 +123,7 @@ export function createInitialPractice(audioOffsetMs: number): InitialPracticeSta
     mode: 'guided',
     ghostOn: false,
     metronomeOn: false,
+    loopOn: false,
     fullSongMode: false,
     startAudioTime: 0,
     sectionNotes: [],

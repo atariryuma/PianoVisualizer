@@ -80,6 +80,8 @@ export interface PracticeFlowSongProgress {
 export interface PracticeFlowDom {
   ptbQuit: HTMLElement;
   ptbToggleOsmd: HTMLElement;
+  /** ⏸ 一時停止ボタン — 旧 DOM には無いので optional。 */
+  ptbPause?: HTMLElement | null;
   resQuit: HTMLElement;
   resRetry: HTMLElement;
   /** "Retry with support" — applies the scaffold strategy published by
@@ -132,6 +134,13 @@ export interface PracticeFlowDeps {
   /** Currently unused but kept for parity with legacy comment that
    *  references lang re-rendering on title return. */
   getLang?(): Lang;
+  /** 明示ポーズ (⏸ ボタン)。practice-visibility の explicitHold ラッチを
+   *  操作する。設定パネルと同じ経路（shell-midi 経由）。 */
+  pausePractice?(): void;
+  resumePractice?(): void;
+  isPracticePaused?(): boolean;
+  /** i18n — ⏸ ボタンのラベル切り替え用（pausePractice / resumePractice）。 */
+  t?(key: string): string;
 }
 
 export interface PracticeFlow {
@@ -149,10 +158,28 @@ export interface PracticeFlow {
 export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
   let transitioning = false;
 
+  /** ⏸ ボタンの表示を実ポーズ状態に同期。設定パネル経由の resume で
+   *  状態が変わることもあるため、window の practicepausechange でも呼ぶ。 */
+  function syncPauseBtn(): void {
+    const btn = deps.dom.ptbPause;
+    if (!btn) return;
+    const paused = !!deps.isPracticePaused?.();
+    btn.textContent = paused ? '▶' : '⏸';
+    const key = paused ? 'resumePractice' : 'pausePractice';
+    btn.setAttribute('data-i18n-title', key);
+    const label = deps.t ? deps.t(key) : key;
+    btn.setAttribute('title', label);
+    btn.setAttribute('aria-label', label);
+  }
+
   async function transitionToSection(idx: number): Promise<void> {
     if (transitioning) return;
     transitioning = true;
     try {
+      // 完了 600ms 猶予内に ⏸ された等でラッチが残っていると、次セクションの
+      // tick が永久にスキップされる。遷移前に必ずクリアする。
+      deps.resumePractice?.();
+      syncPauseBtn();
       await deps.startPracticeSection(idx);
     } finally {
       transitioning = false;
@@ -160,6 +187,9 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
   }
 
   function returnToTitle(): void {
+    // 明示ポーズのラッチを解除（Transport は直後の stopPracticeAudio が止める）。
+    deps.resumePractice?.();
+    syncPauseBtn();
     if (deps.practice.enabled || deps.practice._completing) {
       deps.practice.enabled = false;
       deps.practice._completing = false;
@@ -196,9 +226,22 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
     document.body.classList.add('title-screen');
   }
 
+  // ─── ptbPause (⏸ 一時停止 / ▶ 再開) ──────────────────────────────
+  deps.dom.ptbPause?.addEventListener('click', () => {
+    if (!deps.practice.enabled) return;
+    if (deps.isPracticePaused?.()) deps.resumePractice?.();
+    else deps.pausePractice?.();
+    syncPauseBtn();
+  });
+  // 設定パネル経由の pause/resume でも表示を同期（bootstrap がイベントを発火）。
+  window.addEventListener('practicepausechange', syncPauseBtn);
+
   // ─── ptbQuit (during-practice quit) ───────────────────────────────
   deps.dom.ptbQuit.addEventListener('click', () => {
     if (!deps.practice.enabled && !deps.practice._completing) return;
+    // ポーズ中の quit でもラッチが残らないよう先に解除。
+    deps.resumePractice?.();
+    syncPauseBtn();
     deps.practice.enabled = false;
     // Cancel the in-flight section-complete timer so a quit during the
     // 600 ms grace doesn't credit progress for an abandoned section.

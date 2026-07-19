@@ -26,6 +26,9 @@
 /** Practice slice the tick reads + writes. */
 export interface PracticeTickPracticeRef {
   enabled: boolean;
+  /** ループ練習トグル — ON かつ非 listen ならセクション完了時に結果カード
+   *  ではなく同セクションを即再スタートする。 */
+  loopOn?: boolean;
   /** True while an explicit pause (settings panel / ⏸) holds the session.
    *  The tick skips entirely so the still-ticking AudioContext clock can't
    *  auto-miss the whole section behind a modal. */
@@ -101,6 +104,11 @@ export interface PracticeTickDeps {
   /** Section-complete handler — tick fires it after a 600ms grace
    *  timer to absorb any trailing notes. */
   completePracticeSection(): void;
+  /** ループ用の同セクション再スタート（練習時間の記録も内包 — shell 配線）。
+   *  未配線の旧シェルでは completePracticeSection にフォールバック。 */
+  restartSectionForLoop?(): void;
+  /** Guided つまずきヒント (P2-14) — 期待音をそっと鳴らす。 */
+  playGuidedHint?(midi: number): void;
   /** Remote diagnostic logging. Provide a no-op when disabled to
    *  avoid the 1Hz dispatch overhead. */
   remoteLogEnabled: boolean;
@@ -111,12 +119,21 @@ export interface PracticeTickDeps {
   noteStateLabel(n: PracticeTickNote): string;
 }
 
+/** Guided で同じノートに止まったままヒント音を鳴らすまでの時間 (P2-14)。 */
+const GUIDED_HINT_MS = 7000;
+
 /** Build the tick closure. Returns the per-frame tick function. The
  *  shell stores it under the legacy `updatePractice` short name and
  *  calls it from inside the main render loop. */
 export function createPracticeTick(
   deps: PracticeTickDeps
 ): (timeMs: number, isOnsetNote: boolean, pitchHz: number | null) => void {
+  // Guided つまずき検出のクロージャ状態。ノート配列の identity 比較で
+  // セクション再スタート（同じ idx=0 でも配列は作り直される）を検出する。
+  let hintNotes: PracticeTickNote[] | null = null;
+  let hintIdx = -1;
+  let hintSince = 0;
+  let lastTickMs = 0;
   return function updatePractice(
     timeMs: number,
     isOnsetNote: boolean,
@@ -257,6 +274,26 @@ export function createPracticeTick(
       deps.practice.currentNoteIdx++;
     }
 
+    // 4.5 Guided つまずきヒント (P2-14): 同じノートで 7 秒止まっていたら
+    //     期待音をメロディシンセ（柔らかい sine）でそっと 1 回鳴らし、
+    //     7 秒ごとに再アーム。ポーズ・タブ非表示による rAF ギャップは
+    //     hintSince をスライドさせて「再開直後に即ヒント」を防ぐ。
+    if (deps.practice.mode === 'guided' && deps.playGuidedHint) {
+      const idx = deps.practice.currentNoteIdx;
+      if (lastTickMs > 0 && timeMs - lastTickMs > 400) {
+        hintSince += timeMs - lastTickMs;
+      }
+      if (notes !== hintNotes || idx !== hintIdx) {
+        hintNotes = notes;
+        hintIdx = idx;
+        hintSince = timeMs;
+      } else if (idx < len && elapsed > 0 && timeMs - hintSince >= GUIDED_HINT_MS) {
+        deps.playGuidedHint(notes[idx].midi);
+        hintSince = timeMs;
+      }
+    }
+    lastTickMs = timeMs;
+
     // 5. Progress HUD — rate-limited to 10Hz.
     if (timeMs - deps.practice._lastProgUpdate > 100) {
       deps.practice._lastProgUpdate = timeMs;
@@ -278,7 +315,18 @@ export function createPracticeTick(
       deps.practice._completionTimer = setTimeout(() => {
         deps.practice._completionTimer = null;
         if (deps.practice.enabled && deps.practice._completing) {
-          deps.completePracticeSection();
+          // ループ練習: 結果カードを出さず同セクションへ。listen は一回性の
+          // 視聴なので通常完了（トグル自体も listen では非表示）。
+          if (
+            deps.practice.loopOn &&
+            deps.practice.mode !== 'listen' &&
+            deps.restartSectionForLoop
+          ) {
+            deps.practice._completing = false;
+            deps.restartSectionForLoop();
+          } else {
+            deps.completePracticeSection();
+          }
         }
       }, 600);
     }

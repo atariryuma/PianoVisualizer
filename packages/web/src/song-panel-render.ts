@@ -42,6 +42,8 @@ export interface SongPanelPracticeRef {
   handFilter: 'L' | 'R' | null;
   ghostOn: boolean;
   metronomeOn: boolean;
+  /** ループ練習（子ども発のトグル。listen では非表示）。 */
+  loopOn?: boolean;
 }
 
 /** Section shape used by the section list. Mirrors @piano/core's
@@ -79,6 +81,8 @@ export interface SongPanelRenderDom {
   metronomeToggle: HTMLElement;
   ghostRow: HTMLElement | null;
   metronomeRow: HTMLElement | null;
+  loopRow: HTMLElement | null;
+  loopToggle: HTMLElement | null;
   fullSongRow: HTMLElement | null;
   fullSongToggle: HTMLElement | null;
   /** Feed-forward nudge shown above the start button for a recently-struggled
@@ -271,6 +275,13 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     if (deps.dom.ghostRow) deps.dom.ghostRow.style.display = showRhythmOpts ? '' : 'none';
     if (deps.dom.metronomeRow) {
       deps.dom.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
+    }
+    // ループ練習 — guided/rhythm で表示（listen は一回性の視聴なので非表示）。
+    if (deps.dom.loopRow) {
+      deps.dom.loopRow.style.display = showListenOpts ? 'none' : '';
+    }
+    if (deps.dom.loopToggle) {
+      deps.dom.loopToggle.classList.toggle('on', !!deps.practice.loopOn);
     }
     if (deps.dom.fullSongRow) {
       deps.dom.fullSongRow.style.display = showListenOpts ? '' : 'none';

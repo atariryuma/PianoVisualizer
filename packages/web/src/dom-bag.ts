@@ -71,6 +71,8 @@ export interface DomBag {
   metronomeRow: HTMLElement;
   fullSongToggle: HTMLElement;
   fullSongRow: HTMLElement;
+  loopToggle: HTMLElement;
+  loopRow: HTMLElement;
   songBack: HTMLElement;
   songPreflightHint: HTMLElement;
   songPreflightText: HTMLElement;
@@ -82,6 +84,7 @@ export interface DomBag {
   ptbTempo: HTMLElement;
   ptbProgress: HTMLElement;
   ptbToggleOsmd: HTMLElement;
+  ptbPause: HTMLElement;
   ptbQuit: HTMLElement;
   ptbInput: HTMLElement;
   osmdContainer: HTMLElement;
@@ -151,6 +154,8 @@ export interface DomBag {
   audioOffsetSlider: HTMLElement;
   audioOffsetVal: HTMLElement;
   audioOffsetAuto: HTMLElement;
+  calibrateBtn: HTMLElement;
+  calibrateStatus: HTMLElement;
   audioOffsetReset: HTMLElement;
   settingsRescanBtn: HTMLElement;
   settingsBleBtn: HTMLElement;
@@ -206,6 +211,8 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'metronomeRow',
   'fullSongToggle',
   'fullSongRow',
+  'loopToggle',
+  'loopRow',
   'songBack',
   'songPreflightHint',
   'songPreflightText',
@@ -217,6 +224,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'ptbTempo',
   'ptbProgress',
   'ptbToggleOsmd',
+  'ptbPause',
   'ptbQuit',
   'ptbInput',
   'osmdContainer',
@@ -278,6 +286,8 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'audioOffsetSlider',
   'audioOffsetVal',
   'audioOffsetAuto',
+  'calibrateBtn',
+  'calibrateStatus',
   'audioOffsetReset',
   'settingsRescanBtn',
   'settingsBleBtn',

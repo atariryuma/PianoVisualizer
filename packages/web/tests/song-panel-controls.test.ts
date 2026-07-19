@@ -29,6 +29,7 @@ function makeDom(): void {
     </div>
     <button id="ghostToggle"></button>
     <button id="metronomeToggle"></button>
+    <button id="loopToggle"></button>
     <button id="fullSongToggle"></button>
     <button id="songBack"></button>
   `;
@@ -40,12 +41,14 @@ function makeDeps(overrides: Partial<SongPanelControlsDeps> = {}): SongPanelCont
     mode: 'guided',
     ghostOn: false,
     metronomeOn: false,
+    loopOn: false,
     fullSongMode: false,
   };
   return {
     dom: {
       ghostToggle: document.getElementById('ghostToggle'),
       metronomeToggle: document.getElementById('metronomeToggle'),
+      loopToggle: document.getElementById('loopToggle'),
       fullSongToggle: document.getElementById('fullSongToggle'),
       songBack: document.getElementById('songBack') as HTMLElement,
     },
@@ -143,6 +146,16 @@ describe('createSongPanelControls — toggles', () => {
     createSongPanelControls(deps);
     document.getElementById('metronomeToggle')!.click();
     expect(deps.practice.metronomeOn).toBe(true);
+  });
+
+  it('loop toggle flips practice.loopOn + re-renders (P2-12)', () => {
+    const deps = makeDeps();
+    createSongPanelControls(deps);
+    document.getElementById('loopToggle')!.click();
+    expect(deps.practice.loopOn).toBe(true);
+    expect(deps.renderSongPanel).toHaveBeenCalledOnce();
+    document.getElementById('loopToggle')!.click();
+    expect(deps.practice.loopOn).toBe(false);
   });
 
   it('full-song toggle flips practice.fullSongMode', () => {

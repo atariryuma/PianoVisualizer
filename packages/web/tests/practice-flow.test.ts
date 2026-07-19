@@ -22,6 +22,7 @@ function makeDom(): PracticeFlowDom {
   document.body.innerHTML = `
     <button id="ptbQuit"></button>
     <button id="ptbToggleOsmd"></button>
+    <button id="ptbPause">⏸</button>
     <button id="resQuit"></button>
     <button id="resRetry"></button>
     <button id="resRetrySlow" style="display: none"></button>
@@ -44,6 +45,7 @@ function makeDom(): PracticeFlowDom {
   return {
     ptbQuit: document.getElementById('ptbQuit') as HTMLElement,
     ptbToggleOsmd: document.getElementById('ptbToggleOsmd') as HTMLElement,
+    ptbPause: document.getElementById('ptbPause'),
     resQuit: document.getElementById('resQuit') as HTMLElement,
     resRetry: document.getElementById('resRetry') as HTMLElement,
     resRetrySlow: document.getElementById('resRetrySlow'),
@@ -149,6 +151,78 @@ describe('createPracticeFlow — ptbQuit', () => {
 });
 
 // ─── ptbToggleOsmd ───────────────────────────────────────────────────
+
+describe('createPracticeFlow — ptbPause (⏸ 一時停止)', () => {
+  function pauseDeps(paused = false) {
+    let isPaused = paused;
+    const pausePractice = vi.fn(() => {
+      isPaused = true;
+    });
+    const resumePractice = vi.fn(() => {
+      isPaused = false;
+    });
+    const deps = makeDeps({
+      pausePractice,
+      resumePractice,
+      isPracticePaused: () => isPaused,
+      t: (k: string) => `t:${k}`,
+    } as Partial<PracticeFlowDeps>);
+    return { deps, pausePractice, resumePractice };
+  }
+
+  it('練習中のクリックで pause し、ラベルが ▶/resume に変わる', () => {
+    const { deps, pausePractice } = pauseDeps();
+    deps.practice.enabled = true;
+    createPracticeFlow(deps);
+    deps.dom.ptbPause!.dispatchEvent(new Event('click'));
+    expect(pausePractice).toHaveBeenCalledOnce();
+    expect(deps.dom.ptbPause!.textContent).toBe('▶');
+    expect(deps.dom.ptbPause!.getAttribute('title')).toBe('t:resumePractice');
+    expect(deps.dom.ptbPause!.getAttribute('data-i18n-title')).toBe('resumePractice');
+  });
+
+  it('ポーズ中のクリックで resume し、ラベルが ⏸/pause に戻る', () => {
+    const { deps, resumePractice } = pauseDeps(true);
+    deps.practice.enabled = true;
+    createPracticeFlow(deps);
+    deps.dom.ptbPause!.dispatchEvent(new Event('click'));
+    expect(resumePractice).toHaveBeenCalledOnce();
+    expect(deps.dom.ptbPause!.textContent).toBe('⏸');
+    expect(deps.dom.ptbPause!.getAttribute('data-i18n-title')).toBe('pausePractice');
+  });
+
+  it('練習外（enabled=false）のクリックは何もしない', () => {
+    const { deps, pausePractice, resumePractice } = pauseDeps();
+    createPracticeFlow(deps);
+    deps.dom.ptbPause!.dispatchEvent(new Event('click'));
+    expect(pausePractice).not.toHaveBeenCalled();
+    expect(resumePractice).not.toHaveBeenCalled();
+  });
+
+  it('ポーズ中の quit でも resume が呼ばれてラッチが残らない', () => {
+    const { deps, resumePractice } = pauseDeps(true);
+    deps.practice.enabled = true;
+    createPracticeFlow(deps);
+    deps.dom.ptbQuit.dispatchEvent(new Event('click'));
+    expect(resumePractice).toHaveBeenCalled();
+  });
+
+  it('ポーズラッチが残ったまま transitionToSection しても resume でクリアされる', async () => {
+    const { deps, resumePractice } = pauseDeps(true);
+    const flow = createPracticeFlow(deps);
+    await flow.transitionToSection(0);
+    expect(resumePractice).toHaveBeenCalled();
+    expect(deps.startPracticeSection).toHaveBeenCalledWith(0);
+  });
+
+  it('設定パネル経由の変更は practicepausechange イベントでラベル同期される', () => {
+    const { deps } = pauseDeps(true);
+    deps.practice.enabled = true;
+    createPracticeFlow(deps);
+    window.dispatchEvent(new Event('practicepausechange'));
+    expect(deps.dom.ptbPause!.textContent).toBe('▶');
+  });
+});
 
 describe('createPracticeFlow — ptbToggleOsmd', () => {
   it('toggles the OSMD container visible class', () => {

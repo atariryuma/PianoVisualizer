@@ -432,6 +432,172 @@ describe('createPracticeTick — section completion', () => {
   });
 });
 
+// ─── loop practice (P2-12) ───────────────────────────────────────────
+
+describe('createPracticeTick — loop practice (P2-12)', () => {
+  function loopDeps(mode: string, loopOn: boolean) {
+    return makeDeps({
+      practice: {
+        enabled: true,
+        loopOn,
+        mode,
+        sectionNotes: [makeNote({ hit: true })],
+        currentNoteIdx: 1,
+        hits: 1,
+        misses: 0,
+        sectionCombo: 0,
+        _completing: false,
+        _completionTimer: null,
+        _lastProgUpdate: 0,
+      } as unknown as PracticeTickDeps['practice'],
+      restartSectionForLoop: vi.fn(),
+      practiceElapsedMs: () => 5000,
+    });
+  }
+
+  it('loopOn + rhythm: restarts the section instead of completing', () => {
+    const deps = loopDeps('rhythm', true);
+    createPracticeTick(deps)(0, false, null);
+    vi.advanceTimersByTime(600);
+    expect(deps.restartSectionForLoop).toHaveBeenCalledOnce();
+    expect(deps.completePracticeSection).not.toHaveBeenCalled();
+    // _completing はリスタート前に倒す — 次セクションの完了検出を塞がない
+    expect(deps.practice._completing).toBe(false);
+  });
+
+  it('loopOn + listen: completes normally (listen は一回性の視聴)', () => {
+    const deps = loopDeps('listen', true);
+    createPracticeTick(deps)(0, false, null);
+    vi.advanceTimersByTime(600);
+    expect(deps.completePracticeSection).toHaveBeenCalledOnce();
+    expect(deps.restartSectionForLoop).not.toHaveBeenCalled();
+  });
+
+  it('loopOff: completes normally', () => {
+    const deps = loopDeps('rhythm', false);
+    createPracticeTick(deps)(0, false, null);
+    vi.advanceTimersByTime(600);
+    expect(deps.completePracticeSection).toHaveBeenCalledOnce();
+    expect(deps.restartSectionForLoop).not.toHaveBeenCalled();
+  });
+
+  it('restartSectionForLoop 未配線なら completePracticeSection へフォールバック', () => {
+    const deps = loopDeps('rhythm', true);
+    delete (deps as Record<string, unknown>).restartSectionForLoop;
+    createPracticeTick(deps)(0, false, null);
+    vi.advanceTimersByTime(600);
+    expect(deps.completePracticeSection).toHaveBeenCalledOnce();
+  });
+
+  it('quit during grace: loop restart does not fire either', () => {
+    const deps = loopDeps('rhythm', true);
+    createPracticeTick(deps)(0, false, null);
+    deps.practice.enabled = false;
+    vi.advanceTimersByTime(600);
+    expect(deps.restartSectionForLoop).not.toHaveBeenCalled();
+    expect(deps.completePracticeSection).not.toHaveBeenCalled();
+  });
+});
+
+// ─── guided stuck hint (P2-14) ───────────────────────────────────────
+
+describe('createPracticeTick — guided stuck hint (P2-14)', () => {
+  function guidedDeps(over: Partial<PracticeTickDeps> = {}) {
+    return makeDeps({
+      practice: {
+        enabled: true,
+        mode: 'guided',
+        sectionNotes: [makeNote({ timeMs: 0, midi: 64 })],
+        currentNoteIdx: 0,
+        hits: 0,
+        misses: 0,
+        sectionCombo: 0,
+        _completing: false,
+        _completionTimer: null,
+        _lastProgUpdate: 0,
+      },
+      practiceElapsedMs: () => 1000,
+      playGuidedHint: vi.fn(),
+      ...over,
+    });
+  }
+
+  /** 実 rAF 相当の密な tick（100ms 刻み ≤ 400ms なのでギャップ判定に
+   *  かからない）。疎な tick はポーズ由来のギャップと区別できないため、
+   *  スタック検出のテストは必ずこれで時間を進める。 */
+  function runTicks(
+    tick: (t: number, o: boolean, p: number | null) => void,
+    fromMs: number,
+    toMs: number
+  ): void {
+    for (let t = fromMs; t <= toMs; t += 100) tick(t, false, null);
+  }
+
+  it('plays the expected note after 7s stuck on the same note', () => {
+    const deps = guidedDeps();
+    const tick = createPracticeTick(deps);
+    runTicks(tick, 0, 6900);
+    expect(deps.playGuidedHint).not.toHaveBeenCalled();
+    runTicks(tick, 7000, 7100);
+    expect(deps.playGuidedHint).toHaveBeenCalledWith(64);
+  });
+
+  it('re-arms: fires again 7s later while still stuck', () => {
+    const deps = guidedDeps();
+    const tick = createPracticeTick(deps);
+    runTicks(tick, 0, 13900);
+    expect(deps.playGuidedHint).toHaveBeenCalledTimes(1);
+    runTicks(tick, 14000, 14100);
+    expect(deps.playGuidedHint).toHaveBeenCalledTimes(2);
+  });
+
+  it('resets the timer when the cursor advances', () => {
+    const deps = guidedDeps();
+    const tick = createPracticeTick(deps);
+    deps.practice.sectionNotes = [
+      makeNote({ timeMs: 0, midi: 64 }),
+      makeNote({ timeMs: 100, midi: 66 }),
+    ];
+    runTicks(tick, 0, 5000);
+    // ノート解決 → idx 前進 → ヒントタイマーはリセットされる
+    (deps.practice.sectionNotes[0] as PracticeTickNote).hit = true;
+    runTicks(tick, 5100, 12000); // idx=1 では 6.9s — まだ鳴らない
+    expect(deps.playGuidedHint).not.toHaveBeenCalled();
+    runTicks(tick, 12100, 12200); // idx=1 で 7.1s
+    expect(deps.playGuidedHint).toHaveBeenCalledWith(66);
+  });
+
+  it('does not count a rAF gap (pause / tab hidden) toward the 7s', () => {
+    const deps = guidedDeps();
+    const tick = createPracticeTick(deps);
+    runTicks(tick, 0, 3000);
+    // 60s のギャップ（ポーズ）— hintSince がスライドし即発火しない
+    tick(63000, false, null);
+    expect(deps.playGuidedHint).not.toHaveBeenCalled();
+    runTicks(tick, 63100, 66900); // ギャップ除外で合計 6.9s — まだ
+    expect(deps.playGuidedHint).not.toHaveBeenCalled();
+    runTicks(tick, 67000, 67100); // 合計 7.0s
+    expect(deps.playGuidedHint).toHaveBeenCalledWith(64);
+  });
+
+  it('non-guided modes never hint', () => {
+    const deps = guidedDeps();
+    deps.practice.mode = 'rhythm';
+    const tick = createPracticeTick(deps);
+    tick(0, false, null);
+    tick(8000, false, null);
+    expect(deps.playGuidedHint).not.toHaveBeenCalled();
+  });
+
+  it('does not hint before the count-in ends (elapsed <= 0)', () => {
+    const deps = guidedDeps({ practiceElapsedMs: () => -500 });
+    const tick = createPracticeTick(deps);
+    tick(0, false, null);
+    tick(8000, false, null);
+    expect(deps.playGuidedHint).not.toHaveBeenCalled();
+  });
+});
+
 // ─── diagnostic log ──────────────────────────────────────────────────
 
 describe('createPracticeTick — diagnostic log', () => {

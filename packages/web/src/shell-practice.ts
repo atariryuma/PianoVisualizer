@@ -67,6 +67,9 @@ export interface ShellPracticeDeps {
   prefsStore: any;
   /** Section-complete trigger — assigned after createResultCard. */
   getCompletePracticeSection: () => () => void;
+  /** 練習時間の記録（P2-19 の bootstrap 実装）。ループ周回の完了でも
+   *  呼べるように optional で受ける。 */
+  recordPracticeMinutes?: () => void;
 }
 
 export interface ShellPractice {
@@ -79,8 +82,9 @@ export interface ShellPractice {
   practiceBeatMs: () => number;
   recomputePracticeTimings: () => void;
   showSectionBanner: (sec: any) => void;
-  /** practice-scoring forwarders. */
-  matchNoteOnset: (midi: number, isExact: boolean) => any;
+  /** practice-scoring forwarders.
+   *  P1-11: inputLagMs は MIDI event.timeStamp 由来の per-event 遅延。 */
+  matchNoteOnset: (midi: number, isExact: boolean, inputLagMs?: number) => any;
   finalizeNoteHold: (midi: number) => void;
   practiceElapsedMs: () => number;
   practiceRealElapsedMs: () => number;
@@ -99,6 +103,9 @@ export interface ShellPractice {
   midiToName: (midi: number) => string;
   /** langchange refresh — re-reads activeNoteNames + lane labels. */
   refreshLangCaches: () => void;
+  /** レイテンシ較正 (P2-22) 用の楽器アクセサ。 */
+  ensureToneInstruments: () => void;
+  getToneInstruments: () => { piano: any; metronome: any; melody: any };
   /** Setter so SelectSong can register a new "lane" reference. */
   setPracticeLane: (lane: any) => void;
   /** Late-bound deps the practice-tick needs (resolves at fire time). */
@@ -322,6 +329,23 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     showHitChip: deps.showHitChip,
     t,
     completePracticeSection: () => deps.getCompletePracticeSection()(),
+    // ループ周回: 結果カードは出さないが「1周分の練習時間」は記録してから
+    // 同セクションを再スタート（startPracticeSection が startAudioTime を
+    // リセットする前に elapsed を読む必要があるため、この順序が重要）。
+    restartSectionForLoop: () => {
+      deps.recordPracticeMinutes?.();
+      void startPracticeSection(practice.sectionIdx);
+    },
+    // Guided ヒント音 (P2-14): おともパートと同じ柔らかい sine (-17dB) で
+    // 期待音を短く鳴らす。罰・減点は一切なし（banned-list 準拠の支援）。
+    playGuidedHint: (midi: number) => {
+      try {
+        const { melody } = _practiceToneAudio.getInstruments();
+        melody?.triggerAttackRelease(440 * Math.pow(2, (midi - 69) / 12), 0.6);
+      } catch {
+        /* ヒント音はベストエフォート — 練習フローを止めない */
+      }
+    },
     remoteLogEnabled: deps.remoteLogEnabled,
     remoteLog: deps.remoteLog,
     noteStateLabel: n_state,
@@ -334,7 +358,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     practiceBeatMs: () => _practiceTimings.practiceBeatMs(),
     recomputePracticeTimings: () => _practiceTimings.recomputePracticeTimings(),
     showSectionBanner: (sec: any) => _practiceTimings.showSectionBanner(sec),
-    matchNoteOnset: (m: number, isExact: boolean) => _practiceScoring.matchNoteOnset(m, isExact),
+    // P1-11: MIDI event.timeStamp 由来の per-event 遅延（第3引数）を
+    // scoring まで落とさず貫通させる。
+    matchNoteOnset: (m: number, isExact: boolean, inputLagMs?: number) =>
+      _practiceScoring.matchNoteOnset(m, isExact, inputLagMs),
     finalizeNoteHold: (m: number) => _practiceScoring.finalizeNoteHold(m),
     practiceElapsedMs: () => _practiceScoring.practiceElapsedMs(),
     practiceRealElapsedMs: () => _practiceScoring.practiceRealElapsedMs(),
@@ -345,6 +372,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     startPracticeSection,
     stopPracticeAudio,
     updatePractice,
+    ensureToneInstruments: () => _practiceToneAudio.ensureInstruments(),
+    getToneInstruments: () => _practiceToneAudio.getInstruments(),
     midiToPitchName,
     midiToName,
     refreshLangCaches: () => {

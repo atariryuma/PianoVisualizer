@@ -203,6 +203,12 @@
                 Use auto-detected value
               </button>
             </div>
+            <div style="margin-top: 6px">
+              <button class="settings-btn" id="calibrateBtn" data-i18n="calibrateBtn">
+                🎯 Tap-along auto-set
+              </button>
+              <div class="settings-help" id="calibrateStatus" aria-live="polite"></div>
+            </div>
           </div>
         </div>
 
@@ -326,6 +332,12 @@
           <div class="opt-toggle" id="metronomeToggle"></div>
           <div data-i18n="metronome">🥁 Metronome</div>
         </div>
+        <!-- Loop practice — kid-initiated toggle (banned-list: never forced).
+             Shown for guided + rhythm; hidden in listen. -->
+        <div class="opt-row" id="loopRow">
+          <div class="opt-toggle" id="loopToggle"></div>
+          <div data-i18n="loopPractice">🔁 Loop this part</div>
+        </div>
         <!-- Listen-mode only: play through every section back-to-back. -->
         <div class="opt-row" id="fullSongRow">
           <div class="opt-toggle" id="fullSongToggle"></div>
@@ -364,6 +376,15 @@
           aria-label="Score"
         >
           📜
+        </button>
+        <button
+          id="ptbPause"
+          class="ptb-icon-btn"
+          data-i18n-title="pausePractice"
+          title="Pause"
+          aria-label="Pause"
+        >
+          ⏸
         </button>
         <button
           id="ptbQuit"

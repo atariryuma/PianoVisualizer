@@ -28,12 +28,14 @@ export interface SongPanelPracticeRef {
   mode: string;
   ghostOn: boolean;
   metronomeOn: boolean;
+  loopOn?: boolean;
   fullSongMode: boolean;
 }
 
 export interface SongPanelControlsDom {
   ghostToggle: HTMLElement | null;
   metronomeToggle: HTMLElement | null;
+  loopToggle: HTMLElement | null;
   fullSongToggle: HTMLElement | null;
   songBack: HTMLElement;
 }
@@ -83,6 +85,10 @@ export function createSongPanelControls(deps: SongPanelControlsDeps): void {
   });
   deps.dom.metronomeToggle?.addEventListener('click', () => {
     deps.practice.metronomeOn = !deps.practice.metronomeOn;
+    deps.renderSongPanel();
+  });
+  deps.dom.loopToggle?.addEventListener('click', () => {
+    deps.practice.loopOn = !deps.practice.loopOn;
     deps.renderSongPanel();
   });
   deps.dom.fullSongToggle?.addEventListener('click', () => {

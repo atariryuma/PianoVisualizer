@@ -78,6 +78,10 @@ export interface ShellUiDeps {
   requestWakeLock: () => Promise<unknown>;
   hideIntroHint: () => void;
   resetSession: () => void;
+  /** 明示ポーズ (⏸ / 設定パネル) — practice-flow の ⏸ ボタン用。 */
+  pausePractice?: () => void;
+  resumePractice?: () => void;
+  isPracticePaused?: () => boolean;
   /** Effects + visual primitives. */
   effectGoldenBurst: any;
   effectStarShower: any;
@@ -388,6 +392,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'metronomeRow',
       'fullSongRow',
       'fullSongToggle',
+      'loopRow',
+      'loopToggle',
       'songPreflightHint',
       'songPreflightText',
       'songPreflightApply',
@@ -404,7 +410,14 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
   // ── Song-panel controls (back button, ghost / metronome / full-song toggles) ──
   let _returnToTitle: () => void = () => {};
   SongPanelControls.createSongPanelControls({
-    dom: DomBag.pickDom(dom, 'ghostToggle', 'metronomeToggle', 'fullSongToggle', 'songBack') as any,
+    dom: DomBag.pickDom(
+      dom,
+      'ghostToggle',
+      'metronomeToggle',
+      'loopToggle',
+      'fullSongToggle',
+      'songBack'
+    ) as any,
     practice: deps.practice,
     renderSongPanel,
     // Thunked so the placeholder-then-reassigned `returnToTitle` reads its
@@ -491,6 +504,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         dom,
         'ptbQuit',
         'ptbToggleOsmd',
+        'ptbPause',
         'resQuit',
         'resRetry',
         'resNext',
@@ -523,6 +537,10 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     hideIntroHint: deps.hideIntroHint,
     stopMidiAutoRescan: deps.stopMidiAutoRescan,
     resetSession: deps.resetSession,
+    pausePractice: deps.pausePractice,
+    resumePractice: deps.resumePractice,
+    isPracticePaused: deps.isPracticePaused,
+    t,
   } as any);
   _returnToTitle = _practiceFlow.returnToTitle;
 

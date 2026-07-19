@@ -29,8 +29,10 @@ function makeDom(): SongPanelRenderDom {
     <div id="tempoRow"></div>
     <div id="sectionList"></div>
     <button id="ghostToggle"></button>
+    <button id="loopToggle"></button>
     <button id="metronomeToggle"></button>
     <div id="ghostRow"></div>
+    <div id="loopRow"></div>
     <div id="metronomeRow"></div>
     <div id="fullSongRow"></div>
     <button id="fullSongToggle"></button>
@@ -61,6 +63,8 @@ function makeDom(): SongPanelRenderDom {
     ghostToggle: document.getElementById('ghostToggle') as HTMLElement,
     metronomeToggle: document.getElementById('metronomeToggle') as HTMLElement,
     ghostRow: document.getElementById('ghostRow'),
+    loopRow: document.getElementById('loopRow'),
+    loopToggle: document.getElementById('loopToggle'),
     metronomeRow: document.getElementById('metronomeRow'),
     fullSongRow: document.getElementById('fullSongRow'),
     fullSongToggle: document.getElementById('fullSongToggle'),
@@ -106,6 +110,7 @@ function makeDeps(overrides: Partial<SongPanelRenderDeps> = {}): SongPanelRender
     handFilter: null,
     ghostOn: false,
     metronomeOn: false,
+    loopOn: false,
   };
   return {
     dom: makeDom(),
@@ -402,6 +407,26 @@ describe('createSongPanelRender — mode/hand/toggles', () => {
     createSongPanelRender(deps).render();
     expect(deps.dom.ghostRow!.style.display).toBe('');
     expect(deps.dom.metronomeRow!.style.display).toBe('');
+  });
+
+  it('loopRow は guided/rhythm で表示、listen で非表示 (P2-12)', () => {
+    const deps = makeDeps();
+    deps.practice.mode = 'guided';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.loopRow!.style.display).toBe('');
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.loopRow!.style.display).toBe('');
+    deps.practice.mode = 'listen';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.loopRow!.style.display).toBe('none');
+  });
+
+  it('loopToggle は practice.loopOn を on クラスに反映する (P2-12)', () => {
+    const deps = makeDeps();
+    (deps.practice as { loopOn?: boolean }).loopOn = true;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.loopToggle!.classList.contains('on')).toBe(true);
   });
 
   it('shows fullSongRow only in listen mode', () => {
