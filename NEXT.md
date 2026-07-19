@@ -10,14 +10,15 @@ user request points at it.
 
 Immediate maintenance queue:
 
-1. **[docs/REVIEW-2026-07-19.md](docs/REVIEW-2026-07-19.md) — P0 + P1 all landed
-   (2026-07-19).** All 3 P0 correctness bugs and all 8 P1 items are fixed +
-   tested; 6 P2 gaps also landed (see the status table at the top of the doc).
-   The remaining P2s are UI/audio-experience features that want real-iPad
-   verification before landing (loop practice, ⏸ toolbar button, result-card
-   "retry slower", practice-minute tracking, XML part-index fix, latency-
-   calibration wizard, sampler ghost audio). Each has a self-contained task
-   instruction in the doc.
+1. **[docs/REVIEW-2026-07-19.md](docs/REVIEW-2026-07-19.md) — P0/P1/P2/R2 all
+   landed except P2-23 (2026-07-19).** P0×3 + P1×8 + P2 all (loop practice, ⏸
+   button, guided hint sound, latency-calibration wizard, partIndex, practice
+   minutes, …) + round-2 items R2-1〜R2-6 + the free-play "一期一会" moments
+   (freeplay-moments.ts) are implemented and unit-tested. P2-23 (sampler ghost
+   audio) is deferred — needs self-hosted audio assets + on-device listening
+   (rationale in the doc). **Next session: real-iPad experience pass** — ⏸ / 🔁
+   / guided hint / calibration tap feel / mic sustain-highlight & chord
+   false-positive check / 一期一会 visuals / title-screen battery gain.
 2. Keep documentation synchronized with the Phase 0e runtime shape.
 3. Continue hardening OSMD cursor / scroll behavior and MIDI rescan behavior
    with regression tests before each behavioral change.
