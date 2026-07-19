@@ -34,6 +34,8 @@ import * as ShellOsmd from './shell-osmd';
 import * as ShellPractice from './shell-practice';
 import * as ShellMidi from './shell-midi';
 import * as ShellSettings from './shell-settings';
+import * as LatencyCalibration from './latency-calibration';
+import * as FreeplayMoments from './freeplay-moments';
 import * as ShellMidiHandlers from './shell-midi-handlers';
 import * as ShellPracticeLane from './shell-practice-lane';
 import * as ShellAddSong from './shell-add-song';
@@ -201,6 +203,17 @@ export function boot(): void {
     drawGroundFlowers,
   } = _fx;
 
+  // ── フリープレイの一期一会演出 (2026-07-19) — 音域更新 / 静寂明けの
+  //    一番星 / フレーズ内の大跳躍を、既存プリミティブの上乗せで祝う。
+  const _freeplayMoments = FreeplayMoments.createFreeplayMoments({
+    spawnBurst,
+    spawnStream,
+    ripples,
+    Ripple,
+    getBgStars: _vp.getBgStars as never,
+    getScreen: _vp.getScreen,
+  });
+
   // ── Per-frame reducers — moved to packages/web/src/shell-game-update.ts (batch 105).
   const clamp01 = PianoCore.clamp01;
   const _coreOpts = CoreOpts.createCoreOpts({
@@ -257,6 +270,8 @@ export function boot(): void {
     spawnBurst,
     spawnStream,
     isFreeplayActive,
+    isTitleVisible: () => DOM.startScreen.style.display !== 'none', // R2-5: タイトル前面時は描画のみスキップ（isFreeplayActive と同じ判定手段）
+    freeplayMoments: _freeplayMoments,
     updateAGC,
     updateGameState,
     updateQuestState,
@@ -327,7 +342,11 @@ export function boot(): void {
     resetMidiDispatch: () => _midi.resetMidiDispatch(),
   });
   ({ renderSessionSummaryText, showSessionSummary } = _sess);
-  const resetSession = (): void => _sess.resetSession();
+  const resetSession = (): void => {
+    _sess.resetSession();
+    // 一期一会の検出状態（自己最高音・記憶星カウント等）もセッション境界で白紙に。
+    _freeplayMoments.reset();
+  };
 
   // ── Practice mode catalog — built-in-songs.ts. User-imported scores merge in by id.
   // SONGS is the lazy-load song registry; per-record fields are populated
@@ -395,6 +414,9 @@ export function boot(): void {
     loadCurrentScore: () => _osmd.loadCurrentScore(),
     showHitChip: (kind, text) => showHitChip(kind, text),
     getCompletePracticeSection: () => completePracticeSection,
+    // ループ周回でも1周分の練習時間を記録する (P2-12 × P2-19)。関数宣言で
+    // 巻き上げ — 実際の呼び出しはセクション完了時なので前方参照でも安全。
+    recordPracticeMinutes: () => recordPracticeMinutesImpl(),
   });
   const {
     practice,
@@ -441,6 +463,22 @@ export function boot(): void {
     stopMidiAutoRescan,
   } = _midi;
 
+  // ── レイテンシ較正ウィザード (P2-22) — 設定パネルの「🎯 タップで自動
+  //    そくてい」。クリック列に合わせた 10 タップの中央値を audioOffsetMs へ。
+  const _calibration = LatencyCalibration.createLatencyCalibration({
+    dom: { btn: DOM.calibrateBtn, status: DOM.calibrateStatus },
+    getTone: () => Tone as never,
+    ensureInstruments: () => _practice.ensureToneInstruments(),
+    getMetronome: () => _practice.getToneInstruments().metronome,
+    t,
+    onResult: (v) => {
+      prefs.audioOffsetMs = v;
+      practice.audioOffsetMs = v;
+      savePrefs();
+      refreshSettingsPanel();
+    },
+  });
+
   // ── Settings panel — moved to packages/web/src/shell-settings.ts (batch 118).
   const _settings = ShellSettings.createShellSettings({
     dom: DOM,
@@ -457,8 +495,16 @@ export function boot(): void {
     },
     connectBleMidi: () => _midi.connectBleMidi(),
     showSessionSummary: () => showSessionSummary(),
-    pausePractice: () => _midi.pausePractice(),
-    resumePractice: () => _midi.resumePractice(),
+    pausePractice: () => {
+      _midi.pausePractice();
+      window.dispatchEvent(new Event('practicepausechange'));
+    },
+    resumePractice: () => {
+      _midi.resumePractice();
+      window.dispatchEvent(new Event('practicepausechange'));
+    },
+    // パネルを閉じたら較正のクリック列・タイマーを破棄（鳴りっぱなし防止）。
+    onPanelClose: () => _calibration.stop(),
   });
   ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 
@@ -471,6 +517,7 @@ export function boot(): void {
     effectGlowPulse,
     spawnBurst,
     spawnStream,
+    freeplayMoments: _freeplayMoments,
     ripples,
     Ripple,
     noteDisplayEl: DOM.noteDisplay,
@@ -553,6 +600,24 @@ export function boot(): void {
   const { byId, domAddSong: DOM_ADDSONG, domSecEdit: DOM_SECEDIT } = _addSong;
   ({ closeSectionEditor, openAddSongModal, closeAddSongModal } = _addSong);
 
+  // 練習時間（分）の累積 (P2-19)。所要 = practiceRealElapsedMs（ポーズ・
+  // タブ非表示中は clock rebase で除外済み）。累積のみ・目標/未達表示なし。
+  // 結果カード（ShellUi）とループ周回（ShellPractice）の両方から呼ばれる。
+  function recordPracticeMinutesImpl(): void {
+    try {
+      const prog = (practice.progress ?? loadPracticeProgress()) as PianoCore.PracticeProgress;
+      practice.progress = prog as never;
+      PianoCore.recordPracticeMinutes(
+        prog,
+        PianoCore.formatDateKey(new Date()),
+        practiceRealElapsedMs() / 60000
+      );
+      savePracticeProgress();
+    } catch {
+      /* 時間記録は非クリティカル — 完了フローを止めない */
+    }
+  }
+
   // ── UI cluster — moved to packages/web/src/shell-ui.ts (batch 108).
   const _ui = ShellUi.createShellUi({
     document,
@@ -579,22 +644,7 @@ export function boot(): void {
     loadPracticeProgress,
     savePracticeProgress,
     recordPracticeDay,
-    // 練習時間（分）の累積 (P2-19)。所要 = practiceRealElapsedMs（ポーズ・
-    // タブ非表示中は clock rebase で除外済み）。累積のみ・目標/未達表示なし。
-    recordPracticeMinutes: () => {
-      try {
-        const prog = (practice.progress ?? loadPracticeProgress()) as PianoCore.PracticeProgress;
-        practice.progress = prog as never;
-        PianoCore.recordPracticeMinutes(
-          prog,
-          PianoCore.formatDateKey(new Date()),
-          practiceRealElapsedMs() / 60000
-        );
-        savePracticeProgress();
-      } catch {
-        /* 時間記録は非クリティカル — 完了フローを止めない */
-      }
-    },
+    recordPracticeMinutes: recordPracticeMinutesImpl,
     startPracticeSection,
     stopPracticeAudio,
     initAudio: _audio.initAudio,
@@ -607,6 +657,9 @@ export function boot(): void {
     rescanMidi,
     releaseWakeLock,
     requestWakeLock,
+    pausePractice: () => _midi.pausePractice(),
+    resumePractice: () => _midi.resumePractice(),
+    isPracticePaused: () => _midi.isPracticePaused(),
     resetSession,
     hideIntroHint: () => _ui.hideIntroHint(),
     effectGoldenBurst,
