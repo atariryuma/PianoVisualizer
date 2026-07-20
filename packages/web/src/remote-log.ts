@@ -60,6 +60,10 @@ export interface RemoteLogDeps {
   maxPending?: number;
   /** Override the auto-detected enable flag. Tests set this directly. */
   forceEnabled?: boolean;
+  /** Capacitor ネイティブ実行中か。省略時 `window.Capacitor?.isNativePlatform?.()`。
+   *  出荷アプリは https://localhost 配信で hostname ヒューリスティックが誤って
+   *  true になるため、ネイティブでは（明示 override が無い限り）常にオフにする。 */
+  isNative?: boolean;
   /** Override the storage key. Default `pianoViz_remoteLog`. */
   storageKey?: string;
   /** Override the POST URL. Default `/log`. */
@@ -96,6 +100,17 @@ export function isRemoteLogEnabled(deps: RemoteLogDeps = {}): boolean {
       /* localStorage may throw in private mode / iframe sandbox */
     }
   }
+  // ネイティブ（Capacitor WKWebView）は https://localhost で配信されるため、
+  // 下の hostname ヒューリスティックが誤って true になる（COMPLIANCE の未解決
+  // 項目 H1）。出荷アプリは「no tracking / audio stays on device」約束のため
+  // リモートログを既定オフに。明示 override（localStorage '1'）は上で処理済み
+  // なので、開発者は必要ならそれで有効化できる。
+  const isNative =
+    deps.isNative ??
+    !!(
+      globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }
+    ).Capacitor?.isNativePlatform?.();
+  if (isNative) return false;
   const loc = deps.location ?? (typeof location !== 'undefined' ? location : null);
   if (!loc) return false;
   const h = loc.hostname;

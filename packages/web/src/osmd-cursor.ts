@@ -189,6 +189,11 @@ export interface OsmdCursorDeps {
   /** Highlight color — defaults to pink that contrasts with the
    *  gold cursor + black notes. */
   highlightFill?: string;
+  /** 診断ログ（[CURSOR-SCROLL]/[DIAG-CURSORPOS]/[DIAG-OVERLAY]）を出すか。
+   *  = shell の remoteLogEnabled。false（本番/ネイティブ）では 3 つの診断関数を
+   *  即 return し、console.log も getBoundingClientRect の強制同期レイアウトも
+   *  走らせない（カーソル移動という練習ホットパスのコストを削る）。 */
+  diagEnabled?: boolean;
 }
 
 export interface OsmdCursor {
@@ -269,6 +274,7 @@ type ScrollReason =
 
 export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
   const fill = deps.highlightFill ?? DEFAULT_HIGHLIGHT_FILL;
+  const diagEnabled = deps.diagEnabled ?? false;
   const highlightedPaths: SVGPathElement[] = [];
   const scrollState = {
     hasAnchor: false,
@@ -883,6 +889,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     scrollTop: number,
     scroller: HTMLElement
   ): void {
+    if (!diagEnabled) return;
     _diagOverlayCalls++;
     if (_diagOverlayCalls % 16 !== 1) return;
     try {
@@ -1048,6 +1055,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
     metrics: ScrollMetrics,
     plan: ScrollPlan
   ): void {
+    if (!diagEnabled) return;
     if (event === 'skip' && ++_diagSkipTick % 16 !== 1) return;
     console.log(
       `[CURSOR-SCROLL ${SCROLL_LOG_VERSION}] ` +
@@ -1101,6 +1109,7 @@ export function createOsmdCursor(deps: OsmdCursorDeps): OsmdCursor {
 
   let _diagCalls = 0;
   function _diagCursorPos(osmd: OsmdInstanceRef): void {
+    if (!diagEnabled) return;
     _diagCalls++;
     if (_diagCalls % 16 !== 1) return;
 

@@ -92,6 +92,28 @@ describe('isRemoteLogEnabled', () => {
     ).toBe(true);
   });
 
+  it('native (Capacitor) → disabled even at https://localhost (H1: no-tracking約束)', () => {
+    // 出荷 iOS は https://localhost 配信で hostname が localhost に誤マッチする。
+    // ネイティブでは既定オフ。
+    expect(
+      isRemoteLogEnabled({
+        storage: fakeStorage(),
+        location: fakeLocation('https:', 'localhost'),
+        isNative: true,
+      })
+    ).toBe(false);
+  });
+
+  it('native but explicit localStorage "1" override still enables (dev escape hatch)', () => {
+    expect(
+      isRemoteLogEnabled({
+        storage: fakeStorage({ pianoViz_remoteLog: '1' }),
+        location: fakeLocation('https:', 'localhost'),
+        isNative: true,
+      })
+    ).toBe(true);
+  });
+
   it('192.168.x.x over HTTPS → enabled', () => {
     expect(
       isRemoteLogEnabled({

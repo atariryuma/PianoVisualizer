@@ -358,6 +358,8 @@ describe('resetToStart', () => {
     const cursor = createOsmdCursor({
       getOsmd: () => osmd,
       getLib: () => fakeLib,
+      // 診断ログを観測手段に使うテストなので有効化（本番は既定オフ）。
+      diagEnabled: true,
     });
 
     cursor.resetToStart();

@@ -148,6 +148,8 @@ export function createShellOsmd(deps: ShellOsmdDeps): ShellOsmd {
   const _osmdCursor = OsmdCursor.createOsmdCursor({
     getOsmd: () => osmd,
     getLib: () => opensheetmusicdisplay as unknown as OsmdCursor.OsmdLibRef,
+    // 診断ログ + 強制レイアウトは remote-log 有効時のみ（本番/ネイティブは無効）。
+    diagEnabled: deps.remoteLogEnabled,
   });
 
   const osmdAdapter = OsmdAdapterMod.createOsmdAdapter({
