@@ -54,6 +54,13 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
     private var inputPort: MIDIPortRef = 0
     private var connectedSources: [MIDIEndpointRef: String] = [:]   // endpoint -> stable id
     private var portInfo: [String: [String: Any]] = [:]             // id -> {name, mfg, state, connection}
+    // H3: connectedSources / portInfo は CoreMIDI I/O スレッド（受信）・通知
+    // スレッド（add/remove）・main/bridge スレッド（start/stop/listInputs）から
+    // 触られる。Swift Dictionary は非スレッドセーフで、挿入時 rehash と別スレッド
+    // 読取の競合が EXC_BAD_ACCESS を起こす（抜き差し/RTP 出現時）。全アクセスを
+    // この lock で直列化する。受信ホットパスの critical section は「portId 解決」
+    // だけに絞り、notifyListeners（bridge 呼び）は lock 外で行う。
+    private let stateLock = NSLock()
 
     // MARK: - Capacitor lifecycle
 
@@ -100,18 +107,24 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func stop(_ call: CAPPluginCall) {
-        for (src, _) in connectedSources {
-            MIDIPortDisconnectSource(inputPort, src)
-        }
+        stateLock.lock()
+        let srcs = Array(connectedSources.keys)
         connectedSources.removeAll()
         portInfo.removeAll()
+        stateLock.unlock()
+        for src in srcs {
+            MIDIPortDisconnectSource(inputPort, src)
+        }
         if inputPort != 0 { MIDIPortDispose(inputPort); inputPort = 0 }
         if midiClient != 0 { MIDIClientDispose(midiClient); midiClient = 0 }
         call.resolve()
     }
 
     @objc func listInputs(_ call: CAPPluginCall) {
-        call.resolve(["devices": Array(portInfo.values)])
+        stateLock.lock()
+        let devices = Array(portInfo.values)
+        stateLock.unlock()
+        call.resolve(["devices": devices])
     }
 
     @objc func openPort(_ call: CAPPluginCall) {
@@ -121,11 +134,13 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func closePort(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else { call.reject("Missing id"); return }
-        for (src, mappedId) in connectedSources where mappedId == id {
-            MIDIPortDisconnectSource(inputPort, src)
-            connectedSources.removeValue(forKey: src)
-        }
+        stateLock.lock()
+        // キーを先に集めてから remove（iteration 中の mutation を回避）。
+        let srcs = connectedSources.filter { $0.value == id }.map { $0.key }
+        for src in srcs { connectedSources.removeValue(forKey: src) }
         portInfo.removeValue(forKey: id)
+        stateLock.unlock()
+        for src in srcs { MIDIPortDisconnectSource(inputPort, src) }
         call.resolve()
     }
 
@@ -178,7 +193,10 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func connectSource(_ src: MIDIEndpointRef) {
         // Skip if already connected.
-        if connectedSources[src] != nil { return }
+        stateLock.lock()
+        let already = connectedSources[src] != nil
+        stateLock.unlock()
+        if already { return }
 
         // RTP-MIDI ("Network Session 1") is a virtual endpoint that iOS always
         // publishes once network MIDI is on — it is not an instrument. Exclude
@@ -201,23 +219,29 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
             NSLog("[PianoMidi] connect source failed (\(status)) for \(name)")
             return
         }
-        connectedSources[src] = id
         let info: [String: Any] = [
             "id": id, "name": name, "manufacturer": manufacturer,
             "state": "connected", "connection": "open"
         ]
+        stateLock.lock()
+        connectedSources[src] = id
         portInfo[id] = info
+        stateLock.unlock()
         notifyListeners("portChange", data: info)
     }
 
     private func disconnectSource(_ src: MIDIEndpointRef) {
-        guard let id = connectedSources.removeValue(forKey: src) else { return }
+        stateLock.lock()
+        let removedId = connectedSources.removeValue(forKey: src)
+        let prevName = removedId.flatMap { portInfo[$0]?["name"] }
+        if let rid = removedId { portInfo.removeValue(forKey: rid) }
+        stateLock.unlock()
+        guard let id = removedId else { return }
         MIDIPortDisconnectSource(inputPort, src)
         let info: [String: Any] = [
-            "id": id, "name": portInfo[id]?["name"] ?? "MIDI Source",
+            "id": id, "name": prevName ?? "MIDI Source",
             "state": "disconnected", "connection": "closed"
         ]
-        portInfo.removeValue(forKey: id)
         notifyListeners("portChange", data: info)
     }
 
@@ -243,10 +267,15 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
     /// holds 1..n Universal MIDI Packets (UMP), each 1-4 words long.
     @available(iOS 14.0, *)
     private func handleEventList(_ eventList: UnsafePointer<MIDIEventList>, _ srcConnRefCon: UnsafeMutableRawPointer?) {
-        var packetPtr = UnsafePointer(withUnsafePointer(to: eventList.pointee.packet) { $0 })
-        var packet = packetPtr.pointee
-        guard let portId = sourceId(fromRefCon: srcConnRefCon) ?? connectedSources.first?.value else { return }
-        for _ in 0..<eventList.pointee.numPackets {
+        guard let portId = resolvePortId(fromRefCon: srcConnRefCon) else { return }
+        // H2: 実メモリを反復する Apple 公式シーケンス。以前は
+        // `withUnsafePointer(to: eventList.pointee.packet)` がスタック一時コピーの
+        // アドレスを返し、そこから advance していたため、1 コールバックに複数
+        // パケットが来ると packet[1..] がゴミメモリを読んでいた（和音直後の連打・
+        // 速い区間・BLE バッチで note 取りこぼし/OOB read。単音は packet[0] だけ
+        // 読むので無事＝実機の単音検証を通過していた）。
+        for packetPtr in eventList.unsafeSequence() {
+            let packet = packetPtr.pointee
             let timestamp = hostTimeToMillis(packet.timeStamp)
             // Walk the words as UMPs, advancing by each message's word count
             // (M2-104-UM: SysEx/Data64 = 2 words, MIDI 2.0 voice = 2, Data128
@@ -280,31 +309,23 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 w += PianoMidiPlugin.umpWordCount[messageType]
             }
-            // Advance to the next packet (MIDIEventPacketNext is a C macro;
-            // reimplement). NB: advance from the CURRENT packet's pointer —
-            // advancing from the list head would re-read packet 1's layout.
-            let advance = MemoryLayout<MIDIEventPacket>.offset(of: \MIDIEventPacket.words)!
-                + Int(packet.wordCount) * MemoryLayout<UInt32>.size
-            packetPtr = UnsafeRawPointer(packetPtr).advanced(by: advance)
-                .assumingMemoryBound(to: MIDIEventPacket.self)
-            packet = packetPtr.pointee
         }
     }
 
-    /// iOS 13 fallback. Walks a MIDIPacketList by hand (MIDIPacketNext is a C macro).
+    /// iOS 13 fallback. Walks a MIDIPacketList via Apple's unsafeSequence.
     private func handlePacketList(_ pktList: UnsafePointer<MIDIPacketList>, _ srcConnRefCon: UnsafeMutableRawPointer?) {
-        var packet = pktList.pointee.packet
-        guard let portId = sourceId(fromRefCon: srcConnRefCon) ?? connectedSources.first?.value else { return }
-        for _ in 0..<pktList.pointee.numPackets {
+        guard let portId = resolvePortId(fromRefCon: srcConnRefCon) else { return }
+        // H2（同根）: 以前は `pktList.pointee.packet`（スタック一時コピー）から
+        // MIDIPacketNextPure で advance しており、複数パケットで packet[1..] が
+        // ゴミを読んでいた。実メモリを反復する unsafeSequence に置換。
+        for packetPtr in pktList.unsafeSequence() {
+            let packet = packetPtr.pointee
             let timestamp = hostTimeToMillis(packet.timeStamp)
             let length = Int(packet.length)
-            let bytes = withUnsafePointer(to: &packet.data) { dataPtr in
-                Array(UnsafeBufferPointer(
-                    start: UnsafeRawPointer(dataPtr).assumingMemoryBound(to: UInt8.self),
-                    count: length))
+            let bytes = withUnsafeBytes(of: packet.data) { raw in
+                Array(raw.prefix(length))
             }
             emitMidi1Stream(bytes, portId: portId, timestamp: timestamp)
-            packet = MIDIPacketNextPure(packet: packet)
         }
     }
 
@@ -353,12 +374,19 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
     /// mt 0x3 (Data64/SysEx) = 2 words, 0x5 (Data128) = 4, etc.
     private static let umpWordCount: [Int] = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4]
 
-    /// Recover the source endpoint's stable id from the per-source connRefCon
-    /// that connectSource passed to MIDIPortConnectSource.
-    private func sourceId(fromRefCon refCon: UnsafeMutableRawPointer?) -> String? {
-        guard let refCon = refCon else { return nil }
-        let ep = MIDIEndpointRef(UInt32(truncatingIfNeeded: UInt(bitPattern: refCon)))
-        return connectedSources[ep]
+    /// Resolve the portId for an incoming packet: prefer the per-source
+    /// connRefCon (definitive per-source attribution), else the sole connected
+    /// source. Both dictionary reads happen under `stateLock` in a SINGLE
+    /// critical section so a concurrent connect/disconnect can't tear the read
+    /// (H3). Called from the CoreMIDI I/O thread — kept minimal.
+    private func resolvePortId(fromRefCon refCon: UnsafeMutableRawPointer?) -> String? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        if let refCon = refCon {
+            let ep = MIDIEndpointRef(UInt32(truncatingIfNeeded: UInt(bitPattern: refCon)))
+            if let id = connectedSources[ep] { return id }
+        }
+        return connectedSources.first?.value
     }
 
     /// True for the RTP-MIDI network-session virtual endpoint. Locale-
@@ -422,17 +450,5 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
             return prop?.takeRetainedValue() as String?
         }
         return nil
-    }
-}
-
-/// Pure-Swift reimplementation of the C MIDIPacketNext macro.
-fileprivate func MIDIPacketNextPure(packet: MIDIPacket) -> MIDIPacket {
-    return withUnsafePointer(to: packet) { ptr in
-        let dataOffset = MemoryLayout<MIDIPacket>.offset(of: \MIDIPacket.data)!
-        let total = dataOffset + Int(packet.length)
-        // 4-byte alignment per CoreMIDI.h.
-        let aligned = (total + 3) & ~3
-        let nextRaw = UnsafeRawPointer(ptr).advanced(by: aligned)
-        return nextRaw.assumingMemoryBound(to: MIDIPacket.self).pointee
     }
 }
