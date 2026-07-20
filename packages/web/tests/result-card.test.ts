@@ -58,6 +58,7 @@ function makeDom(): ResultCardDom {
       <button id="resNext"></button>
       <button id="resTryPlay"></button>
       <button id="resRetrySlow" style="display: none"></button>
+      <button id="resTempoUp" style="display: none"></button>
     </div>
   `;
   return {
@@ -83,6 +84,7 @@ function makeDom(): ResultCardDom {
     resNext: document.getElementById('resNext') as HTMLElement,
     resTryPlay: document.getElementById('resTryPlay'),
     resRetrySlow: document.getElementById('resRetrySlow'),
+    resTempoUp: document.getElementById('resTempoUp'),
   };
 }
 
@@ -180,6 +182,44 @@ function makeDeps(over: Partial<ResultCardDeps> = {}): ResultCardDeps {
 
 beforeEach(() => {
   document.body.innerHTML = '';
+});
+
+// ─── speed trainer: renderTempoUp ────────────────────────────────────
+
+describe('createResultCard — speed-trainer step-up button', () => {
+  const rhythmResult = (over: Record<string, unknown> = {}) => ({
+    mode: 'rhythm' as const,
+    secId: 'a1',
+    stars: 2,
+    unlockedTempo: null,
+    unlockedSecKey: null,
+    streakDays: null,
+    tempoPct: 75,
+    ...over,
+  });
+
+  it('shows 🚀 next-tempo button on a ★2+ clear below 100%', () => {
+    const deps = makeDeps({ planTempoStepUp: (t: number) => (t === 75 ? 90 : null) });
+    deps.practice._lastResult = rhythmResult();
+    createResultCard(deps).renderResultCard();
+    const btn = deps.dom.resTempoUp as HTMLElement & { dataset: DOMStringMap };
+    expect(btn.style.display).not.toBe('none');
+    expect(btn.dataset.tempo).toBe('90');
+  });
+
+  it('hides the button when planTempoStepUp returns null (top of ladder / < ★2)', () => {
+    const deps = makeDeps({ planTempoStepUp: () => null });
+    deps.practice._lastResult = rhythmResult({ tempoPct: 100 });
+    createResultCard(deps).renderResultCard();
+    expect((deps.dom.resTempoUp as HTMLElement).style.display).toBe('none');
+  });
+
+  it('never shows for listen mode', () => {
+    const deps = makeDeps({ planTempoStepUp: () => 90 });
+    deps.practice._lastResult = rhythmResult({ mode: 'listen', stars: 0 });
+    createResultCard(deps).renderResultCard();
+    expect((deps.dom.resTempoUp as HTMLElement).style.display).toBe('none');
+  });
 });
 
 // ─── renderResultCard ────────────────────────────────────────────────

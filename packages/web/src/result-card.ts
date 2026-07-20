@@ -70,6 +70,10 @@ export interface ResultSnapshot {
   retryStrategy?: 'listen' | 'oneHand' | 'slowTempo' | null;
   /** Resolved slower tempo (%) when retryStrategy === 'slowTempo'. */
   retryTempo?: number | null;
+  /** Tempo % the section was just played at — drives the speed-trainer
+   *  step-up button (planTempoStepUp). Snapshot-retained so a langchange
+   *  re-render recomputes against the played tempo, not a since-changed one. */
+  tempoPct?: number;
 }
 
 export interface ResultCardSection {
@@ -137,6 +141,10 @@ export interface ResultCardDom {
    *  partial-DOM tests degrade gracefully. Click is wired in practice-flow;
    *  this module only sets label + dataset.strategy/tempo + visibility. */
   resRetrySlow?: HTMLElement | null;
+  /** Speed-trainer "climb to the next tempo" one-tap button (shown on a
+   *  cleared run below 100%). Click wired in practice-flow; this module sets
+   *  label + dataset.tempo + visibility. Optional for partial-DOM tests. */
+  resTempoUp?: HTMLElement | null;
 }
 
 export interface ResultCardDeps {
@@ -189,6 +197,10 @@ export interface ResultCardDeps {
    *  used to resolve the slower-tempo retry target. Optional with
    *  planSectionScaffold. */
   tempoTiers?: readonly number[];
+  /** Speed trainer (PianoCore.planTempoStepUp) — next tempo tier to offer on
+   *  a cleared run, or null. Optional so partial-DOM tests degrade to no
+   *  button. */
+  planTempoStepUp?(currentTempoPct: number, stars: number): number | null;
   /** Decide which unlocks fire (PianoCore.computeUnlocks — pure). */
   computeUnlocks(args: {
     stars: number;
@@ -369,6 +381,27 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
           : deps.t('resRetryListen');
   };
 
+  /** Speed trainer: on a CLEARED rhythm run below 100%, offer a one-tap
+   *  "climb to the next tempo" button. planTempoStepUp gates on ★2+ (the same
+   *  gate that unlocks the tier). Click is wired in practice-flow via
+   *  dataset.tempo. Hidden for listen/guided and at the top of the ladder. */
+  const renderTempoUp = (r: ResultSnapshot): void => {
+    const btn = deps.dom.resTempoUp as (HTMLElement & { dataset: DOMStringMap }) | null;
+    if (!btn) return;
+    const next =
+      r.mode === 'rhythm' && r.tempoPct != null
+        ? (deps.planTempoStepUp?.(r.tempoPct, r.stars) ?? null)
+        : null;
+    if (next == null) {
+      btn.style.display = 'none';
+      delete btn.dataset.tempo;
+      return;
+    }
+    btn.style.display = '';
+    btn.dataset.tempo = String(next);
+    btn.textContent = deps.t('resTempoUpFmt', { v: next });
+  };
+
   function renderResultCard(): void {
     const r = deps.practice._lastResult;
     if (!r) return;
@@ -418,6 +451,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // (the listen branch hides it; guided + rhythm set it via stretchId).
       if (deps.dom.resStretch) deps.dom.resStretch.style.display = 'none';
       renderRetrySupport(r); // hides — never shown for listen/guided
+      renderTempoUp(r); // hides — never shown for listen/guided
       renderSelfAssess(r);
       return;
     }
@@ -456,6 +490,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     if (r.focus) applyFocus(r.focus);
 
     renderRetrySupport(r);
+    renderTempoUp(r);
     renderSelfAssess(r);
   }
 
@@ -704,6 +739,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       focus: deps.pickSectionFocus(accPct, timingPct, durPct, stars),
       retryStrategy,
       retryTempo,
+      tempoPct: deps.practice.tempoPct,
     };
     renderResultCard();
     deps.dom.resStars.innerHTML = '';

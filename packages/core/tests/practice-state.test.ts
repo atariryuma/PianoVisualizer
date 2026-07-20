@@ -13,6 +13,8 @@ import {
   needsPreflightScaffold,
   planSectionScaffold,
   computeUnlocks,
+  planTempoStepUp,
+  TEMPO_TIERS,
   practiceBeatMs,
   computePracticeTimings,
   type UnlockComputeInput,
@@ -919,5 +921,34 @@ describe('computePracticeTimings — meter (整数小節カウントイン)', ()
     const out = computePracticeTimings(833.333, { meter: { beats: 0, beatType: 0 } });
     expect(out.beats).toBe(4);
     expect(out.clicksPerBar).toBeUndefined();
+  });
+});
+
+describe('planTempoStepUp — speed trainer ladder', () => {
+  it('offers the next tier up on a ★2+ clear below 100%', () => {
+    // TEMPO_TIERS = [50, 60, 75, 90, 100]
+    expect(planTempoStepUp(50, 2)).toBe(60);
+    expect(planTempoStepUp(60, 2)).toBe(75);
+    expect(planTempoStepUp(75, 3)).toBe(90);
+    expect(planTempoStepUp(90, 2)).toBe(100);
+  });
+
+  it('returns null below ★2 (not earned yet)', () => {
+    expect(planTempoStepUp(50, 0)).toBeNull();
+    expect(planTempoStepUp(50, 1)).toBeNull();
+  });
+
+  it('returns null at the top of the ladder (100%) — celebrate, do not push', () => {
+    expect(planTempoStepUp(100, 3)).toBeNull();
+  });
+
+  it('returns null for a tempo that is not a known tier', () => {
+    expect(planTempoStepUp(65, 3)).toBeNull();
+    expect(planTempoStepUp(0, 3)).toBeNull();
+  });
+
+  it('honors the top tier of TEMPO_TIERS dynamically', () => {
+    const top = TEMPO_TIERS[TEMPO_TIERS.length - 1];
+    expect(planTempoStepUp(top, 3)).toBeNull();
   });
 });

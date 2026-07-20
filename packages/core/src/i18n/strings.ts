@@ -335,6 +335,9 @@ export const T_STRINGS: TranslationTable = {
     jp: '🎧 きいてから もう一度',
     de: '🎧 Hören, dann nochmal',
   },
+  // Speed trainer — one-tap "climb to the next tempo" button on a cleared
+  // result card (planTempoStepUp). Achievement-gated, no time pressure.
+  resTempoUpFmt: { en: '🚀 Try {v}%', jp: '🚀 {v}% で挑戦', de: '🚀 {v}% probieren' },
   resRetryOneHand: {
     en: '👉 Retry right hand only',
     jp: '👉 右手だけで もう一度',

@@ -472,6 +472,7 @@ export {
   SCAFFOLD_ESCALATE_DEPTH,
   SCAFFOLD_NOTES_BOTTLENECK_BELOW,
   computeUnlocks,
+  planTempoStepUp,
   practiceBeatMs,
   computePracticeTimings,
   practiceElapsedMs,

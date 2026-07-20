@@ -290,7 +290,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'resNext',
       'resStretch',
       'resTryPlay',
-      'resRetrySlow'
+      'resRetrySlow',
+      'resTempoUp'
     ) as any,
     practice: deps.practice,
     getCurrentSong: deps.getCurrentSong,
@@ -306,6 +307,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     pickSectionFocus: PianoCore.pickSectionFocus,
     planSectionScaffold: PianoCore.planSectionScaffold,
     tempoTiers: PianoCore.TEMPO_TIERS,
+    planTempoStepUp: PianoCore.planTempoStepUp,
     computeUnlocks: PianoCore.computeUnlocks,
     effectGoldenBurst: deps.effectGoldenBurst,
     effectStarShower: deps.effectStarShower,
@@ -524,6 +526,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       ),
       resTryPlay: deps.byId('resTryPlay'),
       resRetrySlow: deps.byId('resRetrySlow'),
+      resTempoUp: deps.byId('resTempoUp'),
     } as any,
     practice: deps.practice,
     state: deps.state,

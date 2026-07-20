@@ -87,6 +87,9 @@ export interface PracticeFlowDom {
   /** "Retry with support" — applies the scaffold strategy published by
    *  result-card (dataset.strategy/tempo), then retries the section. */
   resRetrySlow?: HTMLElement | null;
+  /** Speed trainer — result-card publishes dataset.tempo; this restarts the
+   *  same section at that higher tempo. */
+  resTempoUp?: HTMLElement | null;
   resTryPlay: HTMLElement | null;
   resNext: HTMLElement;
   sumClose: HTMLElement;
@@ -294,6 +297,17 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
       const tempo = parseInt(btn.dataset.tempo || '', 10);
       if (Number.isFinite(tempo) && tempo > 0) deps.practice.tempoPct = tempo;
     }
+    deps.dom.sectionResult.classList.remove('visible');
+    void transitionToSection(deps.practice.sectionIdx);
+  });
+  // Speed trainer — "🚀 climb to the next tempo" (cleared runs). Sets the
+  // higher tempo published by result-card and retries the same section. Same
+  // side-effect-free write as the manual tempo row; the kid can still change
+  // it by hand afterwards. Achievement-gated, no time pressure.
+  deps.dom.resTempoUp?.addEventListener('click', () => {
+    const btn = deps.dom.resTempoUp as HTMLElement & { dataset: DOMStringMap };
+    const tempo = parseInt(btn.dataset.tempo || '', 10);
+    if (Number.isFinite(tempo) && tempo > 0) deps.practice.tempoPct = tempo;
     deps.dom.sectionResult.classList.remove('visible');
     void transitionToSection(deps.practice.sectionIdx);
   });

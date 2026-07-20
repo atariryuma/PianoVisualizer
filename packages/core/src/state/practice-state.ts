@@ -637,6 +637,30 @@ export function planSectionScaffold(
  *  earned speed-up ladder. */
 export const TEMPO_TIERS: readonly number[] = Object.freeze([50, 60, 75, 90, 100]);
 
+/**
+ * Speed-trainer step: after a section is CLEARED, what tempo tier should the
+ * "🚀 try the next speed" button on the result card offer?
+ *
+ * Pure. Returns the next tier up when the kid earned it (stars >= 2, same gate
+ * as `computeUnlocks` uses to unlock a tempo) AND the current tempo is a known
+ * tier below the top of the ladder. Returns null at 100% (top — celebrate,
+ * don't push) or below ★2 (not earned yet). This drives the *guided* half of
+ * the speed trainer: `computeUnlocks` already UNLOCKS the tier in the selector;
+ * this hands the kid a one-tap way to climb the "slow → full speed" ladder
+ * without walking back to the song panel. Achievement-gated, no time pressure
+ * (banned-list safe).
+ */
+export function planTempoStepUp(
+  currentTempoPct: number,
+  stars: number,
+  tiers: readonly number[] = TEMPO_TIERS
+): number | null {
+  if (stars < 2) return null;
+  const idx = tiers.indexOf(currentTempoPct);
+  if (idx < 0 || idx >= tiers.length - 1) return null;
+  return tiers[idx + 1];
+}
+
 export interface UnlockComputeInput {
   stars: number;
   /** Tempo % at which this section was just played (e.g. 60, 75, 90, 100). */
