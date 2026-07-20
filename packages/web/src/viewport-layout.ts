@@ -131,7 +131,12 @@ export interface ViewportLayout {
 }
 
 export function createViewportLayout(deps: ViewportLayoutDeps): ViewportLayout {
-  let currentLayoutMode: LayoutMode = 'phone-portrait';
+  // null = "not classified yet" — the first syncLayout must ALWAYS write
+  // body.dataset.layout. Seeding with 'phone-portrait' made the !== guard
+  // skip the first write on phones (detected mode == seed), so body carried
+  // NO data-layout attribute and every body[data-layout='phone-portrait']
+  // CSS rule silently failed until the mode changed (e.g. a rotation).
+  let currentLayoutMode: LayoutMode | null = null;
   let lastTopClusterPx = -1;
   let lastKbHeightPx = -1;
   let resizePending = false;
@@ -190,7 +195,7 @@ export function createViewportLayout(deps: ViewportLayoutDeps): ViewportLayout {
     syncLayout,
     refreshOsmdRect,
     onResizeBurst,
-    getCurrentLayoutMode: () => currentLayoutMode,
+    getCurrentLayoutMode: () => currentLayoutMode ?? 'phone-portrait',
   };
 }
 

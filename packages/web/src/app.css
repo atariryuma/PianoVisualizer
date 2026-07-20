@@ -206,6 +206,10 @@ canvas {
   align-items: center;
   justify-content: center;
   z-index: 10;
+  /* Horizontal breathing room so no text can sit flush against the
+     physical screen edge (390pt phones wrapped the title with the box
+     at full width and the lines left-flush — see h1/p text-align too). */
+  padding: 0 20px;
   /* Mesh-gradient backdrop: 3 stacked radial gradients give the
          title screen a "starry sky over an aurora" feel without needing
          an image. Pure CSS, GPU-friendly, ages well. */
@@ -260,6 +264,11 @@ canvas {
   margin-bottom: var(--sp-3);
   font-weight: 400;
   letter-spacing: 0.12em;
+  /* Multi-line fallback must stay centered — when the title is wider
+     than the viewport the flex item fills the width and default
+     text-align:left renders the wrap left-flush at x=0 (seen on
+     375-393pt iPhones). */
+  text-align: center;
   /* Subtle text-shadow stack: a tiny dark depth + a wide soft glow,
          so the title reads as luminous on the dark background without
          looking like a 90s bevel-and-emboss filter. */
@@ -279,6 +288,7 @@ canvas {
   color: var(--c-text-secondary);
   margin-bottom: var(--sp-10);
   letter-spacing: 0.04em;
+  text-align: center; /* same wrap-centering rationale as the h1 */
 }
 
 /* Title text scales with layout: compress on short landscape, enlarge
@@ -297,6 +307,19 @@ body[data-layout='tablet'] #startScreen h1 {
 }
 body[data-layout='desktop'] #startScreen h1 {
   font-size: var(--fs-display);
+}
+/* Portrait phones: 2.6rem + 0.12em tracking ≈ 420px — wider than a
+   375-393pt viewport, so the title wrapped to two lines. Scale with
+   the viewport so "Piano Visualizer" always fits on one line
+   (375pt → ~32px, capped at the 2.6rem token on wider phones). */
+body[data-layout='phone-portrait'] #startScreen h1 {
+  /* 7.8vw: measured against the display family's wide Latin glyphs
+     (Hiragino Maru Gothic ≈0.6em advance + 0.12em tracking) so
+     "Piano Visualizer" stays on ONE line down to 320pt phones. */
+  font-size: clamp(1.5rem, 7.8vw, var(--fs-3xl));
+}
+body[data-layout='phone-portrait'] #startScreen p {
+  font-size: var(--fs-base);
 }
 
 #startBtn {
@@ -639,7 +662,8 @@ body.title-screen #homeBtn {
 
 #questDisplay {
   position: fixed;
-  top: 55px;
+  /* Below #playTime (see the corner-stack contract at #playTime). */
+  top: max(76px, calc(var(--safe-top) + 72px));
   right: 16px;
   z-index: 5;
   display: flex;
@@ -837,6 +861,13 @@ body.title-screen #homeBtn {
   background: rgba(120, 230, 160, 0.45);
 }
 
+/* With MIDI attached the on-canvas keyboard preview occupies the bottom
+   ~60px band — hop above it like the other bottom HUD elements do
+   (#stageLabel 80, #noteDisplay 110, #debugOverlay 70). */
+body.midi-on #midiBadge {
+  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+}
+
 #micMeter {
   position: fixed;
   right: 16px;
@@ -977,7 +1008,10 @@ body.midi-on #noteDisplay {
 
 #sessionStatus {
   position: fixed;
-  bottom: 80px;
+  /* Safe-area aware like its bottom-stack siblings (#noteDisplay 50px,
+     #stageLabel 16px). A bare 80px sat INSIDE #noteDisplay's band on
+     home-indicator devices (noteDisplay 50+34 → occupies 84..114). */
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -1302,10 +1336,17 @@ body.midi-on #debugOverlay {
   margin-top: 14px;
 }
 
-/* v11: Play Time Display */
+/* v11: Play Time Display
+   Top-right corner stack contract (all right:16, top-anchored):
+     #themeBar   top max(16, safe+12), 32px tall → bottom max(48, safe+44)
+     #playTime   below the bar + 6px gap
+     #questDisplay below the time + ~8px gap (see its rule)
+   The old fixed top:50/55 ignored safe-area — on iPad (safe-top 24) and
+   notch iPhones the ⚙/🏠 buttons rendered on top of the time + quest
+   dots, and the time/quest rows overlapped each other by 9px. */
 #playTime {
   position: fixed;
-  top: 50px;
+  top: max(54px, calc(var(--safe-top) + 50px));
   right: 16px;
   z-index: 4;
   font-size: 0.75rem;
@@ -1335,7 +1376,11 @@ body[data-layout='tablet'] #modeButtons {
 body[data-layout='desktop'] #modeButtons {
   grid-template-columns: repeat(3, minmax(220px, 320px));
 }
-#modeButtons #addSongBtn {
+#modeButtons #addSongBtn,
+#modeButtons .journal-btn {
+  /* Both meta-surface buttons span the full grid row centered — on the
+     tablet/desktop multi-column grid a plain grid item lands in column 1
+     and the journal button sat left-aligned under a centered layout. */
   grid-column: 1 / -1;
   justify-self: center;
   min-width: 220px;
@@ -1798,6 +1843,13 @@ body[data-layout='desktop'] #modeButtons {
   color: #ffe4a8;
   font-weight: 500;
   letter-spacing: 0.08em;
+  /* Ellipsis at every width (not just ≤520px): a long user-song section
+     name could push the pill to its 92vw cap, sliding it under the
+     fixed ⚙/🏠 cluster on landscape phones. */
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #practiceTopBar .ptb-tempo {
