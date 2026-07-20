@@ -77,3 +77,4 @@ packages/web/.last-bench-report.md
 # Ad-hoc PowerShell helpers from agent diagnostics (server.log greps,
 # .mxl inspectors, etc.). Created on the fly when triaging bugs.
 .claude_*.ps1
+store-assets/
