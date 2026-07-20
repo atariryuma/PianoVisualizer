@@ -98,6 +98,18 @@ minimum to get a first build submitted.
 - [ ] App Review Information:
       `<<paste PD score license summary here so reviewer can find it>>`
 
+### Future / non-blocking (does NOT block the current release)
+
+- **UIScene lifecycle adoption** — the console logs
+  `UIScene lifecycle will soon be required. Failure to adopt will result in an assert in the future.`
+  This is a deprecation warning only (Capacitor 6 uses the classic AppDelegate
+  lifecycle); the app builds and runs today. Adopt when Apple makes it mandatory
+  — most likely resolved by a Capacitor upgrade (7.x), otherwise add a
+  `UIApplicationSceneManifest` + scene delegate to the iOS host. The other
+  launch-time console lines (`Could not create a sandbox extension`,
+  `xpc_user_sessions_get_foreground_uid() failed`,
+  `Unable to hide query parameters`) are benign WKWebView/iOS noise, not errors.
+
 ### What to write in App Review Notes
 
 > Piano Visualizer is a real-time piano practice app for children. Microphone
