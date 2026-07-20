@@ -29,14 +29,19 @@ describe('formatDateKey', () => {
 
 describe('initStreakState / resetStreakState', () => {
   it('initial state has no days and count 0', () => {
-    expect(initStreakState()).toEqual({ streakDays: [], streakCount: 0 });
+    expect(initStreakState()).toEqual({ streakDays: [], streakCount: 0, bestStreak: 0 });
   });
 
   it('reset empties a populated state in place', () => {
-    const s: StreakState = { streakDays: ['2026-05-01', '2026-05-02'], streakCount: 2 };
+    const s: StreakState = {
+      streakDays: ['2026-05-01', '2026-05-02'],
+      streakCount: 2,
+      bestStreak: 2,
+    };
     resetStreakState(s);
     expect(s.streakDays).toEqual([]);
     expect(s.streakCount).toBe(0);
+    expect(s.bestStreak).toBe(0);
   });
 
   it('reset preserves the streakDays array reference', () => {
@@ -45,6 +50,22 @@ describe('initStreakState / resetStreakState', () => {
     s.streakDays.push('2026-05-01');
     resetStreakState(s);
     expect(s.streakDays).toBe(ref);
+  });
+});
+
+describe('bestStreak — non-decreasing (banned-list: no decrementing streak in UI)', () => {
+  it('grows with the current streak then never drops when a day is missed', () => {
+    const s = initStreakState();
+    recordPracticeDay(s, '2026-05-01', OPTS);
+    recordPracticeDay(s, '2026-05-02', OPTS);
+    recordPracticeDay(s, '2026-05-03', OPTS);
+    expect(s.streakCount).toBe(3);
+    expect(s.bestStreak).toBe(3);
+
+    // 木・金を空けて土に練習 → 現在ストリークは 1 に落ちるが best は 3 のまま。
+    recordPracticeDay(s, '2026-05-06', OPTS);
+    expect(s.streakCount).toBe(1); // 減少する（UI には出さない）
+    expect(s.bestStreak).toBe(3); // 非減少
   });
 });
 

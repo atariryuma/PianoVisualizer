@@ -511,7 +511,8 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       '<div class="jr-cal-stat"><span class="jr-cal-stat-label">' +
       deps.t('calendarCurrentStreak') +
       '</span><span class="jr-cal-stat-value">' +
-      (progress.streakCount ?? 0) +
+      // 非減少のベストストリークを表示（banned-list: 減少するストリークは出さない）。
+      (progress.bestStreak ?? 0) +
       '</span></div>' +
       minuteStats;
     activity.appendChild(summary);

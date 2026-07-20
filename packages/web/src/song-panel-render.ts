@@ -34,7 +34,7 @@ export interface SongPanelProgress {
 /** Practice slice the renderer reads + writes (tempo + section idx
  *  inside inner click handlers). */
 export interface SongPanelPracticeRef {
-  progress: { streakCount?: number; streakDays: string[] } | null;
+  progress: { streakCount?: number; bestStreak?: number; streakDays: string[] } | null;
   tempoPct: number;
   mode: PracticeMode;
   fullSongMode: boolean;
@@ -139,7 +139,8 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
       deps.dom.songTitle.textContent = deps.t(currentSong.titleKey);
       deps.dom.songComposer.textContent = deps.t(currentSong.composerKey);
     }
-    deps.dom.streakCount.textContent = String(top.streakCount || 0);
+    // 非減少のベストストリークを表示（減少する streakCount は出さない — banned-list）。
+    deps.dom.streakCount.textContent = String(top.bestStreak || 0);
     deps.dom.streakCal.innerHTML = '';
     const days: string[] = [];
     for (let i = 6; i >= 0; i--) {

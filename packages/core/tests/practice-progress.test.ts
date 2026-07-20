@@ -16,6 +16,7 @@ describe('defaultPracticeProgress', () => {
       schemaVersion: 2,
       streakDays: [],
       streakCount: 0,
+      bestStreak: 0,
       songs: {},
       earnedStamps: {},
       minutesByDay: {},

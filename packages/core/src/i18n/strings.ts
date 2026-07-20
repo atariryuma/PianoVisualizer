@@ -922,7 +922,9 @@ export const T_STRINGS: TranslationTable = {
     jp: '通算練習日数',
     de: 'Übungstage insgesamt',
   },
-  calendarCurrentStreak: { en: 'Current streak', jp: '現在の連続日数', de: 'Aktuelle Serie' },
+  // 「最高連続日数」— 減少する現在ストリークではなく非減少のベストを表示する
+  // ため、ラベルも実体（best）に合わせる（banned-list）。キーは互換で据置。
+  calendarCurrentStreak: { en: 'Best streak', jp: '最高連続日数', de: 'Längste Serie' },
   // Stamps tab — category labels + hidden placeholder
   stampCatCompletion: { en: 'Completion', jp: '達成', de: 'Abschluss' },
   stampCatPerformance: { en: 'Performance', jp: 'パフォーマンス', de: 'Leistung' },

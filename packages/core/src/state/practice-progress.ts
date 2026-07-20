@@ -119,6 +119,7 @@ export function defaultPracticeProgress(): PracticeProgress {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     streakDays: [],
     streakCount: 0,
+    bestStreak: 0,
     songs: {},
     earnedStamps: {},
     minutesByDay: {},
@@ -136,10 +137,14 @@ export function migrateAndDefaultProgress(raw: unknown): PracticeProgress {
   const rawVersion = typeof r.schemaVersion === 'number' ? r.schemaVersion : 1;
 
   if (rawVersion < CURRENT_SCHEMA_VERSION) {
+    const sc = typeof r.streakCount === 'number' ? r.streakCount : 0;
     return {
       ...def,
       streakDays: Array.isArray(r.streakDays) ? (r.streakDays as string[]) : [],
-      streakCount: typeof r.streakCount === 'number' ? r.streakCount : 0,
+      streakCount: sc,
+      // 旧セーブに bestStreak は無いので、現ストリークで seed（非減少の起点）。
+      bestStreak:
+        typeof r.bestStreak === 'number' && r.bestStreak >= 0 ? Math.max(r.bestStreak, sc) : sc,
     };
   }
 
@@ -156,6 +161,12 @@ export function migrateAndDefaultProgress(raw: unknown): PracticeProgress {
     : [];
   merged.streakCount =
     typeof merged.streakCount === 'number' && merged.streakCount >= 0 ? merged.streakCount : 0;
+  // bestStreak は非減少。無効/未保存なら現ストリークで seed。既存 best と現
+  // ストリークの大きい方を採る（過去の best を下回らせない）。
+  merged.bestStreak = Math.max(
+    typeof merged.bestStreak === 'number' && merged.bestStreak >= 0 ? merged.bestStreak : 0,
+    merged.streakCount
+  );
   if (!plainObj(merged.earnedStamps)) merged.earnedStamps = {};
   if (!plainObj(merged.minutesByDay)) merged.minutesByDay = {};
   return merged;

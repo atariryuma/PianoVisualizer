@@ -102,7 +102,11 @@ function makeProgress(overrides: Partial<SongPanelProgress> = {}): SongPanelProg
 
 function makeDeps(overrides: Partial<SongPanelRenderDeps> = {}): SongPanelRenderDeps {
   const practice: SongPanelPracticeRef = {
-    progress: { streakCount: 3, streakDays: ['2026-05-05', '2026-05-06', '2026-05-07'] },
+    progress: {
+      streakCount: 1, // 減少しうる現在値（UI には出さない）
+      bestStreak: 3, // 非減少のベスト（フレームバッジはこちらを表示）
+      streakDays: ['2026-05-05', '2026-05-06', '2026-05-07'],
+    },
     tempoPct: 75,
     mode: 'rhythm',
     fullSongMode: false,

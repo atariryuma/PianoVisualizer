@@ -18,8 +18,17 @@ export interface StreakState {
   /** Recorded practice day keys, ascending lex-order. */
   streakDays: string[];
   /** Most recent consecutive-day count. Derived from streakDays — written
-   *  by `recordPracticeDay`, never set directly by the shell. */
+   *  by `recordPracticeDay`, never set directly by the shell. NOTE: this
+   *  DECREASES on a missed day and must NOT be surfaced in the UI (banned-
+   *  list: decrementing streaks carry measured harm). Kept as the source
+   *  for `bestStreak`; the UI shows `bestStreak` instead. */
   streakCount: number;
+  /** Non-decreasing best-ever consecutive-day run. This is what the UI
+   *  shows (banned-list-safe). Updated to max(bestStreak, streakCount) on
+   *  every recorded day; never decreases. Optional in the type so older
+   *  saves / test fixtures stay valid — init/default/migrate always set it,
+   *  and every reader uses `?? 0`. */
+  bestStreak?: number;
 }
 
 export interface StreakOptions {
@@ -31,7 +40,7 @@ export interface StreakOptions {
 
 /** Build a fresh state — no recorded days, count 0. */
 export function initStreakState(): StreakState {
-  return { streakDays: [], streakCount: 0 };
+  return { streakDays: [], streakCount: 0, bestStreak: 0 };
 }
 
 /** Reset a populated state in place. Preserves the streakDays array
@@ -39,6 +48,7 @@ export function initStreakState(): StreakState {
 export function resetStreakState(state: StreakState): void {
   state.streakDays.length = 0;
   state.streakCount = 0;
+  state.bestStreak = 0;
 }
 
 /** Format a Date as the canonical local-time day key. */
@@ -68,6 +78,8 @@ export function recordPracticeDay(state: StreakState, todayKey: string, opts: St
 
   days.push(todayKey);
   state.streakCount = computeStreakCount(state);
+  // 非減少のベストストリークを更新（UI はこちらを表示する）。
+  state.bestStreak = Math.max(state.bestStreak ?? 0, state.streakCount);
 
   if (days.length > opts.maxDays) {
     days.splice(0, days.length - opts.maxDays);
