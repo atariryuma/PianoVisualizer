@@ -44,6 +44,27 @@ describe('progress-backup', () => {
     expect(() => parseBackup(future)).toThrow(/newer than this app supports/);
   });
 
+  it('D2: rejects a newer version given as a string ("2" must not bypass the guard)', () => {
+    const future = JSON.stringify({
+      app: 'piano-visualizer',
+      kind: 'progress-backup',
+      version: String(BACKUP_VERSION + 1),
+      progress: {},
+    });
+    expect(() => parseBackup(future)).toThrow(/newer than this app supports/);
+  });
+
+  it('D2: rejects progress/prefs with an invalid shape (array / non-object)', () => {
+    const bad = JSON.stringify({
+      app: 'piano-visualizer',
+      kind: 'progress-backup',
+      version: 1,
+      progress: [1, 2, 3], // ← 配列は不正
+      prefs: null,
+    });
+    expect(() => parseBackup(bad)).toThrow(/invalid shape/);
+  });
+
   it('rejects an empty backup (no progress and no prefs)', () => {
     const empty = JSON.stringify({
       app: 'piano-visualizer',

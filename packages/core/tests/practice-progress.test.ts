@@ -75,6 +75,39 @@ describe('migrateAndDefaultProgress', () => {
     expect(r.schemaVersion).toBe(2);
   });
 
+  it('D1: sanitizes malformed v2 fields so a corrupt/tampered backup cannot crash the UI', () => {
+    // streakDays が非配列だと song-panel の streakDays.includes() が投げて毎
+    // リロード恒久クラッシュ。v2 マージでも型を検証して安全な既定へ落とす。
+    const raw = {
+      schemaVersion: 2,
+      streakDays: 5, // ← 非配列（破損）
+      streakCount: 'nope', // ← 非数値
+      songs: [1, 2, 3], // ← 配列（不正）
+      earnedStamps: 'x', // ← 非オブジェクト
+      minutesByDay: null,
+    };
+    const r = migrateAndDefaultProgress(raw);
+    expect(Array.isArray(r.streakDays)).toBe(true);
+    expect(r.streakDays).toEqual([]);
+    expect(r.streakCount).toBe(0);
+    expect(r.songs).toEqual({});
+    expect(r.earnedStamps).toEqual({});
+    expect(r.minutesByDay).toEqual({});
+  });
+
+  it('D1: future schemaVersion (>CURRENT) is also sanitized, not passed through raw', () => {
+    const raw = { schemaVersion: 99, streakDays: { bad: true }, songs: 'nope' };
+    const r = migrateAndDefaultProgress(raw);
+    expect(r.streakDays).toEqual([]);
+    expect(r.songs).toEqual({});
+  });
+
+  it('D1: keeps valid v2 streakDays entries and drops non-string members', () => {
+    const raw = { schemaVersion: 2, streakDays: ['2026-04-15', 42, null, '2026-04-16'] };
+    const r = migrateAndDefaultProgress(raw);
+    expect(r.streakDays).toEqual(['2026-04-15', '2026-04-16']);
+  });
+
   it('wipes pre-v2 payloads even when schemaVersion is missing', () => {
     const raw = {
       streakDays: [],

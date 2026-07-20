@@ -144,12 +144,20 @@ export function migrateAndDefaultProgress(raw: unknown): PracticeProgress {
   }
 
   const merged = Object.assign(def, r) as PracticeProgress;
-  if (!merged.earnedStamps || typeof merged.earnedStamps !== 'object') {
-    merged.earnedStamps = {};
-  }
-  if (!merged.minutesByDay || typeof merged.minutesByDay !== 'object') {
-    merged.minutesByDay = {};
-  }
+  // v2 マージは Object.assign で raw をそのまま素通しするため、各フィールドの
+  // 型を検証する。prefs はロード時に sanitizePrefs で必ず浄化されるのに progress
+  // 側にはこの浄化が無く、破損/改竄/未来版バックアップの取り込みで例えば
+  // streakDays が非配列だと song-panel の `streakDays.includes()` が投げ、毎
+  // リロード恒久 UI クラッシュになる（未来版 schemaVersion>CURRENT もここに来る）。
+  const plainObj = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.isArray(v);
+  if (!plainObj(merged.songs)) merged.songs = {};
+  merged.streakDays = Array.isArray(merged.streakDays)
+    ? merged.streakDays.filter((x): x is string => typeof x === 'string')
+    : [];
+  merged.streakCount =
+    typeof merged.streakCount === 'number' && merged.streakCount >= 0 ? merged.streakCount : 0;
+  if (!plainObj(merged.earnedStamps)) merged.earnedStamps = {};
+  if (!plainObj(merged.minutesByDay)) merged.minutesByDay = {};
   return merged;
 }
 

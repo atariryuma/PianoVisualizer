@@ -62,13 +62,23 @@ export function parseBackup(text: string): ParsedBackup {
   if (b.app !== 'piano-visualizer' || b.kind !== 'progress-backup') {
     throw new Error('Not a Piano Visualizer progress backup');
   }
-  if (typeof b.version === 'number' && b.version > BACKUP_VERSION) {
+  // version は数値化して比較（"2" 等の文字列で未来版ガードをすり抜けさせない）。
+  const ver = Number(b.version);
+  if (Number.isFinite(ver) && ver > BACKUP_VERSION) {
     throw new Error(
       'Backup version ' + b.version + ' is newer than this app supports (v' + BACKUP_VERSION + ')'
     );
   }
   if (b.progress == null && b.prefs == null) {
     throw new Error('Backup contains no progress or settings');
+  }
+  // progress/prefs は「プレーンオブジェクト or null」だけ通す（配列・数値・文字列
+  // は不正）。破損データの最終防御は取り込み側の migrateAndDefaultProgress /
+  // sanitizePrefs だが、入口でも明白な不正型を弾く。
+  const isPlainOrNull = (v: unknown): boolean =>
+    v == null || (typeof v === 'object' && !Array.isArray(v));
+  if (!isPlainOrNull(b.progress) || !isPlainOrNull(b.prefs)) {
+    throw new Error('Backup progress/settings has an invalid shape');
   }
   return { progress: b.progress ?? null, prefs: b.prefs ?? null };
 }
