@@ -131,6 +131,8 @@ export const T_STRINGS: TranslationTable = {
   volGhost: { en: '👻 Demo piano', jp: '👻 おてほんピアノ' },
   volBacking: { en: '🎶 Melody guide', jp: '🎶 おともパート' },
   volMetronome: { en: '🥁 Metronome / count-in', jp: '🥁 メトロノーム・カウント' },
+  backupProgress: { en: 'Back up progress', jp: 'きろくをほぞん' },
+  restoreProgress: { en: 'Restore progress', jp: 'きろくをもどす' },
   calibrateBtn: { en: '🎯 Tap-along auto-set', jp: '🎯 タップで自動そくてい' },
   calibrateTapHere: {
     en: '👆 Tap here with the click!',

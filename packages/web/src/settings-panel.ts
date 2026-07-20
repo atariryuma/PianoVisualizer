@@ -86,6 +86,12 @@ export interface SettingsPanelDom {
   volBackingVal?: HTMLElement | null;
   volMetronomeSlider?: HTMLInputElement | null;
   volMetronomeVal?: HTMLElement | null;
+  /** 0.15 — progress backup: export button, restore button + hidden file
+   *  input, and a status line for import errors. */
+  backupExportBtn?: HTMLElement | null;
+  backupImportBtn?: HTMLElement | null;
+  backupImportFile?: HTMLInputElement | null;
+  backupStatus?: HTMLElement | null;
 }
 
 export interface SettingsPanelDeps {
@@ -117,6 +123,10 @@ export interface SettingsPanelDeps {
   applyToneVolumes?(): void;
   /** 0.15 — refresh the shell's note-name cache after a notation change. */
   onNoteNamingChange?(): void;
+  /** 0.15 — download a progress+settings backup file. */
+  exportProgressBackup?(): void;
+  /** 0.15 — restore from a backup file (throws on bad file; reloads on ok). */
+  importProgressBackup?(file: Blob): Promise<void>;
   /** Show the session-summary modal (Reset button). Only fires when
    *  `state.running` is true. */
   showSessionSummary?(): void;
@@ -281,6 +291,33 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
       deps.savePrefs();
     });
   }
+
+  // ── 0.15: progress backup / restore ──────────────────────────────
+  deps.dom.backupExportBtn?.addEventListener('click', () => {
+    deps.exportProgressBackup?.();
+  });
+  deps.dom.backupImportBtn?.addEventListener('click', () => {
+    deps.dom.backupImportFile?.click();
+  });
+  deps.dom.backupImportFile?.addEventListener('change', () => {
+    const file = deps.dom.backupImportFile?.files?.[0];
+    if (!file) return;
+    if (deps.dom.backupStatus) {
+      deps.dom.backupStatus.textContent = '';
+      deps.dom.backupStatus.classList.remove('error');
+    }
+    void deps
+      .importProgressBackup?.(file)
+      // Success reloads the page; we only land here on failure.
+      .catch((e: unknown) => {
+        if (deps.dom.backupStatus) {
+          deps.dom.backupStatus.textContent = (e as Error).message || 'Restore failed';
+          deps.dom.backupStatus.classList.add('error');
+        }
+      });
+    // Reset so re-picking the same file re-fires change.
+    if (deps.dom.backupImportFile) deps.dom.backupImportFile.value = '';
+  });
 
   deps.dom.audioOffsetReset?.addEventListener('click', () => {
     deps.prefs.audioOffsetMs = null;

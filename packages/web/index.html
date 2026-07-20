@@ -306,6 +306,24 @@
               >🐞 <span data-i18n="debugOverlay">Debug overlay</span></span
             >
           </div>
+          <!-- Progress backup (0.15): export/import stars + stamps + practice
+               days + settings, so a new device doesn't lose everything. The
+               user-song library has its own export in the Add-a-song modal. -->
+          <div class="settings-row">
+            <button class="settings-btn" id="backupExportBtn">
+              ⬇️ <span data-i18n="backupProgress">Back up progress</span>
+            </button>
+            <button class="settings-btn" id="backupImportBtn">
+              ⬆️ <span data-i18n="restoreProgress">Restore progress</span>
+            </button>
+            <input
+              type="file"
+              id="backupImportFile"
+              accept="application/json,.json"
+              style="display: none"
+            />
+          </div>
+          <div class="settings-help" id="backupStatus" aria-live="polite"></div>
           <!-- About / privacy reassurance — static, no external link (a link
                would need a parental gate under App Store Kids rules; the full
                policy ships in docs/PRIVACY.md and the store listing). Version

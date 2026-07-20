@@ -40,6 +40,9 @@ export interface ShellSettingsDeps {
   /** 0.15 — 音量バランスのライブ反映 + 音名表記キャッシュ更新。 */
   applyToneVolumes?: () => void;
   onNoteNamingChange?: () => void;
+  /** 0.15 — 進捗バックアップ（星/スタンプ/練習日 + 設定）の書き出し/取り込み。 */
+  exportProgressBackup?: () => void;
+  importProgressBackup?: (file: Blob) => Promise<void>;
 }
 
 export interface ShellSettings {
@@ -75,6 +78,11 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
       volBackingVal: DOM.volBackingVal,
       volMetronomeSlider: DOM.volMetronomeSlider,
       volMetronomeVal: DOM.volMetronomeVal,
+      // 0.15 — 進捗バックアップ。
+      backupExportBtn: DOM.backupExportBtn,
+      backupImportBtn: DOM.backupImportBtn,
+      backupImportFile: DOM.backupImportFile,
+      backupStatus: DOM.backupStatus,
     },
     prefs: deps.prefs,
     practice: deps.practice,
@@ -94,6 +102,8 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     onClose: deps.onPanelClose,
     applyToneVolumes: deps.applyToneVolumes,
     onNoteNamingChange: deps.onNoteNamingChange,
+    exportProgressBackup: deps.exportProgressBackup,
+    importProgressBackup: deps.importProgressBackup,
   } as any);
 
   // Boot-time seed — honor the persisted-prefs debug overlay state

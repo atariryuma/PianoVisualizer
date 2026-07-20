@@ -13,6 +13,7 @@ import * as PianoConfig from './piano-config';
 import * as DomBag from './dom-bag';
 import * as GameStateInit from './game-state-init';
 import * as PrefsStorage from './prefs-storage';
+import * as ProgressBackup from './progress-backup';
 import * as PracticeStateInit from './practice-state-init';
 import * as ModalFocus from './modal-focus';
 import * as PianoWakeLock from './wakelock';
@@ -512,6 +513,31 @@ export function boot(): void {
     // 音量スライダーのライブ反映 + 音名表記トグルのキャッシュ更新。
     applyToneVolumes: () => _practice.applyToneVolumes(),
     onNoteNamingChange: () => _practice.refreshLangCaches(),
+    // 進捗バックアップ（星/スタンプ/練習日 + 設定）。ライブラリ(曲)とは別。
+    exportProgressBackup: () => {
+      const progress = loadJSON('pianoViz_practice_v1', null);
+      const prefsBlob = loadJSON('pianoViz_prefs', null);
+      const stamp = new Date().toISOString();
+      const json = ProgressBackup.serializeBackup(progress, prefsBlob, stamp);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'piano-visualizer-progress-' + stamp.slice(0, 10) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    },
+    importProgressBackup: async (file: Blob): Promise<void> => {
+      // Throws on a bad/foreign file — settings-panel surfaces the message.
+      const { progress, prefs: prefsBlob } = ProgressBackup.parseBackup(await file.text());
+      // Write straight to disk, then reload so every in-memory cache
+      // (prefs object, practice.progress, journal) re-seeds from disk.
+      if (progress != null) saveJSON('pianoViz_practice_v1', progress);
+      if (prefsBlob != null) saveJSON('pianoViz_prefs', prefsBlob);
+      location.reload();
+    },
   });
   ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 

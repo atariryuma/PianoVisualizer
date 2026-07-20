@@ -172,6 +172,11 @@ export interface DomBag {
   volBackingVal: HTMLElement;
   volMetronomeSlider: HTMLElement;
   volMetronomeVal: HTMLElement;
+  // 0.15: progress backup / restore.
+  backupExportBtn: HTMLElement;
+  backupImportBtn: HTMLElement;
+  backupImportFile: HTMLElement;
+  backupStatus: HTMLElement;
 }
 
 /** All ids the bag walks. Kept as a frozen const so a typo (or a
@@ -313,6 +318,10 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'volBackingVal',
   'volMetronomeSlider',
   'volMetronomeVal',
+  'backupExportBtn',
+  'backupImportBtn',
+  'backupImportFile',
+  'backupStatus',
 ] as const) as readonly (keyof DomBag)[];
 
 /** Project a subset of an existing DOM bag onto a new object. The
