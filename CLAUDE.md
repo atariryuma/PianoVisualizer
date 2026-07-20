@@ -208,8 +208,9 @@ pnpm serve                     # build:web + node https_server.mjs (any OS)
 pnpm serve:ps                  # build:web + PowerShell server (Windows legacy)
 
 pnpm build:mobile              # → packages/mobile/dist/ + cap sync
-pnpm cap:ios                   # opens iOS simulator
-pnpm cap:android               # opens Android emulator
+pnpm cap:ios                   # opens iOS project (generated, hardware-verified)
+pnpm cap:android               # ⚠ fails until `cap add android` is run — the
+                               #   Android host app is not generated yet
 ```
 
 ## MIDI input by platform
@@ -599,7 +600,28 @@ submission checklist, and
 wrapper instructions.
 
 The native MIDI plugin lives at
-[`packages/plugins/capacitor-piano-midi/`](packages/plugins/capacitor-piano-midi/)
-— both iOS (Swift + CoreMIDI + CoreBluetooth) and Android (Kotlin +
-android.media.midi + BluetoothLeScanner) implementations are ready, but not yet
-hardware-tested.
+[`packages/plugins/capacitor-piano-midi/`](packages/plugins/capacitor-piano-midi/).
+
+**Platform status (2026-07-20 — iOS-first release):**
+
+- **iOS: shipped-quality.** The Capacitor app under `packages/mobile/ios/` is
+  generated, builds, and was **hardware-verified on a physical iPad Pro 12.9"
+  (3rd gen) / iPadOS 26.5.2**: mic detection, BLE-MIDI (Roland GO:PIANO88 via
+  the OS pairing sheet `CABTMIDICentralViewController`), and the splash screen
+  all work. Native MIDI reaches the shell through the Web-MIDI polyfill
+  (`packages/web/src/native-midi-polyfill.ts`), not the `packages/mobile/src`
+  adapters (those were removed — the shipped bundle is `packages/web`'s Vite
+  build).
+- **Android: NOT generated yet.** `packages/mobile/android/` does not exist
+  (`cap add android` has not been run), so `pnpm cap:android` will fail until it
+  is. The plugin's Kotlin side (`android.media.midi` + `BluetoothLeScanner`) is
+  implemented but has no host app, and **native BLE-MIDI is not wired to JS on
+  Android** (`native-midi-polyfill.ts` only wires `showBleMidiPairing` for iOS;
+  Android would need scanBle/connectBle + a device-picker UI). Treat Android as
+  a future milestone, not a shippable target.
+- **No background audio.** This is a foreground-only practice app;
+  `UIBackgroundModes` was intentionally removed from `Info.plist` (it was
+  declared but never backed by an `AVAudioSession` setup). If lock-screen /
+  background continuation is ever needed, add both the plist key AND a real
+  `AVAudioSession` category — don't re-add the declaration alone (App Store
+  review flags a declared-but-unimplemented background mode).

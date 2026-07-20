@@ -45,14 +45,24 @@ export interface PianoMidiPlugin {
   /** Close a port; you'll stop receiving its messages. */
   closePort(options: { id: string }): Promise<void>;
 
-  /** Start a BLE-MIDI scan. iOS uses CoreBluetooth; Android uses BluetoothAdapter.
-   *  Resolves to a list of discovered peripherals; the user picks one in the UI
-   *  and calls connectBle(). Pure-USB setups don't need to call this. */
+  /** Present the OS Bluetooth-MIDI pairing UI. **iOS only** — shows
+   *  `CABTMIDICentralViewController`; once the user pairs a keyboard there,
+   *  iOS's MIDIBluetoothDriver publishes it as a normal CoreMIDI source and it
+   *  arrives via the `portChange` event (same path as a USB hot-plug). No-op /
+   *  rejects on Android — use scanBle()/connectBle() there instead. */
+  showBleMidiPairing(): Promise<void>;
+
+  /** Start a BLE-MIDI scan. **Android only** — uses BluetoothAdapter (Android
+   *  System WebView exposes no `navigator.bluetooth` and has no OS pairing
+   *  sheet, so the app drives scan/connect itself). Resolves to discovered
+   *  peripherals; the user picks one and calls connectBle(). On iOS this
+   *  rejects — call showBleMidiPairing() instead. */
   scanBle(options?: {
     timeoutMs?: number;
   }): Promise<{ devices: Array<{ id: string; name: string }> }>;
 
-  /** Pair + open a BLE-MIDI peripheral discovered via scanBle(). */
+  /** Pair + open a BLE-MIDI peripheral discovered via scanBle(). **Android
+   *  only** (iOS rejects — use showBleMidiPairing()). */
   connectBle(options: { id: string }): Promise<MidiPort>;
 
   /** Subscribe to MIDI message events from any open input. */

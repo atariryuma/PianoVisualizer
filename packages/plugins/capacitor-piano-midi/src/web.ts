@@ -78,4 +78,10 @@ export class PianoMidiWeb extends WebPlugin implements PianoMidiPlugin {
   async connectBle(_options: { id: string }): Promise<MidiPort> {
     throw this.unavailable('BLE MIDI connect via plugin is native-only.');
   }
+
+  async showBleMidiPairing(): Promise<void> {
+    // iOS-only (CABTMIDICentralViewController). The web shell pairs via Web
+    // Bluetooth (navigator.bluetooth) directly, never through the plugin.
+    throw this.unavailable('OS Bluetooth-MIDI pairing sheet is iOS-only.');
+  }
 }
