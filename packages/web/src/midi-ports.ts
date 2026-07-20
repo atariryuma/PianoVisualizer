@@ -93,6 +93,10 @@ export interface MidiPortsBleRef {
 export interface MidiPortsDeps {
   midiInput: MidiPortsInputRef;
   state: MidiPortsStateRef;
+  /** I1: 切断（detach）時に押下中の鍵の視覚状態をクリアする。切断後は
+   *  note-off が二度と来ないので、これが無いと幽霊点灯が次のセクション遷移
+   *  まで残る。省略可（旧呼び出し互換）。 */
+  clearHeldNotes?: () => void;
   /** Read at call time (not factory-build time) so the legacy shell
    *  can hand in a thunk that resolves `bleMidi` after its TDZ
    *  unblocks — the bleMidi const lives further down legacy-app.js
@@ -269,6 +273,9 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     deps.midiInput.port = null;
     deps.midiInput.enabled = false;
     deps.setInputIndicator();
+    // I1: 切断で note-off が来なくなるので、押下中の鍵の視覚状態をクリア
+    // （幽霊点灯防止）。生成（attach 経路）に対する対称な消去。
+    deps.clearHeldNotes?.();
     console.log('[MIDI] disconnected');
 
     // v13: Bring the mic back on a deliberate detach so the user can

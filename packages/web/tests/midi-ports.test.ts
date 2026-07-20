@@ -368,6 +368,15 @@ describe('detach', () => {
     expect(mocks.startMidiAutoRescan).toHaveBeenCalledOnce();
   });
 
+  it('clears held-note visual state on detach (I1: no ghost notes after unplug)', () => {
+    const port: MidiPortRef = { name: 'r' };
+    const clearHeldNotes = vi.fn();
+    const { ports, midiInput } = makePorts({ clearHeldNotes });
+    midiInput.port = port;
+    ports.detach(port);
+    expect(clearHeldNotes).toHaveBeenCalledOnce();
+  });
+
   it('restarts auto-rescan on detach even when mic is the healthy fallback', () => {
     const port: MidiPortRef = { name: 'r' };
     const { ports, midiInput, mocks } = makePorts();

@@ -68,6 +68,10 @@ export interface ShellMidiDeps {
   resumeMic: () => Promise<unknown>;
   refreshIntroHint: () => void;
   showHitChip: (kind: string, msg: string) => void;
+  /** I1: MIDI 切断（detach / BLE drop）時に押下中の鍵の視覚状態
+   *  （midiState.activeNotes / sustainedNotes / sustainOn）をクリアする。
+   *  切断で note-off が二度と来ない鍵が幽霊点灯で残るのを防ぐ。 */
+  clearHeldMidiNotes?: () => void;
   /** Per-note callbacks defined in the shell (close over midiState etc).
    *  Passed as thunks so the shell can build ShellMidi before the handlers
    *  cluster — the actual fns are read lazily at dispatch time. */
@@ -176,6 +180,7 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     micMeter: dom.micMeter,
     startMidiAutoRescan: () => _rescan.startAutoRescan(),
     stopMidiAutoRescan: () => _rescan.stopAutoRescan(),
+    clearHeldNotes: deps.clearHeldMidiNotes,
     t,
   });
 
@@ -284,6 +289,7 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     parsePacket: (buf: any) =>
       BleMidiParser.parseBleMidiPacket(buf, (s, a, b) => _dispatch.dispatch(s, a, b)),
     startMidiAutoRescan: () => _rescan.startAutoRescan(),
+    clearHeldNotes: deps.clearHeldMidiNotes,
     t,
     alert: (msg: any) => alert(msg),
     navigator: nav,

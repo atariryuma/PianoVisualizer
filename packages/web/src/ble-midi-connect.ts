@@ -94,6 +94,8 @@ export interface BleMidiConnectDeps {
   refreshIntroHint?: () => void;
   showHitChip?: (kind: string, msg: string) => void;
   micMeter?: HTMLElement | null;
+  /** I1: GATT 切断時に押下中の鍵の視覚状態をクリアする（幽霊点灯防止）。 */
+  clearHeldNotes?: () => void;
 
   /** BLE packet decoder — pass `parseBleMidiPacket(buf, dispatch)`
    *  bound to your shell's dispatch entry. The connect factory
@@ -154,6 +156,9 @@ export function createBleMidiConnect(deps: BleMidiConnectDeps): BleMidiConnect {
         deps.midiInput.enabled = false;
         deps.midiInput.port = null;
         deps.setInputIndicator();
+        // I1: BLE 切断で note-off が来なくなるので、押下中の鍵の視覚状態を
+        // クリア（幽霊点灯防止）。
+        deps.clearHeldNotes?.();
         if (deps.hasAudioCtx() && deps.state.micSuspended) {
           deps.resumeMic();
         }

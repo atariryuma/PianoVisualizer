@@ -461,6 +461,14 @@ export function boot(): void {
     isRunning: () => !!state.running,
     requestWakeLock,
     getTone: () => Tone,
+    // I1: MIDI 切断（detach / BLE drop）時に押下中の鍵が幽霊点灯で残らないよう
+    // midiState をクリア。midiState は _midiH 由来で後段束縛だが、この thunk は
+    // 切断時にしか呼ばれないので前方参照で問題ない（getMidiState と同パターン）。
+    clearHeldMidiNotes: () => {
+      midiState.activeNotes.clear();
+      midiState.sustainedNotes.clear();
+      midiState.sustainOn = false;
+    },
   });
   const {
     midiInput,
