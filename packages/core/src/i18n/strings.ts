@@ -51,10 +51,11 @@ export const T_STRINGS: TranslationTable = {
   },
   connectBluetooth: { en: 'Connect Bluetooth', jp: 'Bluetooth接続', de: 'Bluetooth verbinden' },
   other: { en: 'Other', jp: 'その他', de: 'Sonstiges' },
-  // 「セッションを終了」— 実挙動（結果を見せて曲選択へ戻す）に一致させた
-  // 業界標準の呼称（Simply Piano / Yousician 等の Exit/End 相当）。旧
-  // 「リセット」は"開くと結果画面が出る"違和感があった。キーは互換のため据置。
-  resetSession: { en: 'End session', jp: 'セッションを終了', de: 'Sitzung beenden' },
+  // このボタンはフリープレイ専用の「セッション結果」(combo/stage/quest/レーダー)
+  // を開くだけで、セッションを終了しない（終了は 🏠/やめる が担う）。過去に
+  // 「リセット」「終了」と誤ったラベルを付けたが、実挙動＝サマリー表示に合わせ、
+  // カード見出し sumTitle「セッション結果」と同じ語彙に統一。キーは互換で据置。
+  resetSession: { en: 'Session results', jp: 'セッションの結果', de: 'Sitzungsergebnis' },
   debugOverlay: { en: 'Debug overlay', jp: 'デバッグ表示', de: 'Debug-Anzeige' },
   language: { en: 'Language', jp: '言語', de: 'Sprache' },
   // Intro hint / MIDI diagnostics

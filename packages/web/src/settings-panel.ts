@@ -37,6 +37,10 @@ export interface SettingsPrefs {
  *  practice so the running session picks up the change instantly. */
 export interface SettingsPracticeRef {
   audioOffsetMs: number;
+  /** 練習セッション中か。「セッションの結果」ボタンはフリープレイ専用サマリー
+   *  なので、練習中(enabled=true)は隠す判定に使う（露出すると練習を終了せず
+   *  再生を再開してしまう混線の元）。 */
+  enabled?: boolean;
 }
 
 /** Game-state slice — the panel reads `running` (gates the Reset button)
@@ -204,14 +208,17 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     const bleSupported =
       !!(navigator.bluetooth && navigator.bluetooth.requestDevice) || !!deps.nativeBleMidi?.has();
     if (deps.dom.bleBtn) deps.dom.bleBtn.style.display = bleSupported ? '' : 'none';
-    // 「セッションを終了」は走っているセッションが対象。タイトル/曲選択で
-    // 開いた時は対象が無いので、無効化してグレー表示（＝押せるのに無反応で
-    // 壊れて見える）ではなく行ごと隠す（業界標準は非表示）。
+    // 「📊 セッションの結果」はフリープレイ専用のサマリー表示（combo/stage/
+    // quest/レーダー）。練習中(practice.enabled)は quest が回らず中身が無意味で、
+    // かつ押すと close→resume が再生を再開し「終了」に見えないので、練習中と
+    // 非セッション時は行ごと隠す（フリープレイ実行中だけ表示）。練習の出口は
+    // ✕やめる(曲選択)/🏠(タイトル)/結果カードが担う。
     const resetBtn = deps.dom.resetBtn as HTMLButtonElement | null;
     if (resetBtn) {
+      const isFreeplay = deps.state.running && !deps.practice?.enabled;
       const host = (resetBtn.closest('.settings-row') as HTMLElement | null) ?? resetBtn;
-      host.style.display = deps.state.running ? '' : 'none';
-      resetBtn.disabled = !deps.state.running; // 念のためクリックも封じる
+      host.style.display = isFreeplay ? '' : 'none';
+      resetBtn.disabled = !isFreeplay; // 念のためクリックも封じる
     }
   }
 
@@ -364,7 +371,9 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
 
   deps.dom.resetBtn?.addEventListener('click', () => {
     close();
-    if (deps.state.running) deps.showSessionSummary?.();
+    // フリープレイ実行中のみサマリーを開く（練習中は上のガードで非表示だが、
+    // ハンドラ側でも二重に守る）。
+    if (deps.state.running && !deps.practice?.enabled) deps.showSessionSummary?.();
   });
 
   // ─── debug toggle (Phase 0d batch 70 fold) ───────────────────────

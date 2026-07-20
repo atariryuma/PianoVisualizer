@@ -166,11 +166,29 @@ describe('createSettingsPanel — refresh()', () => {
     expect((deps.dom.resetBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('enables the reset button when state.running is true', () => {
-    const deps = makeDeps({ state: { running: true, micSuspended: false } });
+  it('enables the reset button during free-play (running && !practice.enabled)', () => {
+    const deps = makeDeps({
+      state: { running: true, micSuspended: false },
+      practice: { audioOffsetMs: 40, enabled: false },
+    });
     const panel = createSettingsPanel(deps);
     panel.refresh();
     expect((deps.dom.resetBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('hides + disables the reset button during practice (practice.enabled=true)', () => {
+    // 「セッションの結果」はフリープレイ専用。練習中は露出させない（露出すると
+    // 練習を終了せず再生を再開する混線が起きるため）。
+    const deps = makeDeps({
+      state: { running: true, micSuspended: false },
+      practice: { audioOffsetMs: 40, enabled: true },
+    });
+    const panel = createSettingsPanel(deps);
+    panel.refresh();
+    const btn = deps.dom.resetBtn as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    const host = (btn.closest('.settings-row') as HTMLElement | null) ?? btn;
+    expect(host.style.display).toBe('none');
   });
 });
 
@@ -273,11 +291,27 @@ describe('createSettingsPanel — secondary buttons', () => {
     expect(deps.showSessionSummary).not.toHaveBeenCalled();
   });
 
-  it('reset button calls deps.showSessionSummary when state.running is true', () => {
-    const deps = makeDeps({ state: { running: true, micSuspended: false } });
+  it('reset button opens the summary during free-play (running && !practice.enabled)', () => {
+    const deps = makeDeps({
+      state: { running: true, micSuspended: false },
+      practice: { audioOffsetMs: 40, enabled: false },
+    });
     const panel = createSettingsPanel(deps);
     panel.open();
     (deps.dom.resetBtn as HTMLElement).click();
     expect(deps.showSessionSummary).toHaveBeenCalledOnce();
+  });
+
+  it('reset button does NOT open the summary during practice (practice.enabled=true)', () => {
+    // フロー監査 B1: 練習中に押すと再生再開＋無関係サマリー＋生きた練習へ復帰、
+    // という混線が起きるため、練習中はサマリーを開かない。
+    const deps = makeDeps({
+      state: { running: true, micSuspended: false },
+      practice: { audioOffsetMs: 40, enabled: true },
+    });
+    const panel = createSettingsPanel(deps);
+    panel.open();
+    (deps.dom.resetBtn as HTMLElement).click();
+    expect(deps.showSessionSummary).not.toHaveBeenCalled();
   });
 });
