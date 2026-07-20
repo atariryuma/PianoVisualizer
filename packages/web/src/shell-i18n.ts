@@ -36,6 +36,10 @@ export interface ShellI18nDeps {
   renderSongPanel: () => void;
   renderResultCard: () => void;
   renderSessionSummaryText: (animate: boolean) => void;
+  /** タイトル画面の mastery strip（シール名＋「あと N で…」）を再描画。
+   *  applyI18n は data-i18n 属性しか更新しないため、この命令的ラベルは
+   *  langchange で明示再描画が要る（G3: 未配線だと旧言語のまま残る）。 */
+  refreshTitleStrip?: () => void;
 }
 
 export interface ShellI18n {
@@ -107,6 +111,8 @@ export function createShellI18n(deps: ShellI18nDeps): ShellI18n {
     if (dom.stageLabel && state.currentStage > 0) {
       dom.stageLabel.textContent = stageLabel(config.STAGES[state.currentStage]);
     }
+    // タイトル前面に常時見える mastery strip も再描画（旧言語残り対策 G3）。
+    deps.refreshTitleStrip?.();
     if (state.lastIntroDiag) state.lastIntroDiag();
   });
 

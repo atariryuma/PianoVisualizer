@@ -158,7 +158,9 @@ function slowTempoSectionsTouched(progress: PracticeProgress): number {
           h != null &&
           typeof h === 'object' &&
           'tempoPct' in (h as Record<string, unknown>) &&
-          (h as { tempoPct?: number }).tempoPct === 60 &&
+          // 低速帯（50/60%）を許容。50% は後付けの最遅 tier で、スタンプの趣旨
+          // （ゆっくり練習）に最も合致するのに `=== 60` だと非計上だった。
+          ((h as { tempoPct?: number }).tempoPct ?? 999) <= 60 &&
           'a' in (h as Record<string, unknown>) &&
           ((h as { a?: number }).a ?? 0) >= 50
       );

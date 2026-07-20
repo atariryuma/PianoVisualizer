@@ -172,6 +172,9 @@ export function boot(): void {
     renderSongPanel: () => renderSongPanel(),
     renderResultCard: () => renderResultCard(),
     renderSessionSummaryText: (a) => renderSessionSummaryText(a),
+    // _ui は後段で初期化されるが、この thunk は langchange 発火時（boot 完了後）
+    // にしか呼ばれないので TDZ にはならない。
+    refreshTitleStrip: () => _ui.refreshJournal(),
   });
   const { t, stageLabel, applyTheme, setLang } = _i18n;
 
