@@ -2103,7 +2103,9 @@ body:has(#practiceHud.visible) #encouragement {
 
 .result-history {
   margin: 10px auto 4px;
-  padding: 8px 6px 4px;
+  /* 左右パディングを 0 に（縦のみ残す）→ グラフをカード内容幅いっぱいに
+     広げてモーダル幅と揃える。狭く見えていた主因は描画タイミング側で対処済み。 */
+  padding: 8px 0 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;

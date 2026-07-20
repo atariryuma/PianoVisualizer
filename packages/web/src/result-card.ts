@@ -785,14 +785,18 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.effectStarShower(3);
     }
 
-    if (sectionHistory.length >= 2 && deps.dom.resHistoryWrap) {
-      deps.dom.resHistoryWrap.classList.remove('hidden');
-      drawHistoryChart(deps, deps.dom.resHistoryChart, sectionHistory);
-    } else if (deps.dom.resHistoryWrap) {
-      deps.dom.resHistoryWrap.classList.add('hidden');
+    // グラフ canvas は幅を clientWidth で実測するので、カードを可視化した
+    // 「後」に描く。display:none のまま描くと clientWidth=0 → 280px 固定になり、
+    // モーダル内容幅(~312px)より狭いグラフが残って「幅が合わない」に見えていた。
+    const showHistory = sectionHistory.length >= 2 && !!deps.dom.resHistoryWrap;
+    if (deps.dom.resHistoryWrap) {
+      deps.dom.resHistoryWrap.classList.toggle('hidden', !showHistory);
     }
 
     deps.dom.sectionResult.classList.add('visible');
+    if (showHistory) {
+      drawHistoryChart(deps, deps.dom.resHistoryChart, sectionHistory);
+    }
     deps.practice._completing = false;
   }
 
