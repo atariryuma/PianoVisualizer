@@ -27,7 +27,7 @@
 // it as a mutable let elsewhere; fresh on every call so a song
 // change re-uses the new bpm immediately.
 
-import { isFixedTempoMode, countInMeterAtAnchor, countInPickupSec } from '@piano/core';
+import { isFixedTempoMode, countInMeterAtAnchor } from '@piano/core';
 import type { PracticeMode, MeasureGridEntry, PracticeTimingMeter } from '@piano/core';
 import { fullSongAnchorSec } from './section-notes';
 import type { SectionNotesSong } from './section-notes';
@@ -165,13 +165,15 @@ export function createPracticeTimings(deps: PracticeTimingsDeps): PracticeTiming
     const beats = timings.beats > 0 ? timings.beats : 4;
     const clickMs =
       timings.clickMs && timings.clickMs > 0 ? timings.clickMs : timings.countInMs / beats;
-    // 弱起アンカー: GO（ダウンビート）= countInMs + ピックアップ長。
-    // ノート写像（relSec × speedFactor + countInMs）は変えない —
-    // クリック列側を動かす。speedFactor はノート写像と同一
-    // （セクション = 100/tempoPct、全曲再生 = 1）。
-    const noteSpeedFactor = isFullSong ? 1 : 100 / (p.tempoPct || 100);
-    const pickupSec = grid && grid.length > 0 ? countInPickupSec(grid, anchorSec) : 0;
-    const goMs = timings.countInMs + Math.round(pickupSec * 1000 * noteSpeedFactor);
+    // GO（カウントイン終端の合図 = 弾き始め）は「最初の音」= countInMs に置く。
+    // 弱起（アウフタクト）曲でも「GO が出たら弾き始める」で一致する。
+    // 以前は GO = ダウンビート（countInMs + ピックアップ長）だったが、弱起だと
+    // GO が演奏開始より後ろに来て、子どもがピックアップ音を弾き逃す原因だった
+    // （エリーゼのため に等）。音楽的な厳密さ = 走行メトロノームの小節頭
+    // アクセントは実ダウンビートのまま（buildMetronomeEvents が
+    // section-notes 側で独立にピックアップ補正して算出）なので、伴奏の拍節感は
+    // 保たれる。ノート写像（relSec × speedFactor + countInMs）も不変。
+    const goMs = timings.countInMs;
 
     deps.setCountInMs(timings.countInMs);
     deps.setCountInBeats?.(beats);

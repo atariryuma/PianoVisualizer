@@ -249,7 +249,11 @@ describe('createPracticeTimings — measureGrid 駆動の拍子・弱起アン�
     });
   });
 
-  it('弱起: GO = countInMs + pickupSec×1000×(100/tempoPct)', () => {
+  it('弱起でも GO = countInMs（最初の音 = 弾き始め。ダウンビートには置かない）', () => {
+    // 弱起曲でも「GO が出たら弾き始め」で一致させる。以前は GO =
+    // countInMs + pickup（ダウンビート）で、GO が演奏開始より後ろに来て
+    // 子どもがピックアップを弾き逃していた。音楽的厳密さ（小節頭アクセント）は
+    // 走行メトロノーム側（buildMetronomeEvents）が実ダウンビートで担当する。
     const fx = makeFixture({
       song: {
         bpm: 120,
@@ -260,12 +264,12 @@ describe('createPracticeTimings — measureGrid 駆動の拍子・弱起アン�
       tempoPct: 100,
     });
     fx.pt.recomputePracticeTimings(0);
-    // countInMs = 500×4 = 2000（モック）。pickup = 0.5s → GO = 2500。
-    expect(fx.setCountInGoMs).toHaveBeenCalledWith(2500);
-    expect(fx.laneSetTimings).toHaveBeenCalledWith(expect.objectContaining({ countInGoMs: 2500 }));
+    // countInMs = 500×4 = 2000（モック）。GO = countInMs = 2000（pickup 加算なし）。
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(2000);
+    expect(fx.laneSetTimings).toHaveBeenCalledWith(expect.objectContaining({ countInGoMs: 2000 }));
   });
 
-  it('弱起 + テンポ 75%: pickup はノート写像と同じ speedFactor でスケール', () => {
+  it('弱起 + テンポ 75%: GO は依然 countInMs（テンポに依らず最初の音）', () => {
     const fx = makeFixture({
       song: {
         bpm: 120,
@@ -276,11 +280,9 @@ describe('createPracticeTimings — measureGrid 駆動の拍子・弱起アン�
       tempoPct: 75,
     });
     fx.pt.recomputePracticeTimings(0);
-    // beatMs = 60000/(120×0.75) = 666.67 → countInMs = 2666.67。
-    // pickupMs = 500 × (100/75) = 666.67 → GO = countInMs + 667。
     const countIn = fx.setCountInMs.mock.calls[0][0] as number;
     const go = fx.setCountInGoMs.mock.calls[0][0] as number;
-    expect(go - countIn).toBe(Math.round((0.5 * 1000 * 100) / 75));
+    expect(go - countIn).toBe(0);
   });
 
   it('完全小節から始まるセクションは GO = countInMs（回帰なし）', () => {
@@ -314,7 +316,7 @@ describe('createPracticeTimings — measureGrid 駆動の拍子・弱起アン�
     expect(fx.setCountInGoMs).toHaveBeenCalledWith(countIn);
   });
 
-  it('全曲再生 (listen+fullSong): アンカーは最初の音・speedFactor は 1', () => {
+  it('全曲再生 (listen+fullSong): GO = countInMs（弱起でも最初の音）', () => {
     const fx = makeFixture({
       mode: 'listen',
       fullSongMode: true,
@@ -329,8 +331,8 @@ describe('createPracticeTimings — measureGrid 駆動の拍子・弱起アン�
     });
     fx.pt.recomputePracticeTimings(0);
     const countIn = fx.setCountInMs.mock.calls[0][0] as number;
-    // pickup = 0.5 - 0.25 = 0.25s → GO = countInMs + 250（×1 — 100% 固定）。
-    expect(fx.setCountInGoMs).toHaveBeenCalledWith(countIn + 250);
+    // GO は弾き始め = 最初の音 = countInMs（ダウンビートには寄せない）。
+    expect(fx.setCountInGoMs).toHaveBeenCalledWith(countIn);
   });
 });
 
