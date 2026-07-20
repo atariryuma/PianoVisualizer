@@ -180,14 +180,34 @@ export function installNativeMidiPolyfill(
       // 素の配列前提で ports.map() すると "l.map is not a function" で落ちる。
       const listed = await plugin!.listInputs();
       const ports = listed?.devices ?? [];
-      const access: PolyfillMidiAccess = {
-        inputs: new Map(ports.map((p) => [p.id, toInput(p)])),
-        outputs: new Map(),
-        sysexEnabled: false,
-        onstatechange: null,
-      };
-      current = access;
-      return access;
+      // M1: access + inputs をシングルトン化（Chrome の requestMIDIAccess は
+      // 同一 MIDIAccess/MIDIInput を返す。シェルはこの安定 identity 前提で
+      // onmidimessage を束縛し、verifyAlive も identity 比較する）。以前は
+      // 再要求（手動 Rescan の force-fresh 等）のたびに新 access/input を作って
+      // current を差し替えていたため、シェルが束縛した旧 input が孤立し、
+      // 以後の受信が onmidimessage=null の新 input へ流れて無音化していた。
+      // 2 回目以降は同一 access/inputs を返し、in-place で追加/削除だけ行う
+      // （既存 input の onmidimessage 束縛を保持）。
+      if (!current) {
+        current = {
+          inputs: new Map(ports.map((p) => [p.id, toInput(p)])),
+          outputs: new Map(),
+          sysexEnabled: false,
+          onstatechange: null,
+        };
+      } else {
+        const seen = new Set<string>();
+        for (const p of ports) {
+          seen.add(p.id);
+          // 新規ポートのみ追加。既存はそのまま（束縛を壊さない）。
+          if (!current.inputs.has(p.id)) current.inputs.set(p.id, toInput(p));
+        }
+        // listInputs から消えたポート（切断済み）を除去。
+        for (const id of Array.from(current.inputs.keys())) {
+          if (!seen.has(id)) current.inputs.delete(id);
+        }
+      }
+      return current;
     };
   // iOS: BLE-MIDI は OS 標準ペアリング画面。Capacitor のプラグインプロキシは
   // 任意のメソッド名が関数に見えるため typeof では判定できず、プラットフォーム

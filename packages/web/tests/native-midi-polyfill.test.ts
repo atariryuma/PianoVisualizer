@@ -136,6 +136,30 @@ describe('installNativeMidiPolyfill', () => {
     expect(got).toHaveLength(1);
   });
 
+  it('M1: 再要求は同一 access + 同一 input を返し、束縛した onmidimessage を保持する', async () => {
+    const plugin = makeFakePlugin();
+    const nav: { requestMIDIAccess?: () => Promise<unknown> } = {};
+    installNativeMidiPolyfill(nav, { Capacitor: makeCap(plugin) });
+    const access1 = (await nav.requestMIDIAccess!()) as {
+      inputs: Map<string, { onmidimessage: Listener | null }>;
+    };
+    // シェルが旧 input に onmidimessage を束縛する。
+    const got: unknown[] = [];
+    const input1 = access1.inputs.get('p1')!;
+    input1.onmidimessage = (e) => got.push(e);
+
+    // 手動 Rescan 相当の再要求（force-fresh）。
+    const access2 = (await nav.requestMIDIAccess!()) as {
+      inputs: Map<string, unknown>;
+    };
+    // 同一 access / 同一 input（identity 保持）— 旧束縛が生きたまま。
+    expect(access2).toBe(access1);
+    expect(access2.inputs.get('p1')).toBe(input1);
+    // 再要求後も受信が旧束縛へ届く（＝孤立して無音化しない）。
+    plugin.emit('midiMessage', { portId: 'p1', data: [0x90, 60, 100], timestamp: 5 });
+    expect(got).toHaveLength(1);
+  });
+
   it('iOS では OS 標準 BLE ペアリング画面の呼び出し口が配線される', async () => {
     const plugin = makeFakePlugin();
     const nav: { requestMIDIAccess?: unknown } = {};
