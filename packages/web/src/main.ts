@@ -20,9 +20,14 @@ import * as ShellBootstrap from './shell-bootstrap';
 import { installNativeMidiPolyfill } from './native-midi-polyfill';
 import { installNoZoomGuards } from './no-zoom-guard';
 
-// ネイティブアプリらしく「勝手に拡大しない」を徹底（iOS Safari の
-// ピンチズーム抑止。WKWebView / Android / desktop は viewport 側で無効化）。
-installNoZoomGuards();
+// 「勝手に拡大しない」JS ガード（iOS Safari のピンチ抑止）は web ビルド限定。
+// ネイティブ（Capacitor WKWebView）は viewport の user-scalable=no / maximum-scale=1
+// を尊重するので既に無効化済み。むしろ document への非パッシブ gesture リスナーは
+// iOS WebKit の fast-tap 最適化を無効化し、設定などの単タップ反応を鈍らせうるので、
+// ネイティブでは設置しない（Android/desktop web も viewport が効くが、iOS Safari web
+// だけは user-scalable=no を無視するので、非ネイティブでは保険として設置する）。
+const _cap = (window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+if (!_cap?.isNativePlatform?.()) installNoZoomGuards();
 
 // ネイティブ（Capacitor）実行時のみ: シェル起動より前に Web MIDI polyfill を
 // 設置する。initWebMIDI が navigator.requestMIDIAccess を見にいくため、
