@@ -109,23 +109,26 @@ minimum to get a first build submitted.
   file in Xcode (File → New → App Privacy File, target = App) so it lands in the
   pbxproj.
 
-### Code-review follow-ups (from the 2026-07-21 full audit — non-blocking)
+### Code-review follow-ups (from the 2026-07-21 full audit)
 
-Lower-severity items surfaced by the architecture review, deferred (not release-
-blocking). All 🔴 critical + 🟠 high findings were fixed (see git log
-`fix(web|core|plugin)` around that date). Remaining:
+The 6-domain architecture review's findings are now ALL fixed (see git log
+`fix(web|core|plugin)` around that date): 🔴 H1/H2/H3/R1, 🟠 D1/D2/P1/P2/P3/G1,
+🟡 G2/G3/M2/**I1/M1**, and the 🟢 lows (**I2** onset 1-frame RMS, **I3** resume
+respects micIntentionallySkipped, **R3** ripple hard cap, **D3/D4**
+importLibrary size cap + .mxl unzip, **G5** Journal focus-trap). H2/H3 are Swift
+— verify they compile on the next Xcode build.
 
-- **I1** — a MIDI key held at the moment the cable is unplugged / BLE drops
-  stays lit until the next section transition (`midi-ports.detach` /
-  `ble-midi-connect` don't clear `midiState`). Visual only; self-heals.
-- **M1** — the native Web-MIDI polyfill returns a fresh MIDIAccess/input on
-  every `requestMIDIAccess()`; a manual Rescan while connected can orphan the
-  old input (silence until the next visibility-resume re-attach). Singleton the
-  access.
-- Minor: onset voice-gate reads a 1-frame-old RMS; `ripples` has no hard cap
-  (bounded by lifetime); importLibrary bypasses the 20 MB size cap +
-  auto-sections a `.mxl` as text; Journal modal skips the focus-trap. See the
-  audit notes.
+Only genuinely-latent (harmless-today) notes remain, not worth changing now:
+
+- `result-card` "Next" uses a hardcoded `['A1','B','A2']` section-id list;
+  harmless because every current song (built-in / auto-section / manual editor)
+  uses exactly those ids. Breaks only if a future schema adds section ids —
+  align it to `currentSong.sections.map(s => s.id)` then.
+- `core/state/flow-meter.ts` (`applyFlowEvent`) is unused by the live shell (the
+  production flow/combo logic is inlined in `game-state-update.ts`); behaviour
+  matches, but it's a tuning trap — collapse the duplication or delete.
+- Android native MIDI: `showBleMidiPairing` is iOS-only wired; Kotlin `onSend`
+  doesn't split coalesced multi-message callbacks. Latent until Android ships.
 
 ### Future / non-blocking (does NOT block the current release)
 
