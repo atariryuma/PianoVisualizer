@@ -372,6 +372,21 @@ describe('matchNoteOnset — guided mode', () => {
     expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M64)');
   });
 
+  it('correct note pressed EARLY (count-in) → no hit, but no shaming miss chip', () => {
+    // note @5000, countInMs 4000. Press the RIGHT note at t=1000 (during the
+    // count-in): too early to credit (guided blocks early), but it is not a
+    // mistake — never flash "miss" for the note we're waiting for.
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'guided' },
+      Tone: { context: { currentTime: 1 } }, // elapsed 1000 < countInMs 4000
+    });
+    const ok = fx.scoring.matchNoteOnset(60, true);
+    expect(ok).toBe(false);
+    expect(fx.practice.hits).toBe(0);
+    expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
+  });
+
   it('和音の弾き直し: 正解済みメンバーの再打鍵は「まちがい」にしない（後方）', () => {
     // ユーザー報告の核心: C(済)+E(済)+G(待ち) で和音をまるごと弾き直すと、
     // C と E が youPlayed チップで叱られていた。静かに無視する。

@@ -301,7 +301,14 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       // no score penalty (accuracy is hits/target), no shame copy.
       const now = performance.now();
       if (deps.practice.mode === 'guided') {
-        deps.showHitChip('miss', deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }));
+        // The RIGHT note pressed early (before the wait-window opens — e.g.
+        // during the count-in) is not a mistake, it just isn't credited yet.
+        // Never flash a "miss" for the note we're actually waiting for
+        // (banned-list: no-shame). A genuinely wrong key still shows its
+        // fact-based "you played X" chip.
+        if (cur.midi !== detectedMidi) {
+          deps.showHitChip('miss', deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }));
+        }
       } else if (
         deps.practice.mode === 'rhythm' &&
         now - lastWrongChipMs >= WRONG_NOTE_CHIP_THROTTLE_MS
