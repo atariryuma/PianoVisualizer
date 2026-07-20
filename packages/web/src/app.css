@@ -195,7 +195,11 @@ body[data-layout='desktop'] .add-song-card {
   max-width: 720px;
 }
 
-canvas {
+/* 全画面の背景ビジュアライザ canvas 専用。以前は素の `canvas {}` で全 canvas
+   に効いてしまい、カード内の #radarChart / #resHistoryChart まで position:fixed
+   で画面左上(0,0)に固定され、リザルトの折れ線グラフが時計（ステータスバー）に
+   かぶっていた。ID スコープで背景 canvas だけに限定する。 */
+#canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -1264,6 +1268,8 @@ body.midi-on #debugOverlay {
 }
 
 .summary-radar canvas {
+  display: block;
+  margin: 0 auto;
   border-radius: 8px;
 }
 
