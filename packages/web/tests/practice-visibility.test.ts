@@ -172,6 +172,33 @@ describe('createPracticeVisibilityController', () => {
     expect(practice._frozenRealElapsedMs).toBeNull(); // 解凍
   });
 
+  it('does NOT freeze before the timeline starts (startAudioTime in the future / sentinel)', () => {
+    // P2: `await Tone.start()` 前・開始リード中・センチネル(PRE_AUDIO_ANCHOR_SEC)
+    // では startAudioTime が nowSec より未来。ここで freeze すると elapsed=0 の
+    // 偽スナップショットを掴み、await 解決後に Transport が起動して音だけ進み
+    // 視覚が 0 に凍る恒常デシンクになる。タイムライン未開始なら freeze しない。
+    const practice: {
+      enabled: boolean;
+      startAudioTime: number;
+      _frozenRealElapsedMs?: number | null;
+    } = { enabled: true, startAudioTime: Number.MAX_SAFE_INTEGER };
+    const pause = vi.fn();
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({ context: { currentTime: 5 }, Transport: { state: 'started', pause } }),
+      log: vi.fn(),
+    });
+
+    ctrl.onHidden(); // 開始直後（センチネル窓）に背面化
+    expect(practice._frozenRealElapsedMs ?? null).toBeNull(); // 凍結しない
+    expect(pause).not.toHaveBeenCalled(); // Transport も触らない
+    expect(practice.startAudioTime).toBe(Number.MAX_SAFE_INTEGER); // クロック不変
+
+    // 復帰しても thaw は frozen 無しで no-op（リベースしない）。
+    ctrl.onVisible();
+    expect(practice.startAudioTime).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it('a tab refocus during an explicit pause does NOT resume', () => {
     const practice = { enabled: true, startAudioTime: 2, paused: false };
     const start = vi.fn();

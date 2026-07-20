@@ -84,6 +84,12 @@ export function createPracticeVisibilityController(
     if (!deps.practice.enabled || frozen) return;
     const tone = deps.getTone();
     const nowSec = toneNowSec(tone);
+    // タイムライン未開始（startAudioTime が未来 = start-practice-section の
+    // センチネル PRE_AUDIO_ANCHOR_SEC や、`await Tone.start()` 前・開始リード中）
+    // では freeze しない。ここで凍らせると elapsed=0 の偽スナップショット＋
+    // transportWasStarted=false を掴み、await 解決後に Transport が起動して
+    // 「音だけ進み視覚は 0 に凍る」恒常デシンクになる（凍らせるものがまだ無い）。
+    if (nowSec < (deps.practice.startAudioTime || 0)) return;
     const elapsedSec = Math.max(0, nowSec - (deps.practice.startAudioTime || 0));
     const transportWasStarted = tone?.Transport?.state === 'started';
 

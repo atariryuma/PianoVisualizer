@@ -314,19 +314,21 @@ export function createPracticeTick(
       // the section. Re-check practice.enabled at fire time.
       deps.practice._completionTimer = setTimeout(() => {
         deps.practice._completionTimer = null;
-        if (deps.practice.enabled && deps.practice._completing) {
-          // ループ練習: 結果カードを出さず同セクションへ。listen は一回性の
-          // 視聴なので通常完了（トグル自体も listen では非表示）。
-          if (
-            deps.practice.loopOn &&
-            deps.practice.mode !== 'listen' &&
-            deps.restartSectionForLoop
-          ) {
-            deps.practice._completing = false;
-            deps.restartSectionForLoop();
-          } else {
-            deps.completePracticeSection();
-          }
+        if (!deps.practice.enabled || !deps.practice._completing) return;
+        // ポーズ中（設定パネル/⏸）は完了を保留 — 結果カードを設定パネルの裏で
+        // 出さない。_completing を落として、再開後の tick が isComplete のまま
+        // 再検出して再 arm する（tick は paused 中 return するので二重発火しない）。
+        if (deps.practice.paused) {
+          deps.practice._completing = false;
+          return;
+        }
+        // ループ練習: 結果カードを出さず同セクションへ。listen は一回性の
+        // 視聴なので通常完了（トグル自体も listen では非表示）。
+        if (deps.practice.loopOn && deps.practice.mode !== 'listen' && deps.restartSectionForLoop) {
+          deps.practice._completing = false;
+          deps.restartSectionForLoop();
+        } else {
+          deps.completePracticeSection();
         }
       }, 600);
     }

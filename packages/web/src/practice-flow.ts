@@ -272,6 +272,10 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
 
   // ─── result-card buttons ──────────────────────────────────────────
   deps.dom.resQuit.addEventListener('click', () => {
+    // 明示ポーズのラッチ/凍結クロックを解除（他の出口 returnToTitle/ptbQuit は
+    // 呼ぶが resQuit だけ抜けていた。完了猶予600ms中にポーズ→タイマー発火で
+    // 結果カードが出た場合、ここを通らないと explicitHold/paused/_frozen が残留）。
+    deps.resumePractice?.();
     deps.dom.sectionResult.classList.remove('visible');
     deps.dom.practiceHud.classList.remove('visible');
     deps.dom.osmdContainer.classList.remove('visible');

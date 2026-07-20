@@ -106,6 +106,8 @@ export interface PracticePartial {
   _lastCursorNoteIdx?: number;
   /** 凍結クロック（practice-visibility）。セクション開始でクリアする保険。 */
   _frozenRealElapsedMs?: number | null;
+  /** 片手フィルタ（診断ログ + 演奏対象0判定の文脈用）。 */
+  handFilter?: 'R' | 'L' | null;
   mode: 'guided' | 'rhythm' | 'listen';
   fullSongMode?: boolean;
   tempoPct: number;
@@ -343,11 +345,17 @@ export function createStartPracticeSection(
     // result card, so disabling practice here just keeps the kid on
     // the song panel — better than the 1-second flash through the
     // result card we saw in server.log [DIAG-FULLSONG].
-    if (!deps.practice.sectionNotes.length) {
+    //
+    // 片手フィルタで「演奏対象の音が 0」のセクション（例: 左手練習で右手
+    // のみの旋律区間）も同様に中断する。この場合 sectionNotes.length>0 でも
+    // 全ノートが _filtered=hit:true で積まれ、初回 tick の skip-past が全消化
+    // → 即 0★ 完了 → Retry も即再完了、という実質ソフトロックになる。
+    const playableCount = deps.practice.sectionNotes.reduce((c, n) => c + (n._filtered ? 0 : 1), 0);
+    if (!deps.practice.sectionNotes.length || playableCount === 0) {
       deps.practice.enabled = false;
       if (deps.remoteLogEnabled) {
         console.log(
-          '[DIAG-FULLSONG] startPracticeSection ABORT — empty sectionNotes ' +
+          '[DIAG-FULLSONG] startPracticeSection ABORT — no playable notes ' +
             JSON.stringify({
               songId: (song as { id?: string }).id,
               isFullSong,
@@ -355,6 +363,9 @@ export function createStartPracticeSection(
               loaded: !!song._loaded,
               songNotesLen: (song as unknown as { notes?: { length?: number } }).notes?.length || 0,
               sectionsLen: song.sections?.length || 0,
+              sectionNotesLen: deps.practice.sectionNotes.length,
+              playableCount,
+              handFilter: deps.practice.handFilter ?? null,
             })
         );
       }
