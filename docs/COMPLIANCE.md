@@ -98,6 +98,35 @@ minimum to get a first build submitted.
 - [ ] App Review Information:
       `<<paste PD score license summary here so reviewer can find it>>`
 
+### App-target privacy manifest (M2 — manual Xcode step)
+
+- `ITSAppUsesNonExemptEncryption=false` is now set in `App/App/Info.plist`
+  (skips the per-upload export-compliance question; jsDelivr HTTPS is exempt).
+- **Still TODO (manual):** add an App-target `PrivacyInfo.xcprivacy` declaring
+  the required-reason API for `CapacitorPreferences` (UserDefaults, reason
+  `CA92.1`). Capacitor frameworks ship their own manifests, but the App target
+  itself has none — Apple may emit `ITMS-91053` at upload without it. Add the
+  file in Xcode (File → New → App Privacy File, target = App) so it lands in the
+  pbxproj.
+
+### Code-review follow-ups (from the 2026-07-21 full audit — non-blocking)
+
+Lower-severity items surfaced by the architecture review, deferred (not release-
+blocking). All 🔴 critical + 🟠 high findings were fixed (see git log
+`fix(web|core|plugin)` around that date). Remaining:
+
+- **I1** — a MIDI key held at the moment the cable is unplugged / BLE drops
+  stays lit until the next section transition (`midi-ports.detach` /
+  `ble-midi-connect` don't clear `midiState`). Visual only; self-heals.
+- **M1** — the native Web-MIDI polyfill returns a fresh MIDIAccess/input on
+  every `requestMIDIAccess()`; a manual Rescan while connected can orphan the
+  old input (silence until the next visibility-resume re-attach). Singleton the
+  access.
+- Minor: onset voice-gate reads a 1-frame-old RMS; `ripples` has no hard cap
+  (bounded by lifetime); importLibrary bypasses the 20 MB size cap +
+  auto-sections a `.mxl` as text; Journal modal skips the focus-trap. See the
+  audit notes.
+
 ### Future / non-blocking (does NOT block the current release)
 
 - **UIScene lifecycle adoption** — the console logs
