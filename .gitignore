@@ -36,6 +36,7 @@ coverage/
 # The ios/ and android/ source trees themselves get checked in once Phase 1 stabilizes.
 packages/mobile/ios/App/Pods/
 packages/mobile/ios/App/build/
+packages/mobile/ios/App/build-sim/
 packages/mobile/ios/App/DerivedData/
 packages/mobile/android/.gradle/
 packages/mobile/android/build/

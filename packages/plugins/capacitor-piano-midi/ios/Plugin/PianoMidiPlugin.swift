@@ -52,7 +52,7 @@ public class PianoMidiPlugin: CAPPlugin {
         let portName = "PianoVisualizerInputPort" as CFString
         let portStatus: OSStatus
         if #available(iOS 14.0, *) {
-            portStatus = MIDIInputPortCreateWithProtocol(midiClient, portName, ._1_0) { [weak self] (eventList, refCon) in
+            portStatus = MIDIInputPortCreateWithProtocol(midiClient, portName, ._1_0, &inputPort) { [weak self] (eventList, refCon) in
                 self?.handleEventList(eventList)
             }
         } else {
@@ -193,14 +193,18 @@ public class PianoMidiPlugin: CAPPlugin {
     private func handleEventList(_ eventList: UnsafePointer<MIDIEventList>) {
         let pkt = UnsafePointer(withUnsafePointer(to: eventList.pointee.packet) { $0 })
         var packet = pkt.pointee
-        let timestamp = AudioConvertHostTimeToNanos(packet.timeStamp) / 1_000_000   // ns → ms
+        let timestamp = hostTimeToMillis(packet.timeStamp)
         // Source endpoint is not directly attached to the packet on iOS 14 path;
         // we rely on the port-wide connection set, but for now fall back to the first.
         guard let firstId = connectedSources.first?.value else { return }
         for _ in 0..<eventList.pointee.numPackets {
             // Each word is a Uint32 holding a UMP message; decode the basic MIDI 1.0 form.
             for w in 0..<Int(packet.wordCount) {
-                let word = packet.words[w]
+                // `words` is a C fixed-size array imported as a tuple; can't subscript
+                // with a runtime index. Read each UInt32 through a raw byte view.
+                let word: UInt32 = withUnsafeBytes(of: packet.words) { raw in
+                    raw.load(fromByteOffset: w * MemoryLayout<UInt32>.size, as: UInt32.self)
+                }
                 let messageType = (word >> 28) & 0xF
                 if messageType == 0x2 {   // MIDI 1.0 channel voice
                     let status = UInt8((word >> 16) & 0xFF)
@@ -224,7 +228,7 @@ public class PianoMidiPlugin: CAPPlugin {
     /// iOS 13 fallback. Walks a MIDIPacketList by hand (MIDIPacketNext is a C macro).
     private func handlePacketList(_ pktList: UnsafePointer<MIDIPacketList>) {
         var packet = pktList.pointee.packet
-        let timestamp = AudioConvertHostTimeToNanos(packet.timeStamp) / 1_000_000
+        let timestamp = hostTimeToMillis(packet.timeStamp)
         guard let firstId = connectedSources.first?.value else { return }
         for _ in 0..<pktList.pointee.numPackets {
             let length = Int(packet.length)
@@ -245,6 +249,22 @@ public class PianoMidiPlugin: CAPPlugin {
     }
 
     // MARK: - Helpers
+
+    /// Mach timebase for host-time → nanosecond conversion (numer/denom ratio).
+    /// Replaces AudioConvertHostTimeToNanos, which isn't reliably exposed to Swift
+    /// via the iOS CoreAudio module under `use_frameworks!`.
+    private static let machTimebase: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
+    /// Convert a CoreMIDI host-time stamp (mach absolute-time units) to milliseconds.
+    private func hostTimeToMillis(_ hostTime: MIDITimeStamp) -> UInt64 {
+        let tb = PianoMidiPlugin.machTimebase
+        let nanos = hostTime &* UInt64(tb.numer) / UInt64(tb.denom)
+        return nanos / 1_000_000
+    }
 
     private func stableEndpointId(_ ep: MIDIEndpointRef) -> String {
         var uid: Int32 = 0

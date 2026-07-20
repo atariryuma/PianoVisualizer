@@ -1,0 +1,64 @@
+PODS:
+  - Capacitor (6.2.1):
+    - CapacitorCordova
+  - CapacitorApp (6.0.3):
+    - Capacitor
+  - CapacitorCommunityBluetoothLe (6.1.0):
+    - Capacitor
+  - CapacitorCordova (6.2.1)
+  - CapacitorFilesystem (6.0.4):
+    - Capacitor
+  - CapacitorHaptics (6.0.3):
+    - Capacitor
+  - CapacitorPianoMidi (0.1.0):
+    - Capacitor
+  - CapacitorPreferences (6.0.4):
+    - Capacitor
+  - CapacitorStatusBar (6.0.3):
+    - Capacitor
+
+DEPENDENCIES:
+  - "Capacitor (from `../../../../node_modules/.pnpm/@capacitor+ios@6.2.1_@capacitor+core@6.2.1/node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../../../node_modules/.pnpm/@capacitor+app@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/app`)"
+  - "CapacitorCommunityBluetoothLe (from `../../../../node_modules/.pnpm/@capacitor-community+bluetooth-le@6.1.0_@capacitor+core@6.2.1/node_modules/@capacitor-community/bluetooth-le`)"
+  - "CapacitorCordova (from `../../../../node_modules/.pnpm/@capacitor+ios@6.2.1_@capacitor+core@6.2.1/node_modules/@capacitor/ios`)"
+  - "CapacitorFilesystem (from `../../../../node_modules/.pnpm/@capacitor+filesystem@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/filesystem`)"
+  - "CapacitorHaptics (from `../../../../node_modules/.pnpm/@capacitor+haptics@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/haptics`)"
+  - CapacitorPianoMidi (from `../../../plugins/capacitor-piano-midi`)
+  - "CapacitorPreferences (from `../../../../node_modules/.pnpm/@capacitor+preferences@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/preferences`)"
+  - "CapacitorStatusBar (from `../../../../node_modules/.pnpm/@capacitor+status-bar@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/status-bar`)"
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../../../node_modules/.pnpm/@capacitor+ios@6.2.1_@capacitor+core@6.2.1/node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../../../node_modules/.pnpm/@capacitor+app@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/app"
+  CapacitorCommunityBluetoothLe:
+    :path: "../../../../node_modules/.pnpm/@capacitor-community+bluetooth-le@6.1.0_@capacitor+core@6.2.1/node_modules/@capacitor-community/bluetooth-le"
+  CapacitorCordova:
+    :path: "../../../../node_modules/.pnpm/@capacitor+ios@6.2.1_@capacitor+core@6.2.1/node_modules/@capacitor/ios"
+  CapacitorFilesystem:
+    :path: "../../../../node_modules/.pnpm/@capacitor+filesystem@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/filesystem"
+  CapacitorHaptics:
+    :path: "../../../../node_modules/.pnpm/@capacitor+haptics@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/haptics"
+  CapacitorPianoMidi:
+    :path: "../../../plugins/capacitor-piano-midi"
+  CapacitorPreferences:
+    :path: "../../../../node_modules/.pnpm/@capacitor+preferences@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/preferences"
+  CapacitorStatusBar:
+    :path: "../../../../node_modules/.pnpm/@capacitor+status-bar@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/status-bar"
+
+SPEC CHECKSUMS:
+  Capacitor: c95400d761e376be9da6be5a05f226c0e865cebf
+  CapacitorApp: a19ccb4f5f32d2534be5c6f524d5a9b614a1e8a7
+  CapacitorCommunityBluetoothLe: 0d4d197e0d0eadb84d4c3a6683768088253419d9
+  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
+  CapacitorFilesystem: 5b9aec35c0212bd0064e26d278c93e925864f212
+  CapacitorHaptics: 40f83026feeee9cfe36e89e9c98a3baaaf20c450
+  CapacitorPianoMidi: de4938d7e282bc3788f3161e1b48ef529b3f0714
+  CapacitorPreferences: 5848e0691b36b4bb4acc98e481ab56d451578d30
+  CapacitorStatusBar: 149cde8f1328ec3aa6cbdd872a55137ae3f98b16
+
+PODFILE CHECKSUM: 0d06ddcbc44d055dc89d2f36fe1c321f11f3597c
+
+COCOAPODS: 1.17.0

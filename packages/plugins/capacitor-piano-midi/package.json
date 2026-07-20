@@ -11,7 +11,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Plugin/",
-    "PianoMidiPlugin.podspec"
+    "CapacitorPianoMidi.podspec"
   ],
   "author": "Piano Visualizer team",
   "license": "Apache-2.0",
