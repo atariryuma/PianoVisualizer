@@ -95,10 +95,20 @@ export function createThemeControls(deps: ThemeControlsDeps): ThemeControls {
     synToggle.setAttribute('aria-checked', on ? 'true' : 'false');
   }
 
+  // 3-way language cycle: EN → 日本語 → Deutsch → EN. The button shows the
+  // CURRENT language; tapping advances to the next.
+  const LANG_CYCLE: Lang[] = ['en', 'jp', 'de'];
+  const LANG_LABEL: Record<Lang, string> = {
+    en: '🇬🇧 EN',
+    jp: '🇯🇵 日本語',
+    de: '🇩🇪 Deutsch',
+  };
+  const HTML_LANG: Record<Lang, string> = { en: 'en', jp: 'ja', de: 'de' };
+
   function refreshLangToggle(): void {
     const btn = document.getElementById('langToggleBtn');
     if (!btn) return;
-    btn.textContent = deps.prefs.lang === 'jp' ? '🇯🇵 日本語' : '🇬🇧 EN';
+    btn.textContent = LANG_LABEL[deps.prefs.lang] ?? LANG_LABEL.en;
   }
 
   function applyI18n(): void {
@@ -126,12 +136,10 @@ export function createThemeControls(deps: ThemeControlsDeps): ThemeControls {
   }
 
   function setLang(lang: Lang): void {
-    deps.prefs.lang = lang === 'jp' ? 'jp' : 'en';
+    deps.prefs.lang = LANG_CYCLE.includes(lang) ? lang : 'en';
     deps.savePrefs();
     // Keep <html lang> in sync so screen readers announce the right voice.
-    // The HTML default is 'ja'; without this the EN-flipped UI would still
-    // be read by a Japanese voice on iOS VoiceOver / NVDA.
-    document.documentElement.lang = deps.prefs.lang === 'jp' ? 'ja' : 'en';
+    document.documentElement.lang = HTML_LANG[deps.prefs.lang] ?? 'en';
     applyI18n();
     refreshLangToggle();
   }
@@ -171,7 +179,8 @@ export function createThemeControls(deps: ThemeControlsDeps): ThemeControls {
 
   // ─── language toggle wiring ───────────────────────────────────────
   document.getElementById('langToggleBtn')?.addEventListener('click', () => {
-    setLang(deps.prefs.lang === 'jp' ? 'en' : 'jp');
+    const i = LANG_CYCLE.indexOf(deps.prefs.lang);
+    setLang(LANG_CYCLE[(i + 1) % LANG_CYCLE.length]);
     deps.refreshSettingsPanel(); // input status / audio offset use t()
   });
   // Initial sync of the lang toggle label.

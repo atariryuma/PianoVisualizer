@@ -23,7 +23,7 @@ export interface PrefsShape {
   synesthesia?: boolean;
   audioOffsetMs?: number | null;
   debug?: boolean;
-  lang?: 'en' | 'jp';
+  lang?: 'en' | 'jp' | 'de';
   /** Note-name notation: 'abc' = C-D-E, 'solfege' = ドレミ, 'auto' =
    *  follow UI language (the pre-0.15 behavior). */
   noteNaming?: 'auto' | 'abc' | 'solfege';
@@ -130,7 +130,7 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   if (typeof r.debug === 'boolean') {
     out.debug = r.debug;
   }
-  if (r.lang === 'en' || r.lang === 'jp') {
+  if (r.lang === 'en' || r.lang === 'jp' || r.lang === 'de') {
     out.lang = r.lang;
   }
   if (r.noteNaming === 'auto' || r.noteNaming === 'abc' || r.noteNaming === 'solfege') {

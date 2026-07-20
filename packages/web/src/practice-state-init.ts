@@ -26,7 +26,7 @@ export interface InitialPrefs {
   audioOffsetMs: number | null;
   debug: boolean;
   /** UI language. Drives the practice-flow text everywhere. */
-  lang: 'en' | 'jp';
+  lang: 'en' | 'jp' | 'de';
   /** Note-name notation: 'abc' = C-D-E, 'solfege' = ドレミ, 'auto' =
    *  follow `lang` (pre-0.15 behavior — the zero-regression default). */
   noteNaming: 'auto' | 'abc' | 'solfege';

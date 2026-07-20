@@ -221,13 +221,24 @@ describe('createThemeControls — lang toggle click', () => {
     expect(deps.refreshSettingsPanel).toHaveBeenCalledOnce();
   });
 
-  it('clicking again flips back to en', () => {
+  it('cycles en → jp → de → en (3-way)', () => {
     const deps = makeDeps();
     createThemeControls(deps);
     const btn = document.getElementById('langToggleBtn') as HTMLElement;
     btn.click();
+    expect(deps.prefs.lang).toBe('jp');
+    btn.click();
+    expect(deps.prefs.lang).toBe('de');
     btn.click();
     expect(deps.prefs.lang).toBe('en');
+  });
+
+  it('German step shows Deutsch label + <html lang="de">', () => {
+    const deps = makeDeps();
+    const controls = createThemeControls(deps);
+    controls.setLang('de');
+    expect(document.getElementById('langToggleBtn')!.textContent).toContain('Deutsch');
+    expect(document.documentElement.lang).toBe('de');
   });
 });
 

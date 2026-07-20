@@ -1,14 +1,17 @@
 // Translation table types — kept separate so consumers can import them
 // without pulling in the full string table.
 
-export type Lang = 'en' | 'jp';
+export type Lang = 'en' | 'jp' | 'de';
 
 export interface TranslationEntry {
   en: string;
   /** Omit (or leave empty) for English-only entries — UI chrome / loanwords
    *  where the language toggle is intentionally a no-op. `translate()` falls
-   *  back to `en` when `jp` is missing. */
+   *  back to `en` when a locale is missing. */
   jp?: string;
+  /** German (de). Missing keys fall back to `en` at resolve time, so a partial
+   *  translation ships safely — untranslated strings render in English. */
+  de?: string;
 }
 
 /** Catalog of i18n keys → entries. Index signature lets callers add ad-hoc keys

@@ -81,7 +81,8 @@ export function createShellI18n(deps: ShellI18nDeps): ShellI18n {
   // Boot-time i18n seed — set <html lang> + walk [data-i18n*] once. Page loads
   // on the title screen — body class drives the home-button hide (no 🏠 when
   // home is right here) + any future title-only styling.
-  deps.document.documentElement.lang = prefs.lang === 'jp' ? 'ja' : 'en';
+  deps.document.documentElement.lang =
+    prefs.lang === 'jp' ? 'ja' : prefs.lang === 'de' ? 'de' : 'en';
   applyI18n();
   deps.document.body.classList.add('title-screen');
   // Seed UI from persisted prefs; theme-controls' click handlers take it
