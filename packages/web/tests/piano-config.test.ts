@@ -82,8 +82,11 @@ describe('createPianoConfig — pinned constants', () => {
 
   it('Harmonicity gate threshold (v9)', () => {
     const c = createPianoConfig();
-    expect(c.HARMONICITY_MIN).toBe(0.0); // free-play lenient
+    // free-play: 近ゼロ倍音のタップ/衝撃音を弾く小さな床（実音・和音は通る）。
+    expect(c.HARMONICITY_MIN).toBe(0.05);
     expect(c.HARMONICITY_MIN_PRACTICE).toBe(0.12); // practice filters voice/clatter
+    // practice のほうが厳しい関係は維持（実音を通す実績のある 0.12 が上限）。
+    expect(c.HARMONICITY_MIN_PRACTICE).toBeGreaterThan(c.HARMONICITY_MIN);
   });
 
   it('Quality scoring weights sum to 1.0', () => {

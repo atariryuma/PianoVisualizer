@@ -355,7 +355,13 @@ export function createPianoConfig(): PianoConfig {
     FLUX_FREQ_MAX_HZ: 4200,
 
     // Harmonicity gate (v9 — new)
-    HARMONICITY_MIN: 0.0, // free-play: lenient so chords pass
+    // free-play: 0.0 だと倍音ゲートが実質無効で、iPad の画面/筐体タップの
+    // 「コツッ」という共鳴音（YIN がピッチを拾う）まで音として通り、演出が
+    // 連発して重くなっていた（実機・マイク入力時）。近ゼロ倍音のタップ衝撃音
+    // だけを弾く小さな床を入れる。実音・和音は練習の 0.12（実音を通す実績）
+    // より十分低いこの値を余裕で超えるので巻き込まない。効き過ぎる場合は
+    // デバッグ表示の harmonicity 値 + onsetReason(REJ:harm) を見て調整可。
+    HARMONICITY_MIN: 0.05, // free-play: 近ゼロ倍音のタップ/衝撃音だけ棄却（和音は通る）
     HARMONICITY_MIN_PRACTICE: 0.12, // practice: light filter for voice/key clatter
 
     // Session confidence layer (v7+)
