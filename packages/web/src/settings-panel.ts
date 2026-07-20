@@ -88,6 +88,12 @@ export interface SettingsPanelDeps {
   rescanMidi?(): void;
   /** Open Web-Bluetooth pairing for BLE-MIDI keyboards. */
   connectBleMidi?(): Promise<unknown>;
+  /** Native (iOS Capacitor) OS Bluetooth-MIDI pairing sheet. When `has()`
+   *  is true, the BLE button shows and routes here instead of Web
+   *  Bluetooth — attach then happens via CoreMIDI hot-plug → portChange →
+   *  auto-rescan, same as USB. Injected by shell-settings from
+   *  native-midi-polyfill so this module stays deps-only. */
+  nativeBleMidi?: { has(): boolean; show(): Promise<void> } | null;
   /** Show the session-summary modal (Reset button). Only fires when
    *  `state.running` is true. */
   showSessionSummary?(): void;
@@ -149,9 +155,11 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     } else {
       deps.dom.inputStatus.textContent = '🎙️ ' + deps.t('micInput');
     }
-    // BLE button — only useful where Web Bluetooth is supported (Chrome /
-    // Edge desktop, Android Chrome). Hide on Safari / WebKit / Firefox.
-    const bleSupported = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+    // BLE button — Web Bluetooth (Chrome / Edge desktop, Android Chrome),
+    // or the native iOS OS pairing sheet (Capacitor build). Hide only when
+    // neither path exists (Safari / WebKit web, Firefox).
+    const bleSupported =
+      !!(navigator.bluetooth && navigator.bluetooth.requestDevice) || !!deps.nativeBleMidi?.has();
     if (deps.dom.bleBtn) deps.dom.bleBtn.style.display = bleSupported ? '' : 'none';
     // Reset session is only meaningful when audio is alive — disable on title.
     const resetBtn = deps.dom.resetBtn as HTMLButtonElement | null;
@@ -214,6 +222,14 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
   });
 
   deps.dom.bleBtn?.addEventListener('click', () => {
+    if (deps.nativeBleMidi?.has()) {
+      // Native iOS: present the OS Bluetooth-MIDI pairing sheet. No await —
+      // the sheet resolves on presentation; the eventual connection arrives
+      // via CoreMIDI hot-plug → portChange → auto-rescan attach.
+      void deps.nativeBleMidi.show();
+      close();
+      return;
+    }
     void deps.connectBleMidi?.().finally(() => {
       refresh();
     });

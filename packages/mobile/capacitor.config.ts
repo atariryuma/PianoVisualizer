@@ -35,6 +35,20 @@ const config: CapacitorConfig = {
     // Tell Capacitor about our piano MIDI plugin's Android package so it loads.
     // Plugin source lives in packages/plugins/capacitor-piano-midi/.
     PianoMidi: {},
+    // Hold the LaunchScreen splash over the ~1-2s WebView-load gap so launch
+    // doesn't read as a black screen, then fade to the app. Auto-hide (fixed
+    // duration) is used deliberately: it needs no shell boot hook and cannot
+    // get stuck showing the splash if boot ever throws. backgroundColor matches
+    // the app theme (#0a0a14) so the fade is seamless.
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      launchFadeOutDuration: 350,
+      backgroundColor: '#0a0a14',
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true,
+    },
   },
 };
 

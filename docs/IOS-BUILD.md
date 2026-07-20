@@ -33,11 +33,24 @@ Windows 側の準備（2026-07-19 完了済み）:
 
 ## 実機で最初に検証すること（Windows では検証不能だった 3 点）
 
-1. capacitor-piano-midi の実機動作（USB / BLE 両方。stuck note・再接続）
-2. polyfill 経由でシェルの MIDI 経路が全部動くか（鍵盤点灯 → 練習判定）
-3. マイク: `getUserMedia`
-   が capacitor://→https スキームで通るか（capacitor.config.ts の iosScheme:'https' 済み）+
-   AGC/検出感度
+**2026-07-20 実機（iPad Pro 12.9" 第3世代 / iPadOS 26.5.2 /
+GO:PIANO88）で検証済み:**
+
+1. ~~capacitor-piano-midi の実機動作~~ ✅ **BLE 動作確認済み**。接続方式は
+   **アプリ内 ⚙ → Bluetooth ボタン → Apple の OS 標準ペアリング画面**
+   （CABTMIDICentralViewController）。ペア後は OS の MIDIBluetoothDriver が CoreMIDI ソースとして公開し、USB と同一経路で流れる。自前 CoreBluetooth パーサは MIDI
+   1.0 非準拠（Active Sensing で running
+   status 汚染 = スタックノート）のため削除。**USB はケーブル未所持のため未検証**。※「ネットワーク Session
+   1」（RTP-MIDI 仮想ポート）はネイティブ側で MIDINetworkSession 同一性判定により除外（表示名ロケール依存のため名前フィルタでは不可 — 実機で本物より先に attach される事故を確認済み）。
+2. ~~polyfill 経由でシェルの MIDI 経路~~
+   ✅ 鍵盤点灯まで確認。ネイティブ listInputs は `{devices:[…]}`
+   を返す（Capacitor は配列直返し不可）— polyfill 側はこの形状前提。
+3. ~~マイク~~ ✅ `getUserMedia`
+   動作・演奏反応確認済み（実機は capacitor://localhost で起動、マイクは通った）。
+
+**残タスク**:
+USB-MIDI 実機検証（要 USB-C ケーブル）／Android 実機一式（BLE は scanBle/connectBle 未配線 —
+iOS は OS 画面方式のため不要になった）。
 
 ## 提出前チェック
 

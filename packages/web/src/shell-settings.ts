@@ -14,6 +14,7 @@ import type { InitialGameState } from './game-state-init';
 import type { InitialPrefs, InitialPracticeState } from './practice-state-init';
 import type { DomBag } from './dom-bag';
 import * as SettingsPanel from './settings-panel';
+import { hasNativeBleMidiPairing, showNativeBleMidiPairing } from './native-midi-polyfill';
 
 export interface ShellSettingsDeps {
   /** Full DOM bag — the panel pulls 13 named elements via the explicit
@@ -72,6 +73,8 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     modalFocus: deps.modalFocus,
     rescanMidi: deps.rescanMidi,
     connectBleMidi: deps.connectBleMidi,
+    // ネイティブ iOS の OS 標準 Bluetooth-MIDI ペアリング（Capacitor 時のみ有効）。
+    nativeBleMidi: { has: hasNativeBleMidiPairing, show: showNativeBleMidiPairing },
     showSessionSummary: deps.showSessionSummary,
     pausePractice: deps.pausePractice,
     resumePractice: deps.resumePractice,

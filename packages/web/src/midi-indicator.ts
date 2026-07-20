@@ -107,7 +107,14 @@ export function isVirtualMidiPort(port: { name?: string | null } | null): boolea
     name.includes('through') ||
     name.includes('loop') ||
     name.includes('iac driver') ||
-    name.includes('rtpmidi')
+    name.includes('rtpmidi') ||
+    // Apple の RTP-MIDI セッション。表示名はロケール依存 — 日本語 iPad では
+    // 「ネットワーク Session 1」。実機で本物の GO:PIANO88 より先に attach され
+    // 全ノートが破棄される事故を起こした（2026-07-20 実機ログで確認）。
+    // ネイティブ側は MIDINetworkSession の同一性判定で除外済み — ここは
+    // Web MIDI Browser など web 経路のための第2の防壁。
+    name.includes('network session') ||
+    name.includes('ネットワーク session')
   );
 }
 

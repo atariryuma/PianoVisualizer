@@ -14,6 +14,8 @@ PODS:
     - Capacitor
   - CapacitorPreferences (6.0.4):
     - Capacitor
+  - CapacitorSplashScreen (6.0.4):
+    - Capacitor
   - CapacitorStatusBar (6.0.3):
     - Capacitor
 
@@ -26,6 +28,7 @@ DEPENDENCIES:
   - "CapacitorHaptics (from `../../../../node_modules/.pnpm/@capacitor+haptics@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/haptics`)"
   - CapacitorPianoMidi (from `../../../plugins/capacitor-piano-midi`)
   - "CapacitorPreferences (from `../../../../node_modules/.pnpm/@capacitor+preferences@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/preferences`)"
+  - "CapacitorSplashScreen (from `../../../../node_modules/.pnpm/@capacitor+splash-screen@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/splash-screen`)"
   - "CapacitorStatusBar (from `../../../../node_modules/.pnpm/@capacitor+status-bar@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/status-bar`)"
 
 EXTERNAL SOURCES:
@@ -45,6 +48,8 @@ EXTERNAL SOURCES:
     :path: "../../../plugins/capacitor-piano-midi"
   CapacitorPreferences:
     :path: "../../../../node_modules/.pnpm/@capacitor+preferences@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/preferences"
+  CapacitorSplashScreen:
+    :path: "../../../../node_modules/.pnpm/@capacitor+splash-screen@6.0.4_@capacitor+core@6.2.1/node_modules/@capacitor/splash-screen"
   CapacitorStatusBar:
     :path: "../../../../node_modules/.pnpm/@capacitor+status-bar@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/status-bar"
 
@@ -55,10 +60,11 @@ SPEC CHECKSUMS:
   CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
   CapacitorFilesystem: 5b9aec35c0212bd0064e26d278c93e925864f212
   CapacitorHaptics: 40f83026feeee9cfe36e89e9c98a3baaaf20c450
-  CapacitorPianoMidi: de4938d7e282bc3788f3161e1b48ef529b3f0714
+  CapacitorPianoMidi: 13e17343e03240f3f3e588a711db2e50a32ae228
   CapacitorPreferences: 5848e0691b36b4bb4acc98e481ab56d451578d30
+  CapacitorSplashScreen: ef140a8b1ea7244e0c245ce2dd4ce5251e7ab86a
   CapacitorStatusBar: 149cde8f1328ec3aa6cbdd872a55137ae3f98b16
 
-PODFILE CHECKSUM: 0d06ddcbc44d055dc89d2f36fe1c321f11f3597c
+PODFILE CHECKSUM: d8a25b5b542dff5c7bfb8a8ae980ee7665b4fb20
 
 COCOAPODS: 1.17.0

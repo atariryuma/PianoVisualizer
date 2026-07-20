@@ -19,6 +19,7 @@ interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
   isPluginAvailable?: (name: string) => boolean;
   registerPlugin?: (name: string) => unknown;
+  getPlatform?: () => string;
   Plugins?: Record<string, unknown>;
 }
 
@@ -32,7 +33,12 @@ interface PluginMidiPort {
 
 interface PianoMidiPluginLike {
   start(): Promise<void>;
-  listInputs(): Promise<PluginMidiPort[]>;
+  // Capacitor プラグインの resolve は辞書必須。ネイティブは配列を直接返せず
+  // `{ devices: [...] }` で包む（Swift: call.resolve(["devices": ...])）。
+  listInputs(): Promise<{ devices: PluginMidiPort[] }>;
+  // iOS のみ: OS 標準 Bluetooth-MIDI ペアリング画面（CABTMIDICentralViewController）
+  // を表示。ペア後は CoreMIDI ホットプラグ → portChange で USB と同経路。
+  showBleMidiPairing(): Promise<void>;
   addListener(
     eventName: 'midiMessage' | 'portChange',
     listener: (event: never) => void
@@ -75,6 +81,22 @@ function toInput(p: PluginMidiPort): PolyfillMidiInput {
   return input;
 }
 
+// iOS ネイティブで OS 標準ペアリング画面を開く関数。install 成功時のみ非 null。
+// シェル（settings-panel の BLE ボタン）はこれの有無で Web Bluetooth 経路と
+// 出し分ける。Android は scanBle/connectBle 経路（未配線 — NEXT.md 参照）。
+let nativeBlePairing: (() => Promise<void>) | null = null;
+
+/** ネイティブ（iOS）の OS 標準 Bluetooth-MIDI ペアリング画面を開けるか。 */
+export function hasNativeBleMidiPairing(): boolean {
+  return nativeBlePairing != null;
+}
+
+/** OS 標準ペアリング画面を開く。接続はシートを閉じた後に CoreMIDI の
+ *  ホットプラグ通知 → portChange → 自動アタッチが拾う（USB と同経路）。 */
+export function showNativeBleMidiPairing(): Promise<void> {
+  return nativeBlePairing ? nativeBlePairing() : Promise.resolve();
+}
+
 /** requestMIDIAccess polyfill を navigator へ設置。成功で true。
  *  Web 配信（Capacitor 無し）や本物の Web MIDI がある環境では何もしない。 */
 export function installNativeMidiPolyfill(
@@ -82,14 +104,32 @@ export function installNativeMidiPolyfill(
   win: { Capacitor?: CapacitorGlobal } = window as { Capacitor?: CapacitorGlobal }
 ): boolean {
   const cap = win.Capacitor;
+  // Web 配信（Capacitor 無し）では静かに何もしない — console を汚さない。
   if (!cap?.isNativePlatform?.()) return false;
-  if (typeof nav.requestMIDIAccess === 'function') return false; // 本物優先
-  if (cap.isPluginAvailable && !cap.isPluginAvailable('PianoMidi')) return false;
+
+  // ここから先はネイティブアプリ確定。設置の成否は実機で唯一の手掛かりなので
+  // 必ずログを残す（Capacitor が console.log をネイティブログへ転送する）。
+  const diag = (m: string) => console.log('[MIDI-NATIVE] ' + m);
+
+  if (typeof nav.requestMIDIAccess === 'function') {
+    diag('real Web MIDI already present — native polyfill not needed');
+    return false; // 本物優先
+  }
+  if (cap.isPluginAvailable && !cap.isPluginAvailable('PianoMidi')) {
+    diag(
+      'PianoMidi plugin is NOT registered with the Capacitor runtime — ' +
+        'polyfill NOT installed (check CAPBridgedPlugin registration)'
+    );
+    return false;
+  }
 
   const plugin = (cap.registerPlugin?.('PianoMidi') ?? cap.Plugins?.PianoMidi) as
     | PianoMidiPluginLike
     | undefined;
-  if (!plugin) return false;
+  if (!plugin) {
+    diag('registerPlugin("PianoMidi") returned nothing — polyfill NOT installed');
+    return false;
+  }
 
   // アクセスは何度でも要求される（midi-rescan の force-fresh）。プラグインの
   // リスナーは 1 回だけ張り、常に「最新の access」へルーティングする —
@@ -136,7 +176,10 @@ export function installNativeMidiPolyfill(
     async function requestMIDIAccess(): Promise<PolyfillMidiAccess> {
       await plugin!.start();
       await armListeners();
-      const ports = await plugin!.listInputs();
+      // ネイティブ listInputs は {devices:[…]} を返す（配列直返し不可）。
+      // 素の配列前提で ports.map() すると "l.map is not a function" で落ちる。
+      const listed = await plugin!.listInputs();
+      const ports = listed?.devices ?? [];
       const access: PolyfillMidiAccess = {
         inputs: new Map(ports.map((p) => [p.id, toInput(p)])),
         outputs: new Map(),
@@ -146,5 +189,12 @@ export function installNativeMidiPolyfill(
       current = access;
       return access;
     };
+  // iOS: BLE-MIDI は OS 標準ペアリング画面。Capacitor のプラグインプロキシは
+  // 任意のメソッド名が関数に見えるため typeof では判定できず、プラットフォーム
+  // で分岐する（Android は scanBle/connectBle を将来配線）。
+  if (cap.getPlatform?.() === 'ios') {
+    nativeBlePairing = () => plugin.showBleMidiPairing();
+  }
+  diag('polyfill installed — navigator.requestMIDIAccess now backed by CoreMIDI/BLE');
   return true;
 }

@@ -2,7 +2,11 @@
 //
 // Exposes the W3C-Web-MIDI-shaped events (`portChange`, `midiMessage`) to JS so
 // the engine doesn't need to branch on platform. Supports USB MIDI (Lightning
-// Camera Adapter / USB-C) and BLE-MIDI (paired via CoreBluetooth).
+// Camera Adapter / USB-C) and BLE-MIDI via the OS pairing sheet
+// (CABTMIDICentralViewController) — once paired there, iOS's MIDIBluetoothDriver
+// exposes the keyboard as a normal CoreMIDI source and the USB code path
+// handles it unchanged. Apple's certified BLE-MIDI stack does the packet
+// parsing (timestamps, running status, SysEx), so no in-app parser exists.
 //
 // Reference (heavy inspiration but from-scratch implementation):
 //   https://github.com/mizuhiki/WebMIDIAPIShimForiOS — Apache-2.0
@@ -18,17 +22,38 @@
 import Foundation
 import Capacitor
 import CoreMIDI
-import CoreBluetooth
+import CoreAudioKit
 
 @objc(PianoMidiPlugin)
-public class PianoMidiPlugin: CAPPlugin {
+public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
+
+    // MARK: - Capacitor plugin registration (CAPBridgedPlugin)
+    //
+    // Registers the plugin with the Capacitor runtime under jsName "PianoMidi".
+    // This is the ONLY registration path under `use_frameworks!` (the Podfile
+    // uses it): the old ObjC `CAP_PLUGIN` macro that lived in PianoMidiPlugin.h
+    // was never compiled — a macro in a .h has no translation unit — so the
+    // plugin went unregistered, `Capacitor.isPluginAvailable("PianoMidi")`
+    // returned false, and the native-midi polyfill never installed
+    // `navigator.requestMIDIAccess`. Mirrors the bundled @capacitor/* plugins.
+    public let identifier = "PianoMidiPlugin"
+    public let jsName = "PianoMidi"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listInputs", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openPort", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "closePort", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "scanBle", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "connectBle", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showBleMidiPairing", returnType: CAPPluginReturnPromise),
+    ]
 
     // MARK: - State
     private var midiClient: MIDIClientRef = 0
     private var inputPort: MIDIPortRef = 0
     private var connectedSources: [MIDIEndpointRef: String] = [:]   // endpoint -> stable id
     private var portInfo: [String: [String: Any]] = [:]             // id -> {name, mfg, state, connection}
-    private var bleManager: BleMidiManager?
 
     // MARK: - Capacitor lifecycle
 
@@ -52,12 +77,12 @@ public class PianoMidiPlugin: CAPPlugin {
         let portName = "PianoVisualizerInputPort" as CFString
         let portStatus: OSStatus
         if #available(iOS 14.0, *) {
-            portStatus = MIDIInputPortCreateWithProtocol(midiClient, portName, ._1_0, &inputPort) { [weak self] (eventList, refCon) in
-                self?.handleEventList(eventList)
+            portStatus = MIDIInputPortCreateWithProtocol(midiClient, portName, ._1_0, &inputPort) { [weak self] (eventList, srcConnRefCon) in
+                self?.handleEventList(eventList, srcConnRefCon)
             }
         } else {
             portStatus = MIDIInputPortCreateWithBlock(midiClient, portName, &inputPort) { [weak self] (packetList, srcConnRefCon) in
-                self?.handlePacketList(packetList)
+                self?.handlePacketList(packetList, srcConnRefCon)
             }
         }
         guard portStatus == noErr else {
@@ -82,8 +107,6 @@ public class PianoMidiPlugin: CAPPlugin {
         portInfo.removeAll()
         if inputPort != 0 { MIDIPortDispose(inputPort); inputPort = 0 }
         if midiClient != 0 { MIDIClientDispose(midiClient); midiClient = 0 }
-        bleManager?.stop()
-        bleManager = nil
         call.resolve()
     }
 
@@ -106,33 +129,49 @@ public class PianoMidiPlugin: CAPPlugin {
         call.resolve()
     }
 
+    // iOS BLE-MIDI goes through the OS pairing sheet (showBleMidiPairing).
+    // The previous in-app CoreBluetooth central shipped a BLE-MIDI parser that
+    // violated MIDI 1.0 running-status rules (System Real-Time / System Common
+    // / SysEx handling) — deleted in favor of Apple's certified stack, which
+    // surfaces paired keyboards as regular CoreMIDI sources. scanBle/connectBle
+    // remain in the plugin API for Android (android.media.midi has no system
+    // pairing UI, so the Kotlin side scans/connects itself).
+
     @objc func scanBle(_ call: CAPPluginCall) {
-        let timeoutMs = call.getInt("timeoutMs") ?? 5000
-        if bleManager == nil {
-            bleManager = BleMidiManager(plugin: self)
-        }
-        bleManager?.scan(timeoutMs: timeoutMs) { devices in
-            let mapped = devices.map { ["id": $0.id, "name": $0.name] }
-            call.resolve(["devices": mapped])
-        }
+        call.reject("Not used on iOS — call showBleMidiPairing() instead")
     }
 
     @objc func connectBle(_ call: CAPPluginCall) {
-        guard let id = call.getString("id") else { call.reject("Missing id"); return }
-        if bleManager == nil {
-            bleManager = BleMidiManager(plugin: self)
-        }
-        bleManager?.connect(id: id) { result in
-            switch result {
-            case .success(let port):
-                call.resolve([
-                    "id": port.id, "name": port.name,
-                    "state": port.state, "connection": port.connection
-                ])
-            case .failure(let err):
-                call.reject("BLE connect failed: \(err.localizedDescription)")
+        call.reject("Not used on iOS — call showBleMidiPairing() instead")
+    }
+
+    /// Present Apple's Bluetooth-MIDI pairing sheet (CABTMIDICentralViewController).
+    /// Once the user pairs a keyboard there, iOS's MIDIBluetoothDriver publishes
+    /// it as a CoreMIDI source → our msgObjectAdded handler connects it and
+    /// fires portChange, exactly like a USB hot-plug. Resolves when the sheet
+    /// is presented (not when a device connects — connection arrives async via
+    /// portChange).
+    @objc func showBleMidiPairing(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let host = self.bridge?.viewController else {
+                call.reject("No view controller to present from")
+                return
             }
+            let picker = CABTMIDICentralViewController()
+            picker.navigationItem.rightBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .done,
+                target: self,
+                action: #selector(self.dismissBleMidiPairing)
+            )
+            let nav = UINavigationController(rootViewController: picker)
+            nav.modalPresentationStyle = .formSheet
+            host.present(nav, animated: true)
+            call.resolve()
         }
+    }
+
+    @objc private func dismissBleMidiPairing() {
+        bridge?.viewController?.dismiss(animated: true)
     }
 
     // MARK: - CoreMIDI handlers
@@ -141,11 +180,23 @@ public class PianoMidiPlugin: CAPPlugin {
         // Skip if already connected.
         if connectedSources[src] != nil { return }
 
+        // RTP-MIDI ("Network Session 1") is a virtual endpoint that iOS always
+        // publishes once network MIDI is on — it is not an instrument. Exclude
+        // it natively: the JS shell's name-based virtual-port filter misses
+        // localized display names (日本語 iPad: "ネットワーク Session 1"), and a
+        // false attach there blocks the real keyboard from ever attaching.
+        if isNetworkSessionEndpoint(src) { return }
+
         let id = stableEndpointId(src)
         let name = endpointDisplayName(src) ?? "MIDI Source"
         let manufacturer = endpointManufacturer(src) ?? ""
 
-        let status = MIDIPortConnectSource(inputPort, src, nil)
+        // Pass the endpoint ref as connRefCon so the receive handlers can
+        // attribute each packet to its actual source. Attributing to "the
+        // first connected source" mislabels messages the moment a second
+        // endpoint exists, and the JS polyfill routes by portId — a mislabeled
+        // note lands on an input with no onmidimessage bound and is dropped.
+        let status = MIDIPortConnectSource(inputPort, src, UnsafeMutableRawPointer(bitPattern: UInt(src)))
         guard status == noErr else {
             NSLog("[PianoMidi] connect source failed (\(status)) for \(name)")
             return
@@ -188,67 +239,152 @@ public class PianoMidiPlugin: CAPPlugin {
         }
     }
 
-    /// iOS 14+ packet path. MIDIEventList groups MIDIEventPackets, each with multiple words.
+    /// iOS 14+ packet path. MIDIEventList groups MIDIEventPackets; each packet
+    /// holds 1..n Universal MIDI Packets (UMP), each 1-4 words long.
     @available(iOS 14.0, *)
-    private func handleEventList(_ eventList: UnsafePointer<MIDIEventList>) {
-        let pkt = UnsafePointer(withUnsafePointer(to: eventList.pointee.packet) { $0 })
-        var packet = pkt.pointee
-        let timestamp = hostTimeToMillis(packet.timeStamp)
-        // Source endpoint is not directly attached to the packet on iOS 14 path;
-        // we rely on the port-wide connection set, but for now fall back to the first.
-        guard let firstId = connectedSources.first?.value else { return }
+    private func handleEventList(_ eventList: UnsafePointer<MIDIEventList>, _ srcConnRefCon: UnsafeMutableRawPointer?) {
+        var packetPtr = UnsafePointer(withUnsafePointer(to: eventList.pointee.packet) { $0 })
+        var packet = packetPtr.pointee
+        guard let portId = sourceId(fromRefCon: srcConnRefCon) ?? connectedSources.first?.value else { return }
         for _ in 0..<eventList.pointee.numPackets {
-            // Each word is a Uint32 holding a UMP message; decode the basic MIDI 1.0 form.
-            for w in 0..<Int(packet.wordCount) {
-                // `words` is a C fixed-size array imported as a tuple; can't subscript
-                // with a runtime index. Read each UInt32 through a raw byte view.
+            let timestamp = hostTimeToMillis(packet.timeStamp)
+            // Walk the words as UMPs, advancing by each message's word count
+            // (M2-104-UM: SysEx/Data64 = 2 words, MIDI 2.0 voice = 2, Data128
+            // = 4...). Iterating word-by-word misreads the data words of a
+            // multi-word message as fresh UMPs — a SysEx payload word whose
+            // top nibble happens to be 0x2 would dispatch a garbage note.
+            var w = 0
+            while w < Int(packet.wordCount) {
+                // `words` is a C fixed-size array imported as a tuple; can't
+                // subscript with a runtime index. Read through a raw byte view.
                 let word: UInt32 = withUnsafeBytes(of: packet.words) { raw in
                     raw.load(fromByteOffset: w * MemoryLayout<UInt32>.size, as: UInt32.self)
                 }
-                let messageType = (word >> 28) & 0xF
-                if messageType == 0x2 {   // MIDI 1.0 channel voice
+                let messageType = Int((word >> 28) & 0xF)
+                if messageType == 0x2 {   // MIDI 1.0 channel voice (1 word)
                     let status = UInt8((word >> 16) & 0xFF)
-                    let d1 = UInt8((word >> 8) & 0xFF)
-                    let d2 = UInt8(word & 0xFF)
+                    let d1 = UInt8((word >> 8) & 0x7F)
+                    let d2 = UInt8(word & 0x7F)
+                    // Program change / channel pressure carry ONE data byte —
+                    // don't fabricate a third (Web MIDI `data` length must
+                    // match the message).
+                    let cmd = status & 0xF0
+                    let payload: [Int] = (cmd == 0xC0 || cmd == 0xD0)
+                        ? [Int(status), Int(d1)]
+                        : [Int(status), Int(d1), Int(d2)]
                     notifyListeners("midiMessage", data: [
-                        "portId": firstId,
-                        "data": [Int(status), Int(d1), Int(d2)],
-                        "timestamp": timestamp
-                    ])
-                }
-            }
-            // Advance to the next packet (MIDIEventPacketNext is a macro in C; reimplement).
-            let advance = MemoryLayout<MIDIEventPacket>.offset(of: \MIDIEventPacket.words)!
-                + Int(packet.wordCount) * MemoryLayout<UInt32>.size
-            let nextPtr = UnsafeMutableRawPointer(mutating: pkt).advanced(by: advance)
-            packet = nextPtr.assumingMemoryBound(to: MIDIEventPacket.self).pointee
-        }
-    }
-
-    /// iOS 13 fallback. Walks a MIDIPacketList by hand (MIDIPacketNext is a C macro).
-    private func handlePacketList(_ pktList: UnsafePointer<MIDIPacketList>) {
-        var packet = pktList.pointee.packet
-        let timestamp = hostTimeToMillis(packet.timeStamp)
-        guard let firstId = connectedSources.first?.value else { return }
-        for _ in 0..<pktList.pointee.numPackets {
-            let length = Int(packet.length)
-            withUnsafePointer(to: &packet.data) { dataPtr in
-                let bytes = UnsafeBufferPointer(start: UnsafeRawPointer(dataPtr).assumingMemoryBound(to: UInt8.self), count: length)
-                let arr = Array(bytes)
-                if arr.count >= 1 {
-                    let payload: [Int] = arr.prefix(3).map { Int($0) }
-                    notifyListeners("midiMessage", data: [
-                        "portId": firstId,
+                        "portId": portId,
                         "data": payload,
                         "timestamp": timestamp
                     ])
                 }
+                w += PianoMidiPlugin.umpWordCount[messageType]
             }
+            // Advance to the next packet (MIDIEventPacketNext is a C macro;
+            // reimplement). NB: advance from the CURRENT packet's pointer —
+            // advancing from the list head would re-read packet 1's layout.
+            let advance = MemoryLayout<MIDIEventPacket>.offset(of: \MIDIEventPacket.words)!
+                + Int(packet.wordCount) * MemoryLayout<UInt32>.size
+            packetPtr = UnsafeRawPointer(packetPtr).advanced(by: advance)
+                .assumingMemoryBound(to: MIDIEventPacket.self)
+            packet = packetPtr.pointee
+        }
+    }
+
+    /// iOS 13 fallback. Walks a MIDIPacketList by hand (MIDIPacketNext is a C macro).
+    private func handlePacketList(_ pktList: UnsafePointer<MIDIPacketList>, _ srcConnRefCon: UnsafeMutableRawPointer?) {
+        var packet = pktList.pointee.packet
+        guard let portId = sourceId(fromRefCon: srcConnRefCon) ?? connectedSources.first?.value else { return }
+        for _ in 0..<pktList.pointee.numPackets {
+            let timestamp = hostTimeToMillis(packet.timeStamp)
+            let length = Int(packet.length)
+            let bytes = withUnsafePointer(to: &packet.data) { dataPtr in
+                Array(UnsafeBufferPointer(
+                    start: UnsafeRawPointer(dataPtr).assumingMemoryBound(to: UInt8.self),
+                    count: length))
+            }
+            emitMidi1Stream(bytes, portId: portId, timestamp: timestamp)
             packet = MIDIPacketNextPure(packet: packet)
         }
     }
 
+    /// Emit each complete MIDI 1.0 message in a packet's byte stream. A
+    /// CoreMIDI packet may hold several coalesced messages (note-on + Active
+    /// Sensing etc.) — the previous prefix(3) read forwarded only the first
+    /// and silently dropped the rest.
+    private func emitMidi1Stream(_ bytes: [UInt8], portId: String, timestamp: UInt64) {
+        var i = 0
+        while i < bytes.count {
+            let status = bytes[i]
+            if status < 0x80 { i += 1; continue }      // stray data byte — resync
+            if status >= 0xF8 { i += 1; continue }     // System Real-Time: 1 byte, not forwarded
+            if status == 0xF0 {                        // SysEx: skip to EOX
+                while i < bytes.count && bytes[i] != 0xF7 { i += 1 }
+                i += 1
+                continue
+            }
+            let cmd = status & 0xF0
+            let dataLen: Int
+            if cmd == 0xC0 || cmd == 0xD0 {
+                dataLen = 1                            // program change / channel pressure
+            } else if cmd != 0xF0 {
+                dataLen = 2                            // note / poly-AT / CC / pitch-bend
+            } else {
+                // System Common: F1/F3 = 1 data byte, F2 = 2, F4-F7 = 0.
+                dataLen = status == 0xF2 ? 2 : (status == 0xF1 || status == 0xF3) ? 1 : 0
+            }
+            guard i + dataLen < bytes.count || dataLen == 0 else { break }   // truncated
+            if cmd != 0xF0 {                           // channel voice — forward
+                var payload = [Int(status)]
+                for d in 0..<dataLen { payload.append(Int(bytes[i + 1 + d] & 0x7F)) }
+                notifyListeners("midiMessage", data: [
+                    "portId": portId,
+                    "data": payload,
+                    "timestamp": timestamp
+                ])
+            }
+            i += 1 + dataLen
+        }
+    }
+
     // MARK: - Helpers
+
+    /// UMP words per message-type nibble (MIDI 2.0 UMP spec M2-104-UM).
+    /// mt 0x3 (Data64/SysEx) = 2 words, 0x5 (Data128) = 4, etc.
+    private static let umpWordCount: [Int] = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4]
+
+    /// Recover the source endpoint's stable id from the per-source connRefCon
+    /// that connectSource passed to MIDIPortConnectSource.
+    private func sourceId(fromRefCon refCon: UnsafeMutableRawPointer?) -> String? {
+        guard let refCon = refCon else { return nil }
+        let ep = MIDIEndpointRef(UInt32(truncatingIfNeeded: UInt(bitPattern: refCon)))
+        return connectedSources[ep]
+    }
+
+    /// True for the RTP-MIDI network-session virtual endpoint. Locale-
+    /// independent, unlike display-name matching ("Network Session 1" is
+    /// "ネットワーク Session 1" on a Japanese device).
+    ///
+    /// Primary check: identity against MIDINetworkSession's own endpoints —
+    /// definitive. (A driver-owner string match on
+    /// "com.apple.AppleMIDIRTPDriver" was tried first and did NOT match on
+    /// iOS — verified live on iPadOS 26 where the session sailed through,
+    /// attached as if it were a piano, and blocked the real GO:PIANO88.)
+    private func isNetworkSessionEndpoint(_ ep: MIDIEndpointRef) -> Bool {
+        let session = MIDINetworkSession.default()
+        if ep == session.sourceEndpoint() || ep == session.destinationEndpoint() {
+            return true
+        }
+        // Fallback for any other RTP-MIDI-driver endpoint shape. Log the owner
+        // so a future mismatch is diagnosable from the device console.
+        var prop: Unmanaged<CFString>?
+        if MIDIObjectGetStringProperty(ep, kMIDIPropertyDriverOwner, &prop) == noErr,
+           let owner = prop?.takeRetainedValue() as String? {
+            if owner.contains("AppleMIDIRTPDriver") { return true }
+            NSLog("[PianoMidi] endpoint \(stableEndpointId(ep)) driverOwner=\(owner)")
+        }
+        return false
+    }
 
     /// Mach timebase for host-time → nanosecond conversion (numer/denom ratio).
     /// Replaces AudioConvertHostTimeToNanos, which isn't reliably exposed to Swift
@@ -298,127 +434,5 @@ fileprivate func MIDIPacketNextPure(packet: MIDIPacket) -> MIDIPacket {
         let aligned = (total + 3) & ~3
         let nextRaw = UnsafeRawPointer(ptr).advanced(by: aligned)
         return nextRaw.assumingMemoryBound(to: MIDIPacket.self).pointee
-    }
-}
-
-// MARK: - BLE-MIDI Manager (skeleton)
-
-import os.log
-
-fileprivate struct BleDevice { let id: String; let name: String }
-
-fileprivate class BleMidiManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
-    private let plugin: PianoMidiPlugin
-    private var central: CBCentralManager!
-    private var discovered: [String: CBPeripheral] = [:]
-    private var connected: CBPeripheral?
-    private var scanCallback: (([BleDevice]) -> Void)?
-    private var connectCallback: ((Result<(id: String, name: String, state: String, connection: String), Error>) -> Void)?
-    private let bleMidiServiceUUID = CBUUID(string: "03B80E5A-EDE8-4B33-A751-6CE34EC4C700")
-    private let bleMidiCharUUID    = CBUUID(string: "7772E5DB-3868-4112-A1A9-F2669D106BF3")
-
-    init(plugin: PianoMidiPlugin) {
-        self.plugin = plugin
-        super.init()
-        self.central = CBCentralManager(delegate: self, queue: nil)
-    }
-
-    func scan(timeoutMs: Int, callback: @escaping ([BleDevice]) -> Void) {
-        scanCallback = callback
-        discovered.removeAll()
-        guard central.state == .poweredOn else { callback([]); return }
-        central.scanForPeripherals(withServices: [bleMidiServiceUUID], options: nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) { [weak self] in
-            self?.central.stopScan()
-            let list = self?.discovered.map { BleDevice(id: $0.key, name: $0.value.name ?? "BLE-MIDI") } ?? []
-            self?.scanCallback?(list)
-            self?.scanCallback = nil
-        }
-    }
-
-    func connect(id: String, callback: @escaping (Result<(id: String, name: String, state: String, connection: String), Error>) -> Void) {
-        guard let p = discovered[id] else {
-            callback(.failure(NSError(domain: "PianoMidi", code: 404, userInfo: [NSLocalizedDescriptionKey: "Peripheral not found in last scan"])))
-            return
-        }
-        connectCallback = callback
-        connected = p
-        p.delegate = self
-        central.connect(p, options: nil)
-    }
-
-    func stop() {
-        if let c = connected { central.cancelPeripheralConnection(c) }
-        connected = nil
-    }
-
-    // CBCentralManagerDelegate
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        // No-op; scan() guards on poweredOn.
-    }
-    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        discovered[peripheral.identifier.uuidString] = peripheral
-    }
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        peripheral.discoverServices([bleMidiServiceUUID])
-    }
-    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        connectCallback?(.failure(error ?? NSError(domain: "PianoMidi", code: 0, userInfo: nil)))
-        connectCallback = nil
-    }
-
-    // CBPeripheralDelegate
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard let svc = peripheral.services?.first(where: { $0.uuid == bleMidiServiceUUID }) else { return }
-        peripheral.discoverCharacteristics([bleMidiCharUUID], for: svc)
-    }
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard let ch = service.characteristics?.first(where: { $0.uuid == bleMidiCharUUID }) else { return }
-        peripheral.setNotifyValue(true, for: ch)
-        let id = peripheral.identifier.uuidString
-        let name = peripheral.name ?? "BLE-MIDI"
-        let info: [String: Any] = [
-            "id": id, "name": name, "manufacturer": "BLE",
-            "state": "connected", "connection": "open"
-        ]
-        plugin.notifyListeners("portChange", data: info)
-        connectCallback?(.success((id: id, name: name, state: "connected", connection: "open")))
-        connectCallback = nil
-    }
-    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard let data = characteristic.value else { return }
-        // BLE-MIDI 1.0 packet parsing — header byte + timestamp interleaved with status/data.
-        // Same algorithm as the JS-side parseBleMidiPacket() in legacy app.js.
-        let bytes = [UInt8](data)
-        guard bytes.count >= 3 else { return }
-        var i = 1   // skip header
-        var runningStatus: UInt8 = 0
-        let portId = peripheral.identifier.uuidString
-        while i < bytes.count {
-            if (bytes[i] & 0x80) != 0 {
-                i += 1   // skip timestamp
-                if i >= bytes.count { break }
-                if (bytes[i] & 0x80) != 0 {
-                    runningStatus = bytes[i]
-                    i += 1
-                }
-            }
-            if runningStatus == 0 { i += 1; continue }
-            let cmd = runningStatus & 0xF0
-            if cmd == 0x80 || cmd == 0x90 || cmd == 0xB0 || cmd == 0xA0 || cmd == 0xE0 {
-                if i + 1 >= bytes.count { break }
-                let payload: [Int] = [Int(runningStatus), Int(bytes[i] & 0x7F), Int(bytes[i+1] & 0x7F)]
-                plugin.notifyListeners("midiMessage", data: [
-                    "portId": portId,
-                    "data": payload,
-                    "timestamp": Date().timeIntervalSince1970 * 1000
-                ])
-                i += 2
-            } else if cmd == 0xC0 || cmd == 0xD0 {
-                i += 1   // 1-data-byte messages
-            } else {
-                i += 1
-            }
-        }
     }
 }
