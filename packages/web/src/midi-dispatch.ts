@@ -124,6 +124,10 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
     } else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) {
       // 0x80 explicit note-off OR 0x90 with velocity 0 (running-status
       // note-off — common on cheaper keyboards).
+      // note-off で同一鍵のデデュープキーを解除する。デデュープは BLE の
+      // 再送だけを潰すのが目的で、note-off を挟んだ「正当な同音連打」は
+      // 通すべき（さもないと速いスタッカート2打目が落ちる）。
+      if (lastNoteOnKey >> 8 === a) lastNoteOnKey = -1;
       deps.onMidiNoteOff(a);
     } else if (cmd === 0xb0) {
       deps.onMidiCC(a, b);

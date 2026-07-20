@@ -151,6 +151,17 @@ describe('dispatch — BLE dedupe', () => {
     expect(mocks.pulseMidiBadge).toHaveBeenCalledOnce();
   });
 
+  it('a note-off between identical noteOns clears the dedupe so a fast re-strike passes', () => {
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { d, mocks } = makeDispatch();
+    d.dispatch(0x90, 60, 100); // note-on
+    nowSpy.mockReturnValue(10);
+    d.dispatch(0x80, 60, 0); // proper note-off → clears the dedupe key for 60
+    nowSpy.mockReturnValue(15); // still within 30ms of the first note-on
+    d.dispatch(0x90, 60, 100); // legit staccato re-strike must NOT be swallowed
+    expect(mocks.onMidiNoteOn).toHaveBeenCalledTimes(2);
+  });
+
   it('passes second event when >30ms apart', () => {
     const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
     const { d, mocks } = makeDispatch();

@@ -2099,8 +2099,14 @@ body:has(#practiceHud.visible) #encouragement {
   align-items: center;
 }
 
+.result-history {
+  width: 100%;
+}
+
 .result-history canvas {
   display: block;
+  width: 100%;
+  max-width: 340px;
 }
 
 .result-history.hidden {

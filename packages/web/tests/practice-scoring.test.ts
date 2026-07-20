@@ -220,6 +220,25 @@ describe('practiceRealElapsedMs', () => {
     });
     expect(fx.scoring.practiceRealElapsedMs()).toBe(3000);
   });
+
+  it('returns the frozen value while paused, ignoring the advancing Tone clock', () => {
+    // 明示ポーズ/タブ非表示の凍結: _frozenRealElapsedMs が非 null の間は
+    // ctx.currentTime が進んでも経過が固定される（レーン/カーソルが流れない
+    // = 「設定で止まらない」「ノーツ消失」の根治点）。オフセットは差し引く。
+    const fx = makeFixture({
+      practice: { startAudioTime: 1.5, audioOffsetMs: 40, _frozenRealElapsedMs: 2000 },
+      Tone: { context: { currentTime: 999 } }, // クロックは大きく進行
+    });
+    expect(fx.scoring.practiceRealElapsedMs()).toBe(1960); // 2000 - 40（凍結）
+  });
+
+  it('resumes the live clock once _frozenRealElapsedMs is cleared', () => {
+    const fx = makeFixture({
+      practice: { startAudioTime: 1.5, _frozenRealElapsedMs: null },
+      Tone: { context: { currentTime: 3.0 } },
+    });
+    expect(fx.scoring.practiceRealElapsedMs()).toBe(1500); // 通常計算に復帰
+  });
 });
 
 // ─── practiceElapsedMs ─────────────────────────────────────────────

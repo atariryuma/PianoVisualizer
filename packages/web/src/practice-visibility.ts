@@ -16,6 +16,9 @@ export interface PracticeVisibilityPracticeRef {
   paused?: boolean;
   _cursorScanIdx?: number;
   _lastCursorNoteIdx?: number;
+  /** 凍結中の生（オフセット前）経過ms。practiceRealElapsedMs が読み、
+   *  これが非 null の間だけ経過クロックが凍結する（両バグの根治点）。 */
+  _frozenRealElapsedMs?: number | null;
 }
 
 export interface PracticeVisibilityToneRef {
@@ -85,6 +88,9 @@ export function createPracticeVisibilityController(
     const transportWasStarted = tone?.Transport?.state === 'started';
 
     frozen = { elapsedSec, transportWasStarted };
+    // 経過クロックを凍結（生値。オフセットは practiceRealElapsedMs 側で引く）。
+    // これでポーズ中にレーン/カーソル/laneDrawFromIdx/採点が前進しない。
+    deps.practice._frozenRealElapsedMs = elapsedSec * 1000;
 
     if (transportWasStarted && typeof tone?.Transport?.pause === 'function') {
       try {
@@ -114,6 +120,7 @@ export function createPracticeVisibilityController(
     // しない。凍結スナップショットは黙って破棄する。
     if (!deps.practice.enabled) {
       frozen = null;
+      deps.practice._frozenRealElapsedMs = null;
       log('[PRACTICE-VISIBILITY] ' + reason + ' thaw skipped (practice disabled)');
       return;
     }
@@ -145,6 +152,9 @@ export function createPracticeVisibilityController(
         })
     );
     frozen = null;
+    // クロック解凍。startAudioTime は上でリベース済みなので、
+    // 次フレームの practiceRealElapsedMs は凍結値から途切れず継続する。
+    deps.practice._frozenRealElapsedMs = null;
   }
 
   function onHidden(): void {

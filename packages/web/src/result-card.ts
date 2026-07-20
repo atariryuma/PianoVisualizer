@@ -809,8 +809,13 @@ export function drawHistoryChart(
   canvas: HTMLCanvasElement,
   history: Array<{ d: number; a: number; t: number; s: number }>
 ): void {
-  const w = 280;
-  const h = 80;
+  // 幅はカード内容幅に追従（CSS が width:100% で伸ばす → clientWidth を実測）。
+  // 端末で 260〜324px 程度に収まり、iPad で余白に埋もれず、狭い iPhone でも
+  // はみ出さない。レイアウト前（clientWidth=0）や happy-dom は 280 に退避。
+  // 高さは 80→104 に増やし、高得点(90〜100%)帯でも折れ線が潰れず読める
+  // （0〜100% 固定軸は"正直さ"のため維持 — 自動スケールで小差を誇張しない）。
+  const w = Math.max(240, Math.round(canvas.clientWidth) || 280);
+  const h = 104;
   const c = deps.setupHiDPICanvas(canvas, w, h);
   c.clearRect(0, 0, w, h);
   if (!history || history.length < 2) return;

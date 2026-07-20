@@ -104,6 +104,8 @@ export interface PracticePartial {
   _sectionTargetCount?: number;
   _cursorScanIdx?: number;
   _lastCursorNoteIdx?: number;
+  /** 凍結クロック（practice-visibility）。セクション開始でクリアする保険。 */
+  _frozenRealElapsedMs?: number | null;
   mode: 'guided' | 'rhythm' | 'listen';
   fullSongMode?: boolean;
   tempoPct: number;
@@ -326,6 +328,9 @@ export function createStartPracticeSection(
     // settings-panel exit paths already resume(), but a stray paused=true
     // would hard-gate the entire section (silent — no scoring / cursor).
     deps.practice.paused = false;
+    // 凍結クロックも必ず解除（quit 経路が resume() を通らず _frozen が
+    // 残った場合の保険 — 残ると新セクションの経過が固まって無音進行しない）。
+    deps.practice._frozenRealElapsedMs = null;
     deps.practice.sectionIdx = isFullSong ? 0 : sectionIdx;
     deps.practice.sectionNotes = isFullSong
       ? deps.buildFullSongNotes()

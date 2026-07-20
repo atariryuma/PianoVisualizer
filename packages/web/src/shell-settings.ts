@@ -39,6 +39,8 @@ export interface ShellSettingsDeps {
   onPanelClose?: () => void;
   /** 0.15 — 音量バランスのライブ反映 + 音名表記キャッシュ更新。 */
   applyToneVolumes?: () => void;
+  /** 音量スライダー調整時（change）のプレビュー発音。 */
+  previewToneVolume?: (layer: 'ghost' | 'backing' | 'metronome') => void;
   onNoteNamingChange?: () => void;
   /** 0.15 — 進捗バックアップ（星/スタンプ/練習日 + 設定）の書き出し/取り込み。 */
   exportProgressBackup?: () => void;
@@ -101,6 +103,7 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     resumePractice: deps.resumePractice,
     onClose: deps.onPanelClose,
     applyToneVolumes: deps.applyToneVolumes,
+    previewToneVolume: deps.previewToneVolume,
     onNoteNamingChange: deps.onNoteNamingChange,
     exportProgressBackup: deps.exportProgressBackup,
     importProgressBackup: deps.importProgressBackup,

@@ -80,6 +80,11 @@ export interface PracticeScoringRef {
   pendingHolds: Map<number, PracticeNote>;
   startAudioTime: number;
   audioOffsetMs?: number | null;
+  /** 明示ポーズ / タブ非表示で凍結中の生（オフセット前）経過ms。
+   *  practice-visibility が freeze で設定・thaw で解除する。非 null の間、
+   *  practiceRealElapsedMs はこの凍結値を返し、AudioContext クロックが
+   *  進み続けてもレーン・カーソル・laneDrawFromIdx・採点が前進しない。 */
+  _frozenRealElapsedMs?: number | null;
 }
 
 /** Tunables — passed in so the scoring is testable without pulling
@@ -173,6 +178,11 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
   }
 
   function practiceRealElapsedMs(): number {
+    // 凍結中（明示ポーズ/タブ非表示）は AudioContext クロックが進み続けても
+    // 経過を凍結値へ固定。オフセットは現在値で引き直すのでポーズ中に
+    // オーディオオフセットを調整しても整合する。
+    const frozen = deps.practice._frozenRealElapsedMs;
+    if (frozen != null) return frozen - (deps.practice.audioOffsetMs || 0);
     const tone = deps.Tone;
     const raw = tone?.context
       ? (tone.context.currentTime - deps.practice.startAudioTime) * 1000

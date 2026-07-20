@@ -509,9 +509,13 @@ export function boot(): void {
       window.dispatchEvent(new Event('practicepausechange'));
     },
     // パネルを閉じたら較正のクリック列・タイマーを破棄（鳴りっぱなし防止）。
-    onPanelClose: () => _calibration.stop(),
+    // 中断（パネル閉じ）なので握り潰しフラグも解除（再入時の開始タップ
+    // 取りこぼしを防ぐ — latency-calibration.stop 参照）。
+    onPanelClose: () => _calibration.stop(true),
     // 音量スライダーのライブ反映 + 音名表記トグルのキャッシュ更新。
     applyToneVolumes: () => _practice.applyToneVolumes(),
+    previewToneVolume: (layer: 'ghost' | 'backing' | 'metronome') =>
+      _practice.previewToneVolume(layer),
     onNoteNamingChange: () => _practice.refreshLangCaches(),
     // 進捗バックアップ（星/スタンプ/練習日 + 設定）。ライブラリ(曲)とは別。
     exportProgressBackup: () => {

@@ -440,4 +440,22 @@ describe('onMidiCC', () => {
     expect(ripples.length).toBe(0);
     expect(midiState.sustainedNotes.has(60)).toBe(true);
   });
+
+  it('CC#123 (All Notes Off) releases every lit key with a fade ripple — stuck-note recovery for a dropped BLE note-off', () => {
+    const { deps, midiState, ripples } = makeDeps();
+    midiState.activeNotes.set(60, { velocity: 100, onTimeMs: 0 });
+    midiState.activeNotes.set(64, { velocity: 90, onTimeMs: 0 });
+    midiState.sustainedNotes.add(67); // held under pedal
+    onMidiCC(123, 0, deps);
+    expect(midiState.activeNotes.size).toBe(0);
+    expect(midiState.sustainedNotes.size).toBe(0);
+    expect(ripples.length).toBe(3); // 60 + 64 + 67, deduped union
+  });
+
+  it('CC#120 (All Sound Off) also clears every lit key', () => {
+    const { deps, midiState } = makeDeps();
+    midiState.activeNotes.set(72, { velocity: 100, onTimeMs: 0 });
+    onMidiCC(120, 0, deps);
+    expect(midiState.activeNotes.size).toBe(0);
+  });
 });

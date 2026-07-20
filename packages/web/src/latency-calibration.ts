@@ -58,8 +58,10 @@ export interface LatencyCalibrationDeps {
 
 export interface LatencyCalibration {
   start(): Promise<void>;
-  /** 予約済みタイマー破棄 + 状態リセット（設定パネルを閉じたとき等）。 */
-  stop(): void;
+  /** 予約済みタイマー破棄 + 状態リセット。resetSwallow=true は中断
+   *  （パネル閉じ）から呼ぶ時に握り潰しフラグも解除する（再入時の開始
+   *  タップ取りこぼし防止）。自然終了（finalize）は既定 false のまま。 */
+  stop(resetSwallow?: boolean): void;
   isRunning(): boolean;
   /** テスト用に公開 — 実 UI では btn の pointerdown が呼ぶ。 */
   onTap(): void;
@@ -88,10 +90,16 @@ export function createLatencyCalibration(deps: LatencyCalibrationDeps): LatencyC
     deps.dom.status.textContent = msg;
   }
 
-  function stop(): void {
+  /** resetSwallow: パネル中断（閉じる）から呼ぶ時だけ握り潰しフラグを
+   *  解除する。自然終了（finalize）経路では残す — 最終タップに続く合成
+   *  click を飲んで再開始を防ぐため。中断時に残ると次回の「開始」タップが
+   *  1回 swallow され「較正ボタンを2回押さないと始まらない」不具合になる
+   *  （実行中に1タップ→click 発火前にパネルを閉じる等で再現）。 */
+  function stop(resetSwallow = false): void {
     running = false;
     clickSecs = [];
     deltas = [];
+    if (resetSwallow) swallowClick = false;
     if (endTimer) {
       clearTimeout(endTimer);
       endTimer = null;

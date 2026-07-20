@@ -207,4 +207,28 @@ describe('createLatencyCalibration — 停止と UI 配線', () => {
     expect(fx.calib.isRunning()).toBe(false); // 再開始していない
     expect(scheduledClickSecs(fx.metronome)).toHaveLength(TOTAL_CLICKS);
   });
+
+  it('中断 stop(true)（パネル閉じ）後は、次の開始タップが握り潰されない', async () => {
+    const fx = makeFixture();
+    await fx.calib.start();
+    expect(fx.calib.isRunning()).toBe(true);
+    // 1タップ（pointerdown が swallowClick を立てる）→ 合成 click 前に中断。
+    fx.btn.dispatchEvent(new Event('pointerdown'));
+    fx.calib.stop(true); // onPanelClose 相当（中断なので握り潰しも解除）
+    expect(fx.calib.isRunning()).toBe(false);
+    // 再開: 次の click は swallow されず開始する（以前は1回握り潰されていた）。
+    fx.btn.dispatchEvent(new Event('click'));
+    await vi.waitFor(() => expect(fx.calib.isRunning()).toBe(true));
+  });
+
+  it('自然終了経路の stop()（既定）は握り潰しフラグを残す（最終タップの合成 click 用）', async () => {
+    const fx = makeFixture();
+    await fx.calib.start();
+    fx.btn.dispatchEvent(new Event('pointerdown')); // swallowClick = true
+    fx.calib.stop(); // finalize 相当（resetSwallow なし）
+    // 直後の合成 click は飲まれ、再開始しない。
+    fx.btn.dispatchEvent(new Event('click'));
+    await Promise.resolve();
+    expect(fx.calib.isRunning()).toBe(false);
+  });
 });

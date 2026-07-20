@@ -268,10 +268,37 @@ export function onMidiNoteOff(midiNum: number, deps: MidiHandlersDeps): void {
   if (deps.practice.enabled) deps.finalizeNoteHold(midiNum);
 }
 
-/** Sustain-pedal CC handler. Only CC #64 (sustain) is relevant — the
- *  rest are a no-op. On pedal release, drop every sustained key with
- *  a soft fade ripple so the kid sees the "let go" visual. */
+/** Release every lit key (held + sustained) with a soft fade ripple.
+ *  The recovery path for a dropped note-off — BLE-MIDI can lose a packet,
+ *  and the keyboard's own "panic" (All Notes/Sound Off) is the standard
+ *  way to unstick. Visual-only: mirrors the section-transition clear,
+ *  doesn't fabricate a scored release. Pedal state (`sustainOn`) is left
+ *  as-is so a still-depressed pedal keeps working for the next notes. */
+function releaseAllMidiNotes(deps: MidiHandlersDeps): void {
+  const H = deps.getHeight();
+  const lit = new Set<number>([
+    ...deps.midiState.activeNotes.keys(),
+    ...deps.midiState.sustainedNotes,
+  ]);
+  lit.forEach((midiNum) => {
+    const x = deps.midiToScreenX(midiNum);
+    const y = midiNum < 60 ? H * 0.7 : H * 0.3;
+    deps.ripples.push(new deps.Ripple(x, y, deps.noteThemeColor(midiNum), 60));
+  });
+  deps.midiState.activeNotes.clear();
+  deps.midiState.sustainedNotes.clear();
+}
+
+/** Sustain-pedal + panic CC handler. CC #64 (sustain) is the piano-
+ *  relevant continuous controller; CC #120 (All Sound Off) / #123 (All
+ *  Notes Off) are the stuck-note recovery path (see releaseAllMidiNotes).
+ *  Every other CC is a no-op. On pedal release, drop every sustained key
+ *  with a soft fade ripple so the kid sees the "let go" visual. */
 export function onMidiCC(cc: number, value: number, deps: MidiHandlersDeps): void {
+  if (cc === 120 || cc === 123) {
+    releaseAllMidiNotes(deps);
+    return;
+  }
   if (cc !== 64) return;
   const wasOn = deps.midiState.sustainOn;
   deps.midiState.sustainOn = value >= 64;

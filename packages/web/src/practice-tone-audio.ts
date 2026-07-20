@@ -35,6 +35,10 @@ export interface ToneLibRef {
     stop(): void;
     cancel(): void;
   };
+  /** 音量プレビューで suspended な AudioContext を user gesture 内で再開する
+   *  任意フック（本番 Tone は持つ／テストは省略可）。 */
+  start?: () => Promise<void> | void;
+  context?: { state?: string };
 }
 
 export type ToneSynthCtor = any;
@@ -118,6 +122,11 @@ export interface PracticeToneAudio {
    *  panel calls this so slider drags are audible immediately. No-op
    *  before ensureInstruments. */
   applyVolumes(): void;
+  /** 音量スライダー調整時のプレビュー発音。該当層を1発だけ鳴らして
+   *  新しい音量を即座に聴かせる。無音・非再生時（タイトル画面など）でも
+   *  "効いた" と分かるよう、必要なら user gesture 内で AudioContext を再開
+   *  してから鳴らす。ベストエフォート（suspended のまま等は無音で無害）。 */
+  previewVolume(layer: 'ghost' | 'backing' | 'metronome'): void;
   /** Schedule the audible "4, 3, 2, 1, GO!" preceding section start. */
   scheduleCountIn(startAudioTime: number): void;
   /** Tone.Transport stop + cancel, hide cursor + clear notehead
@@ -188,6 +197,33 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     applyVolumes();
   }
 
+  function previewVolume(layer: 'ghost' | 'backing' | 'metronome'): void {
+    if (!deps.Tone) return;
+    const fire = (): void => {
+      ensureInstruments();
+      applyVolumes();
+      try {
+        // 秒指定でトリガ（Transport 未起動でも鳴る。'8n' 等は BPM 依存）。
+        if (layer === 'ghost') piano?.triggerAttackRelease('C4', 0.3);
+        else if (layer === 'backing') melody?.triggerAttackRelease('C4', 0.3);
+        else metronome?.triggerAttackRelease('C2', 0.08);
+      } catch {
+        /* disposed instrument / suspended ctx — preview is best-effort */
+      }
+    };
+    // suspended（未開始）なら user gesture 内で再開してから鳴らす。
+    if (deps.Tone.context?.state === 'running') {
+      fire();
+      return;
+    }
+    const p = deps.Tone.start?.();
+    if (p && typeof (p as Promise<void>).then === 'function') {
+      (p as Promise<void>).then(fire, fire);
+    } else {
+      fire();
+    }
+  }
+
   function scheduleCountIn(startAudioTime: number): void {
     if (!deps.Tone) return;
     deps.audioScheduler.scheduleCountInBeeps({ metronome, piano }, startAudioTime, {
@@ -228,6 +264,7 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
   return {
     ensureInstruments,
     applyVolumes,
+    previewVolume,
     scheduleCountIn,
     stopPracticeAudio,
     getInstruments: () => ({ piano, metronome, melody }),

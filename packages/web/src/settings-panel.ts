@@ -121,6 +121,9 @@ export interface SettingsPanelDeps {
   /** 0.15 — push the prefs volume balance onto live practice synths so a
    *  slider drag is audible immediately (mid-listen/rhythm playback). */
   applyToneVolumes?(): void;
+  /** 音量スライダーを離した時（change）に該当層を1発プレビュー発音する。
+   *  無音・非再生時でも "効いた" と分かるようにするための最小フィードバック。 */
+  previewToneVolume?(layer: 'ghost' | 'backing' | 'metronome'): void;
   /** 0.15 — refresh the shell's note-name cache after a notation change. */
   onNoteNamingChange?(): void;
   /** 0.15 — download a progress+settings backup file. */
@@ -258,6 +261,10 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     { slider: deps.dom.volBackingSlider, val: deps.dom.volBackingVal, key: 'volBacking' },
     { slider: deps.dom.volMetronomeSlider, val: deps.dom.volMetronomeVal, key: 'volMetronome' },
   ];
+  const layerForKey: Record<
+    'volGhost' | 'volBacking' | 'volMetronome',
+    'ghost' | 'backing' | 'metronome'
+  > = { volGhost: 'ghost', volBacking: 'backing', volMetronome: 'metronome' };
   for (const { slider, val, key } of volDefs) {
     slider?.addEventListener('input', () => {
       const v = parseInt(slider.value, 10);
@@ -268,6 +275,12 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
       deps.applyToneVolumes?.();
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(deps.savePrefs, 250);
+    });
+    // ドラッグを離した時に1発プレビュー発音（input 毎だと連射になるので
+    // change で1回）。無音・非再生時（タイトル画面等）でも新しい音量を
+    // 耳で確認できる — スライダーが「効かない」に見える最大要因を解消。
+    slider?.addEventListener('change', () => {
+      deps.previewToneVolume?.(layerForKey[key]);
     });
   }
 

@@ -110,6 +110,8 @@ export interface ShellPractice {
   getActiveNoteNames: () => readonly string[];
   /** Re-apply the prefs volume balance to live practice synths. */
   applyToneVolumes: () => void;
+  /** 音量スライダー調整時のプレビュー発音（該当層を1発鳴らす）。 */
+  previewToneVolume: (layer: 'ghost' | 'backing' | 'metronome') => void;
   /** レイテンシ較正 (P2-22) 用の楽器アクセサ。 */
   ensureToneInstruments: () => void;
   getToneInstruments: () => { piano: any; metronome: any; melody: any };
@@ -439,6 +441,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     getActiveNoteNames: () => activeNoteNames,
     /** Re-apply the prefs volume balance to live practice synths. */
     applyToneVolumes: () => _practiceToneAudio.applyVolumes(),
+    previewToneVolume: (layer: 'ghost' | 'backing' | 'metronome') =>
+      _practiceToneAudio.previewVolume(layer),
     setPracticeLane: (lane: any) => {
       practiceLaneRef.current = lane;
     },

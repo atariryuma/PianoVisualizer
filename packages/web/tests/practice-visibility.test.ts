@@ -141,6 +141,37 @@ describe('createPracticeVisibilityController', () => {
     expect(start).toHaveBeenCalledOnce();
   });
 
+  it('pause() freezes the elapsed clock (_frozenRealElapsedMs) so the lane cannot advance; resume() clears it', () => {
+    // 両バグ（ノーツ消失・設定で止まらない）の根治点: ポーズ中は
+    // practiceRealElapsedMs が読む _frozenRealElapsedMs に凍結値が入り、
+    // AudioContext クロックが進み続けてもレーン/カーソル/laneDrawFromIdx が
+    // 前進しない。resume で null に戻り、rebase 済みクロックから継続する。
+    const practice: {
+      enabled: boolean;
+      startAudioTime: number;
+      paused: boolean;
+      _frozenRealElapsedMs?: number | null;
+    } = { enabled: true, startAudioTime: 2, paused: false };
+    let now = 12;
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({
+        context: { currentTime: now },
+        Transport: { state: 'started', pause: vi.fn(), start: vi.fn() },
+      }),
+      log: vi.fn(),
+    });
+
+    ctrl.pause();
+    expect(practice._frozenRealElapsedMs).toBe(10000); // (12-2)s → 10000ms
+    // クロックが進んでも凍結値は動かない（レーンが流れない）。
+    now = 99;
+    expect(practice._frozenRealElapsedMs).toBe(10000);
+
+    ctrl.resume();
+    expect(practice._frozenRealElapsedMs).toBeNull(); // 解凍
+  });
+
   it('a tab refocus during an explicit pause does NOT resume', () => {
     const practice = { enabled: true, startAudioTime: 2, paused: false };
     const start = vi.fn();
