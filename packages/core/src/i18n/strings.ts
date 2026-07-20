@@ -51,7 +51,10 @@ export const T_STRINGS: TranslationTable = {
   },
   connectBluetooth: { en: 'Connect Bluetooth', jp: 'Bluetooth接続', de: 'Bluetooth verbinden' },
   other: { en: 'Other', jp: 'その他', de: 'Sonstiges' },
-  resetSession: { en: 'Reset session', jp: 'セッションをリセット', de: 'Sitzung zurücksetzen' },
+  // 「セッションを終了」— 実挙動（結果を見せて曲選択へ戻す）に一致させた
+  // 業界標準の呼称（Simply Piano / Yousician 等の Exit/End 相当）。旧
+  // 「リセット」は"開くと結果画面が出る"違和感があった。キーは互換のため据置。
+  resetSession: { en: 'End session', jp: 'セッションを終了', de: 'Sitzung beenden' },
   debugOverlay: { en: 'Debug overlay', jp: 'デバッグ表示', de: 'Debug-Anzeige' },
   language: { en: 'Language', jp: '言語', de: 'Sprache' },
   // Intro hint / MIDI diagnostics

@@ -380,10 +380,22 @@ describe('onMidiNoteOff', () => {
     expect(midiState.sustainedNotes.has(60)).toBe(false);
   });
 
-  it('practice mode finalizes the hold regardless of pedal', () => {
+  it('practice mode finalizes the hold immediately when the pedal is UP', () => {
+    const { deps, mocks } = makeDeps({ practice: { enabled: true } });
+    deps.midiState.sustainOn = false;
+    onMidiNoteOff(60, deps);
+    expect(mocks.finalizeNoteHold).toHaveBeenCalledWith(60);
+  });
+
+  it('practice mode DEFERS finalization while the pedal is DOWN (correct pedaling not mis-scored)', () => {
     const { deps, mocks } = makeDeps({ practice: { enabled: true } });
     deps.midiState.sustainOn = true;
     onMidiNoteOff(60, deps);
+    // 物理離鍵では確定しない — ペダルで伸びている間は「まだ鳴っている」。
+    expect(mocks.finalizeNoteHold).not.toHaveBeenCalled();
+    expect(deps.midiState.sustainedNotes.has(60)).toBe(true);
+    // ペダル解放で初めて確定（実際の発音終端の長さで採点）。
+    onMidiCC(64, 0, deps);
     expect(mocks.finalizeNoteHold).toHaveBeenCalledWith(60);
   });
 

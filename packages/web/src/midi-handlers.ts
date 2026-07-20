@@ -255,17 +255,20 @@ export function onMidiNoteOn(midiNum: number, velocity: number, deps: MidiHandle
   if (cw.emitted && !deps.practice.enabled) deps.effectGlowPulse();
 }
 
-/** Note-off entry point. Sustain pedal swallows physical key release
- *  for visuals (note moves to sustainedNotes), but practice still
- *  finalizes the held duration here regardless of pedal state — that
- *  prevents a kid from masking short presses under sustain. */
+/** Note-off entry point. Sustain pedal swallows physical key release for
+ *  visuals (the note moves to sustainedNotes). When the pedal is DOWN the
+ *  note keeps sounding, so note-length scoring is DEFERRED to pedal release
+ *  (onMidiCC) — finalizing here would mis-score correct pedaling (release
+ *  the key, hold with the pedal) as "too short". When the pedal is up, the
+ *  physical release IS the sounding end, so finalize immediately. */
 export function onMidiNoteOff(midiNum: number, deps: MidiHandlersDeps): void {
   if (deps.midiState.sustainOn) {
     deps.midiState.sustainedNotes.add(midiNum);
+    // 音長の確定はペダル解放まで先送り（pendingHolds に残す）。
   } else {
     deps.midiState.activeNotes.delete(midiNum);
+    if (deps.practice.enabled) deps.finalizeNoteHold(midiNum);
   }
-  if (deps.practice.enabled) deps.finalizeNoteHold(midiNum);
 }
 
 /** Release every lit key (held + sustained) with a soft fade ripple.
@@ -305,6 +308,10 @@ export function onMidiCC(cc: number, value: number, deps: MidiHandlersDeps): voi
   if (wasOn && !deps.midiState.sustainOn) {
     const H = deps.getHeight();
     deps.midiState.sustainedNotes.forEach((midiNum) => {
+      // ペダル解放 = この音の実際の発音終端。先送りしていた音長をここで
+      // 確定することで、「鍵を離してペダルで伸ばす」正しいペダリングが
+      // 物理離鍵の早さではなく実際に鳴っていた長さで正当に評価される。
+      if (deps.practice.enabled) deps.finalizeNoteHold(midiNum);
       const x = deps.midiToScreenX(midiNum);
       const y = midiNum < 60 ? H * 0.7 : H * 0.3;
       deps.ripples.push(new deps.Ripple(x, y, deps.noteThemeColor(midiNum), 60));

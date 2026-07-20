@@ -204,12 +204,14 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     const bleSupported =
       !!(navigator.bluetooth && navigator.bluetooth.requestDevice) || !!deps.nativeBleMidi?.has();
     if (deps.dom.bleBtn) deps.dom.bleBtn.style.display = bleSupported ? '' : 'none';
-    // Reset session is only meaningful when audio is alive — disable on title.
+    // 「セッションを終了」は走っているセッションが対象。タイトル/曲選択で
+    // 開いた時は対象が無いので、無効化してグレー表示（＝押せるのに無反応で
+    // 壊れて見える）ではなく行ごと隠す（業界標準は非表示）。
     const resetBtn = deps.dom.resetBtn as HTMLButtonElement | null;
     if (resetBtn) {
-      resetBtn.disabled = !deps.state.running;
-      resetBtn.style.opacity = deps.state.running ? '' : '.45';
-      resetBtn.style.cursor = deps.state.running ? 'pointer' : 'not-allowed';
+      const host = (resetBtn.closest('.settings-row') as HTMLElement | null) ?? resetBtn;
+      host.style.display = deps.state.running ? '' : 'none';
+      resetBtn.disabled = !deps.state.running; // 念のためクリックも封じる
     }
   }
 
