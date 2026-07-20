@@ -5,12 +5,26 @@ code in this repository.
 
 ## Project Overview
 
-Piano Visualizer is a real-time piano practice app for upper-elementary
-children. It uses microphone audio analysis (YIN pitch detection + multi-feature
-onset gating) and Web MIDI to detect piano notes, then renders responsive visual
-effects on a canvas. The UI is bilingual (EN / 日本語).
+Piano Visualizer is a real-time piano practice app for **learners of any age** —
+originally designed for upper-elementary children, and the kid-safe design (see
+the banned-list below) is retained as a product value ("the honest, no-ads,
+no-tracking, on-device practice app") for a broad audience of beginner-to-
+intermediate self-learners, students, and teachers. It uses microphone audio
+analysis (YIN pitch detection + multi-feature onset gating) and Web MIDI to
+detect piano notes, then renders responsive visual effects on a canvas. The UI
+is trilingual (EN / 日本語 / Deutsch).
 
-Current version: **0.14**
+**Release strategy (2026-07-20): iOS-first, App Store 4+ / Education category —
+NOT the strict "Kids" category.** Rationale: the Kids category's requirements
+(mandatory parental gates, no third-party analytics/ads, COPPA age-gating) are
+heavy, and this app collects essentially no data (on-device processing, no
+accounts, no third-party SDKs, only a SHA-pinned static library fetch), so a 4+
+Education listing keeps compliance light while broadening the audience — without
+giving up the kid-safe design. Keep the banned-list; keep "no ads / no tracking
+/ audio stays on device" as the headline promise.
+
+Version: **1.0** is the store marketing version (iOS `MARKETING_VERSION`).
+Internal package/dev version tracks separately in `package.json` (0.14.x).
 
 ## Gamification: banned-list (kid-safety)
 

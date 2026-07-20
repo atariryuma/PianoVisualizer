@@ -3,6 +3,56 @@
 Use this before submitting Piano Visualizer to the App Store / Google Play. Each
 item cites the relevant rule and the evidence to attach.
 
+## ⭐ Category decision (2026-07-20): 4+ / Education — NOT the "Kids" category
+
+We ship as a **4+ age-rated app in the Education category**, deliberately NOT in
+Apple's dedicated **"Kids" category**. The Kids category's extra burdens
+(mandatory parental gate before every permission/link/purchase, zero third-party
+analytics/ads, COPPA age-gating machinery) are heavy; this app collects **no
+data** (on-device processing, no accounts, no third-party SDKs, only a
+SHA-pinned static library fetch), so a plain 4+ / Education listing keeps review
+light while broadening the audience. The kid-safe **design** (banned- list, no
+ads, no tracking) is retained as a product promise, not a category obligation.
+
+**What this relaxes** (items below marked "Kids-only" no longer block us):
+
+- No mandatory parental gate before the mic permission prompt (a clear usage
+  string is still required — we have one).
+- External links / third-party analytics are permitted (we still ship none, by
+  choice — keeps the "no tracking" promise true).
+
+**What still applies regardless of category:** a Privacy Policy URL + accurate
+Privacy Nutrition Label ("Data Not Collected"), 4.2.3 minimum functionality (the
+native MIDI plugin satisfies it), 4.7 pinned runtime content, and 5.2.3
+public-domain music licensing docs.
+
+## 🚀 Minimal path to first sale (human steps only I, the developer, must do)
+
+Everything in code is done (built + hardware-verified on iPad). These are the
+remaining **console / account** steps — none are code:
+
+1. [ ] **Apple Developer Program** — enrol the paid membership ($99/yr). The
+       free Apple ID only allows on-device debugging, not App Store submission.
+2. [ ] **App Store Connect → new app**: bundle id `com.pianovisualizer.app`,
+       **Category = Education**, then the **age-rating questionnaire → 4+**.
+3. [ ] **Metadata**: name, subtitle, description (lead with "no ads · no
+       tracking · bring your own sheet music · works with just a mic"),
+       keywords, support URL.
+4. [ ] **Screenshots** (capturable from the iOS Simulator —
+       `xcrun simctl io    <udid> screenshot`): iPad Pro 12.9" (required),
+       iPhone 6.7", iPad 11".
+5. [ ] **Privacy**: publish `docs/PRIVACY.md` to a public URL (GitHub Pages),
+       paste it into App Store Connect, and set the Privacy Nutrition Label to
+       **"Data Not Collected"**.
+6. [ ] **Price**: free, or pick a price tier (see `README`/strategy — a low-
+       price or free-with-nothing-nasty launch fits the "honest app" promise).
+7. [ ] **Archive & upload**: Xcode → Product → Archive → Distribute App (needs
+       the paid account's distribution signing).
+8. [ ] Run the **Rejection rehearsal** at the bottom of this file first.
+
+Everything below is the full reference checklist; the 8 items above are the
+minimum to get a first build submitted.
+
 ## Pre-flight (every build)
 
 - [ ] `REMOTE_LOG_ENABLED` resolves to `false` in mobile build (verify via grep
@@ -11,8 +61,9 @@ item cites the relevant rule and the evidence to attach.
       Capacitor's `capacitor://localhost` would falsely match `localhost` — use
       a build-time `--define` flag to force-disable.
 - [ ] No external links surfaced in UI when running with
-      `Capacitor.isNativePlatform()` true. (Apple 1.3 Kids Category bans
-      external links without parental gate.)
+      `Capacitor.isNativePlatform()` true. (Kids-only requirement — relaxed for
+      our 4+/Education listing, but we still ship none, which keeps the "no
+      tracking" promise simple. Good hygiene to keep.)
 - [ ] Microphone usage description in `Info.plist` and `AndroidManifest.xml`
       uses kid-friendly language.
 - [ ] All MusicXML URLs in source pinned to a specific GitHub commit SHA (Apple
@@ -22,13 +73,13 @@ item cites the relevant rule and the evidence to attach.
 
 ### Guidelines hits we know are relevant
 
-| Rule                        | What it means                                                                                                         | Status                                     |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| 1.3 Kids Category           | Designed for ≤ 11. No 3rd-party ads/analytics. Parental gate before any external link / permission prompt / purchase. | ⚠️ Add parental gate before mic permission |
-| 4.2.3 Minimum Functionality | "Repackaged web content" gets rejected. Need native value beyond what mobile Safari can do.                           | ✅ Native MIDI plugin satisfies this       |
-| 4.7 (rewritten 2025-11-13)  | Runtime-loaded JS/HTML5 mini-content is reviewed as if shipped. URLs must be stable, no dynamic eval.                 | ✅ jsDelivr URLs commit-pinned             |
-| 5.1.4 Kids Category data    | No PII or device info to third parties. No IDFA.                                                                      | ✅ Zero collection                         |
-| 5.2.3 Audio licensing       | Streamed/embedded music needs license documentation.                                                                  | ⚠️ Attach PD docs (see `docs/LICENSES/`)   |
+| Rule                        | What it means                                                                                         | Status                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| 1.3 Kids Category           | Parental gate before permission/link/purchase; no 3rd-party ads/analytics.                            | ➖ N/A — we ship 4+/Education, not Kids  |
+| 4.2.3 Minimum Functionality | "Repackaged web content" gets rejected. Need native value beyond what mobile Safari can do.           | ✅ Native MIDI plugin satisfies this     |
+| 4.7 (rewritten 2025-11-13)  | Runtime-loaded JS/HTML5 mini-content is reviewed as if shipped. URLs must be stable, no dynamic eval. | ✅ jsDelivr URLs commit-pinned           |
+| 5.1.4 Kids Category data    | No PII or device info to third parties. No IDFA.                                                      | ✅ Zero collection                       |
+| 5.2.3 Audio licensing       | Streamed/embedded music needs license documentation.                                                  | ⚠️ Attach PD docs (see `docs/LICENSES/`) |
 
 ### Required artifacts before submission
 
@@ -108,5 +159,8 @@ Before the first submission, rehearse the most common rejection scenarios:
    with MIDI-only mode and not show repeated permission prompts.
 4. **External link test**: there should be NONE in the UI. Settings panel must
    not link out.
-5. **Lock-screen test**: lock the device mid-practice. Audio should resume on
-   unlock without manual recovery (the AudioContext recreate path).
+5. **Lock-screen test**: lock the device mid-practice. This is a
+   **foreground-only** app (no background audio — `UIBackgroundModes` was
+   intentionally removed), so playback pauses on lock; on unlock the session
+   must resume cleanly without a dead AudioContext (the recreate path). It must
+   NOT keep playing audio while locked.
