@@ -18,6 +18,11 @@ import JSZipImpl from 'jszip';
 import * as PianoCore from '@piano/core';
 import * as ShellBootstrap from './shell-bootstrap';
 import { installNativeMidiPolyfill } from './native-midi-polyfill';
+import { installNoZoomGuards } from './no-zoom-guard';
+
+// ネイティブアプリらしく「勝手に拡大しない」を徹底（iOS Safari の
+// ピンチズーム抑止。WKWebView / Android / desktop は viewport 側で無効化）。
+installNoZoomGuards();
 
 // ネイティブ（Capacitor）実行時のみ: シェル起動より前に Web MIDI polyfill を
 // 設置する。initWebMIDI が navigator.requestMIDIAccess を見にいくため、
