@@ -34,8 +34,11 @@ export interface PianoMidiPlugin {
   /** Stop and release native resources. */
   stop(): Promise<void>;
 
-  /** Snapshot of currently-connected MIDI input ports. */
-  listInputs(): Promise<MidiPort[]>;
+  /** Snapshot of currently-connected MIDI input ports. Wrapped in `{ devices }`
+   *  because Capacitor's `call.resolve` requires a dictionary — a bare array
+   *  can't cross the native bridge (this mismatch shipped a real
+   *  `l.map is not a function` bug; the JS polyfill reads `.devices`). */
+  listInputs(): Promise<{ devices: MidiPort[] }>;
 
   /** Open a specific port. Idempotent. iOS opens ports lazily on first use,
    *  Android requires explicit open. The plugin auto-opens all ports on start();

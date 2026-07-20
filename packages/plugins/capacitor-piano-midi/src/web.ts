@@ -55,11 +55,11 @@ export class PianoMidiWeb extends WebPlugin implements PianoMidiPlugin {
     }
   }
 
-  async listInputs(): Promise<MidiPort[]> {
-    if (!this.access) return [];
+  async listInputs(): Promise<{ devices: MidiPort[] }> {
+    if (!this.access) return { devices: [] };
     const out: MidiPort[] = [];
     this.access.inputs.forEach((p: any) => out.push(this.normalize(p)));
-    return out;
+    return { devices: out };
   }
 
   async openPort(_options: { id: string }): Promise<void> {

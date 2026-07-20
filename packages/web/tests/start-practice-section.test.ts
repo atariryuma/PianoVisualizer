@@ -335,6 +335,20 @@ describe('startPracticeSection — state reset', () => {
     expect(fx.practice.enabled).toBe(true);
   });
 
+  it('bails without scheduling if quit lands during await Tone.start() (no resurrection)', async () => {
+    const fx = makeFixture();
+    // Simulate ⏸/quit/return-to-title firing while Tone.start() is pending:
+    // the session is torn down (enabled=false) by the time the await resolves.
+    // startPracticeSection sets enabled=true BEFORE the await, so the
+    // post-await recheck must bail before re-arming the Transport.
+    fx.tone.start = vi.fn(async () => {
+      fx.practice.enabled = false;
+    });
+    await fx.start(0);
+    expect(fx.spies.scheduleSectionPlayback).not.toHaveBeenCalled();
+    expect(fx.tone.Transport.start).not.toHaveBeenCalled();
+  });
+
   it('resets practice.paused to false (belt-and-suspenders)', async () => {
     const fx = makeFixture();
     (fx.practice as { paused?: boolean }).paused = true;

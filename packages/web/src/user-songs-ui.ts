@@ -516,6 +516,14 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
     });
   }
   async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+    // Only accept in-place data: URIs. An imported library JSON is untrusted
+    // external input; without this guard a tampered file could put an
+    // `https://…` here and `fetch` would silently hit the network on import —
+    // breaking the app's "no tracking / stays on device" promise. (A non-
+    // data: value would otherwise reach here from importLibrary.)
+    if (!/^data:/i.test(dataUrl)) {
+      throw new Error('Unsupported song data reference (expected a data: URI)');
+    }
     const res = await fetch(dataUrl);
     return res.blob();
   }

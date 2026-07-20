@@ -447,6 +447,14 @@ export function createStartPracticeSection(
     try {
       if (!deps.Tone) throw new Error('Tone.js not loaded');
       await deps.Tone.start();
+      // `enabled` + the HUD are set BEFORE this await, so ⏸/quit/return-to-
+      // title (or a loop-restart) can fire while Tone.start() is pending. If
+      // the session was torn down mid-await, bail before re-arming the
+      // Transport — otherwise the section "resurrects" and audio starts
+      // playing on the song-panel/title screen. (Quit already ran
+      // stopPracticeAudio; the completion-timer + sentinel are guarded too,
+      // but `enabled` itself had no post-await recheck.)
+      if (!deps.practice.enabled) return;
       deps.ensureToneInstruments();
       deps.Tone.Transport.cancel();
       deps.Tone.Transport.stop();
