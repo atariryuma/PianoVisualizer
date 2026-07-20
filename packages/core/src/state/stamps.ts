@@ -45,6 +45,14 @@ export interface StampContext {
   /** All songs registered in the app. Powers "library_explorer"-style
    *  predicates that count distinct songs touched. */
   knownSongIds: readonly string[];
+  /** The current song's REAL section IDs (from the song definition). The
+   *  "whole song" stamps evaluate against these — NOT `Object.values(
+   *  sp.sections)`, which includes the phantom A1/B/A2 that `getSongProgress`
+   *  injects into every song. Without this, a 1-section song would need a
+   *  never-existent B/A2 at ≥N stars, making song_gold/silver/all-sections
+   *  unreachable for short imports (and disagreeing with mastery, which
+   *  already uses real IDs). Empty ⇒ the whole-song predicates return false. */
+  sectionIds: readonly string[];
 }
 
 /** A stamp definition is pure data — same shape as Quest. */
@@ -103,13 +111,28 @@ function countSectionsCleared(progress: PracticeProgress): number {
   return n;
 }
 
-/** Has every section of the given song reached >=3 stars? */
-function isSongFullyThreeStar(progress: PracticeProgress, songId: string): boolean {
+/** Stars for each of the song's REAL sections (0 when a section is unplayed).
+ *  Keyed by the song's actual section IDs so the phantom A1/B/A2 that
+ *  `getSongProgress` injects can't sneak a never-existent section into a
+ *  whole-song `.every()`. */
+function realSectionStars(
+  progress: PracticeProgress,
+  songId: string,
+  sectionIds: readonly string[]
+): number[] {
   const sp = progress.songs?.[songId];
-  if (!sp) return false;
-  const secs = Object.values(sp.sections);
-  if (secs.length === 0) return false;
-  return secs.every((s) => s != null && s.stars >= 3);
+  if (!sp || sectionIds.length === 0) return [];
+  return sectionIds.map((id) => sp.sections[id]?.stars ?? 0);
+}
+
+/** Has every REAL section of the given song reached >=3 stars? */
+function isSongFullyThreeStar(
+  progress: PracticeProgress,
+  songId: string,
+  sectionIds: readonly string[]
+): boolean {
+  const st = realSectionStars(progress, songId, sectionIds);
+  return st.length > 0 && st.every((s) => s >= 3);
 }
 
 /** Look at this song's section history and tally how many attempts
@@ -198,10 +221,8 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
     category: 'completion',
     rarity: 'rare',
     evaluate: (c) => {
-      const sp = c.progress.songs?.[c.attempt.songId];
-      if (!sp) return false;
-      const secs = Object.values(sp.sections);
-      return secs.length > 0 && secs.every((s) => s != null && s.stars >= 1);
+      const st = realSectionStars(c.progress, c.attempt.songId, c.sectionIds);
+      return st.length > 0 && st.every((s) => s >= 1);
     },
   },
   {
@@ -214,10 +235,8 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
     category: 'completion',
     rarity: 'rare',
     evaluate: (c) => {
-      const sp = c.progress.songs?.[c.attempt.songId];
-      if (!sp) return false;
-      const secs = Object.values(sp.sections);
-      return secs.length > 0 && secs.every((s) => s != null && s.stars >= 2);
+      const st = realSectionStars(c.progress, c.attempt.songId, c.sectionIds);
+      return st.length > 0 && st.every((s) => s >= 2);
     },
   },
   {
@@ -229,7 +248,7 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
     icon: '🥇',
     category: 'completion',
     rarity: 'epic',
-    evaluate: (c) => isSongFullyThreeStar(c.progress, c.attempt.songId),
+    evaluate: (c) => isSongFullyThreeStar(c.progress, c.attempt.songId, c.sectionIds),
   },
   {
     id: 'tempo_100_unlocked',

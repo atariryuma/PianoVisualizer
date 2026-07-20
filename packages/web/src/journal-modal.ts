@@ -750,9 +750,15 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
 
   function applyAttempt(input: JournalAttemptInput): readonly string[] {
     const progress = deps.getProgress();
+    // The song's REAL section IDs — so the "whole song" stamps evaluate the
+    // sections the song actually has, not the phantom A1/B/A2 that
+    // getSongProgress injects (a 1-section import must not need a never-
+    // existent B/A2). Same source mastery uses (songRefToDef).
+    const song = deps.getSongs().find((s) => s.id === input.songId);
     const ctx: StampContext = {
       progress,
       attempt: input,
+      sectionIds: song ? song.sections.map((s) => s.id) : [],
       sessionPeakFlow: deps.getSessionPeakFlow?.(),
       knownSongIds: deps.getSongs().map((s) => s.id),
     };

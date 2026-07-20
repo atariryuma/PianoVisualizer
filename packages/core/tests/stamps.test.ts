@@ -37,6 +37,9 @@ function ctx(progress: PracticeProgress, over: Partial<StampContext> = {}): Stam
     progress,
     attempt: attempt(),
     knownSongIds: ['fur_elise'],
+    // Default = the standard 3-section song, so existing whole-song stamp
+    // tests keep their A1/B/A2 semantics. Single-section cases pass their own.
+    sectionIds: ['A1', 'B', 'A2'],
     ...over,
   };
 }
@@ -115,6 +118,41 @@ describe('completion stamps', () => {
     p.songs.fur_elise = sp;
     const r = applyStampEvaluation(ctx(p, { attempt: attempt({ stars: 1 }) }));
     expect(r.newlyEarned).toContain('tempo_100_unlocked');
+  });
+
+  // Phantom-section regression: a 1-section song (real sections = ['A1'])
+  // must earn the whole-song stamps on clearing its ONLY section — the
+  // injected phantom B/A2 (which the song doesn't have) must not block them.
+  it('awards song_gold/silver/all-sections for a single-section song (real sections only)', () => {
+    const p = freshProgress();
+    const sp = defaultSongProgress(); // still injects phantom A1/B/A2 entries
+    sp.sections.A1 = { stars: 3, bestPct: 100 };
+    // B / A2 stay at the injected 0★ — but the song has only A1.
+    p.songs.short_one = sp;
+    const r = applyStampEvaluation(
+      ctx(p, {
+        attempt: attempt({ songId: 'short_one', sectionId: 'A1', stars: 3 }),
+        sectionIds: ['A1'], // the song's REAL sections
+      })
+    );
+    expect(r.newlyEarned).toContain('song_gold');
+    expect(r.newlyEarned).toContain('song_silver');
+    expect(r.newlyEarned).toContain('song_all_sections_cleared');
+  });
+
+  it('does NOT award song_gold when a real section is still below 3★', () => {
+    const p = freshProgress();
+    const sp = defaultSongProgress();
+    sp.sections.A1 = { stars: 3, bestPct: 100 };
+    sp.sections.B = { stars: 1, bestPct: 40 }; // real, not yet mastered
+    p.songs.two_sec = sp;
+    const r = applyStampEvaluation(
+      ctx(p, {
+        attempt: attempt({ songId: 'two_sec', sectionId: 'A1', stars: 3 }),
+        sectionIds: ['A1', 'B'],
+      })
+    );
+    expect(r.newlyEarned).not.toContain('song_gold');
   });
 });
 
@@ -299,10 +337,11 @@ describe('stampHelpers', () => {
     sp.sections.B.stars = 3;
     sp.sections.A2.stars = 2;
     p.songs.fur_elise = sp;
-    expect(stampHelpers.isSongFullyThreeStar(p, 'fur_elise')).toBe(false);
+    const ids = ['A1', 'B', 'A2'];
+    expect(stampHelpers.isSongFullyThreeStar(p, 'fur_elise', ids)).toBe(false);
 
     sp.sections.A2.stars = 3;
-    expect(stampHelpers.isSongFullyThreeStar(p, 'fur_elise')).toBe(true);
+    expect(stampHelpers.isSongFullyThreeStar(p, 'fur_elise', ids)).toBe(true);
   });
 });
 

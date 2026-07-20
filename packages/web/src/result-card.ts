@@ -644,11 +644,15 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // on language change without re-running the gating logic.
     const sectionNameKeys: Record<string, string> = {};
     for (const s of currentSong.sections) sectionNameKeys[s.id] = s.nameKey;
+    // Use the song's REAL section IDs, not the hardcoded A1/B/A2 (`deps.
+    // sectionIds`). A 1-section song otherwise unlocks a phantom next section
+    // ('B'), surfacing a bogus "Next →" button after its only section.
+    const realSectionIds = currentSong.sections.map((s) => s.id);
     const unlocks = deps.computeUnlocks({
       stars,
       tempoPct: deps.practice.tempoPct,
       sectionId: sec.id,
-      sectionIds: deps.sectionIds,
+      sectionIds: realSectionIds,
       sectionNameKeys,
       unlockedTempos: sp.unlockedTempos,
       unlockedSections: sp.unlockedSections,
@@ -657,13 +661,11 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     const { unlockedTempo, unlockedSecKey, streakDays } = unlocks;
     if (unlockedTempo != null) sp.unlockedTempos[unlockedTempo] = true;
     if (unlockedSecKey != null) {
-      // Defensive: sec.id might not be in sectionIds when the song has
-      // been imported with non-standard section IDs (auto-section may
-      // emit names outside the A1/B/A2 default). indexOf returns -1,
-      // -1 + 1 = 0, and we'd silently flip sectionIds[0] ('A1') instead
-      // of the truly-next section. Verify the lookup before writing.
-      const curIdx = deps.sectionIds.indexOf(sec.id);
-      const nextSec = curIdx >= 0 ? deps.sectionIds[curIdx + 1] : undefined;
+      // Verify the lookup before writing — a non-standard / single-section
+      // song's sec.id may be at the end (or absent), so indexOf+1 must not
+      // fall back to flipping realSectionIds[0].
+      const curIdx = realSectionIds.indexOf(sec.id);
+      const nextSec = curIdx >= 0 ? realSectionIds[curIdx + 1] : undefined;
       if (nextSec) sp.unlockedSections[nextSec] = true;
     }
 
