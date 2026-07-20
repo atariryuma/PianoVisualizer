@@ -509,6 +509,9 @@ export function boot(): void {
     },
     // パネルを閉じたら較正のクリック列・タイマーを破棄（鳴りっぱなし防止）。
     onPanelClose: () => _calibration.stop(),
+    // 音量スライダーのライブ反映 + 音名表記トグルのキャッシュ更新。
+    applyToneVolumes: () => _practice.applyToneVolumes(),
+    onNoteNamingChange: () => _practice.refreshLangCaches(),
   });
   ({ open: openSettings, close: closeSettings, refresh: refreshSettingsPanel } = _settings);
 
@@ -531,6 +534,8 @@ export function boot(): void {
     wufOpts: WUF_OPTS,
     shadowBlurEnabled: CONFIG.SHADOW_BLUR_ENABLED,
     getPractice: () => practice,
+    // noteDisplay の表示音名を練習レーンと同じ表（noteNaming + lang）に揃える。
+    getDisplayNoteNames: () => _practice.getActiveNoteNames(),
     hideIntroHint: () => hideIntroHint(),
     finalizeNoteHold: (midi) => finalizeNoteHold(midi),
     getScreen: _vp.getScreen,

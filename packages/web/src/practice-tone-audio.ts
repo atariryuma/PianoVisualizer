@@ -105,11 +105,19 @@ export interface PracticeToneAudioDeps {
   /** Fallback beats per count-in when getCountInBeats is absent.
    *  Default 4 ("4, 3, 2, 1, GO!"). */
   beats?: number;
+  /** Kid/parent volume balance, percent 0-100 per layer (100 = the
+   *  tuned default dB). Read fresh on ensureInstruments AND on
+   *  applyVolumes() so a settings-panel change lands mid-session. */
+  getVolumes?: () => { ghost: number; backing: number; metronome: number };
 }
 
 export interface PracticeToneAudio {
   /** Idempotently build the PolySynth + MembraneSynth pair. */
   ensureInstruments(): void;
+  /** Re-apply deps.getVolumes() to the live instruments — the settings
+   *  panel calls this so slider drags are audible immediately. No-op
+   *  before ensureInstruments. */
+  applyVolumes(): void;
   /** Schedule the audible "4, 3, 2, 1, GO!" preceding section start. */
   scheduleCountIn(startAudioTime: number): void;
   /** Tone.Transport stop + cancel, hide cursor + clear notehead
@@ -126,11 +134,30 @@ export interface PracticeToneAudio {
 
 const DEFAULT_BEATS = 4;
 
+// Tuned base levels (dB) at 100% — the pre-0.15 fixed values. The
+// settings-panel volume sliders scale from here: dB = base + 20·log10(pct/100),
+// so 100% keeps the A/B'd balance, 50% ≈ -6dB per layer, 0% mutes.
+const GHOST_BASE_DB = -14;
+const BACKING_BASE_DB = -17;
+const METRONOME_BASE_DB = -10;
+
+function pctToDb(baseDb: number, pct: number): number {
+  if (!(pct > 0)) return -Infinity; // slider at 0 = mute (also catches NaN)
+  return baseDb + 20 * Math.log10(Math.min(100, pct) / 100);
+}
+
 export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeToneAudio {
   let piano: ToneInstrument | null = null;
   let metronome: ToneInstrument | null = null;
   let melody: ToneInstrument | null = null;
   const beats = deps.beats ?? DEFAULT_BEATS;
+
+  function applyVolumes(): void {
+    const v = deps.getVolumes?.() ?? { ghost: 100, backing: 100, metronome: 100 };
+    if (piano) piano.volume.value = pctToDb(GHOST_BASE_DB, v.ghost);
+    if (melody) melody.volume.value = pctToDb(BACKING_BASE_DB, v.backing);
+    if (metronome) metronome.volume.value = pctToDb(METRONOME_BASE_DB, v.metronome);
+  }
 
   function ensureInstruments(): void {
     if (piano || !deps.Tone) return;
@@ -138,7 +165,6 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
       oscillator: { type: 'triangle' },
       envelope: { attack: 0.005, decay: 0.18, sustain: 0.25, release: 0.6 },
     }).toDestination();
-    piano.volume.value = -14;
     // Raise the voice cap above Tone's default 32 so a dense full-song
     // listen (chords + backing) doesn't steal/drop notes mid-playback.
     piano.maxPolyphony = 64;
@@ -151,14 +177,15 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
       oscillator: { type: 'sine' },
       envelope: { attack: 0.02, decay: 0.25, sustain: 0.4, release: 0.8 },
     }).toDestination();
-    melody.volume.value = -17;
     melody.maxPolyphony = 48;
     metronome = new deps.Tone.MembraneSynth({
       pitchDecay: 0.008,
       octaves: 4,
       envelope: { attack: 0.001, decay: 0.1, sustain: 0 },
     }).toDestination();
-    metronome.volume.value = -10;
+    // Volumes come from the prefs-driven balance (100% = the tuned
+    // GHOST/BACKING/METRONOME_BASE_DB values above).
+    applyVolumes();
   }
 
   function scheduleCountIn(startAudioTime: number): void {
@@ -200,6 +227,7 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
 
   return {
     ensureInstruments,
+    applyVolumes,
     scheduleCountIn,
     stopPracticeAudio,
     getInstruments: () => ({ piano, metronome, melody }),

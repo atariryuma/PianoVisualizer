@@ -134,6 +134,24 @@ describe('ensureInstruments', () => {
     expect(inst.metronome!.volume.value).toBe(-10);
   });
 
+  it('scales volume by prefs percent (100% = base dB, 50% ≈ -6 dB, 0% = mute)', () => {
+    const vols = { ghost: 100, backing: 100, metronome: 100 };
+    const fx = makeFixture({ getVolumes: () => vols });
+    fx.audio.ensureInstruments();
+    const inst = fx.audio.getInstruments();
+    // 100% keeps the tuned base levels.
+    expect(inst.piano!.volume.value).toBe(-14);
+    expect(inst.metronome!.volume.value).toBe(-10);
+    // 50% is ~6 dB down; live-applied without rebuilding the synths.
+    vols.ghost = 50;
+    fx.audio.applyVolumes();
+    expect(inst.piano!.volume.value).toBeCloseTo(-14 + 20 * Math.log10(0.5), 3);
+    // 0% mutes (−Infinity dB) — Tone treats this as silence.
+    vols.ghost = 0;
+    fx.audio.applyVolumes();
+    expect(inst.piano!.volume.value).toBe(-Infinity);
+  });
+
   it('no-op when Tone undefined', () => {
     const fx = makeFixture({ Tone: undefined });
     fx.audio.ensureInstruments();

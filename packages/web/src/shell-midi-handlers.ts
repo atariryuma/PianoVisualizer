@@ -29,6 +29,8 @@ export interface ShellMidiHandlersDeps {
   spawnStream: any;
   /** 一期一会演出 — midi-handlers へのパススルー（optional）。 */
   freeplayMoments?: any;
+  /** 表示専用の音名テーブル（optional — 省略時は英語表記）。 */
+  getDisplayNoteNames?: () => readonly string[];
   ripples: any[];
   Ripple: any;
   hideIntroHint: () => void;
@@ -138,6 +140,8 @@ export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiH
     cwOpts: deps.cwOpts,
     wufOpts: deps.wufOpts,
     config: { NOTE_NAMES: config.NOTE_NAMES, COMBO_WINDOW_MS: config.COMBO_WINDOW_MS },
+    // 表示専用の音名テーブル（prefs.noteNaming + lang を shell-practice が解決）。
+    getDisplayNoteNames: deps.getDisplayNoteNames,
     getHeight: () => deps.getScreen().H,
   };
 

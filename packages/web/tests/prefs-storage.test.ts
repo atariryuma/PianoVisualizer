@@ -206,4 +206,20 @@ describe('sanitizePrefs', () => {
       lang: 'jp',
     });
   });
+
+  it('accepts valid noteNaming and drops invalid', () => {
+    expect(sanitizePrefs({ noteNaming: 'solfege' }).noteNaming).toBe('solfege');
+    expect(sanitizePrefs({ noteNaming: 'abc' }).noteNaming).toBe('abc');
+    expect(sanitizePrefs({ noteNaming: 'auto' }).noteNaming).toBe('auto');
+    expect(sanitizePrefs({ noteNaming: 'katakana' }).noteNaming).toBeUndefined();
+  });
+
+  it('clamps volume prefs to 0-100 and rounds; drops non-numbers', () => {
+    expect(sanitizePrefs({ volGhost: 50 }).volGhost).toBe(50);
+    expect(sanitizePrefs({ volBacking: 150 }).volBacking).toBe(100);
+    expect(sanitizePrefs({ volMetronome: -20 }).volMetronome).toBe(0);
+    expect(sanitizePrefs({ volGhost: 33.7 }).volGhost).toBe(34);
+    expect(sanitizePrefs({ volGhost: 'loud' }).volGhost).toBeUndefined();
+    expect(sanitizePrefs({ volGhost: Infinity }).volGhost).toBeUndefined();
+  });
 });

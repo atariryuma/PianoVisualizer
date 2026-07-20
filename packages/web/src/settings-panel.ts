@@ -24,6 +24,13 @@ export interface SettingsPrefs {
   audioOffsetMs: number | null;
   /** Phase 0d batch 70 fold — whether the debug overlay starts on. */
   debug: boolean;
+  /** 0.15 — note-name notation + practice-audio volume balance.
+   *  Optional so older test fixtures stay valid; the runtime prefs
+   *  object always carries them (practice-state-init defaults). */
+  noteNaming?: 'auto' | 'abc' | 'solfege';
+  volGhost?: number;
+  volBacking?: number;
+  volMetronome?: number;
 }
 
 /** Practice slice — the panel writes audioOffsetMs into both prefs and
@@ -68,6 +75,17 @@ export interface SettingsPanelDom {
    *  that don't exercise the debug path can omit them. */
   debugToggle?: HTMLElement | null;
   debugOverlay?: HTMLElement | null;
+  /** 0.15 — note-naming segment + volume sliders. All optional so
+   *  existing tests that don't exercise them can omit. */
+  noteNamingAuto?: HTMLElement | null;
+  noteNamingAbc?: HTMLElement | null;
+  noteNamingSolfege?: HTMLElement | null;
+  volGhostSlider?: HTMLInputElement | null;
+  volGhostVal?: HTMLElement | null;
+  volBackingSlider?: HTMLInputElement | null;
+  volBackingVal?: HTMLElement | null;
+  volMetronomeSlider?: HTMLInputElement | null;
+  volMetronomeVal?: HTMLElement | null;
 }
 
 export interface SettingsPanelDeps {
@@ -94,6 +112,11 @@ export interface SettingsPanelDeps {
    *  auto-rescan, same as USB. Injected by shell-settings from
    *  native-midi-polyfill so this module stays deps-only. */
   nativeBleMidi?: { has(): boolean; show(): Promise<void> } | null;
+  /** 0.15 — push the prefs volume balance onto live practice synths so a
+   *  slider drag is audible immediately (mid-listen/rhythm playback). */
+  applyToneVolumes?(): void;
+  /** 0.15 — refresh the shell's note-name cache after a notation change. */
+  onNoteNamingChange?(): void;
   /** Show the session-summary modal (Reset button). Only fires when
    *  `state.running` is true. */
   showSessionSummary?(): void;
@@ -147,6 +170,13 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
 
   function refresh(): void {
     refreshAudioOffsetUI();
+    // 0.15: seed volume sliders + note-naming segment from prefs.
+    for (const { slider, val, key } of volDefs) {
+      const v = deps.prefs[key] ?? 100;
+      if (slider) slider.value = String(v);
+      if (val) val.textContent = String(v);
+    }
+    refreshNoteNamingSeg();
     // Input source pill — reflects what's currently driving onset detection.
     if (deps.midiInput.enabled && deps.midiInput.port?.name) {
       deps.dom.inputStatus.textContent = '🎹 ' + deps.midiInput.port.name;
@@ -207,6 +237,50 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(deps.savePrefs, 250);
   });
+
+  // ── 0.15: practice-audio volume balance (3 sliders, live-applied) ──
+  const volDefs: Array<{
+    slider: HTMLInputElement | null | undefined;
+    val: HTMLElement | null | undefined;
+    key: 'volGhost' | 'volBacking' | 'volMetronome';
+  }> = [
+    { slider: deps.dom.volGhostSlider, val: deps.dom.volGhostVal, key: 'volGhost' },
+    { slider: deps.dom.volBackingSlider, val: deps.dom.volBackingVal, key: 'volBacking' },
+    { slider: deps.dom.volMetronomeSlider, val: deps.dom.volMetronomeVal, key: 'volMetronome' },
+  ];
+  for (const { slider, val, key } of volDefs) {
+    slider?.addEventListener('input', () => {
+      const v = parseInt(slider.value, 10);
+      if (!Number.isFinite(v)) return;
+      deps.prefs[key] = Math.max(0, Math.min(100, v));
+      if (val) val.textContent = String(deps.prefs[key]);
+      // Live-apply so a drag during listen/rhythm playback is audible.
+      deps.applyToneVolumes?.();
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(deps.savePrefs, 250);
+    });
+  }
+
+  // ── 0.15: note-name notation segment (auto / C-D-E / ドレミ) ──
+  const segDefs: Array<{ el: HTMLElement | null | undefined; mode: 'auto' | 'abc' | 'solfege' }> = [
+    { el: deps.dom.noteNamingAuto, mode: 'auto' },
+    { el: deps.dom.noteNamingAbc, mode: 'abc' },
+    { el: deps.dom.noteNamingSolfege, mode: 'solfege' },
+  ];
+  function refreshNoteNamingSeg(): void {
+    const current = deps.prefs.noteNaming ?? 'auto';
+    for (const { el, mode } of segDefs) {
+      el?.classList.toggle('active', mode === current);
+    }
+  }
+  for (const { el, mode } of segDefs) {
+    el?.addEventListener('click', () => {
+      deps.prefs.noteNaming = mode;
+      refreshNoteNamingSeg();
+      deps.onNoteNamingChange?.();
+      deps.savePrefs();
+    });
+  }
 
   deps.dom.audioOffsetReset?.addEventListener('click', () => {
     deps.prefs.audioOffsetMs = null;

@@ -37,6 +37,9 @@ export interface ShellSettingsDeps {
   resumePractice: () => void;
   /** パネルが閉じるときの後始末（レイテンシ較正の中断など）。 */
   onPanelClose?: () => void;
+  /** 0.15 — 音量バランスのライブ反映 + 音名表記キャッシュ更新。 */
+  applyToneVolumes?: () => void;
+  onNoteNamingChange?: () => void;
 }
 
 export interface ShellSettings {
@@ -62,6 +65,16 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
       inputStatus: DOM.settingsInputStatus,
       debugToggle: DOM.settingsDebugToggle,
       debugOverlay: DOM.debugOverlay,
+      // 0.15 — 音名表記セグメント + 音量スライダー。
+      noteNamingAuto: DOM.noteNamingAuto,
+      noteNamingAbc: DOM.noteNamingAbc,
+      noteNamingSolfege: DOM.noteNamingSolfege,
+      volGhostSlider: DOM.volGhostSlider,
+      volGhostVal: DOM.volGhostVal,
+      volBackingSlider: DOM.volBackingSlider,
+      volBackingVal: DOM.volBackingVal,
+      volMetronomeSlider: DOM.volMetronomeSlider,
+      volMetronomeVal: DOM.volMetronomeVal,
     },
     prefs: deps.prefs,
     practice: deps.practice,
@@ -79,6 +92,8 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     pausePractice: deps.pausePractice,
     resumePractice: deps.resumePractice,
     onClose: deps.onPanelClose,
+    applyToneVolumes: deps.applyToneVolumes,
+    onNoteNamingChange: deps.onNoteNamingChange,
   } as any);
 
   // Boot-time seed — honor the persisted-prefs debug overlay state

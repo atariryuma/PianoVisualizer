@@ -162,6 +162,16 @@ export interface DomBag {
   settingsResetBtn: HTMLElement;
   settingsInputStatus: HTMLElement;
   settingsDebugToggle: HTMLElement;
+  // 0.15: note-name notation segment + practice-audio volume sliders.
+  noteNamingAuto: HTMLElement;
+  noteNamingAbc: HTMLElement;
+  noteNamingSolfege: HTMLElement;
+  volGhostSlider: HTMLElement;
+  volGhostVal: HTMLElement;
+  volBackingSlider: HTMLElement;
+  volBackingVal: HTMLElement;
+  volMetronomeSlider: HTMLElement;
+  volMetronomeVal: HTMLElement;
 }
 
 /** All ids the bag walks. Kept as a frozen const so a typo (or a
@@ -294,6 +304,15 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'settingsResetBtn',
   'settingsInputStatus',
   'settingsDebugToggle',
+  'noteNamingAuto',
+  'noteNamingAbc',
+  'noteNamingSolfege',
+  'volGhostSlider',
+  'volGhostVal',
+  'volBackingSlider',
+  'volBackingVal',
+  'volMetronomeSlider',
+  'volMetronomeVal',
 ] as const) as readonly (keyof DomBag)[];
 
 /** Project a subset of an existing DOM bag onto a new object. The

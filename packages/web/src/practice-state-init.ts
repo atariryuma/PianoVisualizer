@@ -27,6 +27,13 @@ export interface InitialPrefs {
   debug: boolean;
   /** UI language. Drives the practice-flow text everywhere. */
   lang: 'en' | 'jp';
+  /** Note-name notation: 'abc' = C-D-E, 'solfege' = ドレミ, 'auto' =
+   *  follow `lang` (pre-0.15 behavior — the zero-regression default). */
+  noteNaming: 'auto' | 'abc' | 'solfege';
+  /** Practice-audio volume balance, percent 0-100 (100 = tuned default). */
+  volGhost: number;
+  volBacking: number;
+  volMetronome: number;
 }
 
 /** Build the cold-start prefs object (before merging the persisted
@@ -38,6 +45,10 @@ export function createInitialPrefs(): InitialPrefs {
     audioOffsetMs: null,
     debug: false,
     lang: 'en',
+    noteNaming: 'auto',
+    volGhost: 100,
+    volBacking: 100,
+    volMetronome: 100,
   };
 }
 

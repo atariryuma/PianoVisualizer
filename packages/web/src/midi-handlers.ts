@@ -141,6 +141,11 @@ export interface MidiHandlersDeps {
     NOTE_NAMES: readonly string[];
     COMBO_WINDOW_MS: number;
   };
+  /** Notation-aware note-name table for the on-screen note DISPLAY only
+   *  (shares shell-practice's activeNoteNames: prefs.noteNaming + lang).
+   *  Falls back to config.NOTE_NAMES (English). Color lookups elsewhere
+   *  keep using the English table — NOTE_COLORS is keyed by C/C#/…  */
+  getDisplayNoteNames?: () => readonly string[];
   // ─── Frame-time inputs (the loop hands these in fresh each event). ──
   /** Screen height — used to put bass note visuals lower than treble. */
   getHeight: () => number;
@@ -191,7 +196,8 @@ export function spawnMidiNoteVisuals(
   deps.state.lastGoodNoteTimeMs = now;
   deps.state.lastNoteTimeMs = now;
 
-  const noteName = deps.config.NOTE_NAMES[midiNum % 12];
+  const displayNames = deps.getDisplayNoteNames?.() ?? deps.config.NOTE_NAMES;
+  const noteName = displayNames[midiNum % 12];
   deps.showNoteDisplay(noteName, noteName + (Math.floor(midiNum / 12) - 1), synColor, now);
   if (deps.state.flow < 10) deps.triggerWakeUpFlash(deps.state, deps.wufOpts);
 

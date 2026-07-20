@@ -170,6 +170,72 @@
             <span style="font-size: 0.85rem" data-i18n="language">Language</span>
             <button class="settings-btn" id="langToggleBtn">EN / 日本語</button>
           </div>
+          <div class="settings-row">
+            <span style="font-size: 0.85rem"
+              >🎵 <span data-i18n="noteNaming">Note names</span></span
+            >
+            <div class="settings-seg" role="group">
+              <button class="settings-seg-btn" id="noteNamingAuto" data-i18n="noteNamingAuto">
+                Auto
+              </button>
+              <button class="settings-seg-btn" id="noteNamingAbc">C D E</button>
+              <button class="settings-seg-btn" id="noteNamingSolfege">ドレミ</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Practice-audio volume balance (0.15). Percent of the tuned default
+             level per layer; 0 mutes. Applies live via applyToneVolumes. -->
+        <div class="settings-section">
+          <div class="settings-section-label">🔊 <span data-i18n="volumeSection">Volume</span></div>
+          <div class="settings-slider-row">
+            <div class="settings-slider-label" id="volGhostLabel">
+              <span data-i18n="volGhost">👻 Demo piano</span>
+              <span class="val"><span id="volGhostVal">100</span>%</span>
+            </div>
+            <input
+              type="range"
+              id="volGhostSlider"
+              class="settings-slider"
+              min="0"
+              max="100"
+              step="5"
+              value="100"
+              aria-labelledby="volGhostLabel"
+            />
+          </div>
+          <div class="settings-slider-row">
+            <div class="settings-slider-label" id="volBackingLabel">
+              <span data-i18n="volBacking">🎶 Melody guide</span>
+              <span class="val"><span id="volBackingVal">100</span>%</span>
+            </div>
+            <input
+              type="range"
+              id="volBackingSlider"
+              class="settings-slider"
+              min="0"
+              max="100"
+              step="5"
+              value="100"
+              aria-labelledby="volBackingLabel"
+            />
+          </div>
+          <div class="settings-slider-row">
+            <div class="settings-slider-label" id="volMetronomeLabel">
+              <span data-i18n="volMetronome">🥁 Metronome / count-in</span>
+              <span class="val"><span id="volMetronomeVal">100</span>%</span>
+            </div>
+            <input
+              type="range"
+              id="volMetronomeSlider"
+              class="settings-slider"
+              min="0"
+              max="100"
+              step="5"
+              value="100"
+              aria-labelledby="volMetronomeLabel"
+            />
+          </div>
         </div>
 
         <div class="settings-section">

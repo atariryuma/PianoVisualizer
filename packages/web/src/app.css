@@ -553,6 +553,36 @@ body.title-screen #homeBtn {
   flex-wrap: wrap;
 }
 
+/* 3-way segment toggle (note-name notation). Same chrome family as
+   .settings-btn, joined into one pill. */
+.settings-seg {
+  display: inline-flex;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  margin-left: auto;
+}
+.settings-seg-btn {
+  background: transparent;
+  border: none;
+  color: var(--c-text-secondary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 6px 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+.settings-seg-btn + .settings-seg-btn {
+  border-left: 1px solid var(--c-border-subtle);
+}
+.settings-seg-btn.active {
+  background: rgba(140, 100, 255, 0.35);
+  color: var(--c-text-primary);
+}
+
 /* About / privacy line at the bottom of the panel — quiet metadata. */
 .settings-about {
   margin-top: var(--sp-2);

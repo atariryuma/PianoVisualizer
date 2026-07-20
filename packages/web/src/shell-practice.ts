@@ -106,6 +106,10 @@ export interface ShellPractice {
   midiToName: (midi: number) => string;
   /** langchange refresh — re-reads activeNoteNames + lane labels. */
   refreshLangCaches: () => void;
+  /** Live note-name table (notation prefs + lang resolved). */
+  getActiveNoteNames: () => readonly string[];
+  /** Re-apply the prefs volume balance to live practice synths. */
+  applyToneVolumes: () => void;
   /** レイテンシ較正 (P2-22) 用の楽器アクセサ。 */
   ensureToneInstruments: () => void;
   getToneInstruments: () => { piano: any; metronome: any; melody: any };
@@ -206,12 +210,26 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     // カウントインが全部同じ列で数えるための貫通口。
     getCountInClickMs: () => COUNT_IN_CLICK_MS,
     getCountInGoMs: () => COUNT_IN_GO_MS,
+    // 設定パネルの音量バランス（%）。ensureInstruments / applyVolumes が
+    // 都度読むので、スライダー変更が次の発音から（ライブ適用時は即時）効く。
+    getVolumes: () => ({
+      ghost: prefs.volGhost,
+      backing: prefs.volBacking,
+      metronome: prefs.volMetronome,
+    }),
   } as any);
 
-  // Hot-path bilingual cache — refreshed on langchange so per-frame lane draw
-  // doesn't re-evaluate the prefs.lang ternary 25× per frame.
+  // Hot-path notation cache — refreshed on langchange / noteNaming change so
+  // the per-frame lane draw doesn't re-evaluate the prefs ternary 25× per frame.
+  // prefs.noteNaming: 'abc' = C-D-E, 'solfege' = ドレミ, 'auto' = follow lang
+  // (the pre-0.15 behavior, and the default).
   const NOTE_NAMES_JP = CoreOpts.NOTE_NAMES_JP;
-  let activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : config.NOTE_NAMES;
+  function resolveNoteNames(): readonly string[] {
+    if (prefs.noteNaming === 'abc') return config.NOTE_NAMES;
+    if (prefs.noteNaming === 'solfege') return NOTE_NAMES_JP;
+    return prefs.lang === 'jp' ? NOTE_NAMES_JP : config.NOTE_NAMES;
+  }
+  let activeNoteNames = resolveNoteNames();
   function midiToPitchName(midi: number): string {
     return ShellHelpers.midiToPitchName(midi, activeNoteNames);
   }
@@ -415,8 +433,12 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     midiToPitchName,
     midiToName,
     refreshLangCaches: () => {
-      activeNoteNames = prefs.lang === 'jp' ? NOTE_NAMES_JP : config.NOTE_NAMES;
+      activeNoteNames = resolveNoteNames();
     },
+    /** Live note-name table (lane labels + noteDisplay share it). */
+    getActiveNoteNames: () => activeNoteNames,
+    /** Re-apply the prefs volume balance to live practice synths. */
+    applyToneVolumes: () => _practiceToneAudio.applyVolumes(),
     setPracticeLane: (lane: any) => {
       practiceLaneRef.current = lane;
     },

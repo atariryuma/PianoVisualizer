@@ -124,6 +124,13 @@ export const T_STRINGS: TranslationTable = {
   ghostPlayback: { en: '👻 Ghost playback (demo)', jp: '👻 おてほん再生（ゴースト）' },
   metronome: { en: '🥁 Metronome', jp: '🥁 メトロノーム' },
   loopPractice: { en: '🔁 Loop this part', jp: '🔁 くりかえし練習' },
+  // Settings — note-name notation + practice-audio volume balance.
+  noteNaming: { en: 'Note names', jp: 'おんめいの表示' },
+  noteNamingAuto: { en: 'Auto', jp: 'じどう' },
+  volumeSection: { en: 'Volume', jp: 'おんりょう' },
+  volGhost: { en: '👻 Demo piano', jp: '👻 おてほんピアノ' },
+  volBacking: { en: '🎶 Melody guide', jp: '🎶 おともパート' },
+  volMetronome: { en: '🥁 Metronome / count-in', jp: '🥁 メトロノーム・カウント' },
   calibrateBtn: { en: '🎯 Tap-along auto-set', jp: '🎯 タップで自動そくてい' },
   calibrateTapHere: {
     en: '👆 Tap here with the click!',

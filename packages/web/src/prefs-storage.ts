@@ -24,6 +24,14 @@ export interface PrefsShape {
   audioOffsetMs?: number | null;
   debug?: boolean;
   lang?: 'en' | 'jp';
+  /** Note-name notation: 'abc' = C-D-E, 'solfege' = ドレミ, 'auto' =
+   *  follow UI language (the pre-0.15 behavior). */
+  noteNaming?: 'auto' | 'abc' | 'solfege';
+  /** Practice-audio volume balance, percent 0-100 (100 = the tuned
+   *  default level). 0 mutes the layer entirely. */
+  volGhost?: number;
+  volBacking?: number;
+  volMetronome?: number;
   /** Kid-chosen nickname displayed on the journal "Pianist Card".
    *  Identity-primer per McPherson 10-year longitudinal — kids with a
    *  named long-term self-concept sustain practice the longest. */
@@ -124,6 +132,15 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   }
   if (r.lang === 'en' || r.lang === 'jp') {
     out.lang = r.lang;
+  }
+  if (r.noteNaming === 'auto' || r.noteNaming === 'abc' || r.noteNaming === 'solfege') {
+    out.noteNaming = r.noteNaming;
+  }
+  for (const k of ['volGhost', 'volBacking', 'volMetronome'] as const) {
+    const v = r[k];
+    if (typeof v === 'number' && isFinite(v)) {
+      out[k] = Math.max(0, Math.min(100, Math.round(v)));
+    }
   }
   if (typeof r.pianistName === 'string' && r.pianistName.trim().length > 0) {
     out.pianistName = String(r.pianistName).slice(0, 20).trim();
