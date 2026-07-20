@@ -303,6 +303,11 @@ export function updateGameState(
   );
 
   // 3. Onset detector.
+  // I2: オンセット検出の AGC voice-reject ゲートは s.debugLastRms を読むので、
+  // updateMultiFeatureOnset の「前」に現フレームの rms を書く（以前は後で書いて
+  // いたため常に 1 フレーム古い RMS で判定していた。core onset.ts は frame.rms を
+  // 同フレームで使う正しい実装で、web だけが乖離していた）。
+  s.debugLastRms = rms;
   const onsetState = deps.updateMultiFeatureOnset(timeMs, pitch);
 
   const pitchMinHz = deps.getPractice().enabled ? t.pitchMinHzPractice : t.pitchMinHz;
@@ -314,7 +319,6 @@ export function updateGameState(
   const isOnsetNote = pitchOk && onsetState.isOnset;
   const isActivePlay = pitchOk && onsetState.gateOpen;
 
-  s.debugLastRms = rms;
   s.debugLastConf = conf;
   s.debugLastPitch = pitch;
   s.debugIsGoodNote = isOnsetNote;

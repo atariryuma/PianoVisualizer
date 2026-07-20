@@ -288,6 +288,10 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
 
   async function resume(): Promise<void> {
     if (!deps.getAudioCtx() || !deps.state.micSuspended) return;
+    // I3: iOS Web MIDI Browser 等で「意図的にマイク取得をスキップ」した端末
+    // （micIntentionallySkipped）では、切断契機の resume でも壊れている
+    // getUserMedia を呼びに行かない（縮退方針を守る）。
+    if (deps.state.micIntentionallySkipped) return;
     try {
       await acquire();
     } catch (e) {

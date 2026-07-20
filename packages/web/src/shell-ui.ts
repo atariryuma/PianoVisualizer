@@ -38,6 +38,8 @@ export interface ShellUiDeps {
   state: InitialGameState;
   practice: InitialPracticeState;
   midiInput: MidiInputRef;
+  /** G5: Journal モーダルのフォーカストラップ＋復元に使う（settings 等と共通）。 */
+  modalFocus?: { open(el: HTMLElement): void; close(el: HTMLElement): void };
   midiState: MidiState;
   prefs: InitialPrefs;
   savePrefs?: () => void;
@@ -190,6 +192,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'resStampsEarned',
       'sectionBannerHint'
     ),
+    modalFocus: deps.modalFocus,
     getProgress: () => deps.practice.progress as PianoCore.PracticeProgress,
     getSongs: () => buildJournalSongRefs(),
     saveProgress: () => deps.savePracticeProgress(),

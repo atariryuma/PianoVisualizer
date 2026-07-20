@@ -106,6 +106,10 @@ export interface RenderLateDeps {
  *
  *  dtNorm はフレーム時間の正規化係数（16.67ms = 1、省略時 1）。リップル・
  *  パーティクル物理へ貫通させ、120Hz 端末での2倍速を防ぐ。 */
+/** R3: リップルのハードキャップ。通常 <15、速い区間でも数十なので実プレイは
+ *  切らず、最悪ケース（連続オンセット）だけ有界化する。 */
+const MAX_RIPPLES = 64;
+
 export function runRenderLate(timeMs: number, deps: RenderLateDeps, dtNorm: number = 1): void {
   const skipDraw = deps.skipDraw === true;
 
@@ -123,12 +127,16 @@ export function runRenderLate(timeMs: number, deps: RenderLateDeps, dtNorm: numb
   // 2. Ripples — update + draw + cull. Re-pack live elements at the
   //    front then shrink length to release memory + keep the next
   //    frame's iteration tight.
+  // R3: particles と同型のハードキャップを入れる。以前は life>0 だけで cull して
+  //    おり、高速な連続オンセット（アルペジエータ/グリッサンド/押しっぱ連打）で
+  //    瞬間同時数が入力レートに比例して青天井だった（毎フレーム stroke）。通常
+  //    プレイは <15、速い区間でも数十なので 64 は実プレイを切らない安全上限。
   let alive = 0;
   for (let i = 0; i < deps.ripples.length; i++) {
     const r = deps.ripples[i];
     r.update(dtNorm);
     if (!skipDraw) r.draw(deps.ctx);
-    if (r.life > 0) deps.ripples[alive++] = r;
+    if (r.life > 0 && alive < MAX_RIPPLES) deps.ripples[alive++] = r;
   }
   deps.ripples.length = alive;
 

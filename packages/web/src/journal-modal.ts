@@ -46,6 +46,9 @@ export interface PianistIdentity {
 
 export interface JournalModalDeps {
   dom: JournalModalDom;
+  /** G5: モーダルのフォーカストラップ＋復元（settings/add-song と共通）。
+   *  省略可（テスト/非対応環境では素の class トグルにフォールバック）。 */
+  modalFocus?: { open(el: HTMLElement): void; close(el: HTMLElement): void };
   /** Live progress accessor — fresh fetch each call so re-opens after
    *  practice see the latest stars/stamps without re-injecting deps. */
   getProgress(): PracticeProgress;
@@ -778,10 +781,14 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     render();
     setActiveTab(initialTab);
     deps.dom.journalModal.classList.add('visible');
+    // G5: 設定/add-song/section-editor と同様にフォーカストラップ＋復元を通す
+    // （Tab がモーダル内に留まり、閉じたら元の要素へフォーカスが戻る）。
+    deps.modalFocus?.open(deps.dom.journalModal);
   }
 
   function close(): void {
     deps.dom.journalModal.classList.remove('visible');
+    deps.modalFocus?.close(deps.dom.journalModal);
   }
 
   function isOpen(): boolean {

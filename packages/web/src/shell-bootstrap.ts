@@ -679,6 +679,7 @@ export function boot(): void {
     practice,
     midiInput,
     midiState,
+    modalFocus,
     prefs,
     savePrefs,
     config: CONFIG,

@@ -26,6 +26,10 @@
 
 import type { UserSongRecord, LibraryEntry } from '@piano/core';
 
+/** D3: import 経路のサイズ上限（shell-user-library の USER_SONG_MAX_BYTES と
+ *  同値=20MB）。ファイル選択/URL 経路と同じ上限を import にも課す。 */
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+
 /** What the UI module reads from a library entry. The full
  *  `LibraryEntry` shape carries fields like `filename` that only exist
  *  on the fetched catalog payload; the legacy seed list (and any
@@ -600,16 +604,30 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
           id = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
         }
         const blob = await dataUrlToBlob(String(raw.mxlDataUrl));
-        const sectionDefs =
-          (raw.sectionDefs as UserSongRecord['sectionDefs']) ??
-          (deps.autoSectionDefs(await blob.text(), 1) as UserSongRecord['sectionDefs']);
+        // D3: ファイル選択/URL 経路と同じサイズ上限を import 経路にも課す。
+        // これが無いと細工した巨大 base64 が上限チェックを一切経ずに IndexedDB へ
+        // 直書きされ、低スペック端末で OOM / quota 圧迫を招く。超過分はスキップ。
+        if (blob.size > MAX_IMPORT_BYTES) {
+          console.warn('[import] skipped oversize song', id, blob.size);
+          continue;
+        }
+        const mimeType = (raw.mimeType ??
+          'application/vnd.recordare.musicxml+zip') as UserSongRecord['mimeType'];
+        // D4: sectionDefs 欠損時のフォールバックで .mxl(zip) を blob.text() すると
+        // DOMParser が壊れた XML を掴み、measureCount=1 固定で常に単一セクションに
+        // 潰れる。mime を見て mxl は unzip、plain はそのまま text にする。
+        let sectionDefs = raw.sectionDefs as UserSongRecord['sectionDefs'];
+        if (!sectionDefs) {
+          const isMxl = String(mimeType).includes('zip');
+          const xmlText = isMxl ? await deps.unzipMxlToXmlText(blob) : await blob.text();
+          sectionDefs = deps.autoSectionDefs(xmlText, 1) as UserSongRecord['sectionDefs'];
+        }
         const rec: UserSongRecord = {
           id,
           title: String(raw.title ?? 'Imported'),
           composer: String(raw.composer ?? ''),
           mxlBlob: blob,
-          mimeType: (raw.mimeType ??
-            'application/vnd.recordare.musicxml+zip') as UserSongRecord['mimeType'],
+          mimeType,
           sectionDefs,
           addedAt: Number(raw.addedAt ?? Date.now()),
           source: 'import',
