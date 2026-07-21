@@ -2,10 +2,10 @@
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1">
   <work>
-    <work-title>Hot Cross Buns</work-title>
+    <work-title>Symphony No. 5 (opening)</work-title>
   </work>
   <identification>
-    <creator type="composer">Traditional</creator>
+    <creator type="composer">Ludwig van Beethoven</creator>
     <rights>Public-domain composition; engraving authored by Piano Visualizer.</rights>
     <encoding><software>Piano Visualizer library generator</software></encoding>
   </identification>
@@ -25,69 +25,63 @@
         <clef><sign>G</sign><line>2</line></clef>
       </attributes>
       <direction placement="above"><direction-type>
-        <metronome><beat-unit>quarter</beat-unit><per-minute>100</per-minute></metronome>
-      </direction-type><sound tempo="100"/></direction>
+        <metronome><beat-unit>quarter</beat-unit><per-minute>108</per-minute></metronome>
+      </direction-type><sound tempo="108"/></direction>
+      <note>
+        <rest/>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+      </note>
+      <note>
+        <pitch>
+          <step>G</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+      </note>
+      <note>
+        <pitch>
+          <step>G</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+      </note>
+      <note>
+        <pitch>
+          <step>G</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+      </note>
       <note>
         <pitch>
           <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>C</step>
+          <alter>-1</alter>
           <octave>4</octave>
         </pitch>
         <duration>8</duration>
         <voice>1</voice>
         <type>half</type>
+        <accidental>flat</accidental>
       </note>
     </measure>
     <measure number="2">
       <note>
-        <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
+        <rest/>
+        <duration>2</duration>
         <voice>1</voice>
-        <type>quarter</type>
+        <type>eighth</type>
       </note>
       <note>
         <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>C</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>8</duration>
-        <voice>1</voice>
-        <type>half</type>
-      </note>
-    </measure>
-    <measure number="3">
-      <note>
-        <pitch>
-          <step>C</step>
+          <step>F</step>
           <octave>4</octave>
         </pitch>
         <duration>2</duration>
@@ -96,7 +90,7 @@
       </note>
       <note>
         <pitch>
-          <step>C</step>
+          <step>F</step>
           <octave>4</octave>
         </pitch>
         <duration>2</duration>
@@ -105,16 +99,7 @@
       </note>
       <note>
         <pitch>
-          <step>C</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>2</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-      </note>
-      <note>
-        <pitch>
-          <step>C</step>
+          <step>F</step>
           <octave>4</octave>
         </pitch>
         <duration>2</duration>
@@ -124,62 +109,6 @@
       <note>
         <pitch>
           <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>2</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>2</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>2</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>2</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-      </note>
-    </measure>
-    <measure number="4">
-      <note>
-        <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>C</step>
           <octave>4</octave>
         </pitch>
         <duration>8</duration>

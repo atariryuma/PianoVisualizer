@@ -68,11 +68,12 @@ describe('createBundledLibrary — fetchEntries', () => {
     }
   });
 
-  it('sorts by label and wires JP labels when present', async () => {
+  it('sorts by difficulty level (beginner → advanced) and wires JP labels', async () => {
     const lib = createBundledLibrary({ fetch: stubFetch() as unknown as typeof fetch });
     const entries = await lib.fetchEntries(true);
-    const labels = entries.map((e) => e.label);
-    expect([...labels].sort((a, b) => a.localeCompare(b))).toEqual(labels);
+    const levels = entries.map((e) => e.level);
+    // non-decreasing by level
+    expect(levels).toEqual([...levels].sort((a, b) => a - b));
     const withJp = entries.find((e) => e.titleJp);
     expect(withJp?.labelJp).toContain('—');
   });

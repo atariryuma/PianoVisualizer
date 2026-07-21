@@ -22,6 +22,9 @@ export interface BundledLibraryEntry {
   labelJp: string | null;
   composerJp: string | null;
   titleJp: string | null;
+  /** Difficulty tier 1–4 (1 初級 … 4 上級); the list is sorted by it. */
+  level: number;
+  levelJp: string | null;
   icon: string;
   size: number;
 }
@@ -33,6 +36,8 @@ interface ManifestScore {
   composer: string;
   composerJp?: string;
   died?: number;
+  level?: number;
+  levelJp?: string;
   license?: string;
 }
 
@@ -71,6 +76,8 @@ function toEntry(s: ManifestScore, base: string): BundledLibraryEntry {
     labelJp,
     composerJp: s.composerJp || null,
     titleJp: s.titleJp || null,
+    level: s.level || 1,
+    levelJp: s.levelJp || null,
     icon: '🎼',
     size: 0,
   };
@@ -88,7 +95,8 @@ export function createBundledLibrary(deps: BundledLibraryDeps): BundledLibrary {
     const entries = (manifest.scores || [])
       .filter((s) => s && s.file)
       .map((s) => toEntry(s, base))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      // Beginner → advanced, then alphabetical within a tier.
+      .sort((a, b) => a.level - b.level || a.label.localeCompare(b.label));
     cache = entries;
     return entries;
   }

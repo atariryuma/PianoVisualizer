@@ -31,21 +31,21 @@ Two independent copyright layers, both clean:
 2. **Engraving / encoding** — the MusicXML is authored by us (Piano Visualizer),
    so there is no third-party edition or arrangement right to clear anywhere.
 
-| File                      | Piece                  | Composer (died)       |
-| ------------------------- | ---------------------- | --------------------- |
-| `ode_to_joy.musicxml`     | Ode to Joy             | Beethoven (1827)      |
-| `twinkle.musicxml`        | Twinkle, Twinkle       | Mozart (1791)         |
-| `jingle_bells.musicxml`   | Jingle Bells (chorus)  | J. L. Pierpont (1893) |
-| `mary_lamb.musicxml`      | Mary Had a Little Lamb | Traditional           |
-| `frere_jacques.musicxml`  | Frère Jacques          | Traditional           |
-| `old_macdonald.musicxml`  | Old MacDonald          | Traditional           |
-| `london_bridge.musicxml`  | London Bridge          | Traditional           |
-| `hot_cross_buns.musicxml` | Hot Cross Buns         | Traditional           |
+20 pieces, graded beginner → advanced (the library lists them in this order):
 
-To add a piece: encode it in `scripts/gen-library-scores.mjs` (composition must
-be PD), run the generator, add a row above.
-`packages/web/tests/bundled-library.test.ts` re-parses every generated file so a
-bad transcription fails the build.
+| Level        | Pieces                                                                                                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 初級**   | Twinkle Twinkle (Mozart), Mary Had a Little Lamb, Frère Jacques, Old MacDonald, London Bridge, Hot Cross Buns, Jingle Bells (Pierpont, 1893), Au Clair de la Lune, Symphony No. 5 opening (Beethoven) |
+| **2 初中級** | Ode to Joy (Beethoven), Canon in D theme (Pachelbel, 1706), Minuet in G BWV Anh. 114 (Petzold, 1760), In the Hall of the Mountain King (Grieg, 1907), New World Symphony Largo (Dvořák, 1904)         |
+| **3 中級**   | Gymnopédie No. 1 (Satie, 1925), Habanera / Carmen (Bizet, 1875), Prelude in C BWV 846 (Bach, 1750), Toccata in D minor opening (Bach)                                                                 |
+| **4 上級**   | Nocturne Op. 9 No. 2 melody (Chopin, 1849), Prelude Op. 28 No. 4 (Chopin)                                                                                                                             |
+
+Every composer died > 70 years ago (or the tune is anonymous/traditional), so
+each composition is PD worldwide; the advanced entries are our own simplified
+melody arrangements. To add a piece: encode it in
+`scripts/gen-library-scores.mjs` (composition must be PD), run the generator,
+and render-check it. `packages/web/tests/bundled-library.test.ts` re-parses
+every generated file so a bad transcription fails the build.
 
 ### Why we removed the third-party `musetrainer/library` catalog (2026-07-21)
 
