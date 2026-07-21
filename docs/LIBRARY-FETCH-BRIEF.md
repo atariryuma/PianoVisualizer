@@ -113,8 +113,11 @@ simplified single-line arrangements):
 
 ## Record provenance (required)
 
-For each file you add, append a line to a plain text file
-`packages/web/public/assets/library/INCOMING.md` (create it) with:
+Put the `.musicxml` files in `packages/web/public/assets/library/` (they ship —
+that's correct), but write the provenance notes to **`INCOMING-SCORES.md` at the
+REPO ROOT** — NOT under `public/`. Anything under `public/` is bundled into the
+shipped app, so a staging note placed there would leak into the build (this has
+happened twice). One line per file:
 
 ```text
 filename.musicxml | Title | Composer (death year) | SOURCE_URL | LICENSE (PD/CC0/CC-BY-SA)
