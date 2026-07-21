@@ -26,11 +26,32 @@ export const LIBRARY_API_URL =
   'https://api.github.com/repos/musetrainer/library/contents/scores?ref=' +
   LIBRARY_PINNED_SHA +
   '&per_page=200';
-/** v2: bumped after adding `filename` + JP translations to the
- *  cached entry shape. Forces a one-time cache miss so existing v1
- *  caches don't deny the user the new Japanese labels. */
-export const LIBRARY_CACHE_KEY = 'pianoViz_libraryCache_v2';
+/** v3: bumped when LIBRARY_EXCLUDE was added, so any existing cache
+ *  that still contains a now-excluded (non-public-domain) file is
+ *  discarded on first launch instead of waiting out the 1 h TTL.
+ *  (v2 bumped after adding `filename` + JP translations to the cached
+ *  entry shape.) */
+export const LIBRARY_CACHE_KEY = 'pianoViz_libraryCache_v3';
 export const LIBRARY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Filenames present in the pinned catalog that are NOT public domain and must
+ * never be offered in-app. The upstream musetrainer/library repo labels its
+ * whole catalog "public domain", but it ships no LICENSE file and this claim
+ * is demonstrably wrong for these files, so we exclude them ourselves rather
+ * than trust the upstream label — keeping the "honest, public-domain-only"
+ * promise literally true.
+ *
+ * "Mariage d'Amour" (also circulated as a **mis-attributed** "Chopin — Spring
+ * Waltz") was composed by **Paul de Senneville in 1978**. He is a living
+ * composer, so the work is under copyright worldwide (death + 70) — Chopin
+ * never wrote it. All three filenames below are the same copyrighted piece.
+ */
+export const LIBRARY_EXCLUDE: ReadonlySet<string> = new Set([
+  'Mariage_dAmour.mxl',
+  'Chopin_-_Spring_Waltz.mxl',
+  'Spring_Waltz_Mariage_dAmour_-_Chopin.mxl',
+]);
 
 /** Curated Japanese labels for every score in the pinned MuseTrainer
  *  catalog (69 .mxl files at SHA 9128876…). Keyed by exact filename
@@ -87,7 +108,6 @@ export const LIBRARY_JP: Record<string, { titleJp: string; composerJp: string }>
     titleJp: 'ノクターン Op.9-2 変ホ長調',
     composerJp: 'ショパン',
   },
-  'Chopin_-_Spring_Waltz.mxl': { titleJp: '春のワルツ', composerJp: 'ショパン' },
   'Clair_de_Lune__Debussy.mxl': { titleJp: '月の光', composerJp: 'ドビュッシー' },
   'Clair_de_lune_-_Claude_Debussy.mxl': { titleJp: '月の光 (別編)', composerJp: 'ドビュッシー' },
   'DANSE_VILLAGEOISE_Beethoven.mxl': { titleJp: '田舎の踊り', composerJp: 'ベートーヴェン' },
@@ -150,10 +170,6 @@ export const LIBRARY_JP: Record<string, { titleJp: string; composerJp: string }>
   'Maple_Leaf_Rag_Scott_Joplin.mxl': {
     titleJp: 'メイプル・リーフ・ラグ',
     composerJp: 'ジョプリン',
-  },
-  'Mariage_dAmour.mxl': {
-    titleJp: "愛の喜び (Mariage d'Amour)",
-    composerJp: 'P. ド・センヌヴィル',
   },
   'Minuet_in_G_Major_Bach.mxl': { titleJp: 'メヌエット ト長調', composerJp: 'バッハ' },
   'Mozart_-_Piano_Sonata_No._16_-_Allegro.mxl': {
@@ -220,10 +236,6 @@ export const LIBRARY_JP: Record<string, { titleJp: string; composerJp: string }>
   'Sonate_No._8_Pathetique_2nd_Movement.mxl': {
     titleJp: '悲愴ソナタ 第2楽章',
     composerJp: 'ベートーヴェン',
-  },
-  'Spring_Waltz_Mariage_dAmour_-_Chopin.mxl': {
-    titleJp: "春のワルツ (Mariage d'Amour)",
-    composerJp: 'P. ド・センヌヴィル',
   },
   'Swan_Lake.mxl': { titleJp: '白鳥の湖', composerJp: 'チャイコフスキー' },
   'The_Entertainer_-_Scott_Joplin.mxl': {
@@ -345,7 +357,11 @@ export function createOnlineLibrary(deps: OnlineLibraryDeps): OnlineLibrary {
         if (raw) {
           const cached = JSON.parse(raw);
           if (cached.fetchedAt && deps.now() - cached.fetchedAt < LIBRARY_CACHE_TTL_MS) {
-            return cached.entries as LibraryEntry[];
+            // Defensive: drop any excluded (non-PD) file that a pre-v3 cache
+            // shape or a future upstream change might still carry.
+            return (cached.entries as LibraryEntry[]).filter(
+              (e) => !e.filename || !LIBRARY_EXCLUDE.has(e.filename)
+            );
           }
         }
       } catch {
@@ -358,7 +374,7 @@ export function createOnlineLibrary(deps: OnlineLibraryDeps): OnlineLibrary {
     if (!res.ok) throw new Error('GitHub API ' + res.status);
     const json = (await res.json()) as { type: string; name: string }[];
     const entries = json
-      .filter((f) => f.type === 'file' && /\.mxl$/i.test(f.name))
+      .filter((f) => f.type === 'file' && /\.mxl$/i.test(f.name) && !LIBRARY_EXCLUDE.has(f.name))
       .map(entryFromGhFile)
       .sort((a, b) => a.label.localeCompare(b.label));
     try {

@@ -58,8 +58,8 @@ describe('online-library — exported constants', () => {
     expect(LIBRARY_API_URL).toContain('musetrainer/library');
   });
 
-  it('LIBRARY_CACHE_KEY is versioned (v2)', () => {
-    expect(LIBRARY_CACHE_KEY).toBe('pianoViz_libraryCache_v2');
+  it('LIBRARY_CACHE_KEY is versioned (v3)', () => {
+    expect(LIBRARY_CACHE_KEY).toBe('pianoViz_libraryCache_v3');
   });
 
   it('LIBRARY_CACHE_TTL_MS is 1 hour', () => {
@@ -189,6 +189,36 @@ describe('createOnlineLibrary — fetchEntries network', () => {
       // sorted by label — "Canon in D" < "Fur Elise"
       ['Canon_in_D.mxl', 'Fur_Elise.mxl']
     );
+  });
+
+  it('excludes non-public-domain files (LIBRARY_EXCLUDE) from the network list', async () => {
+    const fx = makeFixture();
+    fx.fetchFn.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        { type: 'file', name: 'Canon_in_D.mxl' },
+        { type: 'file', name: 'Mariage_dAmour.mxl' }, // de Senneville 1978 — copyrighted
+        { type: 'file', name: 'Chopin_-_Spring_Waltz.mxl' }, // same piece, mis-attributed
+        { type: 'file', name: 'Spring_Waltz_Mariage_dAmour_-_Chopin.mxl' }, // same piece
+        { type: 'file', name: 'Fur_Elise.mxl' },
+      ],
+    });
+    const entries = await fx.lib.fetchEntries(true);
+    expect(entries.map((e) => e.filename)).toEqual(['Canon_in_D.mxl', 'Fur_Elise.mxl']);
+  });
+
+  it('drops an excluded file that a stale cache still carries', async () => {
+    const fx = makeFixture({ now: 1700000000000 });
+    fx.storage._store[LIBRARY_CACHE_KEY] = JSON.stringify({
+      fetchedAt: 1700000000000 - 30 * 60 * 1000, // fresh (30 min)
+      entries: [
+        { url: 'cdn://a', label: 'Canon', icon: '', filename: 'Canon_in_D.mxl' },
+        { url: 'cdn://b', label: 'Mariage', icon: '', filename: 'Mariage_dAmour.mxl' },
+      ],
+    });
+    const out = await fx.lib.fetchEntries();
+    expect(fx.fetchFn).not.toHaveBeenCalled(); // still a cache hit
+    expect(out.map((e) => e.filename)).toEqual(['Canon_in_D.mxl']);
   });
 
   it('sorts entries by label.localeCompare', async () => {
