@@ -1,0 +1,135 @@
+# Self-owned score library — curation plan
+
+**Decision (2026-07-21):** stop depending on the third-party
+`musetrainer/library` repo (no LICENSE file, mislabels copyrighted works — see
+[LICENSES/README.md](LICENSES/README.md)) and move the "Add a song" catalog to a
+**self-owned, provenance-verified** library. This is the same model the two
+bundled songs (Für Elise, alla Turca) already follow — scaled up.
+
+The goal is not "find a bigger repo to trust" (none is a clean fit — see the
+landscape table below). It is **own every file's provenance**: a small,
+100%-verified catalog beats a large, unverified one.
+
+## Why no existing repo is a drop-in
+
+| Library                   | License                    | Format                   | Repertoire fit                            |
+| ------------------------- | -------------------------- | ------------------------ | ----------------------------------------- |
+| **OpenScore** (MuseScore) | **CC0** (cleanest)         | MuseScore + **MusicXML** | Lieder + string quartets (not solo piano) |
+| **Mutopia Project**       | PD / **CC BY-SA**          | LilyPond (→ convert)     | ~700 piano pieces (good)                  |
+| **IMSLP / Petrucci**      | mixed (PD / CC / non-comm) | mostly PDF scans         | largest, but per-file + PDF               |
+| musetrainer/library       | **none stated**            | MusicXML                 | piano, but unvetted (dropped)             |
+| MuseScore.com uploads     | mixed / infringing         | MusicXML                 | huge, but unusable                        |
+
+Takeaway: **hand-pick** beginner-friendly PD piano pieces and verify each. There
+is no bulk shortcut for this repertoire.
+
+## Architecture (self-owned, bundled, offline)
+
+Ship the curated scores as **app assets** under
+`packages/web/public/assets/library/`, listed by a bundled
+`packages/web/public/assets/library/manifest.json`. Benefits: works offline, no
+runtime dependency on anyone else, and the whole online-fetch machinery (GitHub
+API + jsDelivr) can be deleted.
+
+The "Add a song" UI is source-agnostic — it renders a `UiLibraryEntry[]` (each
+has a `.url`) and imports the clicked entry via `addUserSongFromUrl(url)`. So
+the only code change is the **catalog source**:
+
+- **Replace** `createOnlineLibrary` (hits the musetrainer GitHub API, builds
+  `cdn.jsdelivr.net/gh/musetrainer/...` URLs) **with** a tiny loader that
+  `fetch`es `assets/library/manifest.json` and returns entries whose `.url` is
+  `assets/library/<file>.mxl` (a bundled, same-origin asset).
+- Wire it in [shell-user-library.ts](../packages/web/src/shell-user-library.ts)
+  in place of `OnlineLibrary.createOnlineLibrary`. The UI, download, and import
+  paths are unchanged.
+- Then delete `online-library.ts`'s musetrainer specifics (`LIBRARY_API_URL`,
+  `LIBRARY_PINNED_SHA`, jsDelivr URL builder, `LIBRARY_EXCLUDE`) once nothing
+  imports them.
+
+### manifest.json schema
+
+```jsonc
+{
+  "version": 1,
+  "scores": [
+    {
+      "file": "beethoven_ode_to_joy.mxl", // in assets/library/
+      "title": "Ode to Joy (theme)",
+      "titleJp": "歓喜の歌",
+      "composer": "Beethoven",
+      "composerJp": "ベートーヴェン",
+      "born": 1770,
+      "died": 1827, // composition PD basis: died + 70 < now
+      "source": "https://…", // where the MusicXML was obtained
+      "license": "PD", // "PD" | "CC0" | "CC-BY-SA-4.0"
+      "verifiedBy": "atari",
+      "verifiedOn": "2026-07-21",
+      "sha256": "…", // integrity pin of the exact file
+    },
+  ],
+}
+```
+
+## Per-file curation checklist
+
+For each candidate score:
+
+1. **Composition is PD** — composer died > 70 years ago (or first published
+   pre-1925 in the US). Record `born`/`died`.
+2. **The file's license is clean** — prefer **CC0** (OpenScore) or a source that
+   states PD; if from Mutopia, note the **CC BY-SA** obligation (attribute the
+   typesetter; don't relabel). Avoid anything with no stated license.
+3. **Kid-appropriate + beginner-playable** — short, recognizable, reasonable
+   difficulty. No TV/film branding in the title.
+4. **It renders** — open it in the app once; confirm OSMD parses it and
+   auto-sectioning is sane.
+5. **Record provenance** — add the manifest row (with `sha256`) and a one-line
+   entry in [LICENSES/README.md](LICENSES/README.md).
+
+## Starter shopping list (~18 beginner PD piano pieces)
+
+All composition-PD. Prefer a CC0/PD MusicXML; fall back to a verified IMSLP
+edition or a Mutopia LilyPond → MusicXML export (with attribution).
+
+| Piece                           | Composer (died)         | Best source to verify |
+| ------------------------------- | ----------------------- | --------------------- |
+| Ode to Joy (theme)              | Beethoven (1827)        | Mutopia / IMSLP       |
+| Für Elise (already bundled)     | Beethoven (1827)        | ✅ have it            |
+| Minuet in G, BWV Anh. 114/115   | Petzold (1760)          | Mutopia / IMSLP       |
+| Prelude in C, BWV 846           | J.S. Bach (1750)        | Mutopia / IMSLP       |
+| Gymnopédie No. 1                | Satie (1925)            | Mutopia / IMSLP       |
+| Gnossienne No. 1                | Satie (1925)            | Mutopia / IMSLP       |
+| Clair de Lune                   | Debussy (1918)          | IMSLP                 |
+| Arabesque No. 1                 | Debussy (1918)          | IMSLP                 |
+| Canon in D (simplified)         | Pachelbel (1706)        | Mutopia / IMSLP       |
+| Turkish March (already bundled) | Mozart (1791)           | ✅ have it            |
+| Twinkle Variations (theme)      | Mozart (1791)           | IMSLP                 |
+| Moonlight Sonata, 1st mvt       | Beethoven (1827)        | Mutopia / IMSLP       |
+| Nocturne Op. 9 No. 2            | Chopin (1849)           | Mutopia / IMSLP       |
+| Prelude Op. 28 No. 4            | Chopin (1849)           | Mutopia / IMSLP       |
+| The Entertainer                 | Joplin (1917)           | Mutopia / IMSLP       |
+| Maple Leaf Rag                  | Joplin (1917)           | Mutopia / IMSLP       |
+| Greensleeves                    | trad. English (PD)      | IMSLP                 |
+| Ave Maria (Bach/Gounod theme)   | Bach 1750 / Gounod 1893 | IMSLP (both PD)       |
+
+Note: **avoid** "Mariage d'Amour"/"Spring Waltz" (de Senneville, 1978 — under
+copyright), "Carol of the Bells" if it's the Wilhousky arrangement, and any film
+/ pop arrangement — the exact traps found in the musetrainer catalog.
+
+## Launch sequencing — recommendation
+
+Populating a quality set is **content work** (each file downloaded + verified by
+hand). Two clean options — pick per how much library size matters at launch:
+
+- **Recommended: ship v1 with the cleaned musetrainer catalog** (the
+  `LIBRARY_EXCLUDE` fix already removed the one clear violation; every remaining
+  piece is composition-PD and the SHA-pin bounds the residual
+  transcription-layer risk), and land the self-owned library as a **v1.x
+  fast-follow** using this plan. No launch regression; destination locked in.
+- **Zero-association alternative: disable the online library for v1**, ship with
+  the two built-ins + user import only (4.2.3 is already satisfied by the native
+  MIDI plugin), then add the self-owned library in v1.x.
+
+Either way the app's **identity** already rests on "bring your own sheet music +
+built-in PD pieces" — the downloadable catalog is optional extra content, and
+musetrainer is named nowhere user-facing.
