@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="index" />
+    <title>Piano Visualizer — Privacy Policy</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.65;
+        color: #1c1c22;
+        background: #faf9fb;
+        -webkit-text-size-adjust: 100%;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 40px 22px 80px;
+      }
+      h1 {
+        font-size: 1.7rem;
+        margin: 0 0 4px;
+        line-height: 1.25;
+      }
+      .meta {
+        color: #6a6a75;
+        font-size: 0.92rem;
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.15rem;
+        margin: 34px 0 10px;
+        padding-top: 14px;
+        border-top: 1px solid #e6e4ea;
+      }
+      p,
+      li {
+        font-size: 1rem;
+      }
+      ul {
+        padding-left: 1.2em;
+      }
+      li {
+        margin: 4px 0;
+      }
+      strong {
+        color: #000;
+      }
+      code {
+        background: #efedf3;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.9em;
+      }
+      a {
+        color: #6b4bd6;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 8px 0;
+        font-size: 0.92rem;
+      }
+      td,
+      th {
+        border: 1px solid #e0dde6;
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .lead {
+        font-size: 1.05rem;
+      }
+      footer {
+        margin-top: 40px;
+        color: #6a6a75;
+        font-size: 0.88rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #e7e6ec;
+          background: #17151c;
+        }
+        strong {
+          color: #fff;
+        }
+        h2 {
+          border-top-color: #2c2933;
+        }
+        code {
+          background: #262330;
+        }
+        td,
+        th {
+          border-color: #2c2933;
+        }
+        .meta,
+        footer {
+          color: #9b98a6;
+        }
+        a {
+          color: #b7a3ff;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Piano Visualizer — Privacy Policy</h1>
+      <p class="meta"><strong>Effective: 2026-07-21</strong> · App version 1.0</p>
+
+      <p>
+        This is the privacy policy required by the Apple App Store, Google Play, and the UK
+        Children's Code for Piano Visualizer.
+      </p>
+
+      <h2>Plain-language summary</h2>
+      <p class="lead">
+        <strong>We collect nothing.</strong> The app runs entirely on your device. Your microphone
+        is used only to detect piano notes in real time — audio is never recorded, never
+        transmitted, and never leaves the device. Practice progress (streak, high scores, added
+        songs) is stored only in your device's app storage.
+      </p>
+
+      <h2>What we do not collect</h2>
+      <ul>
+        <li>We do <strong>not</strong> record, transmit, or store microphone audio.</li>
+        <li>
+          We do <strong>not</strong> collect personal information (names, emails, phone numbers,
+          addresses).
+        </li>
+        <li>
+          We do <strong>not</strong> use cookies, advertising identifiers (IDFA, AAID), or
+          fingerprinting.
+        </li>
+        <li>
+          We do <strong>not</strong> use third-party analytics (no Google Analytics, no Firebase, no
+          Sentry).
+        </li>
+        <li>We do <strong>not</strong> show advertisements.</li>
+        <li>We do <strong>not</strong> offer in-app purchases.</li>
+        <li>We do <strong>not</strong> require an account or login.</li>
+      </ul>
+
+      <h2>What stays on your device</h2>
+      <p>The following is stored locally in your device's app/browser storage:</p>
+      <ul>
+        <li>Your high scores, daily streak, and session statistics</li>
+        <li>The audio-offset calibration value you set in settings</li>
+        <li>Your language preference (EN / 日本語 / Deutsch)</li>
+        <li>Music scores you have imported</li>
+        <li>The app's UI state (theme, last-played song)</li>
+      </ul>
+      <p>This data is deleted when you uninstall the app or clear the app's storage.</p>
+
+      <h2>Network access</h2>
+      <p>
+        The app is <strong>self-contained</strong>. The practice engine, the sheet-music renderer,
+        and the entire built-in song library are all bundled into the app itself. Using the app
+        normally makes <strong>no network requests at all</strong> — it works fully offline.
+      </p>
+      <p>
+        The only time the app touches the network is if <strong>you</strong> choose to import your
+        own MusicXML score by pasting a web address. Your device then fetches that file directly
+        from the address you chose. No personal information is added to the request beyond the
+        standard metadata (your IP address) that any web request includes, and it is never routed
+        through a server of ours. We do not send, log, or receive anything.
+      </p>
+
+      <h2>Microphone</h2>
+      <p>
+        When you grant microphone permission, audio is processed continuously in real time to detect
+        which piano keys you are playing. <strong>Audio samples never leave your device.</strong>
+        The app holds an audio buffer in memory only as long as needed for the pitch-detection
+        algorithm to compute (~93 ms windows), then discards it. There is no recording feature.
+      </p>
+      <p>You can revoke microphone permission at any time:</p>
+      <ul>
+        <li><strong>iOS:</strong> Settings → Privacy &amp; Security → Microphone → Piano Visualizer</li>
+        <li><strong>Android:</strong> Settings → Apps → Piano Visualizer → Permissions</li>
+        <li><strong>Web:</strong> your browser's site settings</li>
+      </ul>
+
+      <h2>MIDI keyboards</h2>
+      <p>
+        If you connect a USB or Bluetooth MIDI piano keyboard, the app reads its note-on, note-off,
+        sustain-pedal, and control-change messages locally to score your performance.
+        <strong>MIDI data never leaves your device.</strong>
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        The app is designed for learners of all ages and is safe for children (its kid-safe design
+        originated for upper-elementary ages, ~8–12, and is retained as a product value). We treat
+        all users as if they may be children and comply with:
+      </p>
+      <ul>
+        <li><strong>COPPA</strong> (US Children's Online Privacy Protection Act)</li>
+        <li><strong>GDPR-K</strong> / UK Children's Code (ICO age-appropriate design code)</li>
+        <li><strong>APPI</strong> (Japan's Act on the Protection of Personal Information)</li>
+      </ul>
+      <p>
+        Because we collect zero personal information, no parental-consent flow is required. Parents
+        are encouraged to use device-level parental controls (Apple Screen Time / Google Family
+        Link) for usage limits.
+      </p>
+
+      <h2>Music</h2>
+      <p>
+        All music in the app is public domain (composers who died more than 70 years ago, works
+        first published before 1925, or works released under Creative Commons CC0). No copyrighted
+        recordings or performances are stored or transmitted.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        If this policy changes, we will update the "Effective" date above and ship the change in the
+        next app release. Material changes (e.g. introducing analytics) would also require updating
+        the App Store / Play Store privacy nutrition labels.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions or issues:
+        <a href="https://github.com/atariryuma/PianoVisualizer/issues"
+          >github.com/atariryuma/PianoVisualizer/issues</a
+        >
+      </p>
+
+      <footer>Piano Visualizer · on-device · no ads · no tracking</footer>
+    </main>
+  </body>
+</html>
