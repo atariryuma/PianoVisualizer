@@ -17,8 +17,7 @@ import JSZipImpl from 'jszip';
 import * as PianoCore from '@piano/core';
 import * as UserSongsMxl from './user-songs-mxl';
 import * as UserSongsStore from './user-songs-store';
-import * as OnlineLibrary from './online-library';
-import { safeLocalStorage } from './prefs-storage';
+import { createBundledLibrary } from './bundled-library';
 
 export interface ShellUserLibraryDeps {
   /** Built-in SONGS registry — user imports merge in by id. */
@@ -92,17 +91,13 @@ export function createShellUserLibrary(deps: ShellUserLibraryDeps): ShellUserLib
     random: () => Math.random(),
   } as any);
 
-  // ── Online library (musetrainer GitHub catalog, jsDelivr-served, pinned SHA) ──
-  const _onlineLibrary = OnlineLibrary.createOnlineLibrary({
-    libraryEntryFromGhFile: PianoCore.libraryEntryFromGhFile,
+  // ── Self-owned bundled library (our own PD transcriptions in
+  //    public/assets/library/; no third-party dependency — see bundled-library.ts). ──
+  const _bundledLibrary = createBundledLibrary({
     fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
-    // ストレージ封鎖環境（SecurityError）ではカタログキャッシュなしの
-    // メモリのみで動く no-op スタブに degrade。
-    localStorage: safeLocalStorage() ?? { getItem: () => null, setItem: () => {} },
-    now: () => Date.now(),
-  } as any);
+  });
 
-  let ONLINE_LIBRARY: any[] = OnlineLibrary.LIBRARY_SEED.slice();
+  let ONLINE_LIBRARY: any[] = [];
 
   return {
     USER_DB_STORE,
@@ -116,7 +111,7 @@ export function createShellUserLibrary(deps: ShellUserLibraryDeps): ShellUserLib
     userSongStore,
     loadUserSongs: () => userSongStore.loadAll(),
     removeUserSong: (id: string) => userSongStore.remove(id),
-    fetchLibrary: (force?: boolean) => _onlineLibrary.fetchEntries(force),
+    fetchLibrary: (force?: boolean) => _bundledLibrary.fetchEntries(force),
     getOnlineLibrary: () => ONLINE_LIBRARY,
     setOnlineLibrary: (entries: any[]) => {
       ONLINE_LIBRARY = entries;

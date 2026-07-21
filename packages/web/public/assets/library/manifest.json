@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "scores": [
+    {
+      "file": "ode_to_joy.musicxml",
+      "title": "Ode to Joy",
+      "titleJp": "歓喜の歌",
+      "composer": "Ludwig van Beethoven",
+      "composerJp": "ベートーヴェン",
+      "died": 1827,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "twinkle.musicxml",
+      "title": "Twinkle, Twinkle, Little Star",
+      "titleJp": "きらきら星",
+      "composer": "Wolfgang Amadeus Mozart",
+      "composerJp": "モーツァルト",
+      "died": 1791,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "jingle_bells.musicxml",
+      "title": "Jingle Bells (Chorus)",
+      "titleJp": "ジングルベル",
+      "composer": "James Lord Pierpont",
+      "composerJp": "ピアポント",
+      "died": 1893,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "mary_lamb.musicxml",
+      "title": "Mary Had a Little Lamb",
+      "titleJp": "メリーさんのひつじ",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "frere_jacques.musicxml",
+      "title": "Frère Jacques",
+      "titleJp": "フレール・ジャック",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "old_macdonald.musicxml",
+      "title": "Old MacDonald Had a Farm",
+      "titleJp": "ゆかいな牧場",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "london_bridge.musicxml",
+      "title": "London Bridge",
+      "titleJp": "ロンドン橋",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "hot_cross_buns.musicxml",
+      "title": "Hot Cross Buns",
+      "titleJp": "ホット・クロス・バンズ",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "license": "PD",
+      "note": "Own transcription of a public-domain composition"
+    }
+  ]
+}

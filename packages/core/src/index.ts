@@ -385,15 +385,6 @@ export type {
   SectionBuildSourceNote,
 } from './library/auto-section';
 
-// === Library: musetrainer catalog (jsDelivr-served, pinned-SHA) ===
-export { libraryEntryFromGhFile } from './library/musetrainer-catalog';
-export type {
-  GhContentsFile,
-  JpOverride,
-  LibraryEntry,
-  LibraryEntryFromGhOptions,
-} from './library/musetrainer-catalog';
-
 // === Util: tiny formatters + math used by both shells ===
 export { formatTime, clamp } from './util/format';
 

@@ -66,20 +66,22 @@ minimum to get a first build submitted.
       tracking" promise simple. Good hygiene to keep.)
 - [ ] Microphone usage description in `Info.plist` and `AndroidManifest.xml`
       uses kid-friendly language.
-- [ ] All MusicXML URLs in source pinned to a specific GitHub commit SHA (Apple
-      4.7 — runtime content is in App Review scope).
+- [x] No runtime-loaded score catalog. All scores are bundled in the app
+      (built-ins + the app's own PD transcriptions in `assets/library/`), so
+      there is no external MusicXML fetch to pin (Apple 4.7). The former
+      `musetrainer/library` jsDelivr dependency was removed 2026-07-21.
 
 ## Apple App Store
 
 ### Guidelines hits we know are relevant
 
-| Rule                        | What it means                                                                                         | Status                                   |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| 1.3 Kids Category           | Parental gate before permission/link/purchase; no 3rd-party ads/analytics.                            | ➖ N/A — we ship 4+/Education, not Kids  |
-| 4.2.3 Minimum Functionality | "Repackaged web content" gets rejected. Need native value beyond what mobile Safari can do.           | ✅ Native MIDI plugin satisfies this     |
-| 4.7 (rewritten 2025-11-13)  | Runtime-loaded JS/HTML5 mini-content is reviewed as if shipped. URLs must be stable, no dynamic eval. | ✅ jsDelivr URLs commit-pinned           |
-| 5.1.4 Kids Category data    | No PII or device info to third parties. No IDFA.                                                      | ✅ Zero collection                       |
-| 5.2.3 Audio licensing       | Streamed/embedded music needs license documentation.                                                  | ⚠️ Attach PD docs (see `docs/LICENSES/`) |
+| Rule                        | What it means                                                                                         | Status                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1.3 Kids Category           | Parental gate before permission/link/purchase; no 3rd-party ads/analytics.                            | ➖ N/A — we ship 4+/Education, not Kids                            |
+| 4.2.3 Minimum Functionality | "Repackaged web content" gets rejected. Need native value beyond what mobile Safari can do.           | ✅ Native MIDI plugin satisfies this                               |
+| 4.7 (rewritten 2025-11-13)  | Runtime-loaded JS/HTML5 mini-content is reviewed as if shipped. URLs must be stable, no dynamic eval. | ✅ No runtime catalog — all scores bundled                         |
+| 5.1.4 Kids Category data    | No PII or device info to third parties. No IDFA.                                                      | ✅ Zero collection                                                 |
+| 5.2.3 Audio licensing       | Streamed/embedded music needs license documentation.                                                  | ✅ All PD; library = our own transcriptions (see `docs/LICENSES/`) |
 
 ### Required artifacts before submission
 

@@ -41,24 +41,16 @@ for this site.
 
 ## Network access
 
-The app fetches the following from third parties on your behalf. **No personal
-information is sent in these requests** — the third parties only see the
-standard HTTP request metadata (your IP address, browser version) that any visit
-to a website generates.
+The app is **self-contained**. The practice engine, the sheet-music renderer,
+and the entire built-in song library are all bundled into the app itself. Using
+the app normally makes **no network requests at all** — it works fully offline.
 
-| Endpoint                                                             | Purpose                                                                                                     | Provider                                                                                             |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `cdn.jsdelivr.net`                                                   | Loads the audio engine (Tone.js), the score renderer (OpenSheetMusicDisplay), and the .mxl unzipper (JSZip) | jsDelivr (a free CDN run by ProspectOne / StackPath)                                                 |
-| `cdn.jsdelivr.net/gh/musetrainer/library@<pinned-commit>/scores/...` | Downloads public-domain music scores you choose to add to your library                                      | jsDelivr serving the [musetrainer/library](https://github.com/musetrainer/library) GitHub repository |
-| `api.github.com/repos/musetrainer/library/contents/scores`           | Lists the catalog of available public-domain scores                                                         | GitHub                                                                                               |
-
-Their privacy policies:
-[jsDelivr](https://www.jsdelivr.com/terms/privacy-policy-jsdelivr-net) ·
-[GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)
-
-The mobile app builds the audio engine and OSMD into the binary, so on
-iOS/Android the only network requests are to the GitHub API and jsDelivr, and
-only when you intentionally browse / download new pieces.
+The only time the app touches the network is if **you** choose to import your
+own MusicXML score by pasting a web address. Your device then fetches that file
+directly from the address you chose. No personal information is added to the
+request beyond the standard metadata (your IP address) that any web request
+includes, and it is never routed through a server of ours. We do not send, log,
+or receive anything.
 
 ## Microphone
 

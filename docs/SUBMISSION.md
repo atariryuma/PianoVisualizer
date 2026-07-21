@@ -29,13 +29,16 @@ NATIVE FUNCTIONALITY (Guideline 4.2.3)
   detection, USB-MIDI, and Bluetooth-MIDI (Roland GO:PIANO88) all work.
 
 MUSIC LICENSING (Guideline 5.2.3)
-• All bundled and downloadable music is public domain.
-• Bundled: "Für Elise" (Beethoven, d. 1827) and "Rondo alla Turca" (Mozart,
+• All music is public domain and bundled in the app — nothing is fetched from
+  any external catalog at runtime.
+• Built-in: "Für Elise" (Beethoven, d. 1827) and "Rondo alla Turca" (Mozart,
   d. 1791) — both PD worldwide (death + 70). Per-piece evidence: docs/LICENSES/.
-• The optional in-app song library fetches MusicXML from the musetrainer/library
-  GitHub repo via jsDelivr, PINNED to commit 9128876f6164d96997c877a2be843349a32bdabb
-  so the catalog cannot change between binary releases (Guideline 4.7). All pieces
-  are by composers who died over 70 years ago (Bach, Chopin, Satie, Debussy, etc.).
+• The in-app song library is the app's OWN engravings (MusicXML) of public-domain
+  compositions — e.g. Ode to Joy (Beethoven), Twinkle Twinkle (Mozart), Jingle
+  Bells (Pierpont, d. 1893), and traditional tunes. The compositions are PD
+  worldwide; the engravings are authored by us, so there is no third-party edition
+  or arrangement right to clear. Since the catalog is bundled, it is in App Review
+  scope as shipped (Guideline 4.7) and cannot change between binary releases.
 
 HOW TO TEST WITHOUT A PIANO
 • Tap "🎨 Free Play" or a song, then hum/whistle or play any note near the mic —

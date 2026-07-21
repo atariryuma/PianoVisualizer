@@ -24,17 +24,18 @@
 // cross-module reference comes through `createUserSongsUi(deps)` rather
 // than reaching into legacy-app globals.
 
-import type { UserSongRecord, LibraryEntry } from '@piano/core';
+import type { UserSongRecord } from '@piano/core';
+import type { BundledLibraryEntry } from './bundled-library';
 
 /** D3: import 経路のサイズ上限（shell-user-library の USER_SONG_MAX_BYTES と
  *  同値=20MB）。ファイル選択/URL 経路と同じ上限を import にも課す。 */
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 
 /** What the UI module reads from a library entry. The full
- *  `LibraryEntry` shape carries fields like `filename` that only exist
- *  on the fetched catalog payload; the legacy seed list (and any
- *  intermediate state during the fetch) is a strict subset. */
-export type UiLibraryEntry = Partial<LibraryEntry> & {
+ *  `BundledLibraryEntry` shape carries fields like `filename`; the UI only
+ *  requires `url` + `label`, so we widen to a partial for any intermediate
+ *  state. */
+export type UiLibraryEntry = Partial<BundledLibraryEntry> & {
   url: string;
   label: string;
   icon: string;
