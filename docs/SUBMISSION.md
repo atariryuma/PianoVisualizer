@@ -129,3 +129,72 @@ title screen changes (e.g. the mastery-strip star fix, best-streak).
 
 Apple currently requires only the iPhone 6.7" and iPad 13" sets; the 11" set is
 optional but recommended.
+
+---
+
+## 5. Age-rating questionnaire — answer key (target result: 4+)
+
+App Store Connect → your app → **Age Rating → Edit**. Every content question is
+**None / No** for this app; the toggles below produce a clean **4+**. Don't opt
+into the Kids category (we ship 4+/Education — see COMPLIANCE §Category).
+
+**Content descriptions — set ALL of these to `None`:**
+
+- Cartoon or Fantasy Violence · Realistic Violence · Prolonged/Graphic/Sadistic
+  Violence
+- Sexual Content or Nudity · Graphic Sexual Content and Nudity
+- Profanity or Crude Humor · Mature/Suggestive Themes · Horror/Fear Themes
+- Alcohol, Tobacco, or Drug Use or References · Simulated Gambling · Medical/
+  Treatment Information · Contests
+
+**Capability / behavior questions:**
+
+| Question                                       | Answer | Why                                                                                                      |
+| ---------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------- |
+| Unrestricted Web Access                        | **No** | The in-app library browses a **fixed, commit-pinned** catalog (jsDelivr/GitHub API), not a browser.      |
+| Gambling / Contests                            | **No** | None present.                                                                                            |
+| User-Generated Content                         | **No** | MusicXML you import is stored locally for your own practice; it is never shared with or shown to others. |
+| Messaging / Social features                    | **No** | No accounts, no chat, no social graph.                                                                   |
+| In-App Purchases                               | **No** | None (privacy policy commits to this).                                                                   |
+| Third-party advertising                        | **No** | None.                                                                                                    |
+| Collects data / tracking (App Privacy section) | **No** | On-device only → Nutrition Label "Data Not Collected", NSPrivacyTracking=false.                          |
+| Location                                       | **No** | Never requested.                                                                                         |
+
+If Apple's newer flow asks for a **minimum age** or "Made for Kids", pick the
+**general 4+ / all-ages** path, NOT the dedicated Kids category. The mic
+permission is the only sensitive capability and is covered by
+`NSMicrophoneUsageDescription`.
+
+---
+
+## 6. Pricing — recommendation
+
+**The market is 100% subscription; that's the gap we occupy.** (2026 yearly:
+Simply Piano ≈ $170, Flowkey ≈ $120, Yousician ≈ $120.) This app's headline
+promise is "no ads · no tracking · **no subscription traps**", and the privacy
+policy already commits to **no in-app purchases**. So the only pricing models
+that keep the promise true are **one-time paid** or **free** — never a
+subscription.
+
+**Recommendation: one-time purchase at launch, ¥600 (≈ $4.99).** Own it forever,
+no recurring charge — the honest counter-position to $120+/yr rivals. Defensible
+range ¥400–¥1,200 ($2.99–$9.99); ¥600 is a low-friction impulse buy for a
+parent/learner and needs no free-trial machinery.
+
+| Model                      | Fit        | Notes                                                                                       |
+| -------------------------- | ---------- | ------------------------------------------------------------------------------------------- |
+| **One-time ¥600 (~$4.99)** | ✅ Best    | Matches "no subscription" ethos, sustainable, no dark-pattern surface. **Recommended.**     |
+| Free                       | ✅ Alt.    | Maximizes reach + goodwill; pick this if audience/reputation matters more than revenue.     |
+| Free + tip-jar IAP         | ⚠️ Caution | A "tip" is still an IAP — contradicts the current "no IAP" promise; would need policy edit. |
+| Subscription / freemium    | ❌ Never   | Directly betrays the core promise and the kid-safe / anti-dark-pattern positioning.         |
+
+Practical notes:
+
+- **Pricing is set in App Store Connect, not in code** — no build change needed;
+  you can switch free ↔ paid later (going free is easy; a paid app can't retro-
+  charge existing free installs, so if unsure, **start paid** — you can always
+  drop to free, not the reverse).
+- Paid-up-front skips the whole IAP review surface (StoreKit, receipt
+  validation, restore-purchases) — less to implement, less to reject.
+- Consider a **free launch week → ¥600** later only if you want early reviews;
+  avoid "limited-time" copy in-app (banned-list: FOMO).

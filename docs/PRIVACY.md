@@ -1,6 +1,6 @@
 # Piano Visualizer — Privacy Policy
 
-**Effective: 2026-05-05** · **App version: 0.14**
+**Effective: 2026-07-21** · **App version: 1.0**
 
 This document is the privacy policy required by Apple App Store, Google Play,
 and the UK Children's Code for Piano Visualizer.
@@ -32,7 +32,7 @@ localStorage (web) or the equivalent app sandbox storage (iOS / Android):
 
 - Your high scores, daily streak, and session statistics
 - The audio offset calibration value you set in settings
-- Your language preference (EN / 日本語)
+- Your language preference (EN / 日本語 / Deutsch)
 - Music scores you have downloaded or imported
 - The app's UI state (theme, last-played song)
 
@@ -82,8 +82,9 @@ your performance. **MIDI data never leaves your device.**
 
 ## Children
 
-The app is designed for upper-elementary children (approximately ages 8–12). We
-comply with:
+The app is designed for learners of all ages and is safe for children (its
+kid-safe design originated for upper-elementary ages, ~8–12, and is retained as
+a product value). We treat all users as if they may be children and comply with:
 
 - **COPPA** (US Children's Online Privacy Protection Act, amended 2025)
 - **GDPR-K** / UK Children's Code (ICO age-appropriate design code)
