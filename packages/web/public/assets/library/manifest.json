@@ -3,6 +3,7 @@
   "scores": [
     {
       "file": "au_clair_de_la_lune.musicxml",
+      "type": "solo",
       "title": "Au Clair de la Lune",
       "titleJp": "月の光に",
       "composer": "Traditional",
@@ -11,10 +12,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "frere_jacques.musicxml",
+      "type": "solo",
       "title": "Frère Jacques",
       "titleJp": "フレール・ジャック",
       "composer": "Traditional",
@@ -23,10 +26,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "hot_cross_buns.musicxml",
+      "type": "solo",
       "title": "Hot Cross Buns",
       "titleJp": "ホット・クロス・バンズ",
       "composer": "Traditional",
@@ -35,10 +40,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "jingle_bells.musicxml",
+      "type": "solo",
       "title": "Jingle Bells (Chorus)",
       "titleJp": "ジングルベル",
       "composer": "James Lord Pierpont",
@@ -47,10 +54,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "london_bridge.musicxml",
+      "type": "solo",
       "title": "London Bridge",
       "titleJp": "ロンドン橋",
       "composer": "Traditional",
@@ -59,10 +68,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "beethoven_marmotte.musicxml",
+      "type": "song",
       "title": "Marmotte, Op. 52 No. 7",
       "titleJp": "マルモット",
       "composer": "Ludwig van Beethoven",
@@ -72,10 +83,12 @@
       "levelJp": "初級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6491461",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "mary_lamb.musicxml",
+      "type": "solo",
       "title": "Mary Had a Little Lamb",
       "titleJp": "メリーさんのひつじ",
       "composer": "Traditional",
@@ -84,10 +97,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "old_macdonald.musicxml",
+      "type": "solo",
       "title": "Old MacDonald Had a Farm",
       "titleJp": "ゆかいな牧場",
       "composer": "Traditional",
@@ -96,10 +111,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "beethoven_fifth.musicxml",
+      "type": "solo",
       "title": "Symphony No. 5 (opening)",
       "titleJp": "交響曲第5番「運命」冒頭",
       "composer": "Ludwig van Beethoven",
@@ -108,10 +125,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "twinkle.musicxml",
+      "type": "solo",
       "title": "Twinkle, Twinkle, Little Star",
       "titleJp": "きらきら星",
       "composer": "Wolfgang Amadeus Mozart",
@@ -120,10 +139,12 @@
       "level": 1,
       "levelJp": "初級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "schubert_an_die_musik.musicxml",
+      "type": "song",
       "title": "An die Musik, D. 547",
       "titleJp": "音楽に寄せて",
       "composer": "Franz Schubert",
@@ -133,10 +154,12 @@
       "levelJp": "初中級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6180725",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "canon_in_d.musicxml",
+      "type": "solo",
       "title": "Canon in D (theme)",
       "titleJp": "カノン（主題）",
       "composer": "Johann Pachelbel",
@@ -145,10 +168,12 @@
       "level": 2,
       "levelJp": "初中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "schubert_heidenroslein.musicxml",
+      "type": "song",
       "title": "Heidenröslein, D. 257",
       "titleJp": "野ばら",
       "composer": "Franz Schubert",
@@ -158,10 +183,12 @@
       "levelJp": "初中級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/30321236",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "grieg_mountain_king.musicxml",
+      "type": "solo",
       "title": "In the Hall of the Mountain King",
       "titleJp": "山の魔王の宮殿にて",
       "composer": "Edvard Grieg",
@@ -170,10 +197,12 @@
       "level": 2,
       "levelJp": "初中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "minuet_in_g.musicxml",
+      "type": "solo",
       "title": "Minuet in G (BWV Anh. 114)",
       "titleJp": "メヌエット ト長調",
       "composer": "Christian Petzold",
@@ -182,10 +211,12 @@
       "level": 2,
       "levelJp": "初中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "new_world_largo.musicxml",
+      "type": "solo",
       "title": "New World Symphony (Largo)",
       "titleJp": "新世界より「家路」",
       "composer": "Antonín Dvořák",
@@ -194,10 +225,12 @@
       "level": 2,
       "levelJp": "初中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "ode_to_joy.musicxml",
+      "type": "solo",
       "title": "Ode to Joy",
       "titleJp": "歓喜の歌",
       "composer": "Ludwig van Beethoven",
@@ -206,10 +239,12 @@
       "level": 2,
       "levelJp": "初中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "brahms_wiegenlied.musicxml",
+      "type": "song",
       "title": "Wiegenlied, Op. 49 No. 4",
       "titleJp": "ブラームスの子守歌",
       "composer": "Johannes Brahms",
@@ -219,10 +254,12 @@
       "levelJp": "初中級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/5701612",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "schubert_die_forelle.musicxml",
+      "type": "song",
       "title": "Die Forelle, D. 550",
       "titleJp": "ます",
       "composer": "Franz Schubert",
@@ -232,10 +269,12 @@
       "levelJp": "中級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6900961",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "gymnopedie_1.musicxml",
+      "type": "solo",
       "title": "Gymnopédie No. 1 (theme)",
       "titleJp": "ジムノペディ 第1番",
       "composer": "Erik Satie",
@@ -244,10 +283,12 @@
       "level": 3,
       "levelJp": "中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "bizet_habanera.musicxml",
+      "type": "solo",
       "title": "Habanera (Carmen)",
       "titleJp": "ハバネラ（カルメン）",
       "composer": "Georges Bizet",
@@ -256,10 +297,12 @@
       "level": 3,
       "levelJp": "中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "bach_prelude_c.musicxml",
+      "type": "solo",
       "title": "Prelude in C (BWV 846)",
       "titleJp": "前奏曲 ハ長調 BWV 846",
       "composer": "Johann Sebastian Bach",
@@ -268,10 +311,12 @@
       "level": 3,
       "levelJp": "中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "schubert_standchen.musicxml",
+      "type": "song",
       "title": "Ständchen, D. 957",
       "titleJp": "セレナーデ",
       "composer": "Franz Schubert",
@@ -281,10 +326,12 @@
       "levelJp": "中級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/5004835",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "bach_toccata_dm.musicxml",
+      "type": "solo",
       "title": "Toccata in D minor (opening)",
       "titleJp": "トッカータ ニ短調（冒頭）",
       "composer": "Johann Sebastian Bach",
@@ -293,10 +340,12 @@
       "level": 3,
       "levelJp": "中級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "schubert_ave_maria.musicxml",
+      "type": "song",
       "title": "Ave Maria, D. 839",
       "titleJp": "アヴェ・マリア",
       "composer": "Franz Schubert",
@@ -306,10 +355,12 @@
       "levelJp": "上級",
       "license": "CC0",
       "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6389103",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "chopin_nocturne_op9no2.musicxml",
+      "type": "solo",
       "title": "Nocturne Op. 9 No. 2 (melody)",
       "titleJp": "ノクターン Op.9-2（旋律）",
       "composer": "Frédéric Chopin",
@@ -318,10 +369,12 @@
       "level": 4,
       "levelJp": "上級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "chopin_prelude_e_minor.musicxml",
+      "type": "solo",
       "title": "Prelude Op. 28 No. 4",
       "titleJp": "前奏曲 Op.28-4 ホ短調",
       "composer": "Frédéric Chopin",
@@ -330,6 +383,7 @@
       "level": 4,
       "levelJp": "上級",
       "license": "PD",
+      "source": "generated",
       "note": "Own transcription of a public-domain composition"
     }
   ]

@@ -19,7 +19,7 @@
 //
 // Run: node scripts/gen-library-scores.mjs
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -225,14 +225,15 @@ const PIECES = [
 // voice + piano: the multi-part "backing part" feature routes the piano staves
 // to the learner and sings the vocal line. Composition PD worldwide (composers
 // died > 70y). Provenance: docs/LICENSES/README.md.
+const OS = 'https://musescore.com/openscore-lieder-corpus/scores/';
 const EXTERNAL = [
-  { file: 'beethoven_marmotte.musicxml', title: 'Marmotte, Op. 52 No. 7', titleJp: 'マルモット', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 1 },
-  { file: 'brahms_wiegenlied.musicxml', title: 'Wiegenlied, Op. 49 No. 4', titleJp: 'ブラームスの子守歌', composer: 'Johannes Brahms', composerJp: 'ブラームス', died: 1897, level: 2 },
-  { file: 'schubert_heidenroslein.musicxml', title: 'Heidenröslein, D. 257', titleJp: '野ばら', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2 },
-  { file: 'schubert_an_die_musik.musicxml', title: 'An die Musik, D. 547', titleJp: '音楽に寄せて', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2 },
-  { file: 'schubert_standchen.musicxml', title: 'Ständchen, D. 957', titleJp: 'セレナーデ', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3 },
-  { file: 'schubert_die_forelle.musicxml', title: 'Die Forelle, D. 550', titleJp: 'ます', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3 },
-  { file: 'schubert_ave_maria.musicxml', title: 'Ave Maria, D. 839', titleJp: 'アヴェ・マリア', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 4 },
+  { file: 'beethoven_marmotte.musicxml', title: 'Marmotte, Op. 52 No. 7', titleJp: 'マルモット', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 1, source: OS + '6491461' },
+  { file: 'brahms_wiegenlied.musicxml', title: 'Wiegenlied, Op. 49 No. 4', titleJp: 'ブラームスの子守歌', composer: 'Johannes Brahms', composerJp: 'ブラームス', died: 1897, level: 2, source: OS + '5701612' },
+  { file: 'schubert_heidenroslein.musicxml', title: 'Heidenröslein, D. 257', titleJp: '野ばら', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2, source: OS + '30321236' },
+  { file: 'schubert_an_die_musik.musicxml', title: 'An die Musik, D. 547', titleJp: '音楽に寄せて', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2, source: OS + '6180725' },
+  { file: 'schubert_standchen.musicxml', title: 'Ständchen, D. 957', titleJp: 'セレナーデ', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3, source: OS + '5004835' },
+  { file: 'schubert_die_forelle.musicxml', title: 'Die Forelle, D. 550', titleJp: 'ます', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3, source: OS + '6900961' },
+  { file: 'schubert_ave_maria.musicxml', title: 'Ave Maria, D. 839', titleJp: 'アヴェ・マリア', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 4, source: OS + '6389103' },
 ];
 
 mkdirSync(OUT_DIR, { recursive: true });
@@ -244,8 +245,9 @@ for (const p of PIECES) {
   const file = `${p.id}.musicxml`;
   writeFileSync(join(OUT_DIR, file), xml, 'utf8');
   manifest.scores.push({
-    file, title: p.title, titleJp: p.titleJp, composer: p.composer, composerJp: p.composerJp,
-    died: p.died, level: p.level, levelJp: LEVEL_JP[p.level], license: 'PD',
+    file, type: 'solo', title: p.title, titleJp: p.titleJp, composer: p.composer,
+    composerJp: p.composerJp, died: p.died, level: p.level, levelJp: LEVEL_JP[p.level],
+    license: 'PD', source: 'generated',
     note: 'Own transcription of a public-domain composition',
   });
   total++;
@@ -254,9 +256,9 @@ for (const p of PIECES) {
 }
 for (const e of EXTERNAL) {
   manifest.scores.push({
-    file: e.file, title: e.title, titleJp: e.titleJp, composer: e.composer,
+    file: e.file, type: e.type || 'song', title: e.title, titleJp: e.titleJp, composer: e.composer,
     composerJp: e.composerJp, died: e.died, level: e.level, levelJp: LEVEL_JP[e.level],
-    license: 'CC0', external: true,
+    license: 'CC0', external: true, source: e.source,
     note: 'External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing',
   });
   total++;
@@ -264,6 +266,24 @@ for (const e of EXTERNAL) {
   console.log(`✓ L${e.level} ${e.file.padEnd(30)} (external CC0)`);
 }
 manifest.scores.sort((a, b) => a.level - b.level || a.title.localeCompare(b.title));
+
+// ── Legality gate: nothing non-PD/CC0 or un-PD may enter the manifest ─────────
+const YEAR = new Date().getFullYear();
+for (const s of manifest.scores) {
+  if (!['PD', 'CC0'].includes(s.license)) throw new Error(`${s.file}: license must be PD/CC0 (got ${s.license})`);
+  if (!(s.died === 0 || s.died <= YEAR - 70)) {
+    throw new Error(`${s.file}: composer died ${s.died} — not yet public domain (need died ≤ ${YEAR - 70} or 0=traditional)`);
+  }
+  if (!s.source) throw new Error(`${s.file}: missing provenance 'source'`);
+}
+// ── Orphan check: every .musicxml on disk must be registered above ────────────
+const registered = new Set(manifest.scores.map((s) => s.file));
+const onDisk = readdirSync(OUT_DIR).filter((f) => f.endsWith('.musicxml'));
+const orphans = onDisk.filter((f) => !registered.has(f));
+if (orphans.length) {
+  throw new Error(`Unregistered .musicxml in assets/library/ (add to PIECES/EXTERNAL or delete): ${orphans.join(', ')}`);
+}
+
 writeFileSync(join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 // eslint-disable-next-line no-console
-console.log(`\nWrote ${total} scores + manifest.json → ${OUT_DIR}`);
+console.log(`\nWrote ${total} scores + manifest.json → ${OUT_DIR} (all PD/CC0, no orphans)`);

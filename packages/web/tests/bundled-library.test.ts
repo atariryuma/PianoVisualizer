@@ -9,7 +9,7 @@
 // This is the regression guard for scripts/gen-library-scores.mjs output.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as PianoCore from '@piano/core';
 import { createBundledLibrary } from '../src/bundled-library';
@@ -26,6 +26,10 @@ const manifest = JSON.parse(readFileSync(LIB_DIR + 'manifest.json', 'utf8')) as 
     composerJp?: string;
     level?: number;
     external?: boolean;
+    license?: string;
+    died?: number;
+    source?: string;
+    type?: string;
   }[];
 };
 
@@ -50,6 +54,44 @@ describe('bundled library — manifest + generated scores', () => {
       expect(Array.isArray(defs) ? defs.length : 0, s.file).toBeGreaterThan(0);
     });
   }
+});
+
+// The legality gate: illegal / un-provenanced / orphan files must be UNABLE to
+// ship. This mirrors the generator's checks so it also runs in `pnpm verify`.
+describe('library legality gate', () => {
+  const currentYear = new Date().getFullYear();
+
+  it('every score is PD or CC0', () => {
+    for (const s of manifest.scores) {
+      expect(['PD', 'CC0'], s.file).toContain(s.license);
+    }
+  });
+
+  it('every composer is public domain (died ≤ year−70, or 0 = traditional)', () => {
+    for (const s of manifest.scores) {
+      const ok = s.died === 0 || (typeof s.died === 'number' && s.died <= currentYear - 70);
+      expect(ok, `${s.file} (died ${s.died})`).toBe(true);
+    }
+  });
+
+  it('every score carries provenance (source) + a type', () => {
+    for (const s of manifest.scores) {
+      expect(s.source, s.file).toBeTruthy();
+      expect(['solo', 'song'], s.file).toContain(s.type);
+    }
+  });
+
+  it('no orphan files — every .musicxml on disk is registered in the manifest', () => {
+    const registered = new Set(manifest.scores.map((s) => s.file));
+    const onDisk = readdirSync(LIB_DIR).filter((f) => f.endsWith('.musicxml'));
+    const orphans = onDisk.filter((f) => !registered.has(f));
+    expect(orphans, 'unregistered files — add to the generator or delete').toEqual([]);
+  });
+
+  it('no dangling entries — every manifest file exists on disk', () => {
+    const onDisk = new Set(readdirSync(LIB_DIR));
+    for (const s of manifest.scores) expect(onDisk.has(s.file), s.file).toBe(true);
+  });
 });
 
 describe('createBundledLibrary — fetchEntries', () => {
