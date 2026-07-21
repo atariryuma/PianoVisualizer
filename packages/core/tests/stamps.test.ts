@@ -154,6 +154,37 @@ describe('completion stamps', () => {
     );
     expect(r.newlyEarned).not.toContain('song_gold');
   });
+
+  it('awards first_full_song_clear on a ★1+ full-song run (sectionId __full)', () => {
+    const p = freshProgress();
+    p.songs.fur_elise = defaultSongProgress();
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ sectionId: '__full', stars: 1, accPct: 60 }) })
+    );
+    expect(r.newlyEarned).toContain('first_full_song_clear');
+  });
+
+  it('does NOT award first_full_song_clear on a 0★ full run or a section run', () => {
+    const p = freshProgress();
+    p.songs.fur_elise = defaultSongProgress();
+    const zero = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ sectionId: '__full', stars: 0 }) })
+    );
+    expect(zero.newlyEarned).not.toContain('first_full_song_clear');
+    const section = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ sectionId: 'A1', stars: 3, accPct: 100 }) })
+    );
+    expect(section.newlyEarned).not.toContain('first_full_song_clear');
+  });
+
+  it('does NOT award first_full_song_clear from a listen-through', () => {
+    const p = freshProgress();
+    p.songs.fur_elise = defaultSongProgress();
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ sectionId: '__full', stars: 1, isListenMode: true }) })
+    );
+    expect(r.newlyEarned).not.toContain('first_full_song_clear');
+  });
 });
 
 describe('performance stamps', () => {

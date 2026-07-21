@@ -505,10 +505,10 @@
     <div id="osmdContainer"></div>
     <!-- Section-start banner that flies in at the start of each section -->
     <div id="sectionBanner"></div>
-    <!-- Goal-gradient hint line — paints "⭐ あと1星で『曲名』が金の楽譜!" beneath
-         the banner when the active song is one star away from a higher seal.
-         Empty most of the time; written by journal-modal.paintSectionBannerHint
-         on song select. Static text — does not animate per section. -->
+    <!-- Goal-gradient hint chip — "⭐ あと1星で金!" etc. Text is written by
+         journal-modal.paintSectionBannerHint (song select / attempt done);
+         visibility is a 2.6s flash triggered by showSectionBanner so it rides
+         the section banner and then fades out with it. Empty otherwise. -->
     <div id="sectionBannerHint"></div>
 
     <div id="sectionResult" role="dialog" aria-modal="true" aria-labelledby="resTitle">

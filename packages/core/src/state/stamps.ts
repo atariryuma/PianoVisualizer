@@ -4,6 +4,7 @@
 // persistence + toast emission.
 
 import type { PracticeProgress } from './practice-progress';
+import { FULL_SONG_SECTION_ID } from './mastery';
 import { formatDateKey } from './streak';
 
 /** Categorization for the Collection-screen filter. */
@@ -251,6 +252,22 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
     category: 'completion',
     rarity: 'epic',
     evaluate: (c) => isSongFullyThreeStar(c.progress, c.attempt.songId, c.sectionIds),
+  },
+  {
+    // 1曲チャレンジ（scored full-song run, sectionId '__full'）の初クリア。
+    // マイルストーン祝福 — perfection ではなく「通せた」こと自体を讃える。
+    id: 'first_full_song_clear',
+    nameKey: 'stampFullSongClearName',
+    descKey: 'stampFullSongClearDesc',
+    earnedKey: 'stampFullSongClearEarned',
+    tipKey: 'stampFullSongClearTip',
+    icon: '🏆',
+    category: 'completion',
+    rarity: 'epic',
+    evaluate: (c) =>
+      !c.attempt.isListenMode &&
+      c.attempt.sectionId === FULL_SONG_SECTION_ID &&
+      c.attempt.stars >= 1,
   },
   {
     id: 'tempo_100_unlocked',

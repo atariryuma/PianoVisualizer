@@ -341,10 +341,24 @@ export function fullSongAnchorSec(song: SectionNotesSong): number {
   return isFinite(t0) ? t0 : 0;
 }
 
-/** Build the full-song "全曲再生" timeline for listen mode. Tempo
- *  is hardcoded 100% (see header note). */
+/** 全曲タイムラインの speedFactor。listen は従来どおり 100% 固定
+ *  （通し試聴は「本番の演奏」体験 — 半速の全曲は間延びする）。
+ *  guided / rhythm の 1曲チャレンジはセクション練習と同じテンポ
+ *  ラダー（buildSectionNotes と同一式）で、ゆっくり通しも支援する。 */
+function fullSongSpeedFactor(practice: SectionNotesPracticeRef): number {
+  // mode 未指定（旧呼び出し）は listen 相当 = 100% 固定に倒す。
+  if (practice.mode === 'rhythm' || practice.mode === 'guided') {
+    return 100 / (practice.tempoPct || 100);
+  }
+  return 1;
+}
+
+/** Build the full-song timeline. Listen mode keeps the fixed-100%
+ *  "performance" playback; guided / rhythm (1曲チャレンジ) scale by the
+ *  practice tempo and apply the same mic-mode chord relaxation as
+ *  buildSectionNotes so a scored full-song run stays fair on mic. */
 export function buildFullSongNotes(deps: SectionNotesDeps): OsmdLikeNote[] {
-  const speedFactor = 1;
+  const speedFactor = fullSongSpeedFactor(deps.practice);
   const handFilter = deps.practice.handFilter;
   const out: OsmdLikeNote[] = [];
   const songNotes = deps.song.notes ?? [];
@@ -374,7 +388,11 @@ export function buildFullSongNotes(deps: SectionNotesDeps): OsmdLikeNote[] {
   out.sort((a, b) => (a.timeMs ?? 0) - (b.timeMs ?? 0));
   // Same cluster step as buildSectionNotes — collapses the dense
   // trill bursts that fullSong listen would otherwise stack.
-  return clusterAdjacentNotes(out);
+  const clustered = clusterAdjacentNotes(out);
+  if (deps.micMode && deps.practice.mode !== 'listen') {
+    return relaxChordsForMic(clustered);
+  }
+  return clustered;
 }
 
 /** おともパート（Voice 等）の再生タイムラインを作る。
@@ -396,11 +414,12 @@ export function buildBackingNotes(
   const out: BackingSchedulerNote[] = [];
   if (sectionIdx === null) {
     const t0 = fullSongAnchorSec(deps.song);
+    const speedFactor = fullSongSpeedFactor(deps.practice);
     for (const n of backing) {
       out.push({
         midi: n.midi,
-        timeMs: (n.timeSec - t0) * 1000 + deps.countInMs,
-        durMs: n.durSec * 1000,
+        timeMs: (n.timeSec - t0) * 1000 * speedFactor + deps.countInMs,
+        durMs: n.durSec * 1000 * speedFactor,
       });
     }
   } else {
@@ -462,7 +481,9 @@ export function buildMetronomeEvents(
     anchorSec = fullSongAnchorSec(deps.song);
     const last = grid[grid.length - 1];
     endSec = last.startSec + last.durSec;
-    speedFactor = 1; // 全曲再生は 100% 固定（buildFullSongNotes と同じ）
+    // listen は 100% 固定、guided/rhythm の 1曲チャレンジはテンポ scale
+    // （buildFullSongNotes / buildBackingNotes と同一関数で常に一致）。
+    speedFactor = fullSongSpeedFactor(deps.practice);
   } else {
     const sec = deps.song.sections?.[sectionIdx];
     if (!sec) return [];

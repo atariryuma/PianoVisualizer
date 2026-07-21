@@ -64,6 +64,13 @@ function makeFixture(
         document.body.appendChild(el);
         return el;
       })();
+  const sectionBannerHintEl = over.noBanner
+    ? null
+    : (() => {
+        const el = document.createElement('div');
+        document.body.appendChild(el);
+        return el;
+      })();
 
   const t = vi.fn((k: string) => 'T:' + k);
 
@@ -80,6 +87,7 @@ function makeFixture(
     setLaneLookaheadMs,
     getPracticeLane: () => practiceLane,
     sectionBannerEl,
+    sectionBannerHintEl,
     t,
   });
 
@@ -94,6 +102,7 @@ function makeFixture(
     setLaneLookaheadMs,
     laneSetTimings,
     sectionBannerEl,
+    sectionBannerHintEl,
     t,
     getCountIn: () => countIn,
     getLaneLookahead: () => laneLookahead,
@@ -365,5 +374,29 @@ describe('createPracticeTimings — showSectionBanner', () => {
   it('no-ops when sectionBannerEl is null', () => {
     const fx = makeFixture({ noBanner: true });
     expect(() => fx.pt.showSectionBanner({ nameKey: 'feA1' })).not.toThrow();
+  });
+
+  // Goal-gradient hint chip: journal-modal writes the TEXT; the banner
+  // flashes it (2.6s CSS arc) so it can't stay parked mid-screen (the
+  // "stuck あと○星で銀 chip" bug).
+  it('flashes the hint chip alongside the banner when it has text', () => {
+    const fx = makeFixture();
+    fx.sectionBannerHintEl!.textContent = '⭐ T:sectionBannerHintFmt';
+    fx.pt.showSectionBanner({ nameKey: 'feA1' });
+    expect(fx.sectionBannerHintEl!.classList.contains('show')).toBe(true);
+  });
+
+  it('does NOT flash the hint chip when its text is empty', () => {
+    const fx = makeFixture();
+    fx.pt.showSectionBanner({ nameKey: 'feA1' });
+    expect(fx.sectionBannerHintEl!.classList.contains('show')).toBe(false);
+  });
+
+  it('restarts the hint animation via remove → add on back-to-back sections', () => {
+    const fx = makeFixture();
+    fx.sectionBannerHintEl!.textContent = '⭐';
+    fx.sectionBannerHintEl!.classList.add('show'); // stale from a prior flash
+    fx.pt.showSectionBanner({ nameKey: 'feA1' });
+    expect(fx.sectionBannerHintEl!.classList.contains('show')).toBe(true);
   });
 });

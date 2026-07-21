@@ -163,6 +163,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     },
     getPracticeLane: () => practiceLaneRef.current,
     sectionBannerEl: dom.sectionBanner,
+    sectionBannerHintEl: dom.sectionBannerHint,
     t,
   } as any);
 
@@ -330,7 +331,9 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     // ループへフォールバック（回帰ゼロ）。
     audioScheduler: {
       scheduleSectionPlayback: (instruments: any, opts: any) => {
-        const isFullSong = practice.mode === 'listen' && !!practice.fullSongMode;
+        // 全曲ターゲット（listen 通し + guided/rhythm の 1曲チャレンジ）は
+        // メトロノーム列も全曲グリッドから合成する。
+        const isFullSong = !!practice.fullSongMode;
         const metronomeEvents = SectionNotes.buildMetronomeEvents(
           isFullSong ? null : practice.sectionIdx,
           _sectionNotesArgs()

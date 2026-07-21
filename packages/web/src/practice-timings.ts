@@ -112,6 +112,10 @@ export interface PracticeTimingsDeps {
   /** Section-banner DOM target. Optional null guard mirrors the
    *  legacy `if (!DOM.sectionBanner) return` path. */
   sectionBannerEl: HTMLElement | null;
+  /** Goal-gradient hint chip below the banner (#sectionBannerHint).
+   *  journal-modal writes its text; showSectionBanner flashes it with the
+   *  banner (same 2.6s arc). Optional — older shells / tests omit it. */
+  sectionBannerHintEl?: HTMLElement | null;
   /** i18n. */
   t: (key: string) => string;
 }
@@ -142,7 +146,9 @@ export function createPracticeTimings(deps: PracticeTimingsDeps): PracticeTiming
     const p = deps.getPractice();
     const song = deps.getCurrentSong();
     const grid = song?.measureGrid;
-    const isFullSong = p.mode === 'listen' && !!p.fullSongMode;
+    // 全曲ターゲット（listen の通し再生 + guided/rhythm の 1曲チャレンジ）
+    // はカウントインのアンカーを曲頭（最初のアタック）に置く。
+    const isFullSong = !!p.fullSongMode;
 
     // カウントインのアンカー（この時刻の音が countInMs に鳴る）と拍子。
     // グリッドがあれば「アンカー小節（弱起なら次の完全小節）の拍子」、
@@ -198,6 +204,15 @@ export function createPracticeTimings(deps: PracticeTimingsDeps): PracticeTiming
     deps.sectionBannerEl.classList.remove('show');
     void deps.sectionBannerEl.offsetWidth; // restart animation
     deps.sectionBannerEl.classList.add('show');
+    // Flash the goal-gradient hint chip in the same 2.6s arc — but only when
+    // journal-modal painted text into it (near-completion songs). Restart the
+    // animation the same way so back-to-back sections re-flash cleanly.
+    const hint = deps.sectionBannerHintEl;
+    if (hint && hint.textContent !== '') {
+      hint.classList.remove('show');
+      void hint.offsetWidth;
+      hint.classList.add('show');
+    }
   }
 
   return { effectiveTempoPct, practiceBeatMs, recomputePracticeTimings, showSectionBanner };

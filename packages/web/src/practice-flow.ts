@@ -293,8 +293,9 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
     const btn = deps.dom.resRetrySlow as HTMLElement & { dataset: DOMStringMap };
     const strategy = btn.dataset.strategy;
     if (strategy === 'listen') {
+      // fullSongMode はそのまま — セクション retry では元々 false、1曲
+      // チャレンジの 0★ retry では「全曲をきいてから」が正しい支援になる。
       deps.practice.mode = 'listen';
-      deps.practice.fullSongMode = false;
     } else if (strategy === 'oneHand') {
       deps.practice.handFilter = 'R';
     } else if (strategy === 'slowTempo') {

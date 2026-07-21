@@ -258,6 +258,66 @@ export function pickNearCompletion(
 }
 
 // =====================================================================
+// Full-song challenge（1曲チャレンジ — the "play the whole song" finale）
+// =====================================================================
+
+/** Reserved pseudo-section ID for the scored full-song run. Its best
+ *  stars / bestPct / history live in `SongProgress.sections['__full']`
+ *  alongside the real sections, but it is NEVER part of a song's
+ *  `sectionIds`, so seals, mastery percent, and whole-song stamp
+ *  predicates (which walk real section IDs) are unaffected. */
+export const FULL_SONG_SECTION_ID = '__full';
+
+export interface FullSongChallengeView {
+  /** Unlocked once EVERY real section has ≥1 star — a deterministic,
+   *  visible goal the kid can chase (banned-list: no RNG gates). */
+  unlocked: boolean;
+  /** Sections already at ≥1 star (the "n of m" progress copy). */
+  clearedSections: number;
+  totalSections: number;
+  /** Best star count earned on the full-song run itself (0–3). */
+  stars: number;
+  /** Best accuracy % on the full-song run. */
+  bestPct: number;
+  /** True once the full-song run has been cleared at ≥1 star. */
+  cleared: boolean;
+}
+
+/** Minimal per-section progress slice the challenge computation reads —
+ *  structural so both core `SongProgress.sections` and the web shell's
+ *  looser render slices satisfy it. */
+export type FullSongProgressSections = Readonly<
+  Record<string, { stars?: number; bestPct?: number } | undefined>
+>;
+
+/**
+ * Pure: derive the full-song-challenge state for one song. The unlock
+ * predicate mirrors the bronze "all sections cleared" moment: every real
+ * section at ≥1 star. A song with no sections yet (still loading) reads
+ * as locked with 0/0.
+ */
+export function computeFullSongChallenge(
+  sectionIds: readonly string[],
+  sections: FullSongProgressSections | undefined
+): FullSongChallengeView {
+  let cleared = 0;
+  for (const id of sectionIds) {
+    if ((sections?.[id]?.stars ?? 0) >= 1) cleared++;
+  }
+  const total = sectionIds.length;
+  const full = sections?.[FULL_SONG_SECTION_ID];
+  const stars = full?.stars ?? 0;
+  return {
+    unlocked: total > 0 && cleared === total,
+    clearedSections: cleared,
+    totalSections: total,
+    stars,
+    bestPct: full?.bestPct ?? 0,
+    cleared: stars >= 1,
+  };
+}
+
+// =====================================================================
 // Weekly growth rollup (library-wide, self-referenced, positive-only)
 // =====================================================================
 

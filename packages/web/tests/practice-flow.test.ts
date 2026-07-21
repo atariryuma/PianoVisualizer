@@ -452,13 +452,27 @@ describe('createPracticeFlow — resRetrySlow', () => {
     return deps;
   }
 
-  it('listen strategy switches mode to listen (fullSong off) and retries', async () => {
+  it('listen strategy switches mode to listen and retries', async () => {
     const deps = clickWithStrategy('listen');
     await Promise.resolve();
     expect(deps.practice.mode).toBe('listen');
-    expect(deps.practice.fullSongMode).toBe(false);
+    // fullSongMode は触らない — セクション retry では元々 false のまま、
+    // 1曲チャレンジの 0★ retry では「全曲をきいてから」が正しい支援。
+    expect(deps.practice.fullSongMode).toBeFalsy();
     expect(deps.startPracticeSection).toHaveBeenCalledWith(deps.practice.sectionIdx);
     expect(deps.dom.sectionResult.classList.contains('visible')).toBe(false);
+  });
+
+  it('listen strategy keeps the full-song target on a challenge retry', async () => {
+    const deps = makeDeps();
+    deps.practice.fullSongMode = true;
+    createPracticeFlow(deps);
+    const btn = deps.dom.resRetrySlow as HTMLElement;
+    btn.dataset.strategy = 'listen';
+    btn.click();
+    await Promise.resolve();
+    expect(deps.practice.mode).toBe('listen');
+    expect(deps.practice.fullSongMode).toBe(true);
   });
 
   it('oneHand strategy sets handFilter=R and retries', async () => {

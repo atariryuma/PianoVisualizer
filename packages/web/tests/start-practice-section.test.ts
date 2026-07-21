@@ -435,6 +435,33 @@ describe('startPracticeSection — full-song listen', () => {
   });
 });
 
+// ─── full-song challenge（rhythm + fullSongMode = scored run）───────
+
+describe('startPracticeSection — full-song challenge (rhythm)', () => {
+  it('uses buildFullSongNotes + forces sectionIdx=0 + song-title HUD', async () => {
+    const fx = makeFixture({ practice: { mode: 'rhythm', fullSongMode: true } });
+    await fx.start(1);
+    expect(fx.spies.buildFullSongNotes).toHaveBeenCalled();
+    expect(fx.spies.buildSectionNotes).not.toHaveBeenCalled();
+    expect(fx.practice.sectionIdx).toBe(0);
+    expect(fx.dom.ptbSection.textContent).toBe('T(title.fur_elise)');
+  });
+
+  it('keeps the practice tempo in the HUD (ladder applies to the challenge)', async () => {
+    const fx = makeFixture({
+      practice: { mode: 'rhythm', fullSongMode: true, tempoPct: 60 },
+    });
+    await fx.start(0);
+    expect(fx.dom.ptbTempo.textContent).toBe('🥁 60%');
+  });
+
+  it('builds the backing timeline for the whole song (null sectionIdx)', async () => {
+    const fx = makeFixture({ practice: { mode: 'rhythm', fullSongMode: true } });
+    await fx.start(1);
+    expect(fx.spies.buildBackingNotes).toHaveBeenCalledWith(null);
+  });
+});
+
 // ─── cursor + scroll ───────────────────────────────────────────────
 
 describe('startPracticeSection — cursor + scroll', () => {

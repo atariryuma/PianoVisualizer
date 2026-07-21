@@ -20,6 +20,7 @@
 //     attempts' accuracy, with star halos for ≥3-star clears, current
 //     value label, and a colored trend delta vs the previous run.
 
+import { FULL_SONG_SECTION_ID } from '@piano/core';
 import type { PracticeMode, SectionFocus } from '@piano/core';
 
 /** Practice slice the module reads + writes. */
@@ -456,9 +457,10 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       return;
     }
 
-    // Past this point we're in rhythm — fullSong is never set there, so
-    // the line-205 early-return guarantees secLookup is defined.
-    const sec = secLookup as ResultCardSection;
+    // Past this point we're in rhythm. `fullSong` here means the scored
+    // 1曲チャレンジ (secId === FULL_SONG_SECTION_ID) — there is no real
+    // section to look up, so the subtitle falls back to the song title.
+    const sec = secLookup as ResultCardSection | undefined;
     deps.dom.resStars.style.display = '';
     document.querySelectorAll('#sectionResult .result-stat').forEach((el) => {
       (el as HTMLElement).style.display = '';
@@ -466,10 +468,22 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     if (deps.dom.resTryPlay) deps.dom.resTryPlay.style.display = 'none';
     const tier = deps.resolveResultTier(r.stars);
     const escalatedZeroStar = r.stars === 0 && (r.zeroStarStreak ?? 0) >= 2;
-    const titleKey = escalatedZeroStar ? 'tier0RetryTitle' : tier.titleKey;
-    const msgKey = escalatedZeroStar ? 'tier0RetryMsg' : tier.msgKey;
+    let titleKey = escalatedZeroStar ? 'tier0RetryTitle' : tier.titleKey;
+    let msgKey = escalatedZeroStar ? 'tier0RetryMsg' : tier.msgKey;
+    // Full-song clear (★1+) gets the milestone framing — the practice path's
+    // endpoint is "played the whole song", not another section tier. 0★ keeps
+    // the gentle tier0 / tough-section copy (no shame — banned-list).
+    if (r.fullSong && r.stars >= 1) {
+      titleKey = 'songClearTitle';
+      msgKey = 'songClearMsg';
+    }
     deps.dom.resTitle.textContent = deps.t(titleKey);
-    deps.dom.resSectionName.textContent = deps.t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
+    deps.dom.resSectionName.textContent = r.fullSong
+      ? currentSong
+        ? '👑 ' + deps.t(currentSong.titleKey)
+        : ''
+      : deps.t((sec as ResultCardSection).nameKey) +
+        ((sec as ResultCardSection).isBoss ? ' 👑' : '');
     deps.dom.resMsg.textContent = deps.t(msgKey);
     let unlockedMsg = '';
     if (r.unlockedTempo) {
@@ -588,9 +602,13 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     }
 
     if (deps.practice.mode === 'guided') {
+      // Guided full-song run（1曲チャレンジのガイド練習） — subtitle は曲名、
+      // Next は非表示（全曲を弾き終えた後に「次のパート」は無い）。
+      const isFullSongGuided = !!deps.practice.fullSongMode;
       deps.practice._lastResult = {
         mode: 'guided',
-        secId: sec.id,
+        secId: isFullSongGuided ? FULL_SONG_SECTION_ID : sec.id,
+        fullSong: isFullSongGuided,
         stars: 0,
         unlockedTempo: null,
         unlockedSecKey: null,
@@ -602,6 +620,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       const realSectionIds = deps.getCurrentSong()?.sections.map((s) => s.id) ?? deps.sectionIds;
       const nextIdx = realSectionIds.indexOf(sec.id) + 1;
       const hasNext =
+        !isFullSongGuided &&
         nextIdx > 0 &&
         nextIdx < realSectionIds.length &&
         !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
@@ -628,16 +647,22 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         : null;
     const stars = deps.computeStars(accPct, timingPct, durPct);
 
+    // Scored full-song run（1曲チャレンジ）: stars/bestPct/history persist
+    // under the reserved FULL_SONG_SECTION_ID pseudo-section, so seals and
+    // whole-song stamp predicates (which walk real section IDs) stay intact.
+    const isFullSongRun = !!deps.practice.fullSongMode;
+    const progressKey = isFullSongRun ? FULL_SONG_SECTION_ID : sec.id;
+
     // Save to progress (per-song)
     const sp = deps.songProg();
-    const prog = sp.sections[sec.id] || { stars: 0, bestPct: 0 };
+    const prog = sp.sections[progressKey] || { stars: 0, bestPct: 0 };
     // Capture pre-attempt values before the overwrites below so the
     // improvement-based stamp predicates can compare against them.
     const priorStars = prog.stars;
     const priorBestPct = prog.bestPct;
     if (stars > prog.stars) prog.stars = stars;
     if (accPct > prog.bestPct) prog.bestPct = accPct;
-    sp.sections[sec.id] = prog;
+    sp.sections[progressKey] = prog;
 
     deps.recordPracticeDay();
 
@@ -651,10 +676,13 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // sectionIds`). A 1-section song otherwise unlocks a phantom next section
     // ('B'), surfacing a bogus "Next →" button after its only section.
     const realSectionIds = currentSong.sections.map((s) => s.id);
+    // 1曲チャレンジは progressKey='__full' で渡す — realSectionIds に無い ID
+    // なので「次のセクション解錠」は発火せず、★2+ のテンポ解錠だけが効く
+    // （通しでも速さの階段は登れる）。
     const unlocks = deps.computeUnlocks({
       stars,
       tempoPct: deps.practice.tempoPct,
-      sectionId: sec.id,
+      sectionId: progressKey,
       sectionIds: realSectionIds,
       sectionNameKeys,
       unlockedTempos: sp.unlockedTempos,
@@ -667,13 +695,13 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // Verify the lookup before writing — a non-standard / single-section
       // song's sec.id may be at the end (or absent), so indexOf+1 must not
       // fall back to flipping realSectionIds[0].
-      const curIdx = realSectionIds.indexOf(sec.id);
+      const curIdx = realSectionIds.indexOf(progressKey);
       const nextSec = curIdx >= 0 ? realSectionIds[curIdx + 1] : undefined;
       if (nextSec) sp.unlockedSections[nextSec] = true;
     }
 
-    if (!sp.history[sec.id]) sp.history[sec.id] = [];
-    const histArr = sp.history[sec.id];
+    if (!sp.history[progressKey]) sp.history[progressKey] = [];
+    const histArr = sp.history[progressKey];
     histArr.push({
       d: Date.now(),
       a: accPct,
@@ -690,7 +718,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     if (deps.onSectionAttemptDone) {
       deps.onSectionAttemptDone({
         songId: currentSong.id,
-        sectionId: sec.id,
+        sectionId: progressKey,
         stars,
         accPct,
         tempoPct: deps.practice.tempoPct,
@@ -735,7 +763,8 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
 
     deps.practice._lastResult = {
       mode: deps.practice.mode,
-      secId: sec.id,
+      secId: progressKey,
+      fullSong: isFullSongRun,
       stars,
       unlockedTempo,
       unlockedSecKey,
@@ -767,7 +796,8 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // F1: 解錠書き込み側（computeUnlocks）は realSectionIds を使うのに、この
     // Next 可視判定だけ静的 deps.sectionIds(['A1','B','A2'])に取り残されていた。
     // 実 section id（上で算出済み realSectionIds）に統一（将来 id 変更で崩れる痕跡）。
-    const nextIdx = realSectionIds.indexOf(sec.id) + 1;
+    // 1曲チャレンジ（progressKey='__full'）は indexOf=-1 → nextIdx=0 → 非表示。
+    const nextIdx = realSectionIds.indexOf(progressKey) + 1;
     const hasNext =
       nextIdx > 0 &&
       nextIdx < realSectionIds.length &&
@@ -780,8 +810,14 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.dom.resStretch.dataset.songId = stretchId ?? '';
     }
 
-    // Big celebration
-    if (stars >= 3) {
+    // Big celebration. A full-song clear (★1+) is the practice path's
+    // summit — always gets the golden-burst treatment regardless of tier
+    // (milestone celebration, not performance-contingent gating).
+    if (isFullSongRun && stars >= 1) {
+      deps.effectGoldenBurst();
+      deps.effectFlowerBurst();
+      deps.effectStarShower(10);
+    } else if (stars >= 3) {
       deps.effectGoldenBurst();
       deps.effectStarShower(8);
     } else if (stars >= 2) {

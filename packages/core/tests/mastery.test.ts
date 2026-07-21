@@ -6,6 +6,8 @@ import {
   endowedProgressFraction,
   pickNearCompletion,
   weeklyLibraryGrowth,
+  computeFullSongChallenge,
+  FULL_SONG_SECTION_ID,
   type MasterySongDef,
 } from '../src/state/mastery';
 import {
@@ -244,6 +246,57 @@ describe('pickNearCompletion', () => {
       ) as PracticeProgress['songs'],
     };
     expect(pickNearCompletion(songs, progress, 2).length).toBe(2);
+  });
+});
+
+describe('computeFullSongChallenge', () => {
+  const IDS = ['A1', 'B', 'A2'] as const;
+
+  it('is locked with 0/0 for a song with no sections (still loading)', () => {
+    const v = computeFullSongChallenge([], undefined);
+    expect(v.unlocked).toBe(false);
+    expect(v.totalSections).toBe(0);
+    expect(v.cleared).toBe(false);
+  });
+
+  it('is locked while any section is below ★1, with cleared/total progress', () => {
+    const sp = spWith({ stars: { A1: 2, B: 1 } }); // A2 untouched
+    const v = computeFullSongChallenge(IDS, sp.sections);
+    expect(v.unlocked).toBe(false);
+    expect(v.clearedSections).toBe(2);
+    expect(v.totalSections).toBe(3);
+  });
+
+  it('unlocks once every section has ★1+', () => {
+    const sp = spWith({ stars: { A1: 1, B: 1, A2: 3 } });
+    const v = computeFullSongChallenge(IDS, sp.sections);
+    expect(v.unlocked).toBe(true);
+    expect(v.cleared).toBe(false); // no full run yet
+    expect(v.stars).toBe(0);
+  });
+
+  it('a 1-section song unlocks after its only section', () => {
+    const v = computeFullSongChallenge(['S1'], { S1: { stars: 1, bestPct: 55 } });
+    expect(v.unlocked).toBe(true);
+  });
+
+  it('reads the full-run stars/bestPct from the __full pseudo-section', () => {
+    const sp = spWith({ stars: { A1: 1, B: 1, A2: 1 } });
+    sp.sections[FULL_SONG_SECTION_ID] = { stars: 2, bestPct: 84 };
+    const v = computeFullSongChallenge(IDS, sp.sections);
+    expect(v.cleared).toBe(true);
+    expect(v.stars).toBe(2);
+    expect(v.bestPct).toBe(84);
+  });
+
+  it('__full never affects seals/mastery (walks real section IDs only)', () => {
+    const sp = spWith({ stars: { A1: 1, B: 0, A2: 0 } });
+    sp.sections[FULL_SONG_SECTION_ID] = { stars: 3, bestPct: 100 };
+    const sm = computeSongMastery(FUR_ELISE, sp);
+    expect(sm.starsEarned).toBe(1); // __full の ★3 は数えない
+    expect(sm.seal).toBe('bronze');
+    // …and the challenge itself stays locked (B/A2 not cleared).
+    expect(computeFullSongChallenge(IDS, sp.sections).unlocked).toBe(false);
   });
 });
 

@@ -317,7 +317,10 @@ export function createStartPracticeSection(
     const sec = song.sections?.[sectionIdx];
     if (!sec) return;
 
-    const isFullSong = deps.practice.mode === 'listen' && !!deps.practice.fullSongMode;
+    // 全曲ターゲット: listen の通し再生 + guided/rhythm の 1曲チャレンジ。
+    // どのモードでも「タイムライン = 曲全体、バナー/HUD = 曲名」で共通。
+    const isFullSong = !!deps.practice.fullSongMode;
+    const isFullSongListen = isFullSong && deps.practice.mode === 'listen';
 
     // ── reset per-section state ──────────────────────────────────
     // 前セッションの明示ポーズラッチを必ず解除（deps コメント参照）。
@@ -416,10 +419,11 @@ export function createStartPracticeSection(
     deps.dom.ptbSection.textContent = isFullSong
       ? deps.t(song.titleKey)
       : deps.t(sec.nameKey) + (sec.isBoss ? ' 👑' : '');
-    // Full-song listen plays at written tempo regardless of
-    // practice.tempoPct (see buildFullSongNotes). Reflect that in
+    // Full-song LISTEN plays at written tempo regardless of
+    // practice.tempoPct (see buildFullSongNotes); the guided/rhythm
+    // 1曲チャレンジ keeps the practice tempo ladder. Reflect that in
     // the HUD.
-    deps.dom.ptbTempo.textContent = '🥁 ' + (isFullSong ? 100 : deps.practice.tempoPct) + '%';
+    deps.dom.ptbTempo.textContent = '🥁 ' + (isFullSongListen ? 100 : deps.practice.tempoPct) + '%';
     // Exclude _filtered notes from the progress count (auto-skipped).
     deps.practice._sectionTargetCount = deps.practice.sectionNotes.reduce(
       (c, n) => c + (n._filtered ? 0 : 1),

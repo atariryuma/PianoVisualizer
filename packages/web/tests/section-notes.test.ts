@@ -210,14 +210,59 @@ describe('buildFullSongNotes', () => {
     expect(out[1].timeMs).toBe(4000);
   });
 
-  it('hardcodes 100% tempo regardless of practice.tempoPct', () => {
+  it('listen (and legacy mode-less callers) hardcode 100% tempo', () => {
     const deps = makeDeps({
       song: { notes: [note({ timeSec: 1 }), note({ timeSec: 2 })] },
-      practice: { tempoPct: 50, handFilter: null }, // ignored
+      practice: { tempoPct: 50, handFilter: null, mode: 'listen' }, // tempo ignored
+      countInMs: 0,
+    });
+    expect(buildFullSongNotes(deps)[1].timeMs).toBe(1000); // not 2000 — 100% speed
+    const legacy = makeDeps({
+      song: { notes: [note({ timeSec: 1 }), note({ timeSec: 2 })] },
+      practice: { tempoPct: 50, handFilter: null }, // no mode — old callers
+      countInMs: 0,
+    });
+    expect(buildFullSongNotes(legacy)[1].timeMs).toBe(1000);
+  });
+
+  it('rhythm（1曲チャレンジ）scales by the practice tempo like a section', () => {
+    const deps = makeDeps({
+      song: { notes: [note({ timeSec: 1 }), note({ timeSec: 2 })] },
+      practice: { tempoPct: 50, handFilter: null, mode: 'rhythm' },
       countInMs: 0,
     });
     const out = buildFullSongNotes(deps);
-    expect(out[1].timeMs).toBe(1000); // not 2000 — 100% speed
+    // (2-1)s × (100/50) = 2000ms
+    expect(out[1].timeMs).toBe(2000);
+    expect(out[1].durMs).toBe(1000); // 0.5s × 2
+  });
+
+  it('rhythm + micMode relaxes chords to the top note (same as sections)', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [note({ midi: 60, timeSec: 1 }), note({ midi: 64, timeSec: 1 })],
+      },
+      practice: { tempoPct: 100, handFilter: null, mode: 'rhythm' },
+      micMode: true,
+    });
+    const out = buildFullSongNotes(deps);
+    const low = out.find((n) => n.midi === 60)!;
+    const top = out.find((n) => n.midi === 64)!;
+    expect(low._filtered).toBe(true);
+    expect(low.hit).toBe(true);
+    expect(top._filtered).toBeFalsy();
+  });
+
+  it('listen + micMode does NOT relax chords (no scoring)', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [note({ midi: 60, timeSec: 1 }), note({ midi: 64, timeSec: 1 })],
+      },
+      practice: { tempoPct: 100, handFilter: null, mode: 'listen' },
+      micMode: true,
+    });
+    const out = buildFullSongNotes(deps);
+    expect(out.every((n) => !n._filtered)).toBe(true);
   });
 
   it('honors hand filter (same shape as section)', () => {
@@ -439,7 +484,7 @@ describe('buildBackingNotes', () => {
     expect(out[0].durMs).toBe(500 * 2);
   });
 
-  it('全曲 (null) はテンポ 100% 固定・共有アンカー基準', () => {
+  it('全曲 (null) はテンポ 100% 固定・共有アンカー基準（listen / 旧呼び出し）', () => {
     const deps = makeDeps({
       song: {
         notes: [note({ timeSec: 2.0 })],
@@ -453,6 +498,21 @@ describe('buildBackingNotes', () => {
     expect(out[0].timeMs).toBe(0 + 4000);
     expect(out[1].timeMs).toBe(4000 * 1 + 4000); // (5.0-1.0)*1000 + countIn
     expect(out[0].durMs).toBe(500); // 100% 固定
+  });
+
+  it('全曲 (null) + rhythm（1曲チャレンジ）は練習ノーツと同じテンポ scale', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [note({ timeSec: 2.0 })],
+        backingNotes: backing,
+        sections: [sec(0, 20)],
+      },
+      practice: { tempoPct: 50, handFilter: null, mode: 'rhythm' },
+    });
+    const out = buildBackingNotes(null, deps);
+    // (5.0-1.0)s × (100/50) = 8000ms + countIn — 練習ノーツと同じ伸長。
+    expect(out[1].timeMs).toBe(8000 + 4000);
+    expect(out[0].durMs).toBe(1000); // 0.5s × 2
   });
 });
 

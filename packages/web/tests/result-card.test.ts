@@ -614,6 +614,93 @@ describe('createResultCard — completePracticeSection', () => {
   });
 });
 
+// ─── scored full-song run（1曲チャレンジ）──────────────────────────────
+
+describe('createResultCard — full-song challenge completion', () => {
+  function challengeDeps(over: Partial<ResultCardDeps> = {}) {
+    const deps = makeDeps(over);
+    deps.practice.mode = 'rhythm';
+    deps.practice.fullSongMode = true;
+    return deps;
+  }
+
+  it('persists stars/bestPct/history under __full, not the section id', () => {
+    const prog = makeProg();
+    const deps = challengeDeps({ songProg: () => prog, computeStars: vi.fn(() => 2) });
+    deps.practice.hits = 8;
+    deps.practice._sectionTargetCount = 10;
+    createResultCard(deps).completePracticeSection();
+    expect(prog.sections.__full?.stars).toBe(2);
+    expect(prog.sections.__full?.bestPct).toBe(80);
+    expect(Array.isArray(prog.history.__full)).toBe(true);
+    expect(prog.history.__full.length).toBe(1);
+    // The real section (a1 = sections[sectionIdx]) is untouched.
+    expect(prog.sections.a1).toEqual({ stars: 1, bestPct: 50 });
+  });
+
+  it('passes __full to computeUnlocks (tempo ladder works, no section unlock)', () => {
+    const deps = challengeDeps({
+      computeUnlocks: vi.fn(() => ({ unlockedTempo: 90, unlockedSecKey: null, streakDays: null })),
+    });
+    createResultCard(deps).completePracticeSection();
+    expect(deps.computeUnlocks).toHaveBeenCalledWith(
+      expect.objectContaining({ sectionId: '__full' })
+    );
+  });
+
+  it('★1+ shows the Song Clear title + song title subtitle and hides Next', () => {
+    const deps = challengeDeps({ computeStars: vi.fn(() => 1) });
+    createResultCard(deps).completePracticeSection();
+    expect(deps.dom.resTitle.textContent).toBe('songClearTitle');
+    expect(deps.dom.resMsg.textContent).toBe('songClearMsg');
+    expect(deps.dom.resSectionName.textContent).toContain('furElise');
+    expect((deps.dom.resNext as HTMLElement).style.display).toBe('none');
+  });
+
+  it('0★ keeps the gentle tier copy (no Song Clear, no shame)', () => {
+    const deps = challengeDeps({
+      computeStars: vi.fn(() => 0),
+      resolveResultTier: vi.fn(() => ({ titleKey: 'tier0Title', msgKey: 'tier0Msg' })),
+    });
+    createResultCard(deps).completePracticeSection();
+    expect(deps.dom.resTitle.textContent).toBe('tier0Title');
+  });
+
+  it('★1 clear fires the full celebration (golden + flower + 10 stars)', () => {
+    const deps = challengeDeps({ computeStars: vi.fn(() => 1) });
+    createResultCard(deps).completePracticeSection();
+    expect(deps.effectGoldenBurst).toHaveBeenCalled();
+    expect(deps.effectFlowerBurst).toHaveBeenCalled();
+    expect(deps.effectStarShower).toHaveBeenCalledWith(10);
+  });
+
+  it('reports the attempt to onSectionAttemptDone with sectionId __full', () => {
+    const onDone = vi.fn(() => [] as string[]);
+    const deps = challengeDeps({ onSectionAttemptDone: onDone });
+    createResultCard(deps).completePracticeSection();
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ sectionId: '__full' }));
+  });
+
+  it('snapshot carries fullSong:true + secId __full for langchange re-render', () => {
+    const deps = challengeDeps();
+    createResultCard(deps).completePracticeSection();
+    expect(deps.practice._lastResult?.fullSong).toBe(true);
+    expect(deps.practice._lastResult?.secId).toBe('__full');
+    // fullSongMode is NOT cleared — Retry re-runs the challenge.
+    expect(deps.practice.fullSongMode).toBe(true);
+  });
+
+  it('guided full-song run stamps fullSong + hides Next', () => {
+    const deps = makeDeps();
+    deps.practice.mode = 'guided';
+    deps.practice.fullSongMode = true;
+    createResultCard(deps).completePracticeSection();
+    expect(deps.practice._lastResult?.fullSong).toBe(true);
+    expect(deps.practice._lastResult?.secId).toBe('__full');
+    expect((deps.dom.resNext as HTMLElement).style.display).toBe('none');
+  });
+});
+
 // ─── drawHistoryChart ────────────────────────────────────────────────
 
 describe('drawHistoryChart', () => {

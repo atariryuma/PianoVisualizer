@@ -323,6 +323,24 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
         diff.textContent = DIFFICULTY_ICONS[song.difficulty];
         title.appendChild(diff);
       }
+      // 👑 = the full-song challenge was cleared (played start to finish,
+      // ★1+). Separate axis from the seal ring: seals aggregate section
+      // stars, the crown marks the actual play-through.
+      const fullClear = PianoCore.computeFullSongChallenge(
+        def.sectionIds,
+        progress.songs?.[song.id]?.sections
+      );
+      if (fullClear.cleared) {
+        const crown = document.createElement('span');
+        crown.className = 'jr-book-fullclear';
+        crown.title =
+          deps.t('fullSongChallengeName') +
+          ' · ' +
+          '★'.repeat(fullClear.stars) +
+          '☆'.repeat(3 - fullClear.stars);
+        crown.textContent = '👑';
+        title.appendChild(crown);
+      }
       body.appendChild(title);
 
       if (song.composer) {
@@ -748,13 +766,17 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     const near = PianoCore.pickNearCompletion([songRefToDef(songRef)], deps.getProgress(), 1);
     if (near.length === 0 || near[0].starsToNext <= 0) return clearSectionBannerHint();
     const entry = near[0];
+    // Text only — visibility is owned by showSectionBanner (practice-timings),
+    // which flashes the hint together with the section banner's 2.6s arc.
+    // Painting `.show` here left the chip permanently mid-screen (it used to
+    // stay from song-select until the next clear — the "stuck chip" bug).
     target.textContent =
       '⭐ ' +
       deps.t('sectionBannerHintFmt', {
         n: entry.starsToNext,
         seal: deps.t(sealGlyph(entry.nextSeal).labelKey),
       });
-    target.classList.add('show');
+    target.classList.remove('show');
   }
 
   function applyAttempt(input: JournalAttemptInput): readonly string[] {

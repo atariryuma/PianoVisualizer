@@ -222,6 +222,35 @@ export const T_STRINGS: TranslationTable = {
   // Listen-mode "play the whole song through" toggle (only shown when mode === 'listen')
   playFullSong: { en: '🎵 Play full song', jp: '🎵 全曲再生', de: '🎵 Ganzes Stück abspielen' },
   fullSongLabel: { en: 'Full song', jp: '曲全体', de: 'Ganzes Stück' },
+  // Full-song challenge — the "play the whole song" finale row at the end of
+  // the section list (guided / rhythm). Unlocks once every part has ★1.
+  fullSongChallengeName: {
+    en: 'Full-song challenge',
+    jp: '1曲チャレンジ',
+    de: 'Ganzes-Stück-Challenge',
+  },
+  fullSongChallengeLockedFmt: {
+    en: 'Earn ★1 on every part to unlock ({n} to go)',
+    jp: 'ぜんぶのパートで★1をとると挑戦できるよ（あと{n}）',
+    de: 'Hol dir ★1 in jedem Teil ({n} fehlen noch)',
+  },
+  fullSongChallengeReady: {
+    en: 'Play it start to finish!',
+    jp: 'さいしょからさいごまで、通して弾いてみよう！',
+    de: 'Spiel es von Anfang bis Ende!',
+  },
+  startChallenge: {
+    en: '🏆 Start the challenge!',
+    jp: '🏆 チャレンジスタート！',
+    de: '🏆 Challenge starten!',
+  },
+  // Scored full-song result card (★1+ replaces the section-tier title).
+  songClearTitle: { en: '🏆 Song clear!', jp: '🏆 1曲クリア！', de: '🏆 Stück geschafft!' },
+  songClearMsg: {
+    en: 'You played the whole song, start to finish!',
+    jp: '1曲まるごと、さいごまで弾けたね！',
+    de: 'Du hast das ganze Stück gespielt — von Anfang bis Ende!',
+  },
   // Listen-mode result (per-section vs full song variants)
   listenedTitle: {
     en: '🎧 Nicely listened!',
@@ -976,6 +1005,21 @@ export const T_STRINGS: TranslationTable = {
     de: 'Jeder Teil mit 3 Sternen',
   },
   stampSongGoldEarned: { en: 'Gold-rank piece!', jp: '金ランクの曲!', de: 'Stück in Gold!' },
+  stampFullSongClearName: {
+    en: 'First Song Clear',
+    jp: 'はじめての1曲クリア',
+    de: 'Erstes ganzes Stück',
+  },
+  stampFullSongClearDesc: {
+    en: 'Clear the full-song challenge (★1+)',
+    jp: '1曲チャレンジを★1以上でクリア',
+    de: 'Die Ganzes-Stück-Challenge schaffen (★1+)',
+  },
+  stampFullSongClearEarned: {
+    en: 'A whole song, start to finish!',
+    jp: '1曲まるごと、さいごまで弾けた!',
+    de: 'Ein ganzes Stück, von Anfang bis Ende!',
+  },
   stampTempo100Name: { en: 'Full Tempo', jp: '本来の速さ', de: 'Volles Tempo' },
   stampTempo100Desc: {
     en: 'Unlocked 100% tempo on a song',
@@ -1167,6 +1211,11 @@ export const T_STRINGS: TranslationTable = {
     en: 'Gold takes weeks of practice. You earned this.',
     jp: '金は週単位の積み重ね。あなたが続けた結果。',
     de: 'Gold braucht Wochen Übung. Das hast du dir verdient.',
+  },
+  stampFullSongClearTip: {
+    en: 'A slow full run is still a full run — any tempo counts.',
+    jp: 'ゆっくりテンポでも、通せたらりっぱな「1曲」。',
+    de: 'Langsam durchgespielt ist trotzdem durchgespielt.',
   },
   stampTempo100Tip: {
     en: 'Full tempo means the song is in your body now.',

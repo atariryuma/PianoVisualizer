@@ -20,7 +20,7 @@
 // renderer is called whenever the controls flip a flag, plus on every
 // langchange event and after sectionIdx mutations from the result-card.
 
-import { isFixedTempoMode, planSectionScaffold } from '@piano/core';
+import { computeFullSongChallenge, isFixedTempoMode, planSectionScaffold } from '@piano/core';
 import type { Lang, PracticeMode } from '@piano/core';
 
 /** Per-song progress slice the renderer reads. */
@@ -217,6 +217,19 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
       deps.dom.sectionList.appendChild(row);
       return;
     }
+    // Full-song challenge state — computed before the rows so a stale
+    // fullSongMode (listen leftovers, or a save whose stars were reset)
+    // can't leave the panel targeting a locked challenge.
+    const isListenMode = deps.practice.mode === 'listen';
+    const challenge = computeFullSongChallenge(
+      currentSong.sections.map((s) => s.id),
+      sp.sections as Record<string, { stars?: number } | undefined>
+    );
+    if (!isListenMode && deps.practice.fullSongMode && !challenge.unlocked) {
+      deps.practice.fullSongMode = false;
+    }
+    const fullSongSelected = !isListenMode && deps.practice.fullSongMode;
+
     currentSong.sections.forEach((sec, i) => {
       const unlocked = sp.unlockedSections[sec.id];
       const row = document.createElement('div');
@@ -245,18 +258,59 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
         row.style.cursor = 'pointer';
         row.onclick = () => {
           deps.practice.sectionIdx = i;
-          // Highlight selected — clear all other outlines first.
-          Array.from(deps.dom.sectionList.children).forEach((c) => {
-            (c as HTMLElement).style.outline = '';
-          });
-          row.style.outline = '2px solid rgba(255,200,230,.6)';
+          // Picking a section deselects the full-song challenge target.
+          deps.practice.fullSongMode = false;
+          render();
         };
       }
       deps.dom.sectionList.appendChild(row);
-      if (i === deps.practice.sectionIdx && unlocked) {
+      if (i === deps.practice.sectionIdx && unlocked && !fullSongSelected) {
         row.style.outline = '2px solid rgba(255,200,230,.6)';
       }
     });
+
+    // 👑 1曲チャレンジ row — the visible endpoint of the practice path
+    // ("eventually you play the whole song"). Guided/rhythm only: in listen
+    // mode the existing "Play full song" toggle already covers listening
+    // through. Locked (with a deterministic, chaseable goal) until every
+    // section has ★1; once unlocked it behaves like a boss section, and the
+    // scored rhythm run persists under FULL_SONG_SECTION_ID.
+    if (!isListenMode) {
+      const row = document.createElement('div');
+      row.className = 'section-row challenge' + (challenge.unlocked ? '' : ' locked');
+      const desc = challenge.unlocked
+        ? deps.t('fullSongChallengeReady')
+        : deps.t('fullSongChallengeLockedFmt', {
+            n: challenge.totalSections - challenge.clearedSections,
+          });
+      row.innerHTML =
+        '<div class="section-icon">' +
+        (challenge.unlocked ? '👑' : '🔒') +
+        '</div>' +
+        '<div>' +
+        '<div style="font-weight:600;">' +
+        deps.t('fullSongChallengeName') +
+        '</div>' +
+        '<div style="font-size:.75rem; color:rgba(255,255,255,.45);">' +
+        desc +
+        '</div>' +
+        '</div>' +
+        '<div class="section-stars">' +
+        '★'.repeat(challenge.stars) +
+        '☆'.repeat(3 - challenge.stars) +
+        '</div>';
+      if (challenge.unlocked) {
+        row.style.cursor = 'pointer';
+        row.onclick = () => {
+          deps.practice.fullSongMode = true;
+          render();
+        };
+        if (fullSongSelected) {
+          row.style.outline = '2px solid rgba(255,215,0,.65)';
+        }
+      }
+      deps.dom.sectionList.appendChild(row);
+    }
 
     // Mode + hand picker active-state highlight (the controls module
     // owns the click-handler wiring; the renderer just paints state).
@@ -278,8 +332,9 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
       deps.dom.metronomeRow.style.display = showRhythmOpts ? '' : 'none';
     }
     // ループ練習 — guided/rhythm で表示（listen は一回性の視聴なので非表示）。
+    // 1曲チャレンジ選択中も非表示 — 通しは必ず結果カード（クリア判定）で終わる。
     if (deps.dom.loopRow) {
-      deps.dom.loopRow.style.display = showListenOpts ? 'none' : '';
+      deps.dom.loopRow.style.display = showListenOpts || fullSongSelected ? 'none' : '';
     }
     if (deps.dom.loopToggle) {
       deps.dom.loopToggle.classList.toggle('on', !!deps.practice.loopOn);
@@ -296,10 +351,14 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     deps.dom.sectionList.style.opacity = sectionListDimmed ? '0.4' : '';
     deps.dom.sectionList.style.pointerEvents = sectionListDimmed ? 'none' : '';
 
-    // Start button copy: Listen mode reads as "Start listening"
-    // instead of "Start practice".
+    // Start button copy: Listen mode reads as "Start listening"; the scored
+    // full-song run reads as the challenge CTA ("🏆 チャレンジスタート！").
     deps.dom.songStart.textContent = deps.t(
-      deps.practice.mode === 'listen' ? 'startListening' : 'startPractice'
+      deps.practice.mode === 'listen'
+        ? 'startListening'
+        : fullSongSelected && deps.practice.mode === 'rhythm'
+          ? 'startChallenge'
+          : 'startPractice'
     );
 
     // Feed-forward scaffold: if the selected section ended its recent runs in
@@ -315,7 +374,8 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
         : undefined;
       const entries = Array.isArray(hist) ? hist.map((h) => ({ a: h?.a ?? 0, s: h?.s ?? 0 })) : [];
       const plan = planSectionScaffold(entries);
-      const show = deps.practice.mode !== 'listen' && plan.show;
+      // 1曲チャレンジ選択中はセクション単位のナッジを出さない（対象が違う）。
+      const show = deps.practice.mode !== 'listen' && !fullSongSelected && plan.show;
       deps.dom.songPreflightHint.style.display = show ? '' : 'none';
 
       // Resolve the effective strategy: slow-tempo can't apply when already at

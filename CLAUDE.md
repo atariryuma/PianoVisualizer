@@ -410,6 +410,28 @@ temporarily limits max gain to prevent amplifying speech.
   **applies** the suggestion (sets mode / hand filter / tempo, then re-renders)
   — all three mutations are side-effect-free, matching the manual rows; autonomy
   is kept (the kid can still change it by hand).
+- **Full-song challenge（1曲チャレンジ, 2026-07-21）**: the practice path's
+  visible endpoint — "eventually you play the whole song". The song panel's
+  section list ends with a gold **👑 challenge row** (guided/rhythm modes;
+  listen keeps its existing "Play full song" toggle). Locked with a
+  deterministic, chaseable goal ("★1 on every part — {n} to go"); once every
+  real section has ★1 it unlocks, and selecting it makes
+  `practice. fullSongMode` target the whole song: **rhythm = the scored run**
+  (tempo ladder applies — a slow full run still counts; `buildFullSongNotes`
+  scales by tempo + applies mic chord-relaxation), guided = an untimed
+  play-through. A ★1+ scored run shows the **"🏆 Song clear!"** card (milestone
+  framing, big celebration, no Next button), awards the one-time
+  `first_full_song_clear` stamp, and can unlock the next tempo tier (★2+, same
+  gate as sections). Stars/bestPct/history persist under the reserved
+  pseudo-section `FULL_SONG_SECTION_ID = '__full'`
+  (`PianoCore.computeFullSongChallenge` is the pure state selector) so seals,
+  mastery %, and whole-song stamps — which walk real section IDs — are
+  unaffected; the journal shows a 👑 on cleared songs. Loop practice is disabled
+  for the run (the clear card must appear), and a 0★ run keeps the gentle tier0
+  copy + scaffold retry (the "listen first" support keeps the full-song target →
+  full-song listen). Banned-list notes: unlock predicate is deterministic and
+  always visible; the clear is attempt/milestone-based (★1, not perfection); no
+  time pressure.
 - **Weekly growth rollup (journal)**:
   `PianoCore.weeklyLibraryGrowth(sections, weekStartMs)` (pure) averages each
   section's accuracy/timing gain (latest − first) across the current ISO week

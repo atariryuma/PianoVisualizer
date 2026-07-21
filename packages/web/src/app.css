@@ -1730,6 +1730,14 @@ body[data-layout='desktop'] #modeButtons {
   background: linear-gradient(135deg, rgba(255, 100, 150, 0.08), rgba(255, 200, 80, 0.08));
 }
 
+/* 👑 1曲チャレンジ — the full-song finale row at the end of the section
+   list. Gold framing so it reads as the summit of the practice path;
+   .locked keeps the shared dim treatment (goal stays visible + chaseable). */
+.section-row.challenge {
+  border-color: rgba(255, 215, 0, 0.4);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.09), rgba(255, 150, 60, 0.07));
+}
+
 .section-icon {
   font-size: 1.2rem;
 }
@@ -2371,10 +2379,11 @@ body:has(#practiceHud.visible) #encouragement {
   }
 }
 
-/* Section-banner near-completion hint — sits below the banner, fades in
-   alongside the banner animation. Static text (does not re-animate on each
-   section change); journal-modal.paintSectionBannerHint rewrites on song
-   select. Empty by default so non-near-completion songs show nothing. */
+/* Section-banner near-completion hint — sits below the banner and flashes
+   WITH it (same 2.6s in-hold-out arc, `forwards` so it ends hidden).
+   journal-modal.paintSectionBannerHint only writes the text; the .show
+   animation is (re)triggered by showSectionBanner at each section start.
+   Empty by default so non-near-completion songs show nothing. */
 #sectionBannerHint {
   position: fixed;
   left: 50%;
@@ -2392,10 +2401,23 @@ body:has(#practiceHud.visible) #encouragement {
   opacity: 0;
   white-space: nowrap;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-  transition: opacity 350ms var(--ease-out);
 }
 #sectionBannerHint.show {
-  opacity: 0.95;
+  animation: sectionBannerHintIn 2.6s ease-out forwards;
+}
+@keyframes sectionBannerHintIn {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  78% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 #sectionBannerHint:empty {
   display: none;
@@ -2905,6 +2927,13 @@ body:has(#practiceHud.visible) #encouragement {
   margin-left: 8px;
   font-size: 0.9em;
   opacity: 0.85;
+}
+
+/* 👑 full-song challenge cleared (played start-to-finish, ★1+). */
+.jr-book-fullclear {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.9em;
 }
 
 /* Practice journal (0.14) — title strip + modal + result-card stamp rows. */

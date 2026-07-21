@@ -301,10 +301,11 @@ describe('createSongPanelRender — tempo row', () => {
 // ─── section list ────────────────────────────────────────────────────
 
 describe('createSongPanelRender — section list', () => {
-  it('renders one row per section', () => {
+  it('renders one row per section (+ the full-song challenge row)', () => {
     const deps = makeDeps();
     createSongPanelRender(deps).render();
-    expect(deps.dom.sectionList.querySelectorAll('.section-row').length).toBe(3);
+    expect(deps.dom.sectionList.querySelectorAll('.section-row:not(.challenge)').length).toBe(3);
+    expect(deps.dom.sectionList.querySelectorAll('.section-row.challenge').length).toBe(1);
   });
 
   it('shows ⏳ loading when song is not loaded yet', () => {
@@ -378,6 +379,112 @@ describe('createSongPanelRender — section list', () => {
   });
 });
 
+// ─── full-song challenge row (👑 1曲チャレンジ) ──────────────────────
+
+describe('createSongPanelRender — full-song challenge row', () => {
+  // Fixture default: a1=2★, b=1★, a2=0★ → locked with 1 section to go.
+  const allCleared = () =>
+    makeProgress({ sections: { a1: { stars: 2 }, b: { stars: 1 }, a2: { stars: 1 } } });
+
+  it('is locked with a progress hint until every section has ★1', () => {
+    const deps = makeDeps();
+    createSongPanelRender(deps).render();
+    const row = deps.dom.sectionList.querySelector('.section-row.challenge') as HTMLElement;
+    expect(row.classList.contains('locked')).toBe(true);
+    expect(row.innerHTML).toContain('🔒');
+    expect(deps.t).toHaveBeenCalledWith('fullSongChallengeLockedFmt', { n: 1 });
+  });
+
+  it('unlocks (👑) once every section has ★1', () => {
+    const deps = makeDeps({ songProg: allCleared });
+    createSongPanelRender(deps).render();
+    const row = deps.dom.sectionList.querySelector('.section-row.challenge') as HTMLElement;
+    expect(row.classList.contains('locked')).toBe(false);
+    expect(row.innerHTML).toContain('👑');
+    expect(row.innerHTML).toContain('fullSongChallengeReady');
+  });
+
+  it('clicking the unlocked row selects the challenge (fullSongMode)', () => {
+    const deps = makeDeps({ songProg: allCleared });
+    createSongPanelRender(deps).render();
+    const row = deps.dom.sectionList.querySelector('.section-row.challenge') as HTMLElement;
+    row.click();
+    expect(deps.practice.fullSongMode).toBe(true);
+  });
+
+  it('clicking a section row deselects the challenge again', () => {
+    const deps = makeDeps({ songProg: allCleared });
+    deps.practice.fullSongMode = true;
+    createSongPanelRender(deps).render();
+    const rows = deps.dom.sectionList.querySelectorAll('.section-row:not(.challenge)');
+    (rows[1] as HTMLElement).click();
+    expect(deps.practice.fullSongMode).toBe(false);
+    expect(deps.practice.sectionIdx).toBe(1);
+  });
+
+  it('shows the challenge stars from the __full pseudo-section', () => {
+    const deps = makeDeps({
+      songProg: () =>
+        makeProgress({
+          sections: {
+            a1: { stars: 2 },
+            b: { stars: 1 },
+            a2: { stars: 1 },
+            __full: { stars: 2 },
+          },
+        }),
+    });
+    createSongPanelRender(deps).render();
+    const row = deps.dom.sectionList.querySelector('.section-row.challenge') as HTMLElement;
+    expect(row.innerHTML).toContain('★★☆');
+  });
+
+  it('is hidden in listen mode (the Play-full-song toggle covers it)', () => {
+    const deps = makeDeps({ songProg: allCleared });
+    deps.practice.mode = 'listen';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.sectionList.querySelector('.section-row.challenge')).toBeNull();
+  });
+
+  it('defensively resets a stale fullSongMode when the challenge is locked', () => {
+    const deps = makeDeps(); // a2 still 0★ → locked
+    deps.practice.mode = 'rhythm';
+    deps.practice.fullSongMode = true;
+    createSongPanelRender(deps).render();
+    expect(deps.practice.fullSongMode).toBe(false);
+  });
+
+  it('rhythm + challenge selected flips the start button to the challenge CTA', () => {
+    const deps = makeDeps({ songProg: allCleared });
+    deps.practice.mode = 'rhythm';
+    deps.practice.fullSongMode = true;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songStart.textContent).toBe('startChallenge');
+  });
+
+  it('guided + challenge selected keeps the normal start copy', () => {
+    const deps = makeDeps({ songProg: allCleared });
+    deps.practice.mode = 'guided';
+    deps.practice.fullSongMode = true;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songStart.textContent).toBe('startPractice');
+  });
+
+  it('challenge selected hides the loop row and the pre-flight nudge', () => {
+    const deps = makeDeps({
+      songProg: () => ({
+        ...allCleared(),
+        history: { a1: [{ s: 0 }, { s: 0 }] },
+      }),
+    });
+    deps.practice.mode = 'rhythm';
+    deps.practice.fullSongMode = true;
+    createSongPanelRender(deps).render();
+    expect(deps.dom.loopRow!.style.display).toBe('none');
+    expect(deps.dom.songPreflightHint!.style.display).toBe('none');
+  });
+});
+
 // ─── mode / hand / toggles ──────────────────────────────────────────
 
 describe('createSongPanelRender — mode/hand/toggles', () => {
@@ -441,7 +548,10 @@ describe('createSongPanelRender — mode/hand/toggles', () => {
   });
 
   it('marks toggle.on when ghostOn / metronomeOn / fullSongMode is true', () => {
+    // listen mode: the full-song toggle is a listen-mode control, and in
+    // guided/rhythm a locked challenge would defensively reset the flag.
     const deps = makeDeps();
+    deps.practice.mode = 'listen';
     deps.practice.ghostOn = true;
     deps.practice.metronomeOn = true;
     deps.practice.fullSongMode = true;

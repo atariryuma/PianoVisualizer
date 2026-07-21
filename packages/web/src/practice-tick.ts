@@ -29,6 +29,9 @@ export interface PracticeTickPracticeRef {
   /** ループ練習トグル — ON かつ非 listen ならセクション完了時に結果カード
    *  ではなく同セクションを即再スタートする。 */
   loopOn?: boolean;
+  /** 全曲ターゲット（1曲チャレンジ / 通し再生）。ループ再開はスキップして
+   *  必ず結果カード（= クリア判定）を出す。 */
+  fullSongMode?: boolean;
   /** True while an explicit pause (settings panel / ⏸) holds the session.
    *  The tick skips entirely so the still-ticking AudioContext clock can't
    *  auto-miss the whole section behind a modal. */
@@ -323,8 +326,14 @@ export function createPracticeTick(
           return;
         }
         // ループ練習: 結果カードを出さず同セクションへ。listen は一回性の
-        // 視聴なので通常完了（トグル自体も listen では非表示）。
-        if (deps.practice.loopOn && deps.practice.mode !== 'listen' && deps.restartSectionForLoop) {
+        // 視聴なので通常完了（トグル自体も listen では非表示）。全曲ターゲット
+        // （1曲チャレンジ）もスキップ — 通しの結果カード = クリア判定は必ず出す。
+        if (
+          deps.practice.loopOn &&
+          deps.practice.mode !== 'listen' &&
+          !deps.practice.fullSongMode &&
+          deps.restartSectionForLoop
+        ) {
           deps.practice._completing = false;
           deps.restartSectionForLoop();
         } else {
