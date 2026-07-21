@@ -102,12 +102,19 @@ minimum to get a first build submitted.
 
 - `ITSAppUsesNonExemptEncryption=false` is now set in `App/App/Info.plist`
   (skips the per-upload export-compliance question; jsDelivr HTTPS is exempt).
-- **Still TODO (manual):** add an App-target `PrivacyInfo.xcprivacy` declaring
-  the required-reason API for `CapacitorPreferences` (UserDefaults, reason
-  `CA92.1`). Capacitor frameworks ship their own manifests, but the App target
-  itself has none — Apple may emit `ITMS-91053` at upload without it. Add the
-  file in Xcode (File → New → App Privacy File, target = App) so it lands in the
-  pbxproj.
+- **The manifest file is written** at
+  `packages/mobile/ios/App/App/PrivacyInfo.xcprivacy` (NSPrivacyTracking=false,
+  no collected data, UserDefaults reason `CA92.1` for the Capacitor Preferences
+  plugin). `plutil -lint` passes. Apple may emit `ITMS-91053` at upload without
+  it, so declaring UserDefaults at the app level is the safe default.
+- **Only remaining step (manual, ~30 s in Xcode):** the file exists on disk but
+  is not yet a member of the App target in the `.pbxproj`. `cap sync` won't add
+  it. In Xcode: **Project navigator → drag `PrivacyInfo.xcprivacy` into the
+  `App` group** (or right-click the `App` group → _Add Files to "App"…_ → select
+  it) → in the dialog make sure **Target = App is checked**. Build once to
+  confirm it's picked up. If Apple later flags an additional required-reason API
+  at upload, add that category to the same file (e.g. FileTimestamp `C617.1`,
+  DiskSpace `E174.1`).
 
 ### Code-review follow-ups (from the 2026-07-21 full audit)
 
