@@ -186,6 +186,66 @@
       "note": "Own transcription of a public-domain composition"
     },
     {
+      "file": "clara_schumann_der_mond_kommt.musicxml",
+      "type": "song",
+      "title": "Der Mond kommt still gegangen, Op. 13 No. 4",
+      "titleJp": "月は静かにのぼり",
+      "composer": "Clara Schumann",
+      "composerJp": "クララ・シューマン",
+      "died": 1896,
+      "level": 2,
+      "levelJp": "初中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/5126921",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
+      "file": "schumann_die_lotosblume.musicxml",
+      "type": "song",
+      "title": "Die Lotosblume, Op. 25 No. 7",
+      "titleJp": "蓮の花",
+      "composer": "Robert Schumann",
+      "composerJp": "シューマン",
+      "died": 1856,
+      "level": 2,
+      "levelJp": "初中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6909797",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
+      "file": "schubert_du_bist_die_ruh.musicxml",
+      "type": "song",
+      "title": "Du bist die Ruh, D. 776",
+      "titleJp": "君こそわが憩い",
+      "composer": "Franz Schubert",
+      "composerJp": "シューベルト",
+      "died": 1828,
+      "level": 2,
+      "levelJp": "初中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/4919879",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
+      "file": "schumann_du_bist_wie_eine_blume.musicxml",
+      "type": "song",
+      "title": "Du bist wie eine Blume, Op. 25 No. 24",
+      "titleJp": "君は花のごとく",
+      "composer": "Robert Schumann",
+      "composerJp": "シューマン",
+      "died": 1856,
+      "level": 2,
+      "levelJp": "初中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6982729",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
       "file": "greensleeves.musicxml",
       "type": "solo",
       "title": "Greensleeves",
@@ -300,6 +360,51 @@
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
+      "file": "schubert_auf_dem_wasser.musicxml",
+      "type": "song",
+      "title": "Auf dem Wasser zu singen, D. 774",
+      "titleJp": "水の上で歌う",
+      "composer": "Franz Schubert",
+      "composerJp": "シューベルト",
+      "died": 1828,
+      "level": 3,
+      "levelJp": "中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/29589203",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
+      "file": "schubert_der_lindenbaum.musicxml",
+      "type": "song",
+      "title": "Der Lindenbaum (Winterreise No. 5)",
+      "titleJp": "菩提樹（冬の旅）",
+      "composer": "Franz Schubert",
+      "composerJp": "シューベルト",
+      "died": 1828,
+      "level": 3,
+      "levelJp": "中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/5016466",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
+      "file": "schumann_der_nussbaum.musicxml",
+      "type": "song",
+      "title": "Der Nussbaum, Op. 25 No. 3",
+      "titleJp": "くるみの木",
+      "composer": "Robert Schumann",
+      "composerJp": "シューマン",
+      "died": 1856,
+      "level": 3,
+      "levelJp": "中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6891758",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
       "file": "schubert_die_forelle.musicxml",
       "type": "song",
       "title": "Die Forelle, D. 550",
@@ -343,6 +448,21 @@
       "note": "Own transcription of a public-domain composition"
     },
     {
+      "file": "schumann_mondnacht.musicxml",
+      "type": "song",
+      "title": "Mondnacht, Op. 39 No. 5",
+      "titleJp": "月の夜",
+      "composer": "Robert Schumann",
+      "composerJp": "シューマン",
+      "died": 1856,
+      "level": 3,
+      "levelJp": "中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/4987640",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
       "file": "bach_prelude_c.musicxml",
       "type": "solo",
       "title": "Prelude in C (BWV 846)",
@@ -355,6 +475,21 @@
       "license": "PD",
       "source": "generated",
       "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "hensel_schwanenlied.musicxml",
+      "type": "song",
+      "title": "Schwanenlied, Op. 1 No. 1",
+      "titleJp": "白鳥の歌",
+      "composer": "Fanny Hensel",
+      "composerJp": "ファニー・ヘンゼル",
+      "died": 1847,
+      "level": 3,
+      "levelJp": "中級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/5100543",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     },
     {
       "file": "schubert_standchen.musicxml",
@@ -441,6 +576,21 @@
       "license": "PD",
       "source": "generated",
       "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "schumann_widmung.musicxml",
+      "type": "song",
+      "title": "Widmung, Op. 25 No. 1",
+      "titleJp": "献呈",
+      "composer": "Robert Schumann",
+      "composerJp": "シューマン",
+      "died": 1856,
+      "level": 4,
+      "levelJp": "上級",
+      "license": "CC0",
+      "external": true,
+      "source": "https://musescore.com/openscore-lieder-corpus/scores/6885211",
+      "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
     }
   ]
 }

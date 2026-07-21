@@ -32,8 +32,8 @@ Two independent copyright layers, both clean:
 2. **Engraving / encoding** — the MusicXML is authored by us (Piano Visualizer),
    so there is no third-party edition or arrangement right to clear anywhere.
 
-**31 pieces**, graded beginner → advanced (the library lists them in this
-order): 24 are our own transcriptions (table below) and 7 are CC0 OpenScore
+**41 pieces**, graded beginner → advanced (the library lists them in this
+order): 24 are our own transcriptions (table below) and 17 are CC0 OpenScore
 Lieder (see the following subsection).
 
 | Level        | Pieces                                                                                                                                                                                                                        |
@@ -52,7 +52,7 @@ every generated file so a bad transcription fails the build.
 
 ### CC0 external files — OpenScore Lieder Corpus (bundled 2026-07-21)
 
-Seven real 2-staff MusicXML scores from the **OpenScore Lieder Corpus**
+Seventeen real 2-staff MusicXML scores from the **OpenScore Lieder Corpus**
 ([github.com/OpenScore/Lieder](https://github.com/OpenScore/Lieder)), released
 **CC0 1.0 Universal** (public-domain dedication — free for commercial use, no
 attribution required; verified in each file's embedded rights). They are bundled
@@ -60,15 +60,25 @@ as app assets — no runtime fetch. Each is voice + piano; the app's multi-part
 "backing part" feature (おともパート) routes the 2-staff piano part to the
 learner and sings the vocal line.
 
-| File                              | Piece                                 | Composer (died)  | Source (musescore.com/openscore-lieder-corpus) |
-| --------------------------------- | ------------------------------------- | ---------------- | ---------------------------------------------- |
-| `beethoven_marmotte.musicxml`     | Marmotte, Op. 52 No. 7                | Beethoven (1827) | scores/6491461                                 |
-| `brahms_wiegenlied.musicxml`      | Wiegenlied, Op. 49 No. 4              | Brahms (1897)    | scores/5701612                                 |
-| `schubert_heidenroslein.musicxml` | Heidenröslein, D. 257                 | Schubert (1828)  | scores/30321236                                |
-| `schubert_an_die_musik.musicxml`  | An die Musik, D. 547                  | Schubert (1828)  | scores/6180725                                 |
-| `schubert_standchen.musicxml`     | Ständchen, D. 957                     | Schubert (1828)  | scores/5004835                                 |
-| `schubert_die_forelle.musicxml`   | Die Forelle, D. 550                   | Schubert (1828)  | scores/6900961                                 |
-| `schubert_ave_maria.musicxml`     | Ave Maria (Ellens Gesang III), D. 839 | Schubert (1828)  | scores/6389103                                 |
+| File                                       | Piece                                   | Composer (died)       | Source (musescore.com/openscore-lieder-corpus) |
+| ------------------------------------------ | --------------------------------------- | --------------------- | ---------------------------------------------- |
+| `beethoven_marmotte.musicxml`              | Marmotte, Op. 52 No. 7                  | Beethoven (1827)      | scores/6491461                                 |
+| `brahms_wiegenlied.musicxml`               | Wiegenlied, Op. 49 No. 4                | Brahms (1897)         | scores/5701612                                 |
+| `schubert_heidenroslein.musicxml`          | Heidenröslein, D. 257                   | Schubert (1828)       | scores/30321236                                |
+| `schubert_an_die_musik.musicxml`           | An die Musik, D. 547                    | Schubert (1828)       | scores/6180725                                 |
+| `schubert_standchen.musicxml`              | Ständchen, D. 957                       | Schubert (1828)       | scores/5004835                                 |
+| `schubert_die_forelle.musicxml`            | Die Forelle, D. 550                     | Schubert (1828)       | scores/6900961                                 |
+| `schubert_ave_maria.musicxml`              | Ave Maria (Ellens Gesang III), D. 839   | Schubert (1828)       | scores/6389103                                 |
+| `schubert_du_bist_die_ruh.musicxml`        | Du bist die Ruh, D. 776                 | Schubert (1828)       | scores/4919879                                 |
+| `schubert_der_lindenbaum.musicxml`         | Der Lindenbaum (Winterreise No. 5)      | Schubert (1828)       | scores/5016466                                 |
+| `schubert_auf_dem_wasser.musicxml`         | Auf dem Wasser zu singen, D. 774        | Schubert (1828)       | scores/29589203                                |
+| `schumann_du_bist_wie_eine_blume.musicxml` | Du bist wie eine Blume, Op. 25/24       | R. Schumann (1856)    | scores/6982729                                 |
+| `schumann_die_lotosblume.musicxml`         | Die Lotosblume, Op. 25/7                | R. Schumann (1856)    | scores/6909797                                 |
+| `schumann_der_nussbaum.musicxml`           | Der Nussbaum, Op. 25/3                  | R. Schumann (1856)    | scores/6891758                                 |
+| `schumann_mondnacht.musicxml`              | Mondnacht, Op. 39/5                     | R. Schumann (1856)    | scores/4987640                                 |
+| `schumann_widmung.musicxml`                | Widmung, Op. 25/1                       | R. Schumann (1856)    | scores/6885211                                 |
+| `clara_schumann_der_mond_kommt.musicxml`   | Der Mond kommt still gegangen, Op. 13/4 | Clara Schumann (1896) | scores/5126921                                 |
+| `hensel_schwanenlied.musicxml`             | Schwanenlied, Op. 1/1                   | Fanny Hensel (1847)   | scores/5100543                                 |
 
 Composition PD worldwide (composers died > 70 years ago); file license CC0 →
 zero residual liability. To add more from this corpus, drop the `.musicxml` in

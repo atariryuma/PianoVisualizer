@@ -248,6 +248,16 @@ const EXTERNAL = [
   { file: 'schubert_standchen.musicxml', title: 'Ständchen, D. 957', titleJp: 'セレナーデ', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3, source: OS + '5004835' },
   { file: 'schubert_die_forelle.musicxml', title: 'Die Forelle, D. 550', titleJp: 'ます', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3, source: OS + '6900961' },
   { file: 'schubert_ave_maria.musicxml', title: 'Ave Maria, D. 839', titleJp: 'アヴェ・マリア', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 4, source: OS + '6389103' },
+  { file: 'schubert_du_bist_die_ruh.musicxml', title: 'Du bist die Ruh, D. 776', titleJp: '君こそわが憩い', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2, source: OS + '4919879' },
+  { file: 'schubert_der_lindenbaum.musicxml', title: 'Der Lindenbaum (Winterreise No. 5)', titleJp: '菩提樹（冬の旅）', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3, source: OS + '5016466' },
+  { file: 'schubert_auf_dem_wasser.musicxml', title: 'Auf dem Wasser zu singen, D. 774', titleJp: '水の上で歌う', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3, source: OS + '29589203' },
+  { file: 'schumann_du_bist_wie_eine_blume.musicxml', title: 'Du bist wie eine Blume, Op. 25 No. 24', titleJp: '君は花のごとく', composer: 'Robert Schumann', composerJp: 'シューマン', died: 1856, level: 2, source: OS + '6982729' },
+  { file: 'schumann_die_lotosblume.musicxml', title: 'Die Lotosblume, Op. 25 No. 7', titleJp: '蓮の花', composer: 'Robert Schumann', composerJp: 'シューマン', died: 1856, level: 2, source: OS + '6909797' },
+  { file: 'schumann_der_nussbaum.musicxml', title: 'Der Nussbaum, Op. 25 No. 3', titleJp: 'くるみの木', composer: 'Robert Schumann', composerJp: 'シューマン', died: 1856, level: 3, source: OS + '6891758' },
+  { file: 'schumann_mondnacht.musicxml', title: 'Mondnacht, Op. 39 No. 5', titleJp: '月の夜', composer: 'Robert Schumann', composerJp: 'シューマン', died: 1856, level: 3, source: OS + '4987640' },
+  { file: 'schumann_widmung.musicxml', title: 'Widmung, Op. 25 No. 1', titleJp: '献呈', composer: 'Robert Schumann', composerJp: 'シューマン', died: 1856, level: 4, source: OS + '6885211' },
+  { file: 'clara_schumann_der_mond_kommt.musicxml', title: 'Der Mond kommt still gegangen, Op. 13 No. 4', titleJp: '月は静かにのぼり', composer: 'Clara Schumann', composerJp: 'クララ・シューマン', died: 1896, level: 2, source: OS + '5126921' },
+  { file: 'hensel_schwanenlied.musicxml', title: 'Schwanenlied, Op. 1 No. 1', titleJp: '白鳥の歌', composer: 'Fanny Hensel', composerJp: 'ファニー・ヘンゼル', died: 1847, level: 3, source: OS + '5100543' },
 ];
 
 mkdirSync(OUT_DIR, { recursive: true });
