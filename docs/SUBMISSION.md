@@ -155,34 +155,30 @@ permission is the only sensitive capability and is covered by
 
 ---
 
-## 6. Pricing — recommendation
+## 6. Pricing — decision: FREE
 
-**The market is 100% subscription; that's the gap we occupy.** (2026 yearly:
-Simply Piano ≈ $170, Flowkey ≈ $120, Yousician ≈ $120.) This app's headline
-promise is "no ads · no tracking · **no subscription traps**", and the privacy
-policy already commits to **no in-app purchases**. So the only pricing models
-that keep the promise true are **one-time paid** or **free** — never a
-subscription.
+**Set the price to Free (tier 0), no in-app purchases, no ads.**
 
-**Recommendation: one-time purchase at launch, ¥600 (≈ $4.99).** Own it forever,
-no recurring charge — the honest counter-position to $120+/yr rivals. Defensible
-range ¥400–¥1,200 ($2.99–$9.99); ¥600 is a low-friction impulse buy for a
-parent/learner and needs no free-trial machinery.
+Why free (deliberate, not a fallback):
 
-| Model                      | Fit        | Notes                                                                                       |
-| -------------------------- | ---------- | ------------------------------------------------------------------------------------------- |
-| **One-time ¥600 (~$4.99)** | ✅ Best    | Matches "no subscription" ethos, sustainable, no dark-pattern surface. **Recommended.**     |
-| Free                       | ✅ Alt.    | Maximizes reach + goodwill; pick this if audience/reputation matters more than revenue.     |
-| Free + tip-jar IAP         | ⚠️ Caution | A "tip" is still an IAP — contradicts the current "no IAP" promise; would need policy edit. |
-| Subscription / freemium    | ❌ Never   | Directly betrays the core promise and the kid-safe / anti-dark-pattern positioning.         |
+- **The developer is (or may be) a public servant.** In Japan a paid app is
+  profit-making side income that generally needs prior permission
+  (国公法103/104, 地公法38); a **free** app earns nothing, so it sidesteps the
+  side-job / permission question entirely. (If paid revenue is ever wanted,
+  apply for 兼業許可 first, then ship a paid version — see the note below.)
+- **The goal here is experience, not revenue** — a shipped App Store app,
+  download numbers, and a public portfolio are the real, non-monetary payoff.
+  Free maximizes reach → reviews → that value.
+- **Free + no IAP + no ads + "Data Not Collected"** is the cleanest possible App
+  Store story: nothing to monetize means nothing to review on the money side,
+  and it makes the "honest, no-tricks" promise literally complete.
 
-Practical notes:
+Keep off the table (unchanged): **subscription** and **freemium** betray the
+core promise; **tip-jar IAP** is still an IAP (contradicts the "no IAP" pledge
+in the privacy policy) — don't add it.
 
-- **Pricing is set in App Store Connect, not in code** — no build change needed;
-  you can switch free ↔ paid later (going free is easy; a paid app can't retro-
-  charge existing free installs, so if unsure, **start paid** — you can always
-  drop to free, not the reverse).
-- Paid-up-front skips the whole IAP review surface (StoreKit, receipt
-  validation, restore-purchases) — less to implement, less to reject.
-- Consider a **free launch week → ¥600** later only if you want early reviews;
-  avoid "limited-time" copy in-app (banned-list: FOMO).
+Note on reversibility: going **free → paid later is hard** (you cannot
+retro-charge existing free installs; you'd typically need a new paid app or an
+IAP, plus the permission above). So free is a genuine commitment for this
+release, chosen on purpose. Pricing is set in App Store Connect — no code/build
+change either way.

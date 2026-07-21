@@ -44,8 +44,10 @@ remaining **console / account** steps — none are code:
 5. [ ] **Privacy**: publish `docs/PRIVACY.md` to a public URL (GitHub Pages),
        paste it into App Store Connect, and set the Privacy Nutrition Label to
        **"Data Not Collected"**.
-6. [ ] **Price**: free, or pick a price tier (see `README`/strategy — a low-
-       price or free-with-nothing-nasty launch fits the "honest app" promise).
+6. [ ] **Price**: **Free** (tier 0), no IAP, no ads. Deliberate — a free app
+       earns nothing, so it sidesteps the public-servant side-job/permission
+       question, and maximizes reach for the real payoff (experience + reviews).
+       See `docs/SUBMISSION.md` §6.
 7. [ ] **Archive & upload**: Xcode → Product → Archive → Distribute App (needs
        the paid account's distribution signing).
 8. [ ] Run the **Rejection rehearsal** at the bottom of this file first.
