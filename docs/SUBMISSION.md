@@ -81,39 +81,19 @@ Extra pre-submit smoke tests (recommended):
 
 ---
 
-## 3. Publish the Privacy Policy on GitHub Pages (free, static)
+## 3. Privacy Policy URL — ✅ PUBLISHED & VERIFIED
 
-App Store Connect requires a public **Privacy Policy URL**. `docs/PRIVACY.md`
-already exists — publish it:
+**Live at: `https://atariryuma.github.io/PianoVisualizer/privacy.html`**
 
-### Option A — Pages from `/docs` on `main` (simplest, keeps Markdown)
+Paste that into **App Store Connect → App Privacy → Privacy Policy URL**.
 
-1. Push `docs/PRIVACY.md` (already committed).
-2. GitHub → repo **Settings → Pages**.
-3. **Source**: "Deploy from a branch". **Branch**: `main`, **Folder**: `/docs`.
-   Save.
-4. Wait ~1 min. Your policy is at:
-   `https://atariryuma.github.io/PianoVisualizer/PRIVACY` (GitHub renders
-   `PRIVACY.md` → `PRIVACY` / `PRIVACY.html`.)
-5. Paste that URL into App Store Connect → App Privacy → Privacy Policy URL.
-
-> The repo must be **public** for Pages on the free tier (or GitHub Pro for
-> private Pages). If you'd rather keep the repo private, host the single file on
-> any static host (Netlify drop, Cloudflare Pages, or a gist → githack).
-
-### Option B — dedicated `gh-pages` branch (if you don't want `/docs` public)
-
-```bash
-git switch --orphan gh-pages
-git rm -rf . >/dev/null 2>&1 || true
-cp docs/PRIVACY.md index.md          # Pages serves index.md at the root
-git add index.md && git commit -m "chore(pages): privacy policy"
-git push -u origin gh-pages
-git switch main
-```
-
-Then Settings → Pages → Source = `gh-pages` / `/ (root)`. URL:
-`https://atariryuma.github.io/PianoVisualizer/`
+How it's hosted (done 2026-07-21): Pages was already enabled on this repo, and
+the `web.yml` workflow auto-deploys `packages/web/dist/` on every push to
+`main`. The policy is a self-contained page at
+[`packages/web/public/privacy.html`](../packages/web/public/privacy.html)
+(renders `docs/PRIVACY.md`), copied into the build — so it publishes with the
+app and **exposes only the policy, not the internal `docs/` folder**. To update
+it: edit `privacy.html`, push to `main`, and the workflow redeploys.
 
 ### Verify
 
