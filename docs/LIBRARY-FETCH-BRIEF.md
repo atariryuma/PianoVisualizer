@@ -36,18 +36,40 @@ If you cannot state a file's license from its source page, **do not bring it.**
 - Filenames: lowercase, `composer_title.musicxml` style (e.g.
   `chopin_prelude_op28_no7.musicxml`).
 
-## Best sources (cleanest first)
+## Download once → BUNDLE (do NOT wire a runtime download)
 
-1. **OpenScore** — `musescore.com/openscore-lieder-corpus` and
-   `musescore.com/openscore-string-quartets`, mirrors at `github.com/OpenScore`.
-   Released **CC0**. Export/download MusicXML. (Repertoire is Lieder + quartets,
-   so limited solo piano — but 100% safe.)
-2. **IMSLP / Petrucci** — per-piece. Only take a file whose page **states Public
-   Domain**; many entries are PDF scans (skip — we need MusicXML), but some have
-   MusicXML/MuseScore files. Record the IMSLP URL.
-3. **Mutopia Project** (`mutopiaproject.org`, `github.com/MutopiaProject`) — PD
-   or **CC BY-SA**; source is LilyPond, so export to MusicXML
-   (LilyPond/MuseScore CLI). Record the typesetter for CC BY-SA attribution.
+Fetch the files **once** and commit them into `assets/library/`. Do **not** make
+the app download from an external library at runtime — that was the old
+musetrainer pattern we removed (App Store 4.7 reviews runtime-loaded content as
+shipped anyway, it breaks offline, and it makes the app a live redistributor).
+Bundling is the clean, offline, review-simple path. CC0 explicitly permits
+copying, redistributing, selling, and modifying with **no attribution**, so
+bundling CC0 files into this paid app is 100% fine and carries no residual
+liability.
+
+## Best sources (all CC0 — verified 2026-07-21)
+
+1. **Open Well-Tempered Clavier** and **Open Goldberg Variations** — **CC0**,
+   professionally engraved solo-keyboard MusicXML, incl. **BWV 846 (Prelude in
+   C)** from the wish-list and the full Goldberg Variations. **This is the
+   solo-piano answer.** Hosted on musescore.com (and the opengoldberg /
+   op1musicxml project pages); a non-sandboxed helper can download the MusicXML
+   or clone a GitHub mirror. Look for the "opengoldbergvariations" / "well
+   tempered clavier" CC0 releases.
+2. **OpenScore/Lieder** — **CC0**, real 2-staff MusicXML, **git-cloneable**
+   (`github.com/OpenScore/Lieder`). The one bulletproof bulk channel. Repertoire
+   is voice + piano art songs (Schubert, Schumann, Brahms Lieder, …) — which
+   this app handles **well**: its multi-part "backing part" feature
+   (おともパート) splits a score into "your part = piano" and "backing = the
+   sung line", so the app sings the melody while the learner plays the piano
+   accompaniment. Prefer pieces with a clear piano staff.
+3. **IMSLP / Petrucci** — per-piece fallback. Only take a file whose page
+   **states Public Domain**; most entries are PDF scans (skip — we need
+   MusicXML). Record the IMSLP URL.
+
+Rejected during research (do not use): **asap-dataset** (CC BY-NC-SA →
+non-commercial, we sell the app), **musetrainer/library** (no LICENSE,
+mislabeled), **Mutopia** (LilyPond/PDF/MIDI only, no clean MusicXML).
 
 ## Repertoire wish-list (all composition-PD; beginner → advanced)
 
@@ -79,7 +101,7 @@ simplified single-line arrangements):
 For each file you add, append a line to a plain text file
 `packages/web/public/assets/library/INCOMING.md` (create it) with:
 
-```
+```text
 filename.musicxml | Title | Composer (death year) | SOURCE_URL | LICENSE (PD/CC0/CC-BY-SA)
 ```
 
