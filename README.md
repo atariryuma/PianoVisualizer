@@ -1,92 +1,87 @@
 # Piano Visualizer
 
-Real-time piano visualizer for upper-elementary children. Plays beautifully on
-iPad with mic input or a USB / Bluetooth MIDI keyboard.
+The honest, real-time piano practice app — **no ads, no tracking, no accounts,
+audio stays on your device.** For learners of every age, it turns practice into
+something you actually want to do: play a note (microphone _or_ MIDI keyboard)
+and the screen comes alive with flowing notes and gentle effects.
 
-> Vite + pnpm monorepo. Capacitor 6 wrapper for iOS + Android in progress.
+**No tracking — and because it's open source, you can verify it:** there are no
+analytics SDKs, no ad networks, and no server. Everything runs on-device.
+
+- 🎹 **Try it in your browser:** <https://atariryuma.github.io/PianoVisualizer/>
+- 🔒 **Privacy policy:**
+  <https://atariryuma.github.io/PianoVisualizer/privacy.html>
+
+> Vite + pnpm monorepo. Capacitor 6 wrapper for iOS (shipped-quality,
+> hardware-verified) + Android (in progress).
 
 ## Features
 
-- **Real-time piano detection** — YIN pitch detection + multi-feature onset
-  gate + harmonicity check (rejects voice / clatter)
-- **Polyphonic MIDI support** — USB + BLE-MIDI on Chrome / Edge / Steam Deck;
-  iOS via Web MIDI Browser (third-party app) or the upcoming native build
-- **Practice mode** — 2 bundled pieces (Für Elise, Turkish March) + user-addable
-  library from any public-domain MusicXML source
-- **Bilingual** — English + Japanese
-- **Kid-safe by design** — zero data collection, no ads, no IAP, no accounts
+- **Real-time piano detection** — YIN pitch detection + a multi-feature onset
+  gate + harmonicity check (rejects voice / clatter).
+- **Microphone _or_ MIDI** — USB + BLE-MIDI on desktop Chrome/Edge; iOS via the
+  native build (CoreMIDI) or the Web MIDI Browser app. Falls back to mic.
+- **57-piece bundled library**, graded beginner → advanced — all public-domain
+  (our own engravings, CC0 OpenScore Lieder, and faithful transcriptions of
+  famous PD solo works: Clair de Lune, Chopin, Bach, Joplin, Satie, and more).
+  Plus **bring your own** MusicXML (`.mxl` / `.musicxml`).
+- **Three practice modes** — Listen, Guided (wait for the right note), Rhythm
+  (scored) — with one-hand practice, adjustable tempo, count-in, and section
+  loop.
+- **Gentle practice journal** — stars, stamps, and a growth chart that compares
+  you only to your own past (no shame copy, no decrementing streaks).
+- **Trilingual** — English · 日本語 · Deutsch.
+- **Kid-safe by design** — zero data collection, no ads, no in-app purchases, no
+  accounts. See the [banned-list](CLAUDE.md) design constraints.
 
 ## Quick start (web, dev)
+
+The app needs HTTPS for microphone access and Service-Worker registration, so a
+trusted dev cert is generated via
+[mkcert](https://github.com/FiloSottile/mkcert).
 
 ```bash
 pnpm install
 
-# One-time: install mkcert (https://github.com/FiloSottile/mkcert)
-scoop install mkcert         # or: choco install mkcert
-
-# Generate trusted dev certs (mic + Service Worker both require HTTPS):
-powershell -File gen_cert.ps1
+# One-time: install mkcert, then generate trusted dev certs
+brew install mkcert nss        # macOS   (Windows: scoop install mkcert)
+./gen_cert.sh                  # macOS/Linux  (Windows: powershell -File gen_cert.ps1)
 # → cert.pfx (server) + rootCA.cer (iPad/Android trust)
 
-# Build + serve the web shell on port 8443:
-pnpm serve
-
-# Or run them separately:
-pnpm build:web                 # → packages/web/dist/
-powershell -File https_server.ps1
-
-# Open in your browser:
-# https://localhost:8443
-# or from iPad: https://<host-ip>:8443
+pnpm serve                     # build:web + Node HTTPS server on :8443
+# open https://localhost:8443  (or https://<host-ip>:8443 from iPad)
 ```
 
 iPad needs `rootCA.cer` installed once as a trusted profile — see
-[`CLAUDE.md`](CLAUDE.md) for the walkthrough.
+[`CLAUDE.md`](CLAUDE.md) for the walkthrough. `pnpm verify` runs lint,
+typecheck, the full test suite, and the Vite build.
 
 ## Project layout
 
-```
+```text
 .
-├── packages/               ← Source of truth
-│   ├── core/               ← Pure-TS engine (35 modules, 680 tests)
+├── packages/               ← source of truth (pnpm workspace)
+│   ├── core/               ← pure-TS engine (DOM-free, testable, shared)
 │   ├── web/                ← ★ Vite PWA shell — production entry
-│   │   ├── index.html
-│   │   ├── public/         ← manifest + icon + bundled scores
-│   │   └── src/
-│   │       ├── app.css     ← Vite-managed stylesheet
-│   │       ├── main.ts     ← Module entry — pins vendor globals, boots shell
-│   │       └── shell-*.ts  ← Typed web shell modules (Phase 0e complete)
-│   ├── mobile/             ← Capacitor 6 wrapper
+│   │   └── public/         ← manifest + icon + bundled scores + privacy.html
+│   ├── mobile/             ← Capacitor 6 wrapper (iOS generated + verified)
 │   └── plugins/
-│       └── capacitor-piano-midi/  ← Native MIDI plugin (Swift + Kotlin)
-│
-├── gen_cert.ps1            ← mkcert wrapper: cert.pfx + rootCA.cer
-├── https_server.ps1        ← PowerShell HTTPS server (port 8443)
-└── docs/                   ← Privacy / compliance / score licenses
+│       └── capacitor-piano-midi/  ← native MIDI plugin (Swift + Kotlin)
+├── scripts/gen-library-scores.mjs ← generates the PD score library + manifest
+├── gen_cert.sh · gen_cert.ps1     ← mkcert wrappers
+└── docs/                   ← privacy / compliance / score licenses / submission
 ```
 
-## Roadmap
+## Status
 
-- [x] **Phase 0a**: split 9000-line monolith into 3-file HTML/CSS/JS shell —
-      _2026-05-05_
-- [x] **Phase 0b extraction**: move engine into `packages/core/` modules — 35
-      modules, 680 tests — _2026-05-06_
-- [x] **Phase 0b.3**: dual-build wire-up — `packages/web` is the production
-      entry, legacy 3-file shell retired — _2026-05-06_
-- [x] **Phase 0c–0e**: TypeScript migration and retirement of `legacy-app.js` —
-      _2026-05-09_
-- [ ] **Phase 1**: `npx cap add ios && npx cap add android` + first installable
-      build
-- [ ] **Phase 2a**: Validate `capacitor-piano-midi` against real iOS hardware
-- [ ] **Phase 2b**: Same on Android
-- [ ] **Phase 3**: Privacy manifest + 5.2.3 evidence collection (CDN deps are
-      already npm-bundled via Vite)
-- [ ] **Phase 4**: App Store + Play Store submission
-
-See [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) for the submission checklist.
+iOS-first, targeting the App Store **4+ / Education** category. The iOS app is
+generated and hardware-verified on a physical iPad (mic, USB-MIDI, and BLE-MIDI
+all work); the library, privacy policy, and submission artifacts are complete.
+Android is a future milestone. See [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md)
+for the submission checklist and [`docs/SUBMISSION.md`](docs/SUBMISSION.md) for
+the paste-ready store artifacts.
 
 ## License
 
-Code: MIT — see [`LICENSE`](LICENSE).
-
-Bundled music: public domain. See [`docs/LICENSES/`](docs/LICENSES/).
+Code: **MIT** — see [`LICENSE`](LICENSE). Bundled music: **public domain / CC0**
+— per-score documentation in [`docs/LICENSES/`](docs/LICENSES/).
