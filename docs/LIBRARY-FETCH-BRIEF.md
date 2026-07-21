@@ -50,12 +50,17 @@ liability.
 ## Best sources (all CC0 — verified 2026-07-21)
 
 1. **Open Well-Tempered Clavier** and **Open Goldberg Variations** — **CC0**,
-   professionally engraved solo-keyboard MusicXML, incl. **BWV 846 (Prelude in
-   C)** from the wish-list and the full Goldberg Variations. **This is the
-   solo-piano answer.** Hosted on musescore.com (and the opengoldberg /
-   op1musicxml project pages); a non-sandboxed helper can download the MusicXML
-   or clone a GitHub mirror. Look for the "opengoldbergvariations" / "well
-   tempered clavier" CC0 releases.
+   professionally engraved solo-keyboard scores, incl. **BWV 846 (Prelude in
+   C)** and the full Goldberg Variations. **This is the solo-piano answer, but
+   it needs a manual step** (confirmed 2026-07-21): the real CC0 editions live
+   only on musescore.com, and **direct MusicXML download there now requires
+   MuseScore Pro**. Do NOT bypass the paywall/ToS. **Clean route:** on a
+   desktop, install the free **MuseScore Studio** app → download the free
+   `.mscz` → open it → **File ▸ Export ▸ MusicXML** → drop the `.musicxml` here.
+   Sources to record:
+   - Open WTC — <https://musescore.com/user/9836/sets/669666> — CC0
+   - Open Goldberg — <https://musescore.com/opengoldberg/goldberg-variations> —
+     CC0
 2. **OpenScore/Lieder** — **CC0**, real 2-staff MusicXML, **git-cloneable**
    (`github.com/OpenScore/Lieder`). The one bulletproof bulk channel. Repertoire
    is voice + piano art songs (Schubert, Schumann, Brahms Lieder, …) — which
@@ -67,9 +72,19 @@ liability.
    **states Public Domain**; most entries are PDF scans (skip — we need
    MusicXML). Record the IMSLP URL.
 
-Rejected during research (do not use): **asap-dataset** (CC BY-NC-SA →
-non-commercial, we sell the app), **musetrainer/library** (no LICENSE,
-mislabeled), **Mutopia** (LilyPond/PDF/MIDI only, no clean MusicXML).
+Rejected during research (do not re-try — reason each fails the "license of the
+FILE" rule):
+
+- **asap-dataset** — CC BY-NC-SA (non-commercial); we sell the app.
+- **musetrainer/library** — no LICENSE, mislabels copyrighted works.
+- **Mutopia / ksnortum** — LilyPond source only; LilyPond→MusicXML round-trips
+  through MIDI and loses staff/voice structure. Not quality-worthy.
+- **humdrum-tools/bach-wtc** (`**kern`, git-cloneable) — the edition carries
+  `!!!YEC Copyright (c) 1994, 2000 CCARH` + "rights to all derivative editions
+  reserved". Composition PD but the **edition is copyrighted** → not
+  commercial-safe.
+- **musescore `demos/goldberg.mscz`** — empty metadata (license unstateable),
+  and its `Fugue_1` is by a MuseScore dev, not Bach.
 
 ## Repertoire wish-list (all composition-PD; beginner → advanced)
 
