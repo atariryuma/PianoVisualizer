@@ -58,6 +58,20 @@
       "note": "Own transcription of a public-domain composition"
     },
     {
+      "file": "lightly_row.musicxml",
+      "type": "solo",
+      "title": "Lightly Row",
+      "titleJp": "かるく こげよ",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "level": 1,
+      "levelJp": "初級",
+      "license": "PD",
+      "source": "generated",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
       "file": "london_bridge.musicxml",
       "type": "solo",
       "title": "London Bridge",
@@ -172,6 +186,20 @@
       "note": "Own transcription of a public-domain composition"
     },
     {
+      "file": "greensleeves.musicxml",
+      "type": "solo",
+      "title": "Greensleeves",
+      "titleJp": "グリーンスリーブス",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
+      "level": 2,
+      "levelJp": "初中級",
+      "license": "PD",
+      "source": "generated",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
       "file": "schubert_heidenroslein.musicxml",
       "type": "song",
       "title": "Heidenröslein, D. 257",
@@ -236,6 +264,20 @@
       "composer": "Ludwig van Beethoven",
       "composerJp": "ベートーヴェン",
       "died": 1827,
+      "level": 2,
+      "levelJp": "初中級",
+      "license": "PD",
+      "source": "generated",
+      "note": "Own transcription of a public-domain composition"
+    },
+    {
+      "file": "scarborough_fair.musicxml",
+      "type": "solo",
+      "title": "Scarborough Fair",
+      "titleJp": "スカボロー・フェア",
+      "composer": "Traditional",
+      "composerJp": "伝承曲",
+      "died": 0,
       "level": 2,
       "levelJp": "初中級",
       "license": "PD",
@@ -357,6 +399,20 @@
       "external": true,
       "source": "https://musescore.com/openscore-lieder-corpus/scores/6389103",
       "note": "External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing"
+    },
+    {
+      "file": "moonlight_1.musicxml",
+      "type": "solo",
+      "title": "Moonlight Sonata (1st mvt, arr.)",
+      "titleJp": "月光ソナタ 第1楽章（編曲）",
+      "composer": "Ludwig van Beethoven",
+      "composerJp": "ベートーヴェン",
+      "died": 1827,
+      "level": 4,
+      "levelJp": "上級",
+      "license": "PD",
+      "source": "generated",
+      "note": "Own transcription of a public-domain composition"
     },
     {
       "file": "chopin_nocturne_op9no2.musicxml",

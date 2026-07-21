@@ -217,6 +217,20 @@ const PIECES = [
     notes: ['Bb4:q.','G4:e','F4:e','G4:e','C5:h','Ab4:q','Bb4:q.','C5:e','Ab4:e','Bb4:e','Eb5:h','C5:q','Bb4:q','Ab4:q','G4:q'] },
   { id: 'chopin_prelude_e_minor', title: 'Prelude Op. 28 No. 4', titleJp: '前奏曲 Op.28-4 ホ短調', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 4, time: [4, 4], tempo: 60,
     notes: ['B4:h','B4:q','C5:q','B4:h','A4:h','A4:h','G4:h','G4:h','F#4:h','F#4:h','E4:h'] },
+
+  // ── batch 2 (verified by render) ──
+  { id: 'lightly_row', title: 'Lightly Row', titleJp: 'かるく こげよ', composer: 'Traditional', composerJp: '伝承曲', died: 0, level: 1, time: [4, 4], tempo: 100,
+    notes: ['G4','E4','E4:h','F4','D4','D4:h','C4','D4','E4','F4','G4','G4','G4:h','G4','E4','E4:h','F4','D4','D4:h','C4','E4','G4','G4','E4','D4','C4:h'] },
+  { id: 'greensleeves', title: 'Greensleeves', titleJp: 'グリーンスリーブス', composer: 'Traditional', composerJp: '伝承曲', died: 0, level: 2, time: [3, 4], tempo: 90, pickup: 4,
+    notes: ['A4:q','C5:h','D5:q','E5:q.','F5:e','E5:q','D5:h','B4:q','G4:q.','A4:e','B4:q','C5:h','A4:q','A4:q.','G#4:e','A4:q','B4:h','G#4:q','A4:h.'] },
+  { id: 'scarborough_fair', title: 'Scarborough Fair', titleJp: 'スカボロー・フェア', composer: 'Traditional', composerJp: '伝承曲', died: 0, level: 2, time: [3, 4], tempo: 100,
+    notes: ['A4:q','A4:q','E5:q','E5:h','B4:q','A4:q','B4:q','C5:q','B4:h.','G4:q','B4:q','A4:q','G4:q','E4:q','F#4:q','G4:q','A4:q','E4:q','A4:h.'] },
+  { id: 'moonlight_1', title: 'Moonlight Sonata (1st mvt, arr.)', titleJp: '月光ソナタ 第1楽章（編曲）', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 4, time: [12, 8], tempo: 50,
+    notes: [
+      'E4:e','A4:e','C5:e','E4:e','A4:e','C5:e','E4:e','A4:e','C5:e','E4:e','A4:e','C5:e',
+      'E4:e','A4:e','C5:e','E4:e','A4:e','C5:e','E4:e','A4:e','C5:e','E4:e','A4:e','C5:e',
+      'D4:e','F4:e','A4:e','D4:e','F4:e','A4:e','D4:e','G4:e','B4:e','D4:e','G4:e','B4:e',
+      'C4:e','E4:e','A4:e','C4:e','E4:e','A4:e','B3:e','E4:e','G#4:e','B3:e','E4:e','G#4:e'] },
 ];
 
 // ── External bundled scores (already in assets/library/, NOT generated) ──────

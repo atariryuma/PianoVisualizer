@@ -32,16 +32,16 @@ Two independent copyright layers, both clean:
 2. **Engraving / encoding** — the MusicXML is authored by us (Piano Visualizer),
    so there is no third-party edition or arrangement right to clear anywhere.
 
-**27 pieces**, graded beginner → advanced (the library lists them in this
-order): 20 are our own transcriptions (table below) and 7 are CC0 OpenScore
+**31 pieces**, graded beginner → advanced (the library lists them in this
+order): 24 are our own transcriptions (table below) and 7 are CC0 OpenScore
 Lieder (see the following subsection).
 
-| Level        | Pieces                                                                                                                                                                                                |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1 初級**   | Twinkle Twinkle (Mozart), Mary Had a Little Lamb, Frère Jacques, Old MacDonald, London Bridge, Hot Cross Buns, Jingle Bells (Pierpont, 1893), Au Clair de la Lune, Symphony No. 5 opening (Beethoven) |
-| **2 初中級** | Ode to Joy (Beethoven), Canon in D theme (Pachelbel, 1706), Minuet in G BWV Anh. 114 (Petzold, 1760), In the Hall of the Mountain King (Grieg, 1907), New World Symphony Largo (Dvořák, 1904)         |
-| **3 中級**   | Gymnopédie No. 1 (Satie, 1925), Habanera / Carmen (Bizet, 1875), Prelude in C BWV 846 (Bach, 1750), Toccata in D minor opening (Bach)                                                                 |
-| **4 上級**   | Nocturne Op. 9 No. 2 melody (Chopin, 1849), Prelude Op. 28 No. 4 (Chopin)                                                                                                                             |
+| Level        | Pieces                                                                                                                                                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 初級**   | Twinkle Twinkle (Mozart), Mary Had a Little Lamb, Frère Jacques, Old MacDonald, London Bridge, Hot Cross Buns, Jingle Bells (Pierpont, 1893), Au Clair de la Lune, Lightly Row, Symphony No. 5 opening (Beethoven)            |
+| **2 初中級** | Ode to Joy (Beethoven), Canon in D theme (Pachelbel, 1706), Minuet in G BWV Anh. 114 (Petzold, 1760), In the Hall of the Mountain King (Grieg, 1907), New World Symphony Largo (Dvořák, 1904), Greensleeves, Scarborough Fair |
+| **3 中級**   | Gymnopédie No. 1 (Satie, 1925), Habanera / Carmen (Bizet, 1875), Prelude in C BWV 846 (Bach, 1750), Toccata in D minor opening (Bach)                                                                                         |
+| **4 上級**   | Nocturne Op. 9 No. 2 melody (Chopin, 1849), Prelude Op. 28 No. 4 (Chopin), Moonlight Sonata 1st mvt arr. (Beethoven, 1827)                                                                                                    |
 
 Every composer died > 70 years ago (or the tune is anonymous/traditional), so
 each composition is PD worldwide; the advanced entries are our own simplified
