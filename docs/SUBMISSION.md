@@ -29,16 +29,21 @@ NATIVE FUNCTIONALITY (Guideline 4.2.3)
   detection, USB-MIDI, and Bluetooth-MIDI (Roland GO:PIANO88) all work.
 
 MUSIC LICENSING (Guideline 5.2.3)
-• All music is public domain and bundled in the app — nothing is fetched from
-  any external catalog at runtime.
+• ALL music is bundled in the app — nothing is fetched from an external catalog
+  at runtime — and every piece is a PUBLIC-DOMAIN composition (composer died 70+
+  years ago, or an anonymous traditional tune). In App Review scope as shipped
+  (Guideline 4.7); cannot change between binary releases.
 • Built-in: "Für Elise" (Beethoven, d. 1827) and "Rondo alla Turca" (Mozart,
-  d. 1791) — both PD worldwide (death + 70). Per-piece evidence: docs/LICENSES/.
-• The in-app song library is the app's OWN engravings (MusicXML) of public-domain
-  compositions — e.g. Ode to Joy (Beethoven), Twinkle Twinkle (Mozart), Jingle
-  Bells (Pierpont, d. 1893), and traditional tunes. The compositions are PD
-  worldwide; the engravings are authored by us, so there is no third-party edition
-  or arrangement right to clear. Since the catalog is bundled, it is in App Review
-  scope as shipped (Guideline 4.7) and cannot change between binary releases.
+  d. 1791). Per-piece evidence: docs/LICENSES/.
+• The in-app song library is 57 pieces from three provenance-clean sources, each
+  documented with its license + source in docs/LICENSES/README.md:
+  (1) our OWN engravings of PD compositions (we author the MusicXML);
+  (2) CC0 scores from the OpenScore Lieder Corpus (public-domain dedication);
+  (3) faithful full transcriptions of famous PD solo works (e.g. Clair de Lune,
+      Chopin nocturnes, Joplin rags) — the compositions are PD and each file is a
+      faithful transcription (thin-to-no new copyright for faithful encodings of
+      PD notation). Known copyrighted arrangements were deliberately excluded.
+• No lyrics-in-copyright, no modern arrangements, no film/pop content.
 
 HOW TO TEST WITHOUT A PIANO
 • Tap "🎨 Free Play" or a song, then hum/whistle or play any note near the mic —
