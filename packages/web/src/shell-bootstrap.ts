@@ -632,6 +632,9 @@ export function boot(): void {
     songs: SONGS,
     t,
     modalFocus,
+    // A1: _ui は下段で初期化されるが、この thunk はユーザー曲の
+    // load/add/rename/delete 時（boot 完了後）にしか呼ばれないので前方参照で安全。
+    refreshTitleStrip: () => _ui.refreshJournal(),
     fetchLibrary,
     openUserDb,
     userDbAll,

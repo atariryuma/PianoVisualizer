@@ -57,6 +57,8 @@ export interface ShellAddSongDeps {
   /** i18n + modal focus trap. */
   t: T;
   modalFocus: any;
+  /** A1: タイトルの mastery strip 再描画（ユーザー曲ロード/追加/削除時）。 */
+  refreshTitleStrip?: () => void;
 }
 
 export interface ShellAddSong {
@@ -193,6 +195,7 @@ export function createShellAddSong(deps: ShellAddSongDeps): ShellAddSong {
     },
     t,
     modalFocus,
+    refreshTitleStrip: deps.refreshTitleStrip,
   });
 
   // Hydrate user-added songs at startup so they appear in the picker without

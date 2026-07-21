@@ -597,11 +597,14 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         streakDays: null,
       };
       renderResultCard();
-      const nextIdx = deps.sectionIds.indexOf(sec.id) + 1;
+      // F1: 実 section id に統一（rhythm 側と同じ理由）。currentSong 未取得時は
+      // 静的リストにフォールバック。
+      const realSectionIds = deps.getCurrentSong()?.sections.map((s) => s.id) ?? deps.sectionIds;
+      const nextIdx = realSectionIds.indexOf(sec.id) + 1;
       const hasNext =
         nextIdx > 0 &&
-        nextIdx < deps.sectionIds.length &&
-        !!deps.songProg().unlockedSections[deps.sectionIds[nextIdx]];
+        nextIdx < realSectionIds.length &&
+        !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
       deps.dom.resNext.style.display = hasNext ? '' : 'none';
       if (deps.dom.resStretch) {
         const stretchId = deps.getStretchSongId?.() ?? null;
@@ -761,11 +764,14 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     }
     deps.dom.resCombo.textContent = String(deps.practice.sectionBestCombo);
 
-    const nextIdx = deps.sectionIds.indexOf(sec.id) + 1;
+    // F1: 解錠書き込み側（computeUnlocks）は realSectionIds を使うのに、この
+    // Next 可視判定だけ静的 deps.sectionIds(['A1','B','A2'])に取り残されていた。
+    // 実 section id（上で算出済み realSectionIds）に統一（将来 id 変更で崩れる痕跡）。
+    const nextIdx = realSectionIds.indexOf(sec.id) + 1;
     const hasNext =
       nextIdx > 0 &&
-      nextIdx < deps.sectionIds.length &&
-      !!deps.songProg().unlockedSections[deps.sectionIds[nextIdx]];
+      nextIdx < realSectionIds.length &&
+      !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
     deps.dom.resNext.style.display = hasNext ? '' : 'none';
 
     if (deps.dom.resStretch) {

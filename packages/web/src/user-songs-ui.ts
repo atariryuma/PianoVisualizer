@@ -87,6 +87,11 @@ export interface UserSongsUiDom {
 
 export interface UserSongsUiDeps {
   dom: UserSongsUiDom;
+  /** A1: タイトル画面の mastery strip を再描画するフック。ユーザー曲は
+   *  IndexedDB から非同期ロードされ、boot 直後の strip 描画には間に合わない。
+   *  曲リストが変わる唯一のチョークポイント renderUserSongButtons から呼び、
+   *  strip の星総数がユーザー曲を数え落とさないようにする。省略可。 */
+  refreshTitleStrip?: () => void;
   /** Live reference to the in-memory SONGS map. The module reads this in
    *  filter/lookup paths but never mutates — adds/removes flow through
    *  `addUserSongFromBlob` etc., which update SONGS as a side effect. */
@@ -131,7 +136,7 @@ export interface UserSongsUiDeps {
   /** Auto-section detector from @piano/core. Used by import when the
    *  imported record has no sectionDefs (pre-v1 export, or a manually
    *  constructed JSON). */
-  autoSectionDefs(xmlText: string, count: number): unknown;
+  autoSectionDefs(xmlText: string, count?: number): unknown;
   /** Open the section editor for a given user song id. Already extracted
    *  to section-editor.ts; the shell wires this through. */
   openSectionEditor(songId: string): Promise<void> | void;
@@ -504,6 +509,10 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       wrap.appendChild(removeBtn);
       deps.dom.userSongList.appendChild(wrap);
     }
+    // A1: 曲リストが変わった＝タイトルの mastery strip の星総数も変わる。
+    // ここが load/add/rename/delete の唯一のチョークポイントなので、strip も
+    // 再描画してユーザー曲を数え落とさないようにする。
+    deps.refreshTitleStrip?.();
   }
 
   // ─── export / import ────────────────────────────────────────────
@@ -620,7 +629,10 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
         if (!sectionDefs) {
           const isMxl = String(mimeType).includes('zip');
           const xmlText = isMxl ? await deps.unzipMxlToXmlText(blob) : await blob.text();
-          sectionDefs = deps.autoSectionDefs(xmlText, 1) as UserSongRecord['sectionDefs'];
+          // F2: count を省略して auto-section に実小節数(cand.total)を使わせる。
+          // 以前は 1 固定で total<3 の退化ガードに落ち、長い曲でも常に単一
+          // セクションに潰れていた（D4 の不完全修正の残り）。
+          sectionDefs = deps.autoSectionDefs(xmlText) as UserSongRecord['sectionDefs'];
         }
         const rec: UserSongRecord = {
           id,

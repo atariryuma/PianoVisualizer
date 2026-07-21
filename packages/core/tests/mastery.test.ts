@@ -88,6 +88,23 @@ describe('computeSongMastery', () => {
     expect(sm.sections[1].unlocked).toBe(false);
   });
 
+  it('F3: does NOT throw on a corrupt per-song bucket missing unlockedTempos', () => {
+    // 破損/移行後の per-song バケットが unlockedTempos を欠くと、以前は
+    // highestUnlockedTempo → undefined['60'] で TypeError → renderLibraryStrip
+    // 経由で boot 恒久クラッシュしていた。leaf ガードで安全に既定へ落ちる。
+    const corrupt = { sections: {}, unlockedSections: {} } as unknown as Parameters<
+      typeof computeSongMastery
+    >[1];
+    expect(() => computeSongMastery(FUR_ELISE, corrupt)).not.toThrow();
+    const sm = computeSongMastery(FUR_ELISE, corrupt);
+    expect(sm.starsPossible).toBe(9);
+    expect(sm.highestTempoUnlocked).toBe(50); // 既定（TEMPO_TIERS[0]=最遅）
+    // computeLibraryMastery 経由でも throw しない（boot 経路の再現）。
+    expect(() =>
+      computeLibraryMastery([FUR_ELISE], { songs: { fur_elise: corrupt } } as never)
+    ).not.toThrow();
+  });
+
   it('applies the endowed-progress floor for untouched songs', () => {
     // Untouched but the cold-start ring still reads >0% so the kid
     // sees "in progress" not "0%". For 9 possible stars, 1/9 ≈ 11%.

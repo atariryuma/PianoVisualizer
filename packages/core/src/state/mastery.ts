@@ -70,8 +70,12 @@ export interface MasterySongDef {
   sectionIds: readonly string[];
 }
 
-function isTempoUnlocked(unlocked: Record<string, boolean>, tier: number): boolean {
-  return unlocked[String(tier)] === true;
+function isTempoUnlocked(unlocked: Record<string, boolean> | undefined, tier: number): boolean {
+  // F3: 破損/移行後の per-song バケットが unlockedTempos を欠く（{} 等）と、
+  // computeSongMastery が raw バケットを getSongProgress を通さず渡すため
+  // undefined['60'] で TypeError → renderLibraryStrip 経由で boot 恒久クラッシュ。
+  // leaf でガードして全呼び出し元（highest/count）を一括で安全化する。
+  return unlocked?.[String(tier)] === true;
 }
 
 function highestUnlockedTempo(unlocked: Record<string, boolean>): number {

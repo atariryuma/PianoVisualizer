@@ -347,9 +347,11 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       const tempos = document.createElement('div');
       tempos.className = 'jr-tempo-pips';
       const sp = progress.songs?.[song.id];
-      for (const t of [60, 75, 90, 100]) {
+      // A2: 実テンポ梯子 TEMPO_TIERS=[50,60,75,90,100]（50/60 は常時解放の支援
+      // ティア）。以前は 50 を描かず 60 を最下段にしていて song-panel と不一致。
+      for (const t of [50, 60, 75, 90, 100]) {
         const pip = document.createElement('span');
-        const unlocked = sp?.unlockedTempos?.[String(t)] === true || t === 60;
+        const unlocked = sp?.unlockedTempos?.[String(t)] === true || t <= 60;
         pip.className = 'jr-tempo-pip' + (unlocked ? ' jr-tempo-pip-on' : '');
         pip.textContent = String(t);
         tempos.appendChild(pip);
