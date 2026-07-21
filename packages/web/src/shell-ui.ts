@@ -40,6 +40,8 @@ export interface ShellUiDeps {
   midiInput: MidiInputRef;
   /** G5: Journal モーダルのフォーカストラップ＋復元に使う（settings 等と共通）。 */
   modalFocus?: { open(el: HTMLElement): void; close(el: HTMLElement): void };
+  /** SE（最小版）: スタンプ獲得時の控えめな祝福音（結果画面）。省略可。 */
+  playStampCelebration?: () => void;
   midiState: MidiState;
   prefs: InitialPrefs;
   savePrefs?: () => void;
@@ -202,6 +204,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'sectionBannerHint'
     ),
     modalFocus: deps.modalFocus,
+    playStampCelebration: deps.playStampCelebration,
     getProgress: () => deps.practice.progress as PianoCore.PracticeProgress,
     getSongs: () => buildJournalSongRefs(),
     saveProgress: () => deps.savePracticeProgress(),

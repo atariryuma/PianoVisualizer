@@ -58,6 +58,9 @@ export interface JournalModalDeps {
   /** Persist progress to localStorage. Called after stamp evaluation
    *  mutates `progress.earnedStamps`. */
   saveProgress(): void;
+  /** SE（最小版）: スタンプ新規獲得時に結果画面で1回だけ鳴らす控えめな祝福音。
+   *  演奏中は鳴らさない（音楽と競合させない）。省略可。 */
+  playStampCelebration?(): void;
   /** Live session peak-flow accessor — feeds flow_peak_80 /
    *  flow_peak_max predicates. Optional; missing returns 0. */
   getSessionPeakFlow?(): number;
@@ -771,6 +774,10 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     const { newlyEarned } = PianoCore.applyStampEvaluation(ctx, stamps);
     if (newlyEarned.length > 0) {
       deps.saveProgress();
+      // SE（最小版）: スタンプ獲得という「節目」だけ、結果画面で控えめな祝福音を
+      // 1回鳴らす。演奏中ではないので音楽と競合しない。成果contingentではなく
+      // マイルストーン祝福（banned-list 準拠の装飾）。
+      deps.playStampCelebration?.();
     }
     renderStampsEarned(newlyEarned);
     renderLibraryStrip();

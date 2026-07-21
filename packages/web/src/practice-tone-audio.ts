@@ -127,6 +127,10 @@ export interface PracticeToneAudio {
    *  "効いた" と分かるよう、必要なら user gesture 内で AudioContext を再開
    *  してから鳴らす。ベストエフォート（suspended のまま等は無音で無害）。 */
   previewVolume(layer: 'ghost' | 'backing' | 'metronome'): void;
+  /** SE（最小版）: スタンプ獲得の節目に結果画面で1回だけ鳴らす、控えめな
+   *  上行アルペジオ（メロディ音色・低ベロシティ）。AudioContext が running の
+   *  時だけ鳴らし、suspended なら黙ってスキップ（無理に resume しない）。 */
+  playStampCelebration(): void;
   /** Schedule the audible "4, 3, 2, 1, GO!" preceding section start. */
   scheduleCountIn(startAudioTime: number): void;
   /** Tone.Transport stop + cancel, hide cursor + clear notehead
@@ -224,6 +228,26 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     }
   }
 
+  function playStampCelebration(): void {
+    if (!deps.Tone) return;
+    // 結果画面（演奏後）でのみ呼ばれる想定。ctx が running の時だけ鳴らす。
+    // suspended（タイトル等）なら黙ってスキップ — user gesture 外なので resume
+    // しない（後から遅れて鳴るのを防ぐ）。
+    if (deps.Tone.context?.state !== 'running') return;
+    ensureInstruments();
+    if (!melody) return;
+    try {
+      // 柔らかい上行アルペジオ C5→E5→G5 を低ベロシティで（ピアノ音色の控えめな
+      // 祝福。ゲーム的な "ピロン" は使わない）。相対時間 '+X' は Tone.now() 基準
+      // で Transport 非依存。
+      melody.triggerAttackRelease('C5', 0.2, '+0', 0.26);
+      melody.triggerAttackRelease('E5', 0.2, '+0.1', 0.26);
+      melody.triggerAttackRelease('G5', 0.55, '+0.2', 0.3);
+    } catch {
+      /* disposed / suspended — best-effort */
+    }
+  }
+
   function scheduleCountIn(startAudioTime: number): void {
     if (!deps.Tone) return;
     deps.audioScheduler.scheduleCountInBeeps({ metronome, piano }, startAudioTime, {
@@ -265,6 +289,7 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     ensureInstruments,
     applyVolumes,
     previewVolume,
+    playStampCelebration,
     scheduleCountIn,
     stopPracticeAudio,
     getInstruments: () => ({ piano, metronome, melody }),

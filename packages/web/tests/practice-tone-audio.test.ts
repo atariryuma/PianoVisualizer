@@ -245,6 +245,33 @@ describe('stopPracticeAudio', () => {
   });
 });
 
+// ─── playStampCelebration (SE 最小版) ──────────────────────────────
+
+describe('playStampCelebration', () => {
+  it('no-ops when the AudioContext is not running (suspended / title)', () => {
+    const fx = makeFixture(); // fake Tone は context 無し → running でない
+    fx.audio.playStampCelebration();
+    // 早期 return するので synth すら作らない。
+    expect(fx.audio.getInstruments().melody).toBeNull();
+  });
+
+  it('plays a soft 3-note arpeggio on the melody synth when running', () => {
+    const tone = makeFakeTone();
+    (tone as unknown as { context: { state: string } }).context = { state: 'running' };
+    const fx = makeFixture({ Tone: tone as unknown as PracticeToneAudioDeps['Tone'] });
+    fx.audio.playStampCelebration();
+    const melody = fx.audio.getInstruments().melody as unknown as {
+      triggerAttackRelease: ReturnType<typeof vi.fn>;
+    };
+    expect(melody).not.toBeNull();
+    expect(melody.triggerAttackRelease).toHaveBeenCalledTimes(3); // C5-E5-G5
+    // 全て低ベロシティ（<0.35）で控えめ。
+    for (const call of melody.triggerAttackRelease.mock.calls) {
+      expect(call[3]).toBeLessThan(0.35);
+    }
+  });
+});
+
 // ─── getInstruments ────────────────────────────────────────────────
 
 describe('getInstruments', () => {

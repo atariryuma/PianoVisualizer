@@ -683,6 +683,7 @@ export function boot(): void {
     midiInput,
     midiState,
     modalFocus,
+    playStampCelebration: () => _practice.playStampCelebration(),
     prefs,
     savePrefs,
     config: CONFIG,
