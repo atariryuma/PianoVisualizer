@@ -26,7 +26,12 @@ const LEVEL_JP = { 1: '初級', 2: '初中級', 3: '中級', 4: '上級' };
 
 function pick(re, xml) {
   const m = xml.match(re);
-  return m ? m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim() : '';
+  return m
+    ? m[1]
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .trim()
+    : '';
 }
 
 // "chopin_prelude_op28_no7.musicxml" → "Prelude Op28 No7"
@@ -66,10 +71,14 @@ for (const file of files) {
     _embeddedTitle: embeddedTitle, // for your reference; delete after review
     _cc0Detected: cc0, // false → confirm the license before shipping
   });
-  // eslint-disable-next-line no-console
-  console.log(`${cc0 ? '✓' : '⚠'} ${file}  (${composer})${cc0 ? '' : '  ← CC0 NOT detected in file — verify!'}`);
+
+  console.log(
+    `${cc0 ? '✓' : '⚠'} ${file}  (${composer})${cc0 ? '' : '  ← CC0 NOT detected in file — verify!'}`
+  );
 }
 
 writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ version: 1, scores }, null, 2) + '\n');
-// eslint-disable-next-line no-console
-console.log(`\nWrote manifest.json with ${scores.length} scores. NOW: review titles + set each level (1-4), then delete the _embeddedTitle/_cc0Detected helper fields.`);
+
+console.log(
+  `\nWrote manifest.json with ${scores.length} scores. NOW: review titles + set each level (1-4), then delete the _embeddedTitle/_cc0Detected helper fields.`
+);
