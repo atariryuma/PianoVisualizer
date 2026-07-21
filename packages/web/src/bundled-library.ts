@@ -51,10 +51,39 @@ interface LibraryManifest {
 export const LIBRARY_BASE = 'assets/library/';
 export const LIBRARY_MANIFEST_URL = LIBRARY_BASE + 'manifest.json';
 
+/**
+ * OPTIONAL pinned remote catalog merged on top of the bundled scores — the
+ * "download more free songs at runtime" path. DISABLED by default (`null`).
+ *
+ * Legal + App-Store-4.7 safe ONLY under these invariants (do not relax):
+ *   1. `base` is pinned to a SPECIFIC COMMIT of a repo whose files are ALL
+ *      CC0 / public domain (e.g. a jsDelivr `@<40-char-sha>` URL). A moving
+ *      ref (`@main`) is forbidden — the catalog must be reproducible/reviewable.
+ *   2. The source is a repo you have VERIFIED is entirely CC0. NEVER point this
+ *      at a mixed-license site (IMSLP per-file, MuseScore.com user uploads) —
+ *      the app redistributes whatever it lists, so a mislabeled file there is
+ *      the app's liability (this is exactly the musetrainer trap we removed).
+ *   3. The files are real **MusicXML** (`.musicxml`/`.mxl`). OpenScore's GitHub
+ *      stores MuseScore `.mscx`, which OSMD cannot read — those must be
+ *      converted to MusicXML first and re-hosted (see docs/LIBRARY-CURATION.md).
+ *
+ * The fetch is best-effort + time-bounded: any failure (offline, 404, timeout)
+ * silently falls back to the bundled catalog, so the app never breaks.
+ */
+export interface RemoteCatalogConfig {
+  /** Pinned raw dir ending in '/', holding `manifest.json` + the score files. */
+  base: string;
+}
+export const REMOTE_CATALOG: RemoteCatalogConfig | null = null;
+const REMOTE_TIMEOUT_MS = 8000;
+
 export interface BundledLibraryDeps {
   fetch: typeof fetch;
   /** Override the asset base (tests). Production: LIBRARY_BASE. */
   base?: string;
+  /** Pinned CC0 remote catalog to merge, or null to disable. Defaults to the
+   *  module `REMOTE_CATALOG` constant when omitted. */
+  remote?: RemoteCatalogConfig | null;
 }
 
 export interface BundledLibrary {
@@ -85,18 +114,49 @@ function toEntry(s: ManifestScore, base: string): BundledLibraryEntry {
 
 export function createBundledLibrary(deps: BundledLibraryDeps): BundledLibrary {
   const base = deps.base ?? LIBRARY_BASE;
+  const remote = deps.remote === undefined ? REMOTE_CATALOG : deps.remote;
   let cache: BundledLibraryEntry[] | null = null;
+
+  /** Best-effort, time-bounded fetch of the pinned CC0 remote catalog. Any
+   *  failure resolves to [] so the bundled catalog always wins. */
+  async function fetchRemote(cfg: RemoteCatalogConfig): Promise<BundledLibraryEntry[]> {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('remote catalog timeout')), REMOTE_TIMEOUT_MS)
+    );
+    try {
+      const res = (await Promise.race([
+        deps.fetch(cfg.base + 'manifest.json'),
+        timeout,
+      ])) as Response;
+      if (!res.ok) return [];
+      const manifest = (await res.json()) as LibraryManifest;
+      return (manifest.scores || []).filter((s) => s && s.file).map((s) => toEntry(s, cfg.base));
+    } catch {
+      return [];
+    }
+  }
 
   async function fetchEntries(force?: boolean): Promise<BundledLibraryEntry[]> {
     if (cache && !force) return cache;
     const res = await deps.fetch(base + 'manifest.json');
     if (!res.ok) throw new Error('library manifest ' + res.status);
     const manifest = (await res.json()) as LibraryManifest;
-    const entries = (manifest.scores || [])
-      .filter((s) => s && s.file)
-      .map((s) => toEntry(s, base))
-      // Beginner → advanced, then alphabetical within a tier.
-      .sort((a, b) => a.level - b.level || a.label.localeCompare(b.label));
+    const entries = (manifest.scores || []).filter((s) => s && s.file).map((s) => toEntry(s, base));
+
+    // Merge the optional pinned CC0 remote catalog; bundled files win on
+    // filename collisions, and remote failure never breaks the bundled list.
+    if (remote) {
+      const seen = new Set(entries.map((e) => e.filename));
+      for (const e of await fetchRemote(remote)) {
+        if (!seen.has(e.filename)) {
+          seen.add(e.filename);
+          entries.push(e);
+        }
+      }
+    }
+
+    // Beginner → advanced, then alphabetical within a tier.
+    entries.sort((a, b) => a.level - b.level || a.label.localeCompare(b.label));
     cache = entries;
     return entries;
   }

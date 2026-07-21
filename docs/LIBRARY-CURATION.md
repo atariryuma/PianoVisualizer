@@ -144,3 +144,39 @@ Each new piece is auto-checked by `packages/web/tests/bundled-library.test.ts`
 (parses + auto-sections). Do a one-off OSMD render pass (see the puppeteer
 render check used during the migration) to confirm pitches look right before
 committing.
+
+## Runtime remote catalog (optional "download more free songs")
+
+There are three ways to add songs, in increasing effort:
+
+1. **Bundle** (default) — add to the generator / `EXTERNAL` array; ships in an
+   app update. Offline, verified, zero liability.
+2. **User import** — the user pastes a URL or picks a file. The user chooses it,
+   so it's the user's responsibility (the app is a neutral tool).
+3. **Runtime remote catalog** — an in-app "more free songs" list the app fetches
+   at runtime. Implemented in `bundled-library.ts` (`REMOTE_CATALOG`),
+   **disabled by default** (`null`). When enabled, its entries merge on top of
+   the bundled 27 (bundled wins on filename collisions); any fetch failure
+   silently falls back to the bundled catalog, so offline still works.
+
+**To enable #3 legally (do not skip any invariant):**
+
+- **Pin to a specific commit** of a repo whose files are **all CC0 / public
+  domain** — e.g.
+  `{ base: 'https://cdn.jsdelivr.net/gh/<you>/piano-scores@<40-char-sha>/' }`. A
+  moving ref (`@main`) is forbidden (App Store 4.7 = runtime content must be
+  stable/reviewable).
+- **Never** point it at a mixed-license site (IMSLP per-file, MuseScore.com
+  uploads). The app redistributes whatever it lists, so one mislabeled file
+  there is the app's liability — the exact musetrainer trap.
+- The files must be real **MusicXML**. OpenScore's GitHub is MuseScore `.mscx`
+  (OSMD can't read it) → convert to MusicXML first (free MuseScore Studio ▸
+  Export ▸ MusicXML) and host the `.musicxml` + a `manifest.json` in your pinned
+  repo. This is why the recommended source is **your own** `piano-scores` repo
+  filled with verified CC0 files — not a raw third-party fetch.
+- **Update `docs/PRIVACY.md`** — enabling this adds a network request (fetching
+  the pinned catalog), so the "Network access" section must say so.
+
+The remote manifest uses the same shape as the bundled one
+(`{version, scores:[{file,title,composer,level,...}]}`); entry download URLs are
+`base + file`.

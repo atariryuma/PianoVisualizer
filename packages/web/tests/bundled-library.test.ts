@@ -83,6 +83,62 @@ describe('createBundledLibrary — fetchEntries', () => {
     expect(withJp?.labelJp).toContain('—');
   });
 
+  it('merges a pinned remote CC0 catalog, deduped + sorted by level', async () => {
+    const remoteManifest = {
+      version: 1,
+      scores: [
+        { file: 'remote_adv.musicxml', title: 'Remote Advanced', composer: 'X', level: 4 },
+        // filename collides with a bundled file → bundled must win (not duplicated)
+        { file: manifest.scores[0].file, title: 'DUPLICATE', composer: 'Y', level: 1 },
+      ],
+    };
+    const fetch = (async (url: string) => {
+      if (String(url) === 'https://cdn.test/pinned/manifest.json') {
+        return { ok: true, json: async () => remoteManifest } as unknown as Response;
+      }
+      if (String(url).endsWith('manifest.json')) {
+        return { ok: true, json: async () => manifest } as unknown as Response;
+      }
+      return { ok: false, status: 404 } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const lib = createBundledLibrary({ fetch, remote: { base: 'https://cdn.test/pinned/' } });
+    const entries = await lib.fetchEntries(true);
+    // remote entry present with its pinned absolute URL
+    const adv = entries.find((e) => e.filename === 'remote_adv.musicxml');
+    expect(adv?.url).toBe('https://cdn.test/pinned/remote_adv.musicxml');
+    // no duplicate of the colliding filename
+    expect(entries.filter((e) => e.filename === manifest.scores[0].file).length).toBe(1);
+    // still sorted non-decreasing by level (remote L4 lands at the end)
+    const levels = entries.map((e) => e.level);
+    expect(levels).toEqual([...levels].sort((a, b) => a - b));
+  });
+
+  it('falls back to the bundled catalog when the remote fetch fails', async () => {
+    const fetch = (async (url: string) => {
+      if (String(url) === 'https://cdn.test/pinned/manifest.json') {
+        return { ok: false, status: 500 } as unknown as Response; // remote down
+      }
+      if (String(url).endsWith('manifest.json')) {
+        return { ok: true, json: async () => manifest } as unknown as Response;
+      }
+      return { ok: false, status: 404 } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const lib = createBundledLibrary({ fetch, remote: { base: 'https://cdn.test/pinned/' } });
+    const entries = await lib.fetchEntries(true);
+    expect(entries.length).toBe(manifest.scores.length); // bundled only, no throw
+  });
+
+  it('does not touch the network for a remote catalog when disabled (null)', async () => {
+    let remoteCalls = 0;
+    const fetch = (async (url: string) => {
+      if (String(url).includes('pinned')) remoteCalls++;
+      return { ok: true, json: async () => manifest } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const lib = createBundledLibrary({ fetch, remote: null });
+    await lib.fetchEntries(true);
+    expect(remoteCalls).toBe(0);
+  });
+
   it('caches after the first fetch unless forced', async () => {
     let calls = 0;
     const fetch = (async () => {
