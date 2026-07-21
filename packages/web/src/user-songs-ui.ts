@@ -26,6 +26,7 @@
 
 import type { UserSongRecord } from '@piano/core';
 import type { BundledLibraryEntry } from './bundled-library';
+import { DIFFICULTY_ICON, libraryLevelToDifficulty } from './built-in-songs';
 
 /** D3: import 経路のサイズ上限（shell-user-library の USER_SONG_MAX_BYTES と
  *  同値=20MB）。ファイル選択/URL 経路と同じ上限を import にも課す。 */
@@ -361,6 +362,15 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       labelSpan.textContent = libraryDisplayLabel(item);
       row.appendChild(iconSpan);
       row.appendChild(labelSpan);
+      // Difficulty band badge (🌱/🌿/🌳/🏔️) derived from the catalog level, so
+      // the kid can self-calibrate WHICH piece to add — the same vocabulary
+      // the built-in songs use (connects the level-1–4 and plant systems).
+      const band = libraryLevelToDifficulty(item.level);
+      const bandSpan = document.createElement('span');
+      bandSpan.className = 'lib-band';
+      bandSpan.textContent = DIFFICULTY_ICON[band];
+      bandSpan.title = deps.t('difficulty' + band[0].toUpperCase() + band.slice(1));
+      row.appendChild(bandSpan);
       row.addEventListener('click', async () => {
         if (row.classList.contains('busy')) return;
         row.classList.add('busy');

@@ -10,6 +10,7 @@ import type {
   StampCategory,
   StampContext,
 } from '@piano/core';
+import { ADD_SONG_SENTINEL } from './result-card';
 
 /** Minimum shape the modal needs to know about each song. The shell
  *  feeds a list assembled from its SONGS registry (built-in + user). */
@@ -245,6 +246,42 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
         '</div>';
     }
 
+    // Medals row — surfaces gold/platinum song counts (previously computed but
+    // never shown). Only once at least one medal exists, so a fresh start
+    // doesn't open on an empty "🥇 0  💎 0".
+    let medalsRow = '';
+    if (lib.songsGold > 0 || lib.songsPlatinum > 0) {
+      medalsRow =
+        '<div class="rollup-row">' +
+        '<span class="rollup-icon">🏆</span>' +
+        '<span class="rollup-label">' +
+        deps.t('rollupSealsLabel') +
+        '</span>' +
+        '<span class="rollup-value">' +
+        deps.t('rollupSealsFmt', { gold: lib.songsGold, plat: lib.songsPlatinum }) +
+        '</span>' +
+        '</div>';
+    }
+
+    // Capstone row — a positive-only "how far across the whole library"
+    // acknowledgment so mastery is celebrated instead of dead-ending silently.
+    const completion = PianoCore.computeLibraryCompletion(songs, progress);
+    let capstoneRow = '';
+    if (completion.milestone) {
+      const key =
+        'capstone' + completion.milestone[0].toUpperCase() + completion.milestone.slice(1);
+      capstoneRow =
+        '<div class="rollup-row rollup-capstone">' +
+        '<span class="rollup-icon">✨</span>' +
+        '<span class="rollup-label">' +
+        deps.t('capstoneLabel') +
+        '</span>' +
+        '<span class="rollup-value">' +
+        deps.t(key) +
+        '</span>' +
+        '</div>';
+    }
+
     deps.dom.journalLibraryRollup.innerHTML =
       '<div class="rollup-row">' +
       '<span class="rollup-icon">⭐</span>' +
@@ -276,7 +313,9 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       deps.t('rollupDaysFmt', { n: progress.streakDays?.length ?? 0 }) +
       '</span>' +
       '</div>' +
-      growthRow;
+      medalsRow +
+      growthRow +
+      capstoneRow;
   }
 
   function renderRepertoireTab(): void {
@@ -700,6 +739,18 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
         target.appendChild(nearEl);
       }
     }
+
+    // Endgame capstone chip on the title screen — the library-wide milestone is
+    // celebrated where the kid starts, not buried in the journal.
+    const completion = PianoCore.computeLibraryCompletion(songs, progress);
+    if (completion.milestone) {
+      const key =
+        'capstone' + completion.milestone[0].toUpperCase() + completion.milestone.slice(1);
+      const capEl = document.createElement('div');
+      capEl.className = 'lib-strip-capstone';
+      capEl.textContent = deps.t(key);
+      target.appendChild(capEl);
+    }
   }
 
   function renderStampsEarned(ids: readonly string[]): void {
@@ -744,9 +795,19 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
   function pickStretchSong(excludeSongId: string): string | null {
     const songRefs = deps.getSongs();
     const songs = songRefs.map(songRefToDef);
-    const near = PianoCore.pickNearCompletion(songs, deps.getProgress(), songs.length);
+    const progress = deps.getProgress();
+    const near = PianoCore.pickNearCompletion(songs, progress, songs.length);
     for (const entry of near) {
       if (entry.songId !== excludeSongId) return entry.songId;
+    }
+    // Endgame: no song left to push toward its next seal. If the kid has
+    // actually maxed songs out (something is touched, so `near` is empty
+    // because every touched song is platinum — not because nothing's played),
+    // route to "add more free songs" instead of hiding the button (the old
+    // dead-end). ADD_SONG_SENTINEL is intercepted by the shell's stretch click.
+    if (near.length === 0) {
+      const lib = PianoCore.computeLibraryMastery(songs, progress);
+      if (lib.songsTouched > 0) return ADD_SONG_SENTINEL;
     }
     return null;
   }

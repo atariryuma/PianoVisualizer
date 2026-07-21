@@ -37,6 +37,25 @@ export const DIFFICULTY_ICON: Record<SongDifficulty, string> = {
   mountain: '🏔️',
 };
 
+/** Map a bundled-library `level` (1 初級 … 4 上級) onto the kid-friendly
+ *  plant band, so the two difficulty systems agree and imported library
+ *  pieces show the same 🌱/🌿/🌳/🏔️ vocabulary as the built-in songs.
+ *  Out-of-range/absent levels fall back to the middle of the ramp. */
+export function libraryLevelToDifficulty(level: number | undefined): SongDifficulty {
+  switch (level) {
+    case 1:
+      return 'sprout';
+    case 2:
+      return 'leaf';
+    case 3:
+      return 'tree';
+    case 4:
+      return 'mountain';
+    default:
+      return 'leaf';
+  }
+}
+
 export function makeSong(
   id: string,
   titleKey: string,

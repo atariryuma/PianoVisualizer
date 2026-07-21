@@ -192,6 +192,88 @@ export function computeLibraryMastery(
   };
 }
 
+// =====================================================================
+// Library capstone（エンドゲーム — mastery が無言で尽きないための到達承認）
+// =====================================================================
+
+/** The highest library-wide capstone milestone reached. Ordered by prestige;
+ *  `null` when nothing library-wide is complete yet. Positive-only — there is
+ *  no "you're behind" tier (banned-list: no shame, no false-progress). */
+export type LibraryMilestone =
+  | 'allTouched'
+  | 'allFullCleared'
+  | 'allSilver'
+  | 'allGold'
+  | 'allPlatinum';
+
+export interface LibraryCompletion {
+  /** Registered songs considered. */
+  total: number;
+  /** Songs with ≥1 star anywhere. */
+  touched: number;
+  /** Songs sealed silver or better. */
+  silver: number;
+  /** Songs sealed gold or better. */
+  gold: number;
+  /** Songs sealed platinum. */
+  platinum: number;
+  /** Songs whose full-song challenge has been cleared (≥1★ on '__full'). */
+  fullCleared: number;
+  /** Highest capstone milestone reached, or null. Drives the celebratory row. */
+  milestone: LibraryMilestone | null;
+}
+
+const SEAL_RANK: Readonly<Record<SongSeal, number>> = Object.freeze({
+  none: 0,
+  bronze: 1,
+  silver: 2,
+  gold: 3,
+  platinum: 4,
+});
+
+/**
+ * Pure: library-wide completion snapshot + the highest capstone reached, so the
+ * journey has a *named ending* instead of silently running out of buttons once
+ * every song is maxed. Milestones are picked by prestige (platinum > gold >
+ * silver > full-cleared > touched); a milestone only counts when EVERY
+ * registered song qualifies. An empty library returns all-zeros with
+ * `milestone: null` (nothing to celebrate yet).
+ */
+export function computeLibraryCompletion(
+  songs: readonly MasterySongDef[],
+  progress: PracticeProgress
+): LibraryCompletion {
+  let touched = 0;
+  let silver = 0;
+  let gold = 0;
+  let platinum = 0;
+  let fullCleared = 0;
+
+  for (const song of songs) {
+    const sp = progress.songs?.[song.id];
+    const sm = computeSongMastery(song, sp);
+    if (sm.touched) touched++;
+    const rank = SEAL_RANK[sm.seal];
+    if (rank >= SEAL_RANK.silver) silver++;
+    if (rank >= SEAL_RANK.gold) gold++;
+    if (rank >= SEAL_RANK.platinum) platinum++;
+    if (computeFullSongChallenge(song.sectionIds, sp?.sections).cleared) fullCleared++;
+  }
+
+  const total = songs.length;
+  let milestone: LibraryMilestone | null = null;
+  if (total > 0) {
+    // Highest prestige first — the first "every song qualifies" wins.
+    if (platinum === total) milestone = 'allPlatinum';
+    else if (gold === total) milestone = 'allGold';
+    else if (silver === total) milestone = 'allSilver';
+    else if (fullCleared === total) milestone = 'allFullCleared';
+    else if (touched === total) milestone = 'allTouched';
+  }
+
+  return { total, touched, silver, gold, platinum, fullCleared, milestone };
+}
+
 /** Songs ranked by how few stars remain to reach the next seal. */
 export interface NearCompletionEntry {
   songId: string;

@@ -301,6 +301,82 @@ body[data-layout='desktop'] .add-song-card {
   text-align: center; /* same wrap-centering rationale as the h1 */
 }
 
+/* First-run welcome card — onboarding "start here" on the title screen. */
+.first-run-welcome {
+  position: relative;
+  width: min(92vw, 380px);
+  margin: 0 auto var(--sp-10, 16px);
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.14), rgba(140, 100, 255, 0.14));
+  border: 1px solid rgba(255, 200, 230, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  text-align: center;
+}
+.first-run-welcome[hidden] {
+  display: none;
+}
+.first-run-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.first-run-body {
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 14px;
+}
+.first-run-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.first-run-actions button {
+  padding: 11px 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    transform 0.1s;
+}
+.first-run-actions button:active {
+  transform: scale(0.98);
+}
+.first-run-start {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 140, 200, 0.9),
+    rgba(140, 100, 255, 0.9)
+  ) !important;
+  border-color: transparent !important;
+}
+.first-run-dismiss {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  font-weight: 500 !important;
+}
+
+/* "👈 Start here" chip appended to the recommended song's title-screen button. */
+.start-here-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  color: #2a1740;
+  background: rgba(255, 215, 0, 0.92);
+  vertical-align: middle;
+}
+
 /* Title text scales with layout: compress on short landscape, enlarge
        on tablet/desktop where there's headroom. */
 body[data-layout='phone-landscape'] #startScreen h1 {
@@ -1801,6 +1877,18 @@ body[data-layout='desktop'] #modeButtons {
 /* Feed-forward nudge above the Start button — a gentle "try Listen first"
    for a recently-struggled section. Warm amber, framed as help not failure.
    Holds the copy plus a one-tap "set it up for me" button. */
+/* In-context mode explainer under the mode row (onboarding). Quiet, one line. */
+.mode-hint {
+  margin: 6px 2px 2px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+}
+.mode-hint:empty {
+  display: none;
+}
+
 .song-preflight-hint {
   display: flex;
   flex-direction: column;
@@ -2499,6 +2587,11 @@ body:has(#practiceHud.visible) #encouragement {
 #addSongMyList .my-row .my-label {
   flex: 1;
 }
+#addSongLibraryList .lib-row .lib-band {
+  font-size: 1rem;
+  opacity: 0.85;
+  flex: 0 0 auto;
+}
 #addSongMyList .my-row .my-sub {
   display: block;
   font-size: 0.72rem;
@@ -2989,6 +3082,19 @@ body:has(#practiceHud.visible) #encouragement {
   max-width: 320px;
 }
 
+/* Endgame capstone chip on the title-screen library strip. */
+.lib-strip-capstone {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ffd86a;
+  text-align: center;
+  max-width: 320px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill, 999px);
+  background: rgba(255, 215, 0, 0.12);
+  border: 1px solid rgba(255, 215, 0, 0.32);
+}
+
 /* ---- Modal chrome ---- */
 #journalModal {
   position: fixed;
@@ -3059,6 +3165,20 @@ body:has(#practiceHud.visible) #encouragement {
 .rollup-growth .rollup-value {
   color: #9fffb0;
   font-weight: 600;
+}
+
+/* Library capstone row — the endgame acknowledgment. Gold, celebratory,
+   spans the row (it's a milestone banner, not a stat). */
+.rollup-capstone {
+  margin-top: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.12), rgba(255, 150, 60, 0.08));
+  border: 1px solid rgba(255, 215, 0, 0.32);
+}
+.rollup-capstone .rollup-value {
+  color: #ffd86a;
+  font-weight: 700;
 }
 
 /* Tab strip */

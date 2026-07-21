@@ -151,6 +151,28 @@ export const T_STRINGS: TranslationTable = {
     de: 'Spiel Klavier und der Bildschirm leuchtet auf',
   },
   freePlay: { en: 'Free Play', jp: 'フリープレイ', de: 'Freies Spiel' },
+  // First-run welcome card — a gentle, dismissible "start here" on the title
+  // screen when there's no progress yet. Not a blocking tutorial (kid-safe:
+  // no forced gate); a single CTA to the recommended first song + a name nudge.
+  welcomeTitle: { en: 'Welcome! 🎹', jp: 'ようこそ！ 🎹', de: 'Willkommen! 🎹' },
+  welcomeBody: {
+    en: 'Play the piano and the screen lights up. Ready to try your first song together?',
+    jp: 'ピアノを弾くと画面が光るよ。まずは1曲、いっしょに弾いてみよう。',
+    de: 'Spiel Klavier und der Bildschirm leuchtet. Probieren wir dein erstes Stück?',
+  },
+  welcomeStartFmt: {
+    en: '▶ Start with “{song}”',
+    jp: '▶ 「{song}」からはじめる',
+    de: '▶ Mit „{song}“ starten',
+  },
+  welcomeSetName: {
+    en: '🎹 Set my pianist name',
+    jp: '🎹 なまえをきめる',
+    de: '🎹 Meinen Namen setzen',
+  },
+  welcomeDismiss: { en: 'Maybe later', jp: 'あとで', de: 'Später' },
+  // "Start here" chip on the recommended first (easiest untouched) song button.
+  startHereChip: { en: '👈 Start here', jp: '👈 はじめてはここから', de: '👈 Fang hier an' },
   // Song panel
   // Leading space lives in EN so JP renders "1日れんしゅう中" without a half-width gap.
   dayStreak: { en: ' day streak', jp: '日れんしゅう中', de: ' Tage in Folge' },
@@ -164,6 +186,24 @@ export const T_STRINGS: TranslationTable = {
   modeListen: { en: '🎧 Listen', jp: '🎧 きく', de: '🎧 Hören' },
   modeGuided: { en: '✨ Guided', jp: '✨ ガイド', de: '✨ Geführt' },
   modeRhythm: { en: '🎵 Rhythm', jp: '🎵 リズム', de: '🎵 Rhythmus' },
+  // One-line, in-context explainer that updates under the mode row as the
+  // kid taps a mode. Teaches the modes where the choice is made (no separate
+  // tutorial); intentionally reassuring, never a warning.
+  modeListenDesc: {
+    en: 'Hear the song first — the app plays it for you.',
+    jp: 'まずはお手本を聴いて、曲をおぼえよう。',
+    de: 'Hör dir das Stück erst an — die App spielt es vor.',
+  },
+  modeGuidedDesc: {
+    en: 'The notes wait for you. No rush, no mistakes.',
+    jp: '音が待っててくれる。あせらなくて大丈夫。',
+    de: 'Die Noten warten auf dich. Kein Stress, keine Fehler.',
+  },
+  modeRhythmDesc: {
+    en: 'The real thing — play along in time and earn stars.',
+    jp: '本番！テンポにのって弾いて、星をあつめよう。',
+    de: 'Das Original — spiel im Takt mit und sammle Sterne.',
+  },
   ghostPlayback: {
     en: '👻 Ghost playback (demo)',
     jp: '👻 おてほん再生（ゴースト）',
@@ -721,6 +761,18 @@ export const T_STRINGS: TranslationTable = {
   },
   questTargetFmt: { en: '🎯 {v}', jp: '🎯 {v}', de: '🎯 {v}' },
   questClearedFmt: { en: '✅ {v} CLEARED!', jp: '✅ {v} クリア！', de: '✅ {v} GESCHAFFT!' },
+  // Free-play quest reward taglines (were hardcoded English; now localized).
+  qstReward1: { en: 'Nice start!', jp: 'いいスタート！', de: 'Guter Start!' },
+  qstReward2: { en: 'Good flow!', jp: 'ながれに乗ってる！', de: 'Guter Flow!' },
+  qstReward3: { en: 'Combo master!', jp: 'コンボ名人！', de: 'Combo-Meister!' },
+  qstReward4: { en: 'Clean tone!', jp: 'きれいな音！', de: 'Sauberer Ton!' },
+  qstReward5: { en: 'Virtuoso!', jp: '名演奏！', de: 'Virtuose!' },
+  qstReward6: { en: 'Rhythm master!', jp: 'リズム名人！', de: 'Rhythmus-Meister!' },
+  qstReward7: { en: 'Peak flow!', jp: 'フロー最高潮！', de: 'Flow-Gipfel!' },
+  qstReward8: { en: 'Century combo!', jp: '100コンボ！', de: '100er-Combo!' },
+  qstReward9: { en: 'Dynamic range!', jp: '強弱ゆたか！', de: 'Dynamik!' },
+  qstReward10: { en: 'Full focus!', jp: 'しゅうちゅう満点！', de: 'Volle Konzentration!' },
+  qstReward11: { en: 'LEGENDARY!', jp: 'でんせつ級！', de: 'LEGENDÄR!' },
   // Session summary (post free-play)
   sumTitle: { en: '🎹 Session Results', jp: '🎹 セッション結果', de: '🎹 Sitzungs-Ergebnis' },
   sumBestCombo: { en: '🎵 Best Combo', jp: '🎵 ベストコンボ', de: '🎵 Beste Combo' },
@@ -938,6 +990,52 @@ export const T_STRINGS: TranslationTable = {
     de: 'Genauigkeit +{v} Pkt 📈',
   },
   rollupGrowthTimeFmt: { en: 'Timing +{v}pt 📈', jp: 'テンポ +{v}pt 📈', de: 'Timing +{v} Pkt 📈' },
+  // Library seals row — surfaces gold/platinum song counts (previously
+  // computed but never shown). Always visible once the kid has any songs.
+  rollupSealsLabel: { en: 'Medals', jp: 'メダル', de: 'Medaillen' },
+  rollupSealsFmt: {
+    en: '🥇 {gold}  💎 {plat}',
+    jp: '🥇 {gold}  💎 {plat}',
+    de: '🥇 {gold}  💎 {plat}',
+  },
+  // Library capstone row — a positive-only "how far across the whole library"
+  // acknowledgment so mastery never dead-ends silently. Shows the HIGHEST
+  // milestone reached (never a shortfall). Endgame recognition (banned-list:
+  // no shame, no false-progress — every tier is reachable and named).
+  capstoneLabel: { en: 'Library', jp: 'ライブラリ', de: 'Bibliothek' },
+  capstoneAllTouched: {
+    en: '🌱 Every piece started!',
+    jp: '🌱 ぜんぶの曲にチャレンジ！',
+    de: '🌱 Jedes Stück begonnen!',
+  },
+  capstoneAllFullCleared: {
+    en: '🎼 Every piece played through!',
+    jp: '🎼 ぜんぶの曲を通しでクリア！',
+    de: '🎼 Jedes Stück durchgespielt!',
+  },
+  capstoneAllSilver: {
+    en: '🥈 Whole library at Silver!',
+    jp: '🥈 ライブラリぜんぶ銀！',
+    de: '🥈 Ganze Bibliothek in Silber!',
+  },
+  capstoneAllGold: {
+    en: '🥇 Whole library at Gold!',
+    jp: '🥇 ライブラリぜんぶ金！',
+    de: '🥇 Ganze Bibliothek in Gold!',
+  },
+  capstoneAllPlatinum: {
+    en: '🏆 Library mastered — every piece Platinum!',
+    jp: '🏆 ライブラリ完全制覇 — ぜんぶ白金！',
+    de: '🏆 Bibliothek gemeistert — alles Platin!',
+  },
+  // "Add more songs" CTA that replaces the stretch-piece button once every
+  // touched song is maxed out, so the practice path routes to new content
+  // instead of hiding the button (the old endgame dead-end).
+  stretchAddSong: {
+    en: '➕ Add more free songs',
+    jp: '➕ もっと曲をふやす',
+    de: '➕ Mehr Stücke hinzufügen',
+  },
   // Repertoire tab
   sealNone: { en: 'Just starting', jp: 'これから', de: 'Frisch dabei' },
   sealBronze: { en: 'Bronze', jp: '銅', de: 'Bronze' },
@@ -1019,6 +1117,40 @@ export const T_STRINGS: TranslationTable = {
     en: 'A whole song, start to finish!',
     jp: '1曲まるごと、さいごまで弾けた!',
     de: 'Ein ganzes Stück, von Anfang bis Ende!',
+  },
+  // Endgame long-tail chases — reachable capstones that keep goals alive after
+  // a single song is maxed (the "no ending" gap). Achievement-gated, no RNG.
+  stampFirstPlatinumName: { en: 'Platinum Piece', jp: '白金の一曲', de: 'Platin-Stück' },
+  stampFirstPlatinumDesc: {
+    en: 'Take a song all the way to Platinum',
+    jp: '1曲を白金ランクまで仕上げる',
+    de: 'Ein Stück bis Platin bringen',
+  },
+  stampFirstPlatinumEarned: {
+    en: 'Platinum — every part, full speed!',
+    jp: '白金達成 — 全部、本来の速さで!',
+    de: 'Platin — jeder Teil, volles Tempo!',
+  },
+  stampFirstPlatinumTip: {
+    en: 'Platinum = every section 3★ AND 100% tempo. Mastery.',
+    jp: '白金 = 全セクション三ツ星＋100%テンポ。まさに熟達。',
+    de: 'Platin = jeder Teil 3★ und 100 % Tempo. Meisterschaft.',
+  },
+  stampFullSongMasterName: { en: 'Concert Ready', jp: 'コンサート級', de: 'Konzertreif' },
+  stampFullSongMasterDesc: {
+    en: 'Play 3 different songs start to finish',
+    jp: '3曲を通しでクリアする',
+    de: 'Spiel 3 Stücke von Anfang bis Ende',
+  },
+  stampFullSongMasterEarned: {
+    en: 'Three whole songs — a real repertoire!',
+    jp: '3曲を通しで — りっぱなレパートリー!',
+    de: 'Drei ganze Stücke — ein echtes Repertoire!',
+  },
+  stampFullSongMasterTip: {
+    en: 'A repertoire of pieces you can play end-to-end is what performing is.',
+    jp: '通して弾ける曲が増える = 「演奏できる」ってこと。',
+    de: 'Ein Repertoire, das du ganz spielen kannst — das ist Auftreten.',
   },
   stampTempo100Name: { en: 'Full Tempo', jp: '本来の速さ', de: 'Volles Tempo' },
   stampTempo100Desc: {

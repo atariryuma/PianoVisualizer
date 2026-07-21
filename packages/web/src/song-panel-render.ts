@@ -85,6 +85,9 @@ export interface SongPanelRenderDom {
   loopToggle: HTMLElement | null;
   fullSongRow: HTMLElement | null;
   fullSongToggle: HTMLElement | null;
+  /** One-line, mode-conditional explainer under the mode row. Optional so
+   *  partial-DOM tests / older shells degrade gracefully. */
+  modeHint?: HTMLElement | null;
   /** Feed-forward nudge shown above the start button for a recently-struggled
    *  section. `Hint` is the container, `Text` the copy, `Apply` the one-tap
    *  "set it up for me" button. All optional so partial-DOM tests / older
@@ -323,6 +326,17 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
         h === 'L' || h === 'R' ? deps.practice.handFilter === h : !deps.practice.handFilter;
       b.classList.toggle('active', active);
     });
+    // Mode explainer — teaches Listen/Guided/Rhythm in place as the kid taps.
+    if (deps.dom.modeHint) {
+      const hintKey =
+        deps.practice.mode === 'listen'
+          ? 'modeListenDesc'
+          : deps.practice.mode === 'rhythm'
+            ? 'modeRhythmDesc'
+            : 'modeGuidedDesc';
+      deps.dom.modeHint.textContent = deps.t(hintKey);
+    }
+
     deps.dom.ghostToggle.classList.toggle('on', deps.practice.ghostOn);
     deps.dom.metronomeToggle.classList.toggle('on', deps.practice.metronomeOn);
     const showRhythmOpts = deps.practice.mode === 'rhythm';

@@ -30,6 +30,10 @@
            Empty until the kid sets a pianist name in the journal. -->
       <div id="startScreenPianistBadge" class="start-screen-pianist-badge"></div>
       <p data-i18n="tagline">Play the piano and watch the screen come alive</p>
+      <!-- First-run welcome card — content built by first-run-welcome.ts and
+           shown only when there's no progress yet (dismissible, kid-safe: no
+           blocking gate). Hidden by default. -->
+      <div id="firstRunWelcome" class="first-run-welcome" hidden></div>
       <div id="modeButtons">
         <button id="startBtn" class="mode-btn">
           <span class="mode-btn-label">🎨 <span data-i18n="freePlay">Free Play</span></span>
@@ -426,6 +430,10 @@
           </button>
           <button class="hand-btn" data-mode="rhythm" data-i18n="modeRhythm">🎵 Rhythm</button>
         </div>
+        <!-- In-context, one-line explainer for the selected mode. Owned by
+             renderSongPanel (updates as the mode changes) — teaches the three
+             modes where the choice is made, without a separate tutorial. -->
+        <div id="modeHint" class="mode-hint"></div>
         <div class="opt-row" id="ghostRow">
           <div class="opt-toggle" id="ghostToggle"></div>
           <div data-i18n="ghostPlayback">👻 Ghost playback (demo)</div>

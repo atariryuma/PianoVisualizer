@@ -23,6 +23,11 @@
 import { FULL_SONG_SECTION_ID } from '@piano/core';
 import type { PracticeMode, SectionFocus } from '@piano/core';
 
+/** Sentinel `getStretchSongId()` returns at endgame (every touched song maxed
+ *  out) so the stretch button routes to "add more songs" instead of vanishing
+ *  — the old dead-end. Not a real song id; shell-ui intercepts it. */
+export const ADD_SONG_SENTINEL = '__addsong';
+
 /** Practice slice the module reads + writes. */
 export interface ResultCardPracticeRef {
   enabled: boolean;
@@ -217,6 +222,10 @@ export interface ResultCardDeps {
   effectGoldenBurst(): void;
   effectStarShower(count: number): void;
   effectFlowerBurst(): void;
+  /** Milestone piano fanfare for a full-song clear (result screen only —
+   *  same design rule as playStampCelebration: no gameplay SE). Optional so
+   *  partial-DOM tests / older shells degrade to silence. */
+  playSongClear?(): void;
   /** HiDPI canvas setup helper. */
   setupHiDPICanvas(canvas: HTMLCanvasElement, w: number, h: number): CanvasRenderingContext2D;
   /** [0..1] clamp helper (PianoCore.clamp01). */
@@ -401,6 +410,25 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     btn.style.display = '';
     btn.dataset.tempo = String(next);
     btn.textContent = deps.t('resTempoUpFmt', { v: next });
+  };
+
+  /** Paint the stretch/"add more songs" button from getStretchSongId. A real
+   *  song id → "try a stretch piece"; the ADD_SONG_SENTINEL → "add more songs"
+   *  (endgame). Sets data-i18n too so a langchange keeps the right label. */
+  const paintStretchButton = (): void => {
+    const btn = deps.dom.resStretch;
+    if (!btn) return;
+    const stretchId = deps.getStretchSongId?.() ?? null;
+    if (!stretchId) {
+      btn.style.display = 'none';
+      btn.dataset.songId = '';
+      return;
+    }
+    btn.style.display = '';
+    btn.dataset.songId = stretchId;
+    const key = stretchId === ADD_SONG_SENTINEL ? 'stretchAddSong' : 'stretchBtn';
+    btn.setAttribute('data-i18n', key);
+    btn.textContent = deps.t(key);
   };
 
   function renderResultCard(): void {
@@ -625,11 +653,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         nextIdx < realSectionIds.length &&
         !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
       deps.dom.resNext.style.display = hasNext ? '' : 'none';
-      if (deps.dom.resStretch) {
-        const stretchId = deps.getStretchSongId?.() ?? null;
-        deps.dom.resStretch.style.display = stretchId ? '' : 'none';
-        deps.dom.resStretch.dataset.songId = stretchId ?? '';
-      }
+      paintStretchButton();
       deps.dom.sectionResult.classList.add('visible');
       deps.practice._completing = false;
       return;
@@ -804,11 +828,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
     deps.dom.resNext.style.display = hasNext ? '' : 'none';
 
-    if (deps.dom.resStretch) {
-      const stretchId = deps.getStretchSongId?.() ?? null;
-      deps.dom.resStretch.style.display = stretchId ? '' : 'none';
-      deps.dom.resStretch.dataset.songId = stretchId ?? '';
-    }
+    paintStretchButton();
 
     // Big celebration. A full-song clear (★1+) is the practice path's
     // summit — always gets the golden-burst treatment regardless of tier
@@ -817,6 +837,11 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.effectGoldenBurst();
       deps.effectFlowerBurst();
       deps.effectStarShower(10);
+      // The one live-adjacent milestone that gets audio: a full-song clear is
+      // the summit of the practice path. A short piano fanfare on the result
+      // screen (not during play) — fills the MIDI/headphone silence without
+      // adding gameplay SE.
+      deps.playSongClear?.();
     } else if (stars >= 3) {
       deps.effectGoldenBurst();
       deps.effectStarShower(8);

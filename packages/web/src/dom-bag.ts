@@ -73,6 +73,7 @@ export interface DomBag {
   fullSongRow: HTMLElement;
   loopToggle: HTMLElement;
   loopRow: HTMLElement;
+  modeHint: HTMLElement;
   songBack: HTMLElement;
   songPreflightHint: HTMLElement;
   songPreflightText: HTMLElement;
@@ -139,6 +140,7 @@ export interface DomBag {
   pianistEditCancelBtn: HTMLElement;
   pianistEditSaveBtn: HTMLElement;
   startScreenPianistBadge: HTMLElement;
+  firstRunWelcome: HTMLElement;
   journalLibraryRollup: HTMLElement;
   journalRepertoireList: HTMLElement;
   journalStampsGrid: HTMLElement;
@@ -229,6 +231,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'fullSongRow',
   'loopToggle',
   'loopRow',
+  'modeHint',
   'songBack',
   'songPreflightHint',
   'songPreflightText',
@@ -289,6 +292,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'pianistEditCancelBtn',
   'pianistEditSaveBtn',
   'startScreenPianistBadge',
+  'firstRunWelcome',
   'journalLibraryRollup',
   'journalRepertoireList',
   'journalStampsGrid',

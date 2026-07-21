@@ -59,6 +59,7 @@ function makeDom(): ResultCardDom {
       <button id="resTryPlay"></button>
       <button id="resRetrySlow" style="display: none"></button>
       <button id="resTempoUp" style="display: none"></button>
+      <button id="resStretch" data-i18n="stretchBtn" style="display: none"></button>
     </div>
   `;
   return {
@@ -85,6 +86,7 @@ function makeDom(): ResultCardDom {
     resTryPlay: document.getElementById('resTryPlay'),
     resRetrySlow: document.getElementById('resRetrySlow'),
     resTempoUp: document.getElementById('resTempoUp'),
+    resStretch: document.getElementById('resStretch'),
   };
 }
 
@@ -698,6 +700,60 @@ describe('createResultCard — full-song challenge completion', () => {
     expect(deps.practice._lastResult?.fullSong).toBe(true);
     expect(deps.practice._lastResult?.secId).toBe('__full');
     expect((deps.dom.resNext as HTMLElement).style.display).toBe('none');
+  });
+
+  it('plays the song-clear fanfare on a ★1+ full-song clear', () => {
+    const playSongClear = vi.fn();
+    const deps = challengeDeps({ computeStars: vi.fn(() => 1), playSongClear });
+    createResultCard(deps).completePracticeSection();
+    expect(playSongClear).toHaveBeenCalled();
+  });
+
+  it('does NOT play the fanfare on a 0★ full-song run', () => {
+    const playSongClear = vi.fn();
+    const deps = challengeDeps({ computeStars: vi.fn(() => 0), playSongClear });
+    createResultCard(deps).completePracticeSection();
+    expect(playSongClear).not.toHaveBeenCalled();
+  });
+
+  it('does NOT play the fanfare on a normal (non-full-song) section clear', () => {
+    const playSongClear = vi.fn();
+    const deps = makeDeps({ computeStars: vi.fn(() => 3), playSongClear });
+    deps.practice.mode = 'rhythm';
+    createResultCard(deps).completePracticeSection();
+    expect(playSongClear).not.toHaveBeenCalled();
+  });
+});
+
+// ─── endgame stretch → add-song routing ──────────────────────────────
+
+describe('createResultCard — stretch button (add-song at endgame)', () => {
+  it('shows a real stretch song with the stretch label', () => {
+    const deps = makeDeps({ getStretchSongId: () => 'alla_turca', computeStars: vi.fn(() => 2) });
+    deps.practice.mode = 'rhythm';
+    createResultCard(deps).completePracticeSection();
+    const btn = deps.dom.resStretch as HTMLElement;
+    expect(btn.style.display).toBe('');
+    expect(btn.dataset.songId).toBe('alla_turca');
+    expect(btn.getAttribute('data-i18n')).toBe('stretchBtn');
+  });
+
+  it('routes to "add more songs" (sentinel) with the add-song label at endgame', () => {
+    const deps = makeDeps({ getStretchSongId: () => '__addsong', computeStars: vi.fn(() => 2) });
+    deps.practice.mode = 'rhythm';
+    createResultCard(deps).completePracticeSection();
+    const btn = deps.dom.resStretch as HTMLElement;
+    expect(btn.style.display).toBe('');
+    expect(btn.dataset.songId).toBe('__addsong');
+    expect(btn.getAttribute('data-i18n')).toBe('stretchAddSong');
+    expect(btn.textContent).toBe('stretchAddSong');
+  });
+
+  it('hides the button when there is nothing to stretch to', () => {
+    const deps = makeDeps({ getStretchSongId: () => null, computeStars: vi.fn(() => 2) });
+    deps.practice.mode = 'rhythm';
+    createResultCard(deps).completePracticeSection();
+    expect((deps.dom.resStretch as HTMLElement).style.display).toBe('none');
   });
 });
 

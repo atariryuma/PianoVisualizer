@@ -41,6 +41,9 @@ export interface QuestDef {
   id: string;
   nameKey: string;
   descKey: string;
+  /** i18n key for the reward tagline (preferred). */
+  rewardKey?: string;
+  /** Legacy raw-English fallback when rewardKey is absent. */
   reward: string;
   condition?: unknown; // shape owned by @piano/core
 }
@@ -120,8 +123,9 @@ export function createQuestStateUpdate(deps: QuestUpdateDeps): QuestStateUpdate 
 
         console.log('Quest Completed: ' + deps.t(quest.nameKey));
         deps.dom.toastTitle.textContent = '✨ ' + deps.t(quest.nameKey) + ' ✨';
+        const rewardText = quest.rewardKey ? deps.t(quest.rewardKey) : quest.reward;
         deps.dom.toastSub.textContent =
-          quest.reward +
+          rewardText +
           ' (' +
           deps.trackerState.completedIds.length +
           '/' +

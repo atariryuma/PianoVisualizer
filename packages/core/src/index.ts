@@ -215,6 +215,7 @@ export {
   pickNearCompletion,
   weeklyLibraryGrowth,
   computeFullSongChallenge,
+  computeLibraryCompletion,
   FULL_SONG_SECTION_ID,
 } from './state/mastery';
 export type {
@@ -228,6 +229,8 @@ export type {
   WeeklyGrowthAttempt,
   FullSongChallengeView,
   FullSongProgressSections,
+  LibraryCompletion,
+  LibraryMilestone,
 } from './state/mastery';
 
 // === State: stamp collection (varied "collectibles" awarded on section complete) ===

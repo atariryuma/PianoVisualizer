@@ -185,6 +185,57 @@ describe('completion stamps', () => {
     );
     expect(r.newlyEarned).not.toContain('first_full_song_clear');
   });
+
+  it('awards first_platinum when a song is all-3★ AND 100% tempo unlocked', () => {
+    const p = freshProgress();
+    const sp = defaultSongProgress();
+    sp.sections.A1 = { stars: 3, bestPct: 100 };
+    sp.sections.B = { stars: 3, bestPct: 100 };
+    sp.sections.A2 = { stars: 3, bestPct: 100 };
+    sp.unlockedTempos['100'] = true;
+    p.songs.fur_elise = sp;
+    const r = applyStampEvaluation(ctx(p, { attempt: attempt({ sectionId: 'A2', stars: 3 }) }));
+    expect(r.newlyEarned).toContain('first_platinum');
+  });
+
+  it('does NOT award first_platinum when 3★ but 100% tempo still locked', () => {
+    const p = freshProgress();
+    const sp = defaultSongProgress();
+    sp.sections.A1 = { stars: 3, bestPct: 100 };
+    sp.sections.B = { stars: 3, bestPct: 100 };
+    sp.sections.A2 = { stars: 3, bestPct: 100 };
+    // unlockedTempos['100'] stays false
+    p.songs.fur_elise = sp;
+    const r = applyStampEvaluation(ctx(p, { attempt: attempt({ sectionId: 'A2', stars: 3 }) }));
+    expect(r.newlyEarned).not.toContain('first_platinum');
+    expect(r.newlyEarned).toContain('song_gold'); // gold still fires
+  });
+
+  it('awards full_song_master once 3 distinct songs are full-song-cleared', () => {
+    const p = freshProgress();
+    for (const id of ['s1', 's2', 's3']) {
+      const sp = defaultSongProgress();
+      sp.sections['__full'] = { stars: 1, bestPct: 55 };
+      p.songs[id] = sp;
+    }
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ songId: 's3', sectionId: '__full', stars: 1 }) })
+    );
+    expect(r.newlyEarned).toContain('full_song_master');
+  });
+
+  it('does NOT award full_song_master with only 2 full-song clears', () => {
+    const p = freshProgress();
+    for (const id of ['s1', 's2']) {
+      const sp = defaultSongProgress();
+      sp.sections['__full'] = { stars: 2, bestPct: 80 };
+      p.songs[id] = sp;
+    }
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ songId: 's2', sectionId: '__full', stars: 2 }) })
+    );
+    expect(r.newlyEarned).not.toContain('full_song_master');
+  });
 });
 
 describe('performance stamps', () => {

@@ -114,6 +114,8 @@ export interface ShellPractice {
   previewToneVolume: (layer: 'ghost' | 'backing' | 'metronome') => void;
   /** SE（最小版）: スタンプ獲得時の控えめな祝福音（結果画面）。 */
   playStampCelebration: () => void;
+  /** 1曲チャレンジ・クリアの節目ファンファーレ（結果画面）。 */
+  playSongClear: () => void;
   /** レイテンシ較正 (P2-22) 用の楽器アクセサ。 */
   ensureToneInstruments: () => void;
   getToneInstruments: () => { piano: any; metronome: any; melody: any };
@@ -449,6 +451,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     previewToneVolume: (layer: 'ghost' | 'backing' | 'metronome') =>
       _practiceToneAudio.previewVolume(layer),
     playStampCelebration: () => _practiceToneAudio.playStampCelebration(),
+    playSongClear: () => _practiceToneAudio.playSongClear(),
     setPracticeLane: (lane: any) => {
       practiceLaneRef.current = lane;
     },

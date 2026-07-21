@@ -272,6 +272,30 @@ describe('playStampCelebration', () => {
   });
 });
 
+describe('playSongClear', () => {
+  it('no-ops when the AudioContext is not running', () => {
+    const fx = makeFixture();
+    fx.audio.playSongClear();
+    expect(fx.audio.getInstruments().melody).toBeNull();
+  });
+
+  it('plays a soft 4-note ascending fanfare (C5-E5-G5-C6) when running', () => {
+    const tone = makeFakeTone();
+    (tone as unknown as { context: { state: string } }).context = { state: 'running' };
+    const fx = makeFixture({ Tone: tone as unknown as PracticeToneAudioDeps['Tone'] });
+    fx.audio.playSongClear();
+    const melody = fx.audio.getInstruments().melody as unknown as {
+      triggerAttackRelease: ReturnType<typeof vi.fn>;
+    };
+    expect(melody).not.toBeNull();
+    expect(melody.triggerAttackRelease).toHaveBeenCalledTimes(4);
+    // Still piano-toned + restrained (no gamey bloops): low velocity throughout.
+    for (const call of melody.triggerAttackRelease.mock.calls) {
+      expect(call[3]).toBeLessThan(0.4);
+    }
+  });
+});
+
 // ─── getInstruments ────────────────────────────────────────────────
 
 describe('getInstruments', () => {

@@ -35,6 +35,9 @@ export interface QuestDef {
   nameKey: string;
   descKey: string;
   condition: (s: QuestEvalState) => boolean;
+  /** i18n key for the celebratory reward tagline (localized). */
+  rewardKey: string;
+  /** Legacy raw-English fallback (kept for older call sites/tests). */
   reward: string;
 }
 
@@ -201,6 +204,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst1Name',
     descKey: 'qst1Desc',
     condition: (s) => s.noteOnsetTimes.length >= 3,
+    rewardKey: 'qstReward1',
     reward: 'Nice Start!',
   },
   {
@@ -208,6 +212,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst2Name',
     descKey: 'qst2Desc',
     condition: (s) => s.flow >= 50,
+    rewardKey: 'qstReward2',
     reward: 'Good Flow!',
   },
   {
@@ -215,6 +220,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst3Name',
     descKey: 'qst3Desc',
     condition: (s) => s.combo >= 30,
+    rewardKey: 'qstReward3',
     reward: 'Combo Master!',
   },
   {
@@ -222,6 +228,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst4Name',
     descKey: 'qst4Desc',
     condition: (s) => s.stabilityScore >= 0.8,
+    rewardKey: 'qstReward4',
     reward: 'Stable Tone!',
   },
   {
@@ -229,6 +236,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst5Name',
     descKey: 'qst5Desc',
     condition: (s) => s.sessionState === 'performing' && s.sessionConfidence > 0.8,
+    rewardKey: 'qstReward5',
     reward: 'Virtuoso!',
   },
   {
@@ -236,6 +244,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst6Name',
     descKey: 'qst6Desc',
     condition: (s) => s.rhythmScore >= 0.85,
+    rewardKey: 'qstReward6',
     reward: 'Rhythm Master!',
   },
   {
@@ -243,6 +252,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst7Name',
     descKey: 'qst7Desc',
     condition: (s) => s.flow >= 95,
+    rewardKey: 'qstReward7',
     reward: 'Peak Flow!',
   },
   {
@@ -250,6 +260,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst8Name',
     descKey: 'qst8Desc',
     condition: (s) => s.combo >= 100,
+    rewardKey: 'qstReward8',
     reward: 'Century Combo!',
   },
   {
@@ -257,6 +268,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst9Name',
     descKey: 'qst9Desc',
     condition: (s) => s.dynamicsScore >= 0.8,
+    rewardKey: 'qstReward9',
     reward: 'Dynamic Range!',
   },
   {
@@ -264,6 +276,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst10Name',
     descKey: 'qst10Desc',
     condition: (s) => s.qualityScore >= 0.85,
+    rewardKey: 'qstReward10',
     reward: 'Full Focus!',
   },
   {
@@ -271,6 +284,7 @@ export const QUESTS_DEFS: QuestDef[] = [
     nameKey: 'qst11Name',
     descKey: 'qst11Desc',
     condition: (s) => s.bestCombo >= 200 && s.flow >= 90,
+    rewardKey: 'qstReward11',
     reward: 'LEGENDARY!',
   },
 ];

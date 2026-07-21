@@ -432,6 +432,53 @@ temporarily limits max gain to prevent amplifying speech.
   full-song listen). Banned-list notes: unlock predicate is deterministic and
   always visible; the clear is attempt/milestone-based (★1, not perfection); no
   time pressure.
+- **Onboarding + endgame completeness pass（2026-07-21）**: closed the "strong
+  middle, weak start, no ending" gap from a game-design review.
+  - **First-run welcome** (`first-run-welcome.ts`, `#firstRunWelcome`): a
+    dismissible card on the title screen shown only on a cold start (no
+    progress, no pianist name, not dismissed → `prefs.welcomeDismissed`).
+    Greets, one-line explainer, a primary CTA to the recommended first song
+    (`fur_elise` else first registered), and a "set my name" nudge into the
+    pianist editor. NOT a blocking tutorial (banned-list). A "👈 Start here"
+    chip (`startHereChip`) marks the recommended song button while the welcome
+    shows. Refreshed via `refreshFirstRun()` inside `_ui.refreshJournal()` +
+    `returnToTitle` + pianist `onSaved` (so it retires the moment there's
+    progress/a name), and re-localized on `langchange` (built from JS, not
+    `data-i18n`).
+  - **Mode explainer** (`#modeHint`, `song-panel-render.ts`): a one-line,
+    mode-conditional description under the mode row (`modeListenDesc` /
+    `modeGuidedDesc` / `modeRhythmDesc`) — teaches Listen/Guided/Rhythm where
+    the choice is made, no separate tutorial.
+  - **Library capstone / endgame** (`PianoCore.computeLibraryCompletion`, pure):
+    the journal rollup now shows a **medals row** (🥇 gold / 💎 platinum counts
+    — previously computed but never rendered) and a **capstone row** for the
+    highest library-wide milestone reached (`allTouched` → `allFullCleared` →
+    `allSilver` → `allGold` → `allPlatinum`, positive-only, `capstone*` keys);
+    the same capstone chip rides the title-screen library strip. Two long-tail
+    stamps keep goals alive after one song is maxed: `first_platinum` 💎 (a song
+    to all-3★ + 100% tempo) and `full_song_master` 🎼 (3 distinct songs
+    full-song-cleared). The result-card stretch button no longer dead-ends at
+    100% — when `pickNearCompletion` is empty but songs are touched,
+    `pickStretchSong` returns `ADD_SONG_SENTINEL` ('\_\_addsong') and the button
+    becomes "➕ add more free songs" (`stretchAddSong`), routing to the add-song
+    modal (`openAddSong`).
+  - **Milestone audio** (`practice-tone-audio.playSongClear`): a full-song ★1+
+    clear plays a short piano fanfare (C5→E5→G5→C6) on the **result screen
+    only** — respecting `sound-design-minimal-se` (no live-play SE, no gamey
+    bloops; just extends the existing result-screen `playStampCelebration`
+    pattern to the practice path's summit, which fills the MIDI/headphone
+    silence there).
+  - **Difficulty band on the library pick-list** (`libraryLevelToDifficulty`):
+    each "Add a song" row shows the 🌱/🌿/🌳/🏔️ band derived from the catalog
+    `level` (1→sprout … 4→mountain), so the level-1–4 and plant systems agree at
+    the point of choosing.
+  - **Quest rewards localized** (`qstReward1..11` via `QuestDef.rewardKey`) —
+    the free-play quest taglines were hardcoded English.
+  - **Deliberately deferred**: persisting free-play progress (best stage /
+    session records). Free-play is a sandbox by design; turning its
+    session-ephemeral flow into a saved chase risks making free exploration feel
+    graded (brushes the banned-list "keep it intrinsic / no false-progress"
+    values), so it wants its own careful design pass, not a bolt-on.
 - **Weekly growth rollup (journal)**:
   `PianoCore.weeklyLibraryGrowth(sections, weekStartMs)` (pure) averages each
   section's accuracy/timing gain (latest − first) across the current ISO week

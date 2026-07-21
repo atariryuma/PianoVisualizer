@@ -131,6 +131,9 @@ export interface PracticeToneAudio {
    *  上行アルペジオ（メロディ音色・低ベロシティ）。AudioContext が running の
    *  時だけ鳴らし、suspended なら黙ってスキップ（無理に resume しない）。 */
   playStampCelebration(): void;
+  /** 1曲チャレンジ・クリアの節目に結果画面で1回だけ鳴らす、少しだけ豊かな
+   *  ピアノ・ファンファーレ（同じく結果画面のみ・ゲーム的SEは足さない）。 */
+  playSongClear(): void;
   /** Schedule the audible "4, 3, 2, 1, GO!" preceding section start. */
   scheduleCountIn(startAudioTime: number): void;
   /** Tone.Transport stop + cancel, hide cursor + clear notehead
@@ -248,6 +251,26 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     }
   }
 
+  /** 1曲チャレンジ・クリア（結果画面）専用の、少しだけ豊かなピアノ・ファンファーレ。
+   *  playStampCelebration と同じ設計原則（結果画面のみ・ピアノ音色・ゲーム的
+   *  ピロン無し）を守りつつ、練習経路の頂点＝「1曲通した」瞬間に見合う C5→E5→
+   *  G5→C6 の完全上行で締める。MIDI＋ヘッドホン時に全画面演出が完全無音になる
+   *  問題を、原則を破らずこの節目だけで埋める。 */
+  function playSongClear(): void {
+    if (!deps.Tone) return;
+    if (deps.Tone.context?.state !== 'running') return;
+    ensureInstruments();
+    if (!melody) return;
+    try {
+      melody.triggerAttackRelease('C5', 0.2, '+0', 0.28);
+      melody.triggerAttackRelease('E5', 0.2, '+0.12', 0.28);
+      melody.triggerAttackRelease('G5', 0.2, '+0.24', 0.28);
+      melody.triggerAttackRelease('C6', 0.7, '+0.36', 0.34);
+    } catch {
+      /* disposed / suspended — best-effort */
+    }
+  }
+
   function scheduleCountIn(startAudioTime: number): void {
     if (!deps.Tone) return;
     deps.audioScheduler.scheduleCountInBeeps({ metronome, piano }, startAudioTime, {
@@ -290,6 +313,7 @@ export function createPracticeToneAudio(deps: PracticeToneAudioDeps): PracticeTo
     applyVolumes,
     previewVolume,
     playStampCelebration,
+    playSongClear,
     scheduleCountIn,
     stopPracticeAudio,
     getInstruments: () => ({ piano, metronome, melody }),

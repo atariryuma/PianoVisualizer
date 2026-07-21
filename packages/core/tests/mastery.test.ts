@@ -7,6 +7,7 @@ import {
   pickNearCompletion,
   weeklyLibraryGrowth,
   computeFullSongChallenge,
+  computeLibraryCompletion,
   FULL_SONG_SECTION_ID,
   type MasterySongDef,
 } from '../src/state/mastery';
@@ -184,6 +185,94 @@ describe('computeLibraryMastery', () => {
     expect(lib.songsGold).toBe(1); // platinum counts toward gold
     expect(lib.songsPlatinum).toBe(1);
     expect(lib.percent).toBe(56);
+  });
+});
+
+describe('computeLibraryCompletion', () => {
+  const LIB = [FUR_ELISE, ALLA_TURCA];
+  const prog = (songs: PracticeProgress['songs']): PracticeProgress => ({
+    streakDays: [],
+    streakCount: 0,
+    songs,
+  });
+
+  it('empty library → all zeros, milestone null', () => {
+    const c = computeLibraryCompletion([], defaultPracticeProgress());
+    expect(c).toEqual({
+      total: 0,
+      touched: 0,
+      silver: 0,
+      gold: 0,
+      platinum: 0,
+      fullCleared: 0,
+      milestone: null,
+    });
+  });
+
+  it('nothing touched → milestone null', () => {
+    const c = computeLibraryCompletion(LIB, defaultPracticeProgress());
+    expect(c.touched).toBe(0);
+    expect(c.milestone).toBeNull();
+  });
+
+  it('every song touched (but not all sealed) → allTouched', () => {
+    const c = computeLibraryCompletion(
+      LIB,
+      prog({
+        fur_elise: spWith({ stars: { A1: 1 } }),
+        alla_turca: spWith({ stars: { A: 1 } }),
+      })
+    );
+    expect(c.touched).toBe(2);
+    expect(c.milestone).toBe('allTouched');
+  });
+
+  it('only one song touched → milestone null (not ALL)', () => {
+    const c = computeLibraryCompletion(
+      LIB,
+      prog({ fur_elise: spWith({ stars: { A1: 3, B: 3, A2: 3 }, tempos: { 100: true } }) })
+    );
+    expect(c.touched).toBe(1);
+    expect(c.platinum).toBe(1);
+    expect(c.milestone).toBeNull();
+  });
+
+  it('every song full-song-cleared but not all silver → allFullCleared', () => {
+    const withFull = (ids: string[]) => {
+      const sp = spWith({ stars: Object.fromEntries(ids.map((i) => [i, 1])) });
+      sp.sections[FULL_SONG_SECTION_ID] = { stars: 1, bestPct: 55 };
+      return sp;
+    };
+    const c = computeLibraryCompletion(
+      LIB,
+      prog({ fur_elise: withFull(['A1', 'B', 'A2']), alla_turca: withFull(['A', 'B', 'C']) })
+    );
+    expect(c.fullCleared).toBe(2);
+    expect(c.milestone).toBe('allFullCleared');
+  });
+
+  it('every song gold → allGold (gold beats a partial full-clear)', () => {
+    const c = computeLibraryCompletion(
+      LIB,
+      prog({
+        fur_elise: spWith({ stars: { A1: 3, B: 3, A2: 3 } }),
+        alla_turca: spWith({ stars: { A: 3, B: 3, C: 3 } }),
+      })
+    );
+    expect(c.gold).toBe(2);
+    expect(c.milestone).toBe('allGold');
+  });
+
+  it('every song platinum → allPlatinum (the summit)', () => {
+    const c = computeLibraryCompletion(
+      LIB,
+      prog({
+        fur_elise: spWith({ stars: { A1: 3, B: 3, A2: 3 }, tempos: { 100: true } }),
+        alla_turca: spWith({ stars: { A: 3, B: 3, C: 3 }, tempos: { 100: true } }),
+      })
+    );
+    expect(c.platinum).toBe(2);
+    expect(c.milestone).toBe('allPlatinum');
   });
 });
 

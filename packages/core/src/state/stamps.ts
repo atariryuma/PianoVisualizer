@@ -136,6 +136,26 @@ function isSongFullyThreeStar(
   return st.length > 0 && st.every((s) => s >= 3);
 }
 
+/** Platinum = every real section 3★ AND the song's 100% tempo tier unlocked. */
+function isSongPlatinum(
+  progress: PracticeProgress,
+  songId: string,
+  sectionIds: readonly string[]
+): boolean {
+  if (!isSongFullyThreeStar(progress, songId, sectionIds)) return false;
+  return progress.songs?.[songId]?.unlockedTempos?.['100'] === true;
+}
+
+/** How many distinct songs have had their full-song challenge cleared
+ *  (≥1★ on the reserved '__full' pseudo-section)? */
+function fullSongClearsCount(progress: PracticeProgress): number {
+  let n = 0;
+  for (const sp of Object.values(progress.songs ?? {})) {
+    if ((sp.sections?.[FULL_SONG_SECTION_ID]?.stars ?? 0) >= 1) n++;
+  }
+  return n;
+}
+
 /** Look at this song's section history and tally how many attempts
  *  the just-completed section has now (after the result-card pushed
  *  the new attempt onto history). */
@@ -268,6 +288,30 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
       !c.attempt.isListenMode &&
       c.attempt.sectionId === FULL_SONG_SECTION_ID &&
       c.attempt.stars >= 1,
+  },
+  {
+    // エンドゲームの長期目標: 1曲を白金まで。全セクション3★＋100%テンポ。
+    id: 'first_platinum',
+    nameKey: 'stampFirstPlatinumName',
+    descKey: 'stampFirstPlatinumDesc',
+    earnedKey: 'stampFirstPlatinumEarned',
+    tipKey: 'stampFirstPlatinumTip',
+    icon: '💎',
+    category: 'completion',
+    rarity: 'legendary',
+    evaluate: (c) => isSongPlatinum(c.progress, c.attempt.songId, c.sectionIds),
+  },
+  {
+    // 3曲を通しでクリア = 「弾ける曲のレパートリー」。ライブラリ横断の長期目標。
+    id: 'full_song_master',
+    nameKey: 'stampFullSongMasterName',
+    descKey: 'stampFullSongMasterDesc',
+    earnedKey: 'stampFullSongMasterEarned',
+    tipKey: 'stampFullSongMasterTip',
+    icon: '🎼',
+    category: 'completion',
+    rarity: 'epic',
+    evaluate: (c) => fullSongClearsCount(c.progress) >= 3,
   },
   {
     id: 'tempo_100_unlocked',

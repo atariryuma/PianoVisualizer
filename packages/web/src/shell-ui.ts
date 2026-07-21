@@ -20,10 +20,12 @@ import * as PianoCore from '@piano/core';
 import type { T } from '@piano/core';
 import * as IntroHintUi from './intro-hint-ui';
 import * as ResultCard from './result-card';
+import { ADD_SONG_SENTINEL } from './result-card';
 import type { AttemptCompletionInput } from './result-card';
 import * as JournalModal from './journal-modal';
 import type { JournalSongRef } from './journal-modal';
 import * as PianistEditor from './pianist-editor';
+import * as FirstRunWelcome from './first-run-welcome';
 import { PIANIST_AVATARS } from './prefs-storage';
 import * as SongPanelRender from './song-panel-render';
 import * as SongPanelControls from './song-panel-controls';
@@ -82,6 +84,9 @@ export interface ShellUiDeps {
   requestWakeLock: () => Promise<unknown>;
   hideIntroHint: () => void;
   resetSession: () => void;
+  /** Open the "Add a song" modal — used by the endgame stretch CTA that
+   *  routes to new content when every touched song is maxed out. */
+  openAddSong?: () => void;
   /** 明示ポーズ (⏸ / 設定パネル) — practice-flow の ⏸ ボタン用。 */
   pausePractice?: () => void;
   resumePractice?: () => void;
@@ -90,6 +95,8 @@ export interface ShellUiDeps {
   effectGoldenBurst: any;
   effectStarShower: any;
   effectFlowerBurst: any;
+  /** Milestone piano fanfare for a full-song clear (result screen). */
+  playSongClear?: () => void;
   /** Score helpers. */
   setupHiDPICanvas: (
     canvas: HTMLCanvasElement,
@@ -272,11 +279,73 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       _journal.render();
       _journal.renderLibraryStrip();
       renderPianistBadge();
+      // Setting a name counts as engaging with identity → the welcome retires.
+      refreshFirstRun();
     },
     t,
   });
 
   renderPianistBadge();
+
+  // ── First-run welcome (onboarding) ──
+  /** Any real progress at all → the app has been used, so the welcome is done. */
+  function hasAnyProgress(prog: any): boolean {
+    if (!prog || typeof prog !== 'object') return false;
+    if (Object.keys(prog.earnedStamps ?? {}).length > 0) return true;
+    if ((prog.streakDays ?? []).length > 0) return true;
+    for (const sp of Object.values(prog.songs ?? {}) as any[]) {
+      for (const sec of Object.values(sp?.sections ?? {}) as any[]) {
+        if ((sec?.stars ?? 0) >= 1) return true;
+      }
+    }
+    return false;
+  }
+  /** Recommended first song: the easier built-in (fur_elise) if present, else
+   *  the first registered song. */
+  function recommendedFirstSong(): FirstRunWelcome.FirstRunRecommended | null {
+    const songs = deps.songs as Record<string, any>;
+    const pick = songs['fur_elise'] ?? (Object.values(songs)[0] as any);
+    if (!pick || !pick.id || !pick.titleKey) return null;
+    return { id: pick.id, titleKey: pick.titleKey };
+  }
+  const shouldShowWelcome = (): boolean => {
+    const p = deps.prefs as any;
+    if (p.welcomeDismissed) return false;
+    if (p.pianistName) return false; // already engaged with the identity flow
+    const prog = (deps.practice as any).progress ?? deps.loadPracticeProgress();
+    return !hasAnyProgress(prog);
+  };
+  /** Add/remove the "👈 Start here" chip on the recommended song's button so a
+   *  first-timer's eye is pulled to it (redundant with the welcome CTA). */
+  function paintStartHereChip(): void {
+    doc.querySelectorAll('.practice-song-btn .start-here-chip').forEach((c) => c.remove());
+    if (!shouldShowWelcome()) return;
+    const rec = recommendedFirstSong();
+    if (!rec) return;
+    const btn = doc.querySelector('.practice-song-btn[data-song="' + rec.id + '"]');
+    const label = btn?.querySelector('.mode-btn-label');
+    if (!label) return;
+    const chip = doc.createElement('span');
+    chip.className = 'start-here-chip';
+    chip.textContent = t('startHereChip');
+    label.appendChild(chip);
+  }
+  const _welcome = FirstRunWelcome.createFirstRunWelcome({
+    container: dom.firstRunWelcome,
+    t,
+    shouldShow: shouldShowWelcome,
+    recommended: recommendedFirstSong,
+    selectSong: (id: string) => selectSong(id),
+    openPianistEditor: () => _pianistEditor.open(),
+    persistDismissed: () => {
+      (deps.prefs as any).welcomeDismissed = true;
+      deps.savePrefs?.();
+    },
+  });
+  function refreshFirstRun(): void {
+    _welcome.refresh();
+    paintStartHereChip();
+  }
 
   // ── Result-card ──
   const SECTION_IDS = ['A1', 'B', 'A2'];
@@ -327,6 +396,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     effectGoldenBurst: deps.effectGoldenBurst,
     effectStarShower: deps.effectStarShower,
     effectFlowerBurst: deps.effectFlowerBurst,
+    playSongClear: deps.playSongClear,
     setupHiDPICanvas: deps.setupHiDPICanvas,
     clamp01: deps.clamp01,
     t,
@@ -383,12 +453,18 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     },
   } as any);
 
-  // resStretch click — jump to the suggested stretch song. selectSong
-  // closes the result card via the song-panel transition.
+  // resStretch click — jump to the suggested stretch song, OR (endgame) route
+  // to "add more songs" when every touched song is maxed out. selectSong closes
+  // the result card via the song-panel transition; the add-song modal opens
+  // over it.
   dom.resStretch.addEventListener('click', () => {
     const id = (dom.resStretch as HTMLElement).dataset.songId;
     if (!id) return;
     dom.sectionResult.classList.remove('visible');
+    if (id === ADD_SONG_SENTINEL) {
+      deps.openAddSong?.();
+      return;
+    }
     selectSong(id);
   });
 
@@ -411,6 +487,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'fullSongToggle',
       'loopRow',
       'loopToggle',
+      'modeHint',
       'songPreflightHint',
       'songPreflightText',
       'songPreflightApply',
@@ -585,10 +662,12 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       // Refresh the title-screen mastery strip — progress may have
       // grown during the session that just ended.
       _journal.renderLibraryStrip();
+      refreshFirstRun();
     },
     refreshJournal: () => {
       _journal.renderLibraryStrip();
       renderPianistBadge();
+      refreshFirstRun();
     },
     openJournal: (initialTab?: 'repertoire' | 'stamps' | 'calendar') => _journal.open(initialTab),
     closeJournal: () => _journal.close(),

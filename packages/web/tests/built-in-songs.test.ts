@@ -5,7 +5,26 @@
 // section schema can't silently drop required keys.
 
 import { describe, it, expect } from 'vitest';
-import { makeSong, createBuiltInSongs, type SectionDef } from '../src/built-in-songs';
+import {
+  makeSong,
+  createBuiltInSongs,
+  libraryLevelToDifficulty,
+  type SectionDef,
+} from '../src/built-in-songs';
+
+describe('libraryLevelToDifficulty', () => {
+  it('maps levels 1–4 onto the plant band', () => {
+    expect(libraryLevelToDifficulty(1)).toBe('sprout');
+    expect(libraryLevelToDifficulty(2)).toBe('leaf');
+    expect(libraryLevelToDifficulty(3)).toBe('tree');
+    expect(libraryLevelToDifficulty(4)).toBe('mountain');
+  });
+  it('falls back to the middle of the ramp for missing/out-of-range levels', () => {
+    expect(libraryLevelToDifficulty(undefined)).toBe('leaf');
+    expect(libraryLevelToDifficulty(0)).toBe('leaf');
+    expect(libraryLevelToDifficulty(9)).toBe('leaf');
+  });
+});
 
 describe('makeSong', () => {
   const sectionDefs: SectionDef[] = [

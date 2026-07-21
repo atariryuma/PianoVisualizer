@@ -36,6 +36,7 @@ function makeDom(): SongPanelRenderDom {
     <div id="metronomeRow"></div>
     <div id="fullSongRow"></div>
     <button id="fullSongToggle"></button>
+    <div id="modeHint"></div>
     <div id="songPreflightHint" style="display: none">
       <span id="songPreflightText"></span>
       <button id="songPreflightApply" style="display: none"></button>
@@ -68,6 +69,7 @@ function makeDom(): SongPanelRenderDom {
     metronomeRow: document.getElementById('metronomeRow'),
     fullSongRow: document.getElementById('fullSongRow'),
     fullSongToggle: document.getElementById('fullSongToggle'),
+    modeHint: document.getElementById('modeHint'),
     songPreflightHint: document.getElementById('songPreflightHint'),
     songPreflightText: document.getElementById('songPreflightText'),
     songPreflightApply: document.getElementById('songPreflightApply'),
@@ -538,6 +540,19 @@ describe('createSongPanelRender — mode/hand/toggles', () => {
     (deps.practice as { loopOn?: boolean }).loopOn = true;
     createSongPanelRender(deps).render();
     expect(deps.dom.loopToggle!.classList.contains('on')).toBe(true);
+  });
+
+  it('writes the mode explainer for the selected mode', () => {
+    const deps = makeDeps();
+    deps.practice.mode = 'guided';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.modeHint!.textContent).toBe('modeGuidedDesc');
+    deps.practice.mode = 'listen';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.modeHint!.textContent).toBe('modeListenDesc');
+    deps.practice.mode = 'rhythm';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.modeHint!.textContent).toBe('modeRhythmDesc');
   });
 
   it('shows fullSongRow only in listen mode', () => {
