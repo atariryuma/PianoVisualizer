@@ -4,9 +4,10 @@ This directory documents the public-domain status of every score the app ships.
 Required for App Store Guideline 5.2.3 audio licensing review (reviewers ask for
 license documentation even for clearly-PD pieces).
 
-**The app depends on NO third-party score repository.** Every score is either a
-bundled built-in or one of the app's own transcriptions (below). Nothing is
-fetched from an outside catalog at runtime.
+**The app fetches NO score from an outside catalog at runtime.** Every score is
+bundled in the app and is one of: a built-in, one of the app's own PD
+transcriptions, or a **CC0** file we bundled (OpenScore Lieder). All are clean
+for a paid, worldwide release.
 
 ## Bundled built-in scores
 
