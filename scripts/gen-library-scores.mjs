@@ -219,6 +219,22 @@ const PIECES = [
     notes: ['B4:h','B4:q','C5:q','B4:h','A4:h','A4:h','G4:h','G4:h','F#4:h','F#4:h','E4:h'] },
 ];
 
+// ── External bundled scores (already in assets/library/, NOT generated) ──────
+// Real 2-staff MusicXML from the OpenScore Lieder Corpus (github.com/OpenScore/
+// Lieder), released CC0 1.0 — free for commercial use, no attribution. Each is
+// voice + piano: the multi-part "backing part" feature routes the piano staves
+// to the learner and sings the vocal line. Composition PD worldwide (composers
+// died > 70y). Provenance: docs/LICENSES/README.md.
+const EXTERNAL = [
+  { file: 'beethoven_marmotte.musicxml', title: 'Marmotte, Op. 52 No. 7', titleJp: 'マルモット', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 1 },
+  { file: 'brahms_wiegenlied.musicxml', title: 'Wiegenlied, Op. 49 No. 4', titleJp: 'ブラームスの子守歌', composer: 'Johannes Brahms', composerJp: 'ブラームス', died: 1897, level: 2 },
+  { file: 'schubert_heidenroslein.musicxml', title: 'Heidenröslein, D. 257', titleJp: '野ばら', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2 },
+  { file: 'schubert_an_die_musik.musicxml', title: 'An die Musik, D. 547', titleJp: '音楽に寄せて', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 2 },
+  { file: 'schubert_standchen.musicxml', title: 'Ständchen, D. 957', titleJp: 'セレナーデ', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3 },
+  { file: 'schubert_die_forelle.musicxml', title: 'Die Forelle, D. 550', titleJp: 'ます', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 3 },
+  { file: 'schubert_ave_maria.musicxml', title: 'Ave Maria, D. 839', titleJp: 'アヴェ・マリア', composer: 'Franz Schubert', composerJp: 'シューベルト', died: 1828, level: 4 },
+];
+
 mkdirSync(OUT_DIR, { recursive: true });
 const manifest = { version: 1, scores: [] };
 let total = 0;
@@ -235,6 +251,17 @@ for (const p of PIECES) {
   total++;
   // eslint-disable-next-line no-console
   console.log(`✓ L${p.level} ${file.padEnd(30)} (${measureCount} bars)`);
+}
+for (const e of EXTERNAL) {
+  manifest.scores.push({
+    file: e.file, title: e.title, titleJp: e.titleJp, composer: e.composer,
+    composerJp: e.composerJp, died: e.died, level: e.level, levelJp: LEVEL_JP[e.level],
+    license: 'CC0', external: true,
+    note: 'External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing',
+  });
+  total++;
+  // eslint-disable-next-line no-console
+  console.log(`✓ L${e.level} ${e.file.padEnd(30)} (external CC0)`);
 }
 manifest.scores.sort((a, b) => a.level - b.level || a.title.localeCompare(b.title));
 writeFileSync(join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');

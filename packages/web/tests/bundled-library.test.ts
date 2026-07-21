@@ -24,6 +24,8 @@ const manifest = JSON.parse(readFileSync(LIB_DIR + 'manifest.json', 'utf8')) as 
     composer: string;
     titleJp?: string;
     composerJp?: string;
+    level?: number;
+    external?: boolean;
   }[];
 };
 
@@ -38,8 +40,11 @@ describe('bundled library — manifest + generated scores', () => {
       const xml = readFileSync(LIB_DIR + s.file, 'utf8');
       const meta = PianoCore.parseMusicXmlMetadata(xml);
       expect(meta.measureCount, s.file).toBeGreaterThan(0);
-      expect(meta.title, s.file).toBe(s.title);
       expect(meta.composer, s.file).toBe(s.composer);
+      // External (OpenScore) files embed a collection/opus <work-title>; the
+      // display title comes from the manifest, so only our own generated
+      // engravings must match their embedded title.
+      if (!s.external) expect(meta.title, s.file).toBe(s.title);
       // Auto-sectioning must not throw and must produce at least one section.
       const defs = PianoCore.autoSectionDefs(xml, meta.measureCount) as unknown[];
       expect(Array.isArray(defs) ? defs.length : 0, s.file).toBeGreaterThan(0);
