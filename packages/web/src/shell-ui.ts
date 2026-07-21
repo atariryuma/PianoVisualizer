@@ -162,12 +162,21 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         : s.composerKey
           ? t(s.composerKey)
           : undefined;
-      const sections: JournalSongRef['sections'] = Array.isArray(s.sections)
-        ? s.sections.map((sec: any, i: number) => ({
-            id: String(sec.id ?? String.fromCharCode(65 + i)),
-            nameKey: String(sec.nameKey ?? ''),
-          }))
-        : [];
+      // s.sections は曲ロード後にしか populate されない（makeSong は
+      // sections:[] で、実体は sectionDefs にある）。タイトル画面は曲未ロード
+      // なので、空なら静的な sectionDefs にフォールバックする。これが無いと
+      // mastery strip の star 総数が 0 になり「0/0 星」と表示されていた
+      // （section id は sectionDefs=sections で一致し、進捗の star とも整合）。
+      const secSource: any[] =
+        Array.isArray(s.sections) && s.sections.length > 0
+          ? s.sections
+          : Array.isArray(s.sectionDefs)
+            ? s.sectionDefs
+            : [];
+      const sections: JournalSongRef['sections'] = secSource.map((sec: any, i: number) => ({
+        id: String(sec.id ?? String.fromCharCode(65 + i)),
+        nameKey: String(sec.nameKey ?? ''),
+      }));
       const difficulty = ['sprout', 'leaf', 'tree', 'mountain'].includes(s.difficulty)
         ? (s.difficulty as JournalSongRef['difficulty'])
         : undefined;
