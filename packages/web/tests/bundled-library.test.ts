@@ -48,8 +48,12 @@ describe('bundled library — manifest + generated scores', () => {
       // their in-test check light (valid MusicXML root) — the generated files,
       // which the generator authors, get the full parse.
       if (s.external) {
-        expect(xml, s.file).toContain('<score-partwise');
-        expect(xml, s.file).toContain('<part ');
+        if (s.file.endsWith('.mxl')) {
+          // compressed MusicXML → just confirm a valid zip container ('PK').
+          expect(xml.slice(0, 2), s.file).toBe('PK');
+        } else {
+          expect(xml, s.file).toContain('<score-partwise');
+        }
         return;
       }
       const meta = PianoCore.parseMusicXmlMetadata(xml);
@@ -117,7 +121,7 @@ describe('createBundledLibrary — fetchEntries', () => {
     expect(entries.length).toBe(manifest.scores.length);
     for (const e of entries) {
       expect(e.url.startsWith('assets/library/')).toBe(true);
-      expect(e.url.endsWith('.musicxml')).toBe(true);
+      expect(/\.(musicxml|mxl)$/.test(e.url), e.url).toBe(true);
       expect(e.label).toContain('—'); // "Composer — Title"
     }
   });

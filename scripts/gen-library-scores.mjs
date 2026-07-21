@@ -33,6 +33,18 @@ const BASE = { w: 16, h: 8, q: 4, e: 2, s: 1 };
 const TYPE = { w: 'whole', h: 'half', q: 'quarter', e: 'eighth', s: '16th' };
 const LEVEL_JP = { 1: '初級', 2: '初中級', 3: '中級', 4: '上級' };
 
+// Simplified single-line drafts that FULL professional transcriptions (bundled
+// from musetrainer, see EXTERNAL) now supersede. Skipped so the library has no
+// duplicate entries; their old generated .musicxml files were deleted.
+const SUPERSEDED = new Set([
+  'gymnopedie_1',
+  'chopin_nocturne_op9no2',
+  'chopin_prelude_e_minor',
+  'moonlight_1',
+  'minuet_in_g',
+  'bach_prelude_c',
+]);
+
 function durOf(durTok) {
   const dots = (durTok.match(/\./g) || []).length;
   const letter = durTok[0];
@@ -1231,11 +1243,46 @@ const EXTERNAL = [
   },
 ];
 
+// ── External bundled solo-piano FULL scores from musetrainer/library ──────────
+// Cherry-picked (NOT the whole catalog) famous ORIGINAL solo works, each a
+// faithful FULL transcription of a public-domain composition (composer died
+// > 70 yrs — verified individually). The upstream repo has NO LICENSE file, so
+// license is 'PD' on the COMPOSITION + faithful-transcription basis (not CC0);
+// de Senneville / "Easy" arrangements / orchestral reductions were excluded.
+// See docs/LICENSES/README.md for the honest license caveat.
+const MT = 'https://cdn.jsdelivr.net/gh/musetrainer/library@9128876f6164d96997c877a2be843349a32bdabb/scores/';
+const MTNOTE = 'Faithful full transcription of a PD composition; source musetrainer/library (no upstream license; composition PD + faithful transcription).';
+const mt = (o) => ({ ...o, type: 'solo', license: 'PD', note: MTNOTE });
+EXTERNAL.push(
+  mt({ file: 'debussy_clair_de_lune.mxl', title: 'Clair de Lune (Suite bergamasque)', titleJp: '月の光', composer: 'Claude Debussy', composerJp: 'ドビュッシー', died: 1918, level: 4, source: MT + 'Clair_de_Lune__Debussy.mxl' }),
+  mt({ file: 'debussy_arabesque_1.mxl', title: 'Arabesque No. 1, L. 66', titleJp: 'アラベスク 第1番', composer: 'Claude Debussy', composerJp: 'ドビュッシー', died: 1918, level: 4, source: MT + 'Arabesque_L._66_No._1_in_E_Major.mxl' }),
+  mt({ file: 'satie_gymnopedie_1_full.mxl', title: 'Gymnopédie No. 1', titleJp: 'ジムノペディ 第1番', composer: 'Erik Satie', composerJp: 'サティ', died: 1925, level: 3, source: MT + 'Gymnopdie_No._1__Satie.mxl' }),
+  mt({ file: 'satie_gnossienne_1.mxl', title: 'Gnossienne No. 1', titleJp: 'グノシエンヌ 第1番', composer: 'Erik Satie', composerJp: 'サティ', died: 1925, level: 3, source: MT + 'Gnossienne_No._1.mxl' }),
+  mt({ file: 'chopin_nocturne_op9no2_full.mxl', title: 'Nocturne Op. 9 No. 2 in E-flat', titleJp: 'ノクターン Op.9-2 変ホ長調', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 4, source: MT + 'Chopin_-_Nocturne_Op_9_No_2_E_Flat_Major.mxl' }),
+  mt({ file: 'chopin_nocturne_op9no1.mxl', title: 'Nocturne Op. 9 No. 1 in B-flat minor', titleJp: 'ノクターン Op.9-1 変ロ短調', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 4, source: MT + 'Chopin_-_Nocturne_Op._9_No._1.mxl' }),
+  mt({ file: 'chopin_nocturne_no20_cs_minor.mxl', title: 'Nocturne No. 20 in C-sharp minor (posth.)', titleJp: 'ノクターン第20番 嬰ハ短調（遺作）', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 4, source: MT + 'Nocturne_in_C_sharp_Minor.mxl' }),
+  mt({ file: 'chopin_prelude_op28no4.mxl', title: 'Prelude Op. 28 No. 4 in E minor', titleJp: '前奏曲 Op.28-4 ホ短調', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 3, source: MT + 'Prlude_Opus_28_No._4_in_E_Minor__Chopin.mxl' }),
+  mt({ file: 'chopin_waltz_op64no2.mxl', title: 'Waltz Op. 64 No. 2 in C-sharp minor', titleJp: 'ワルツ Op.64-2 嬰ハ短調', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 4, source: MT + 'Waltz_Opus_64_No._2_in_C_Minor.mxl' }),
+  mt({ file: 'chopin_waltz_a_minor_b150.mxl', title: 'Waltz in A minor, B. 150 (posth.)', titleJp: 'ワルツ イ短調（遺作）', composer: 'Frédéric Chopin', composerJp: 'ショパン', died: 1849, level: 3, source: MT + 'Waltz_in_A_MinorChopin.mxl' }),
+  mt({ file: 'liszt_liebestraum_3.mxl', title: 'Liebestraum No. 3 in A-flat', titleJp: '愛の夢 第3番', composer: 'Franz Liszt', composerJp: 'リスト', died: 1886, level: 4, source: MT + 'Liebestraum_No._3_in_A_Major.mxl' }),
+  mt({ file: 'liszt_la_campanella.mxl', title: 'La Campanella (Paganini Étude No. 3)', titleJp: 'ラ・カンパネラ', composer: 'Franz Liszt', composerJp: 'リスト', died: 1886, level: 4, source: MT + 'La_Campanella_-_Grandes_Etudes_de_Paganini_No._3_-_Franz_Liszt.mxl' }),
+  mt({ file: 'bach_prelude_c_bwv846_full.mxl', title: 'Prelude in C, BWV 846 (WTC I)', titleJp: '前奏曲 ハ長調 BWV846（平均律I）', composer: 'Johann Sebastian Bach', composerJp: 'バッハ', died: 1750, level: 3, source: MT + 'Prelude_I_in_C_major_BWV_846_-_Well_Tempered_Clavier_First_Book.mxl' }),
+  mt({ file: 'bach_prelude_c_minor_bwv847.mxl', title: 'Prelude in C minor, BWV 847 (WTC I)', titleJp: '前奏曲 ハ短調 BWV847', composer: 'Johann Sebastian Bach', composerJp: 'バッハ', died: 1750, level: 3, source: MT + 'Prelude_No._2_BWV_847_in_C_Minor.mxl' }),
+  mt({ file: 'bach_minuet_g_bwv_anh114.mxl', title: 'Minuet in G, BWV Anh. 114', titleJp: 'メヌエット ト長調 BWV Anh.114', composer: 'Christian Petzold', composerJp: 'ペツォールト', died: 1760, level: 2, source: MT + 'Bach_Minuet_in_G_Major_BWV_Anh._114.mxl' }),
+  mt({ file: 'beethoven_moonlight_1st_full.mxl', title: 'Moonlight Sonata No. 14, 1st mvt', titleJp: '月光ソナタ 第1楽章', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 4, source: MT + 'Sonate_No._14_Moonlight_1st_Movement.mxl' }),
+  mt({ file: 'beethoven_moonlight_3rd.mxl', title: 'Moonlight Sonata No. 14, 3rd mvt', titleJp: '月光ソナタ 第3楽章', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 4, source: MT + 'Sonate_No._14_Moonlight_3rd_Movement.mxl' }),
+  mt({ file: 'beethoven_pathetique_2nd.mxl', title: 'Pathétique Sonata No. 8, 2nd mvt', titleJp: '悲愴ソナタ 第2楽章', composer: 'Ludwig van Beethoven', composerJp: 'ベートーヴェン', died: 1827, level: 3, source: MT + 'Sonate_No._8_Pathetique_2nd_Movement.mxl' }),
+  mt({ file: 'mozart_sonata_k545_1st.mxl', title: 'Piano Sonata K. 545, 1st mvt', titleJp: 'ピアノソナタ K.545 第1楽章', composer: 'Wolfgang Amadeus Mozart', composerJp: 'モーツァルト', died: 1791, level: 3, source: MT + 'Sonata_No._16_1st_Movement_K._545.mxl' }),
+  mt({ file: 'mozart_twinkle_variations_k265.mxl', title: '12 Variations "Ah vous dirai-je, Maman", K. 265', titleJp: 'キラキラ星変奏曲 K.265', composer: 'Wolfgang Amadeus Mozart', composerJp: 'モーツァルト', died: 1791, level: 3, source: MT + '12_Variations_of_Twinkle_Twinkle_Little_Star.mxl' }),
+  mt({ file: 'joplin_the_entertainer.mxl', title: 'The Entertainer', titleJp: 'ジ・エンターテイナー', composer: 'Scott Joplin', composerJp: 'ジョプリン', died: 1917, level: 3, source: MT + 'The_Entertainer_-_Scott_Joplin_-_1902.mxl' }),
+  mt({ file: 'joplin_maple_leaf_rag.mxl', title: 'Maple Leaf Rag', titleJp: 'メイプル・リーフ・ラグ', composer: 'Scott Joplin', composerJp: 'ジョプリン', died: 1917, level: 3, source: MT + 'Maple_Leaf_Rag_Scott_Joplin.mxl' })
+);
+
 mkdirSync(OUT_DIR, { recursive: true });
 const manifest = { version: 1, scores: [] };
 let total = 0;
 for (const p of PIECES) {
-  if (p.skip) continue;
+  if (p.skip || SUPERSEDED.has(p.id)) continue;
   const { xml, measureCount } = buildScore(p);
   const file = `${p.id}.musicxml`;
   writeFileSync(join(OUT_DIR, file), xml, 'utf8');
@@ -1268,14 +1315,16 @@ for (const e of EXTERNAL) {
     died: e.died,
     level: e.level,
     levelJp: LEVEL_JP[e.level],
-    license: 'CC0',
+    license: e.license || 'CC0',
     external: true,
     source: e.source,
-    note: 'External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing',
+    note:
+      e.note ||
+      'External CC0 file (OpenScore Lieder); voice+piano, played via multi-part backing',
   });
   total++;
 
-  console.log(`✓ L${e.level} ${e.file.padEnd(30)} (external CC0)`);
+  console.log(`✓ L${e.level} ${e.file.padEnd(34)} (external ${e.license || 'CC0'})`);
 }
 manifest.scores.sort((a, b) => a.level - b.level || a.title.localeCompare(b.title));
 
