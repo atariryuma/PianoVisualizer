@@ -4282,9 +4282,9 @@
         <beam number="1">continue</beam>
         <beam number="2">continue</beam>
         </note>
-      <note default-x="66.20" default-y="-70.60">
+      <note default-x="66.20" default-y="-75.60">
         <pitch>
-          <step>F</step>
+          <step>E</step>
           <octave>4</octave>
           </pitch>
         <duration>6</duration>
@@ -5363,6 +5363,18 @@
         <chord/>
         <pitch>
           <step>E</step>
+          <octave>4</octave>
+          </pitch>
+        <duration>12</duration>
+        <voice>5</voice>
+        <type>eighth</type>
+        <stem>up</stem>
+        <staff>2</staff>
+        </note>
+      <note default-x="16.50" default-y="-111.90">
+        <chord/>
+        <pitch>
+          <step>G</step>
           <octave>4</octave>
           </pitch>
         <duration>12</duration>
