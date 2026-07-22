@@ -30,6 +30,54 @@ let _divGradCached: CanvasGradient | null = null;
 let _glossGradCtx: CanvasRenderingContext2D | null = null;
 let _glossGradCached: CanvasGradient | null = null;
 
+/** How long the tile "hit bloom" flourish plays after a correct press (ms).
+ *  Short + soft — a satisfying pop that fits the app's calm feel, not a loud
+ *  explosion. */
+const HIT_BLOOM_MS = 380;
+
+/**
+ * Draw the moment-of-hit flourish centered on a just-struck tile: two soft,
+ * phase-offset rings blooming outward (a water-ripple "爽快感") plus a quick
+ * bright core flash, all additive so they read as light, not paint. Time-based
+ * on `hitFxMs` so it animates smoothly regardless of the practice clock.
+ */
+function drawHitBloom(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  baseR: number,
+  age: number,
+  useShadow: boolean
+): void {
+  const p = age / HIT_BLOOM_MS; // 0 → 1
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  if (useShadow) {
+    ctx.shadowColor = 'rgba(160, 255, 210, 0.9)';
+    ctx.shadowBlur = 14 * (1 - p);
+  }
+  for (let r = 0; r < 2; r++) {
+    const rp = Math.min(1, p + r * 0.2); // trailing ring lags a touch
+    const rad = baseR + rp * (baseR * 3 + 26);
+    const a = (1 - rp) * (r === 0 ? 0.6 : 0.32);
+    if (a <= 0) continue;
+    ctx.strokeStyle = 'rgba(185, 255, 216, ' + a.toFixed(3) + ')';
+    ctx.lineWidth = (1 - rp) * 2.4 + 0.6;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Bright core flash on the first third, fading fast — the "pop".
+  const coreA = Math.max(0, 0.55 - p * 1.4);
+  if (coreA > 0) {
+    ctx.fillStyle = 'rgba(240, 255, 245, ' + coreA.toFixed(3) + ')';
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR * (1 - p * 0.5), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export interface LaneNoteView {
   /** Section-relative time in ms (already includes count-in offset). */
   timeMs: number;
@@ -53,6 +101,12 @@ export interface LaneNoteView {
    *  `×N` badge + a tremolo chevron on the tile so a trill / tremolo /
    *  grace-burst reads as one event rather than overlapping tiles. */
   replayCount?: number;
+  /** Wall-clock ms (`performance.now()`) the note was hit — set by the shell's
+   *  scoring at the moment of a correct press. Drives a short "bloom" flourish
+   *  on the tile so the hit MOMENT feels satisfying, independent of the practice
+   *  clock (so it animates smoothly even when the guided clock freezes). Absent
+   *  on un-hit notes and after the flash decays. */
+  hitFxMs?: number;
 }
 
 export interface LaneViewState {
@@ -354,6 +408,16 @@ export function drawPracticeLane(
       ctx.textBaseline = 'middle';
       ctx.fillText(opts.midiToPitchName(n.midi), x, y - noteH / 2);
       ctx.textBaseline = 'alphabetic';
+    }
+
+    // Moment-of-hit bloom — a soft light-ring flourish so a correct note POPS
+    // pleasantly instead of just turning green. Time-gated on hitFxMs so it
+    // fires once per hit and decays; drawn last so it blooms over the tile.
+    if (n.hit && n.hitFxMs != null) {
+      const age = timing.nowMs - n.hitFxMs;
+      if (age >= 0 && age < HIT_BLOOM_MS) {
+        drawHitBloom(ctx, x, y - noteH / 2, Math.max(8, noteW * 0.55), age, useShadow);
+      }
     }
 
     // Trill / tremolo collapse — data-layer clustering in

@@ -140,6 +140,43 @@ describe('drawPracticeLane', () => {
     expect(fillStyles.some((s) => s.startsWith('rgba(255, 90, 120,'))).toBe(true);
   });
 
+  it('blooms a just-hit tile (recent hitFxMs) with a soft additive light ring', () => {
+    // nowMs=1000, hitFxMs=900 → age 100 ms < HIT_BLOOM_MS (380) → flourish plays.
+    const notes = [makeNote({ midi: 60, timeMs: 5500, hit: true, hitFxMs: 900 })];
+    drawPracticeLane(stub.ctx, baseView({ sectionNotes: notes }), baseTiming(), baseOpts());
+    const strokes = stub.calls
+      .filter((c) => c.method === 'set strokeStyle')
+      .map((c) => c.args[0])
+      .filter((s): s is string => typeof s === 'string');
+    expect(strokes.some((s) => s.startsWith('rgba(185, 255, 216,'))).toBe(true);
+    // Additive blend = the "light, not paint" glow.
+    const comp = stub.calls
+      .filter((c) => c.method === 'set globalCompositeOperation')
+      .map((c) => c.args[0]);
+    expect(comp).toContain('lighter');
+  });
+
+  it('does NOT bloom once the flash has decayed (stale hitFxMs)', () => {
+    // nowMs=1000, hitFxMs=500 → age 500 ms > HIT_BLOOM_MS → no flourish.
+    const notes = [makeNote({ midi: 60, timeMs: 5500, hit: true, hitFxMs: 500 })];
+    drawPracticeLane(stub.ctx, baseView({ sectionNotes: notes }), baseTiming(), baseOpts());
+    const strokes = stub.calls
+      .filter((c) => c.method === 'set strokeStyle')
+      .map((c) => c.args[0])
+      .filter((s): s is string => typeof s === 'string');
+    expect(strokes.some((s) => s.startsWith('rgba(185, 255, 216,'))).toBe(false);
+  });
+
+  it('a hit note without hitFxMs never blooms (back-compat)', () => {
+    const notes = [makeNote({ midi: 60, timeMs: 5500, hit: true })];
+    drawPracticeLane(stub.ctx, baseView({ sectionNotes: notes }), baseTiming(), baseOpts());
+    const strokes = stub.calls
+      .filter((c) => c.method === 'set strokeStyle')
+      .map((c) => c.args[0])
+      .filter((s): s is string => typeof s === 'string');
+    expect(strokes.some((s) => s.startsWith('rgba(185, 255, 216,'))).toBe(false);
+  });
+
   it('skips notes flagged _filtered (hidden hand)', () => {
     const notes = [
       makeNote({ midi: 60, timeMs: 5500, _filtered: true }),

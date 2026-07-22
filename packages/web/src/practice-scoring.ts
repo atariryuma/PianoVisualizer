@@ -100,6 +100,8 @@ export interface PracticeNote {
   hit?: boolean;
   missed?: boolean;
   holdStartMs?: number;
+  /** Wall-clock ms of the hit — drives the lane's moment-of-hit tile bloom. */
+  hitFxMs?: number;
   _filtered?: boolean;
 }
 
@@ -378,6 +380,10 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const dt = Math.abs(dtSignedMatched);
     matched.hit = true;
     matched.holdStartMs = performance.now();
+    // Timestamp the hit so the lane can bloom the tile at the moment of the
+    // press (a satisfying pop). Separate from holdStartMs, which the release
+    // path consumes for length scoring.
+    matched.hitFxMs = performance.now();
     deps.practice.pendingHolds.set(detectedMidi, matched);
     deps.practice.hits++;
     deps.practice.sectionCombo++;

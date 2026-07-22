@@ -374,6 +374,14 @@ temporarily limits max gain to prevent amplifying speech.
     amber pulse. Two-sided (good is celebrated), gentle framing (banned-list: no
     shame). `showHitChip` gained optional `xPx/yPx` so the length chip sits at
     the key, low, clear of the centered timing verdict.
+  - **Tile hit bloom** (`render/lane.ts` `drawHitBloom`): at the moment of a
+    correct press the falling tile itself blooms — two soft, phase-offset light
+    rings expanding outward (a water-ripple 爽快感) + a quick bright core flash,
+    additive-blended so they read as light not paint, decaying over ~380 ms.
+    Driven by `LaneNoteView.hitFxMs` (wall-clock, stamped by scoring on hit) so
+    it animates smoothly even when the guided clock freezes; absent/stale → no
+    bloom. Replaces the old "tile just turns green" so the hit MOMENT on the
+    note feels satisfying.
   - Kept deliberately soft (modest particle counts, gentle colours) so richer ≠
     noisier — the app's relaxing feel is preserved. `spawnRipple` is pool-capped
     (≤24) so fast passages can't saturate.

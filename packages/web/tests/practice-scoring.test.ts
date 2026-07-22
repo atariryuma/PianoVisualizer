@@ -387,6 +387,15 @@ describe('matchNoteOnset — guided mode', () => {
     expect(fx.mocks.spawnBurst).toHaveBeenCalled();
   });
 
+  it('stamps hitFxMs on a hit so the lane can bloom the tile', () => {
+    const notes = [note({ midi: 60, timeMs: 5000 })];
+    const fx = setup({ notes });
+    const before = performance.now();
+    fx.scoring.matchNoteOnset(60, true);
+    expect(typeof notes[0].hitFxMs).toBe('number');
+    expect(notes[0].hitFxMs!).toBeGreaterThanOrEqual(before);
+  });
+
   it('wrong note → miss chip with played name, no hit', () => {
     const fx = setup();
     const ok = fx.scoring.matchNoteOnset(64, true);
