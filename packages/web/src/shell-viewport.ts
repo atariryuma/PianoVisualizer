@@ -87,10 +87,27 @@ export function createShellViewport(deps: ShellViewportDeps): ShellViewport {
   resize();
   _viewportLayout.syncLayout();
 
-  // Resize listeners.
-  window.addEventListener('resize', resize);
-  window.addEventListener('resize', () => _viewportLayout.onResizeBurst());
-  window.addEventListener('orientationchange', () => _viewportLayout.onResizeBurst());
+  // Any viewport change must update BOTH the canvas backing store (resize)
+  // AND the layout mode / CSS vars (onResizeBurst → syncLayout). Doing only
+  // one of them is what squished landscape: the old orientationchange handler
+  // re-ran the layout but NOT the canvas resize, so the canvas kept its
+  // portrait width/height and got stretched into the wider viewport.
+  function handleViewportChange(): void {
+    resize();
+    _viewportLayout.onResizeBurst();
+  }
+  window.addEventListener('resize', handleViewportChange);
+  // iOS/iPadOS report a STALE window.innerWidth/innerHeight synchronously at
+  // orientationchange (and resize() early-returns on unchanged dims), so a
+  // single immediate pass misses the true post-rotation size. Run now
+  // (best-effort) + after the viewport settles so the canvas + layout pick up
+  // the real dimensions. visualViewport 'resize' is the most reliable signal
+  // on mobile Safari and fires with correct dims — listen to it too.
+  window.addEventListener('orientationchange', () => {
+    handleViewportChange();
+    setTimeout(handleViewportChange, 250);
+  });
+  window.visualViewport?.addEventListener('resize', handleViewportChange);
   if (typeof ResizeObserver !== 'undefined') {
     if (deps.practiceTopBarEl)
       new ResizeObserver(() => _viewportLayout.syncLayout()).observe(deps.practiceTopBarEl);
