@@ -635,6 +635,10 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     pausePractice: deps.pausePractice,
     resumePractice: deps.resumePractice,
     isPracticePaused: deps.isPracticePaused,
+    setShowScorePref: (visible: boolean) => {
+      (deps.prefs as any).showScore = visible;
+      deps.savePrefs?.();
+    },
     t,
   } as any);
   _returnToTitle = _practiceFlow.returnToTitle;

@@ -119,6 +119,9 @@ export interface PracticePartial {
 
 export interface PrefsPartial {
   audioOffsetMs?: number | null;
+  /** Show the OSMD sheet panel during play. Default false → the falling-notes
+   *  lane runs full-height (notes fall from the top, game-like). */
+  showScore?: boolean;
 }
 
 /** Subset of OsmdAdapter we touch. */
@@ -185,7 +188,7 @@ export interface StartSectionDom {
   ptbTempo: { textContent: string };
   ptbProgress: { textContent: string };
   practiceHud: { classList: { add(c: string): void } };
-  osmdContainer: { classList: { add(c: string): void } };
+  osmdContainer: { classList: { add(c: string): void; remove(c: string): void } };
 }
 
 /** Subset of midiState we clear at section start so a previous
@@ -431,7 +434,11 @@ export function createStartPracticeSection(
     );
     deps.dom.ptbProgress.textContent = '0 / ' + deps.practice._sectionTargetCount;
     deps.dom.practiceHud.classList.add('visible');
-    deps.dom.osmdContainer.classList.add('visible');
+    // Sheet panel is OFF by default so the falling-notes lane runs full-height
+    // (notes fall from the top of the screen — the game-like default). The 📜
+    // top-bar button toggles it and the choice persists (prefs.showScore).
+    if (deps.prefs.showScore) deps.dom.osmdContainer.classList.add('visible');
+    else deps.dom.osmdContainer.classList.remove('visible');
     deps.syncLayout();
     deps.setInputIndicator();
     deps.requestWakeLock();

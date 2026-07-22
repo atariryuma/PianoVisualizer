@@ -504,6 +504,28 @@ Canvas-based with `requestAnimationFrame`. Layers drawn back-to-front:
 8. Ripples (expanding circles at note positions)
 9. Particles (circle, ring, star, note, flower types; cap from `PERF_PROFILE`)
 
+### Falling-notes lane + sheet-panel default (2026-07-22)
+
+The practice falling-notes lane
+([`render/lane.ts`](packages/core/src/render/lane.ts)) spawns notes at the **top
+of the lane region** and drops them to the hit line. `laneTop` is `50` when the
+OSMD sheet panel is hidden (full-height, game-like — notes fall from the top of
+the screen), but jumps to **below the score** (`cachedOsmdRect.bottom + 12`)
+when the panel is visible, which squeezes the lane into a short strip and makes
+notes appear to start mid-screen. The lane keys off the panel's `.visible` class
+(`osmdContainerVisible`), not the element's layout box (the panel is
+opacity-hidden, so it always has a rect).
+
+**So the sheet panel is OFF by default during practice** (`prefs.showScore`,
+default `false`) — the game-like full-height lane is the default experience. The
+📜 top-bar button (`ptbToggleOsmd`) toggles it and **persists the choice**
+(`setShowScorePref` → `prefs.showScore` + `savePrefs`; survives sanitize via the
+accept-list). Turning it on trades lane height for a reading aid; the lane
+re-reads the class next frame (no relayout). `start-practice-section` applies
+the pref at each section start. (Same commit also added `showScore` +
+`welcomeDismissed` to the prefs accept-list — the latter was written but dropped
+on load, so the first-run welcome had been re-appearing every session.)
+
 ### Score-follow controller (OSMD cursor)
 
 OSMD's built-in `followCursor` is **OFF**;

@@ -150,6 +150,16 @@ describe('sanitizePrefs', () => {
     });
   });
 
+  it('keeps boolean showScore + welcomeDismissed (persisted across reloads)', () => {
+    expect(sanitizePrefs({ showScore: true })).toEqual({ showScore: true });
+    expect(sanitizePrefs({ showScore: false })).toEqual({ showScore: false });
+    expect(sanitizePrefs({ welcomeDismissed: true })).toEqual({ welcomeDismissed: true });
+  });
+
+  it('drops non-boolean showScore + welcomeDismissed', () => {
+    expect(sanitizePrefs({ showScore: 'yes', welcomeDismissed: 1 })).toEqual({});
+  });
+
   it('drops non-boolean synesthesia + debug', () => {
     expect(sanitizePrefs({ synesthesia: 'yes', debug: 1 })).toEqual({});
   });

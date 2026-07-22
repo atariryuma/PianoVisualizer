@@ -34,6 +34,11 @@ export interface InitialPrefs {
   volGhost: number;
   volBacking: number;
   volMetronome: number;
+  /** Show the OSMD sheet-music panel during practice. Default false → the
+   *  falling-notes lane is full-height (game-like); 📜 toggles + persists. */
+  showScore: boolean;
+  /** First-run welcome dismissed (persisted). Optional — absent on cold boot. */
+  welcomeDismissed?: boolean;
 }
 
 /** Build the cold-start prefs object (before merging the persisted
@@ -49,6 +54,7 @@ export function createInitialPrefs(): InitialPrefs {
     volGhost: 100,
     volBacking: 100,
     volMetronome: 100,
+    showScore: false,
   };
 }
 

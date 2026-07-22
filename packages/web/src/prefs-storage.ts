@@ -43,6 +43,15 @@ export interface PrefsShape {
   pianistCommitYear?: number;
   /** Chosen avatar — one of PIANIST_AVATARS. Empty string = unset. */
   pianistAvatar?: string;
+  /** Practice: show the OSMD sheet-music panel during play. Default false so
+   *  the falling-notes lane is full-height (game-like — notes fall from the
+   *  top of the screen); the 📜 top-bar button toggles it and the choice
+   *  persists. When on, the lane sits below the score (reading aid). */
+  showScore?: boolean;
+  /** True once the kid dismissed / acted on the first-run welcome card, so it
+   *  never re-appears. (Was previously written but not on the accept-list, so
+   *  it was dropped on load — the welcome kept re-showing.) */
+  welcomeDismissed?: boolean;
 }
 
 /** Minimal localStorage-like surface. The shell hands in the real
@@ -150,6 +159,12 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   }
   if (typeof r.pianistAvatar === 'string' && PIANIST_AVATARS.includes(r.pianistAvatar)) {
     out.pianistAvatar = r.pianistAvatar;
+  }
+  if (typeof r.showScore === 'boolean') {
+    out.showScore = r.showScore;
+  }
+  if (typeof r.welcomeDismissed === 'boolean') {
+    out.welcomeDismissed = r.welcomeDismissed;
   }
   return out;
 }

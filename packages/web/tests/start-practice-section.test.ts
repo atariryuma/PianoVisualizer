@@ -110,7 +110,7 @@ function makeFixture(
     fullSongNotes?: OsmdLikeNote[];
     tone?: StartSectionToneRef | undefined;
     practice?: Partial<PracticePartial>;
-    prefs?: { audioOffsetMs?: number | null };
+    prefs?: { audioOffsetMs?: number | null; showScore?: boolean };
     loadCurrentScoreThrows?: Error;
     remoteLogEnabled?: boolean;
   } = {}
@@ -157,7 +157,7 @@ function makeFixture(
     ptbTempo: { textContent: '' },
     ptbProgress: { textContent: '' },
     practiceHud: { classList: { add: vi.fn() } },
-    osmdContainer: { classList: { add: vi.fn() } },
+    osmdContainer: { classList: { add: vi.fn(), remove: vi.fn() } },
   };
 
   const spies: Fixture['spies'] = {
@@ -393,6 +393,20 @@ describe('startPracticeSection — HUD writes', () => {
     const fx = makeFixture({ notes });
     await fx.start(0);
     expect(fx.dom.ptbProgress.textContent).toBe('0 / 2');
+  });
+
+  it('hides the score by default (full-height game lane)', async () => {
+    const fx = makeFixture({ prefs: { audioOffsetMs: null } }); // showScore undefined → off
+    await fx.start(0);
+    expect(fx.dom.osmdContainer.classList.remove).toHaveBeenCalledWith('visible');
+    expect(fx.dom.osmdContainer.classList.add).not.toHaveBeenCalledWith('visible');
+  });
+
+  it('shows the score when prefs.showScore is true', async () => {
+    const fx = makeFixture({ prefs: { audioOffsetMs: null, showScore: true } });
+    await fx.start(0);
+    expect(fx.dom.osmdContainer.classList.add).toHaveBeenCalledWith('visible');
+    expect(fx.dom.osmdContainer.classList.remove).not.toHaveBeenCalledWith('visible');
   });
 });
 

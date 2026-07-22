@@ -234,6 +234,16 @@ describe('createPracticeFlow — ptbToggleOsmd', () => {
     deps.dom.ptbToggleOsmd.click();
     expect(deps.dom.osmdContainer.classList.contains('visible')).toBe(false);
   });
+
+  it('persists the new visibility via setShowScorePref on each toggle', () => {
+    const setShowScorePref = vi.fn();
+    const deps = makeDeps({ setShowScorePref } as Partial<PracticeFlowDeps>);
+    createPracticeFlow(deps);
+    deps.dom.ptbToggleOsmd.click();
+    expect(setShowScorePref).toHaveBeenLastCalledWith(true);
+    deps.dom.ptbToggleOsmd.click();
+    expect(setShowScorePref).toHaveBeenLastCalledWith(false);
+  });
 });
 
 // ─── resQuit ─────────────────────────────────────────────────────────

@@ -144,6 +144,9 @@ export interface PracticeFlowDeps {
   isPracticePaused?(): boolean;
   /** i18n — ⏸ ボタンのラベル切り替え用（pausePractice / resumePractice）。 */
   t?(key: string): string;
+  /** 📜 トグルの新しい表示状態を prefs に保存（次セクション/次回起動に反映）。
+   *  省略時は保存しない（旧シェル互換）。 */
+  setShowScorePref?(visible: boolean): void;
 }
 
 export interface PracticeFlow {
@@ -266,8 +269,13 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
   });
 
   // ─── ptbToggleOsmd (score overlay show/hide) ─────────────────────
+  // Persist the choice so it sticks across sections + reloads. Default is OFF
+  // (full-height game lane); turning it on keeps it on until the kid turns it
+  // back off. The lane re-reads the `.visible` class next frame, so no explicit
+  // relayout is needed — the score just fades in/out and the lane resizes.
   deps.dom.ptbToggleOsmd.addEventListener('click', () => {
-    deps.dom.osmdContainer.classList.toggle('visible');
+    const visible = deps.dom.osmdContainer.classList.toggle('visible');
+    deps.setShowScorePref?.(visible);
   });
 
   // ─── result-card buttons ──────────────────────────────────────────
