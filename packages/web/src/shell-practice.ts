@@ -60,8 +60,10 @@ export interface ShellPracticeDeps {
    *  be built before ShellMidiHandlers (which owns midiState). */
   getMidiState: () => any;
   /** Hit-feedback + visual spawners. */
-  showHitChip: (kind: string, text: string) => void;
+  showHitChip: (kind: string, text: string, xPx?: number, yPx?: number) => void;
   spawnBurst: any;
+  /** Expanding-ring pulse at a note's key (clean-hit pop + length-OK cue). */
+  spawnRipple?: (x: number, y: number, color: string, radius: number) => void;
   getScreen: () => { W: number; H: number };
   /** Prefs persistence — practiceProgress writes through this. */
   prefsStore: any;
@@ -190,6 +192,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     Tone: deps.Tone,
     showHitChip: deps.showHitChip,
     spawnBurst: deps.spawnBurst,
+    spawnRipple: deps.spawnRipple,
+    // MIDI → key x, so per-note hit effects land under the pressed key.
+    noteScreenX: (midi: number) =>
+      ((midi - config.PIANO_KEY_MIN) / config.PIANO_KEY_COUNT) * deps.getScreen().W,
     getScreen: deps.getScreen,
     t,
     midiToName,

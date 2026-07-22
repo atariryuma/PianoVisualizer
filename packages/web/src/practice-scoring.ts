@@ -37,7 +37,45 @@
 //      at the hit line waiting for the kid. Rhythm/listen always use
 //      real time (the song moves on its own).
 
+import { resolveTimingGrade, resolveLengthGrade, type TimingGrade } from '@piano/core';
 import { PITCH_MEDIAN_WINDOW_MS, type RecentPitchEntry } from './core-opts';
+
+/** Vertical band (fraction of screen height) where per-note hit effects spawn —
+ *  the play zone near the falling-note hit line, above the keyboard. */
+const HIT_FX_Y_FRAC = 0.72;
+
+/** Per-timing-grade feedback: chip kind + i18n key + burst spec + tint. Soft on
+ *  purpose (modest particle counts, gentle colors) so richer ≠ noisier — the
+ *  app stays relaxing. The colour doubles as a learnable signal: gold = spot on,
+ *  green = very close, blue = a touch early/late. */
+const TIMING_FX: Record<
+  TimingGrade,
+  { chip: string; textKey: string; color: string; burst: number; energy: number; ring: number }
+> = {
+  perfect: {
+    chip: 'perfect',
+    textKey: 'perfect',
+    color: '#ffe26b',
+    burst: 16,
+    energy: 1.15,
+    ring: 230,
+  },
+  great: {
+    chip: 'great',
+    textKey: 'gradeGreat',
+    color: '#b6f5b3',
+    burst: 11,
+    energy: 0.95,
+    ring: 175,
+  },
+  early: { chip: 'early', textKey: 'gradeEarly', color: '#a9d4ff', burst: 7, energy: 0.7, ring: 0 },
+  late: { chip: 'late', textKey: 'gradeLate', color: '#a9d4ff', burst: 7, energy: 0.7, ring: 0 },
+};
+
+/** Length-verdict colors — distinct from the timing palette so a release cue
+ *  reads as its own channel: cyan pulse = held it right, amber = adjust. */
+const LENGTH_GOOD_COLOR = '#7fe9e0';
+const LENGTH_OFF_COLOR = '#ffd08a';
 
 /** Subset of the shell `state` we read/write. */
 export interface PracticeScoringStateRef {
@@ -118,8 +156,15 @@ export interface PracticeScoringDeps {
   Tone: PracticeScoringToneRef | undefined;
 
   /** Visual feedback hooks. */
-  showHitChip: (kind: string, text: string) => void;
-  spawnBurst: (x: number, y: number, count: number, energy: number) => void;
+  showHitChip: (kind: string, text: string, xPx?: number, yPx?: number) => void;
+  spawnBurst: (x: number, y: number, count: number, energy: number, color?: string) => void;
+  /** Expanding-ring pulse at a note's key (the "pop" on a clean hit + the
+   *  length-OK cue on release). Optional so partial-DOM tests degrade. */
+  spawnRipple?: (x: number, y: number, color: string, radius: number) => void;
+  /** MIDI number → screen x (the key's horizontal position) so per-note
+   *  effects land under the key the kid pressed, not dead center. Optional —
+   *  falls back to screen center when absent. */
+  noteScreenX?: (midi: number) => number;
   /** Read fresh each call — the canvas could resize mid-section. */
   getScreen: () => { W: number; H: number };
 
@@ -346,7 +391,14 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const window = dtSignedMatched < 0 ? deps.tuning.hitWindowEarlyMs : deps.tuning.hitWindowMs;
     const ts = deps.practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
     deps.practice.timingScoreSum += ts;
-    const isPerfect = deps.practice.mode === 'guided' || dt < deps.tuning.perfectMs;
+    // Multi-tier timing verdict (perfect / great / a bit early / a bit late) so
+    // the kid SEES how clean the note was, not just "right". Guided never grades
+    // timing (the note waits), so it's always "perfect".
+    const grade: TimingGrade =
+      deps.practice.mode === 'guided'
+        ? 'perfect'
+        : resolveTimingGrade(dtSignedMatched, deps.tuning.perfectMs);
+    const fx = TIMING_FX[grade];
     // Guided の和音: メンバー1音ごとに Perfect を出すと、まちがいチップと
     // 100ms スロットル（intro-hint-ui）を取り合い、「止まっているのに
     // Perfect だけ見える」が起きる。押下確認は鍵盤の点灯とレーンの緑
@@ -365,16 +417,20 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       }
     }
     if (showChip) {
-      deps.showHitChip(
-        isPerfect ? 'perfect' : 'good',
-        isPerfect ? deps.t('perfect') : deps.t('nice')
-      );
+      // Timing verdict — centered so it reads consistently note to note.
+      deps.showHitChip(fx.chip, deps.t(fx.textKey));
     }
     deps.state.flow = Math.min(100, deps.state.flow + 6 + ts * 4);
     deps.state.combo++;
     if (deps.state.combo > deps.state.bestCombo) deps.state.bestCombo = deps.state.combo;
+    // Grade-scaled sparkle AT the key the kid pressed (not dead center), tinted
+    // by the timing grade, with a soft ring on a clean hit. Bigger reward for a
+    // cleaner note = "worth aiming for perfect" without shame on the rest.
     const screen = deps.getScreen();
-    deps.spawnBurst(screen.W * 0.5, screen.H * 0.55, 8, 0.7 + ts * 0.5);
+    const fxX = deps.noteScreenX ? deps.noteScreenX(detectedMidi) : screen.W * 0.5;
+    const fxY = screen.H * HIT_FX_Y_FRAC;
+    deps.spawnBurst(fxX, fxY, fx.burst, fx.energy, fx.color);
+    if (fx.ring > 0) deps.spawnRipple?.(fxX, fxY, fx.color, fx.ring);
     // OSMD cursor advancement is driven by the per-frame skip-past
     // loop in updatePracticeFrame.
     return true;
@@ -392,8 +448,28 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const score = Math.max(0, 1 - Math.abs(heldMs - expected) / tol);
     deps.practice.durationScoreSum += score;
     deps.practice.durationScoredCount++;
-    if (score < 0.4) {
-      deps.showHitChip('miss', heldMs < expected ? deps.t('tooShort') : deps.t('tooLong'));
+
+    // Note-length verdict — a SECOND visible dimension beyond "right note, right
+    // time". Kept as its own channel so it doesn't fight the timing chip:
+    //   • good hold → a soft cyan ring pulse at the key (no text — the distinct
+    //     colour reads as "held it right" without adding clutter).
+    //   • short / long → a gentle nudge chip placed LOW (near the key), so it
+    //     never overprints the centered timing verdict.
+    // Gentle framing, no shame (banned-list).
+    const screen = deps.getScreen();
+    const lenX = deps.noteScreenX ? deps.noteScreenX(detectedMidi) : screen.W * 0.5;
+    const lenY = screen.H * HIT_FX_Y_FRAC;
+    const grade = resolveLengthGrade(heldMs, expected, tol);
+    if (grade === 'good') {
+      deps.spawnRipple?.(lenX, lenY, LENGTH_GOOD_COLOR, 150);
+    } else {
+      deps.spawnRipple?.(lenX, lenY, LENGTH_OFF_COLOR, 110);
+      deps.showHitChip(
+        grade === 'short' ? 'short' : 'long',
+        deps.t(grade === 'short' ? 'lengthShort' : 'lengthLong'),
+        lenX,
+        screen.H * 0.82
+      );
     }
   }
 

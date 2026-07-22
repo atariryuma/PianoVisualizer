@@ -50,6 +50,7 @@ const TUNING: PracticeScoringTuning = {
 interface Mocks {
   showHitChip: ReturnType<typeof vi.fn>;
   spawnBurst: ReturnType<typeof vi.fn>;
+  spawnRipple: ReturnType<typeof vi.fn>;
   remoteLog: ReturnType<typeof vi.fn>;
 }
 
@@ -88,6 +89,7 @@ function makeFixture(
   const mocks: Mocks = {
     showHitChip: vi.fn(),
     spawnBurst: vi.fn(),
+    spawnRipple: vi.fn(),
     remoteLog: vi.fn(),
   };
   const deps: PracticeScoringDeps = {
@@ -97,6 +99,8 @@ function makeFixture(
     Tone: 'Tone' in over ? over.Tone : undefined,
     showHitChip: mocks.showHitChip,
     spawnBurst: mocks.spawnBurst,
+    spawnRipple: mocks.spawnRipple,
+    noteScreenX: (midi: number) => midi * 10, // deterministic stand-in
     getScreen: () => ({ W: 800, H: 600 }),
     t: (key, vars) => (vars ? `T(${key},${vars.v})` : `T(${key})`),
     midiToName: (midi) => 'M' + midi,
@@ -549,12 +553,28 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
   });
 
-  it('inside hit window but past perfectMs → good chip', () => {
-    // dt=120 > 50 perfect, but inside 200 hit
+  it('inside hit window, past the great band → direction-aware late chip', () => {
+    // dt=120 > perfect(50) and > great(2×50=100) → late (pressed after the beat)
     const fx = setup(5.12);
     const ok = fx.scoring.matchNoteOnset(60, true);
     expect(ok).toBe(true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('good', 'T(nice)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('late', 'T(gradeLate)');
+  });
+
+  it('a perfect hit sparkles AT the key (grade x/colour) + a clean-hit ring', () => {
+    const fx = setup(5.04); // dt=40 → perfect
+    fx.scoring.matchNoteOnset(60, true);
+    // Burst at the pressed key's x (noteScreenX(60)=600), gold tint, in the play band.
+    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 16, 1.15, '#ffe26b');
+    // Clean hits (perfect / great) add a soft ring; the burst colour matches.
+    expect(fx.mocks.spawnRipple).toHaveBeenCalledWith(600, 600 * 0.72, '#ffe26b', 230);
+  });
+
+  it('an off-timing hit (early/late) gets a smaller burst and NO ring', () => {
+    const fx = setup(5.12); // dt=120 → late
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 7, 0.7, '#a9d4ff');
+    expect(fx.mocks.spawnRipple).not.toHaveBeenCalled();
   });
 
   it('past late window → no match', () => {
@@ -598,7 +618,8 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     });
     const ok = fx.scoring.matchNoteOnset(60, true); // MIDI → no compensation
     expect(ok).toBe(true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('good', 'T(nice)'); // 70>50, not perfect
+    // 70 > perfect(50) but ≤ great(100) → 'great' (very close, not perfect)
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('great', 'T(gradeGreat)');
   });
 
   it('P1-11: MIDI の per-event inputLagMs（event.timeStamp 由来）は elapsed から減算される', () => {
@@ -672,33 +693,46 @@ describe('finalizeNoteHold', () => {
     expect(fx.practice.durationScoredCount).toBe(1);
   });
 
-  it('rhythm mode: heldMs < expected by > tol → too-short chip', () => {
-    // expected 500, tol = max(100, 500*0.3) = 150. held 300 → off by 200, score=0
+  it('rhythm mode: held much shorter than written → "hold longer" chip at the key', () => {
+    // expected 500, tol = max(100, 500*0.3) = 150. held 300 → diff -200 > tol/2 → short
     const start = performance.now() - 300;
     const matched = note({ midi: 60, durMs: 500, holdStartMs: start });
     const fx = makeFixture({ practice: { mode: 'rhythm' } });
     fx.practice.pendingHolds.set(60, matched);
     fx.scoring.finalizeNoteHold(60);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(tooShort)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'short',
+      'T(lengthShort)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
-  it('rhythm mode: heldMs > expected by > tol → too-long chip', () => {
+  it('rhythm mode: held much longer than written → "a bit long" chip at the key', () => {
     const start = performance.now() - 1000; // held 1000ms vs expected 500
     const matched = note({ midi: 60, durMs: 500, holdStartMs: start });
     const fx = makeFixture({ practice: { mode: 'rhythm' } });
     fx.practice.pendingHolds.set(60, matched);
     fx.scoring.finalizeNoteHold(60);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(tooLong)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'long',
+      'T(lengthLong)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
-  it('does not chip when score >= 0.4', () => {
-    // held 450, expected 500, tol 150 → score = 1 - 50/150 = 0.667
+  it('good hold (within half the tolerance) → cyan pulse, no nudge chip', () => {
+    // held 450, expected 500, tol 150 → diff -50 ≤ tol/2 (75) → good → soft
+    // cyan pulse only, no corrective chip.
     const start = performance.now() - 450;
     const matched = note({ midi: 60, durMs: 500, holdStartMs: start });
     const fx = makeFixture({ practice: { mode: 'rhythm' } });
     fx.practice.pendingHolds.set(60, matched);
     fx.scoring.finalizeNoteHold(60);
     expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
+    // A distinct cyan "held it right" pulse at the key marks the length dimension.
+    expect(fx.mocks.spawnRipple).toHaveBeenCalledWith(600, 600 * 0.72, '#7fe9e0', 150);
   });
 
   it('skips scoring when matched has no holdStartMs / durMs', () => {

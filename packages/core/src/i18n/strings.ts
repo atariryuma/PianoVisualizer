@@ -362,6 +362,17 @@ export const T_STRINGS: TranslationTable = {
   youPlayedFmt: { en: 'You played: {v}', jp: '弾いた音: {v}', de: 'Gespielt: {v}' },
   tooShort: { en: '⏱ Too short', jp: '⏱ 短い', de: '⏱ Zu kurz' },
   tooLong: { en: '⏱ Too long', jp: '⏱ 長い', de: '⏱ Zu lang' },
+  // Per-note timing grades (real-time, direction-aware). `perfect` is reused for
+  // the top tier; these cover the rest. Celebratory tiers stay English-styled
+  // (like perfect/nice); the corrective ones carry JP so the nudge is clear.
+  gradeGreat: { en: 'Great!', de: 'Super!' },
+  gradeEarly: { en: '⏱ A little early', jp: '⏱ ちょっと早いよ', de: '⏱ Etwas früh' },
+  gradeLate: { en: '⏱ A little late', jp: '⏱ ちょっと遅いよ', de: '⏱ Etwas spät' },
+  // Per-note length grades (on release). Two-sided — a good hold is celebrated,
+  // not only off-length ones flagged. Gentle, no shame (banned-list).
+  lengthGood: { en: '✓ Nice hold!', jp: '✓ いい長さ！', de: '✓ Schön gehalten!' },
+  lengthShort: { en: '⏱ Hold a bit longer', jp: '⏱ もう少し長く', de: '⏱ Etwas länger halten' },
+  lengthLong: { en: '⏱ A bit long', jp: '⏱ 少し長いよ', de: '⏱ Etwas zu lang' },
   // Lane labels
   laneLeft: { en: 'LEFT', jp: '左手', de: 'LINKS' },
   laneRight: { en: 'RIGHT', jp: '右手', de: 'RECHTS' },

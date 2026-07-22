@@ -6,6 +6,8 @@ import {
   computeHandRanges,
   matchNoteOnset,
   finalizeNoteHold,
+  resolveTimingGrade,
+  resolveLengthGrade,
   computeStars,
   resolveResultTier,
   pickSectionFocus,
@@ -384,6 +386,57 @@ describe('finalizeNoteHold', () => {
     finalizeNoteHold(s, 60, 500);
     const r2 = finalizeNoteHold(s, 60, 500);
     expect(r2.type).toBe('no-op');
+  });
+});
+
+// =====================================================================
+// resolveTimingGrade
+// =====================================================================
+
+describe('resolveTimingGrade', () => {
+  const P = 90; // perfectMs; great defaults to 180
+
+  it('dead-on (|dt| ≤ perfectMs) → perfect', () => {
+    expect(resolveTimingGrade(0, P)).toBe('perfect');
+    expect(resolveTimingGrade(90, P)).toBe('perfect');
+    expect(resolveTimingGrade(-90, P)).toBe('perfect');
+  });
+
+  it('within the great band (≤ 2× perfect) → great', () => {
+    expect(resolveTimingGrade(120, P)).toBe('great');
+    expect(resolveTimingGrade(-180, P)).toBe('great');
+  });
+
+  it('beyond great → direction-aware early / late', () => {
+    expect(resolveTimingGrade(-200, P)).toBe('early'); // pressed before the beat
+    expect(resolveTimingGrade(200, P)).toBe('late'); // pressed after the beat
+  });
+
+  it('honors a custom great window', () => {
+    expect(resolveTimingGrade(120, P, 100)).toBe('late'); // 120 > 100 great cap
+    expect(resolveTimingGrade(-120, P, 300)).toBe('great');
+  });
+});
+
+// =====================================================================
+// resolveLengthGrade
+// =====================================================================
+
+describe('resolveLengthGrade', () => {
+  it('held about the written length (within half the tolerance) → good', () => {
+    expect(resolveLengthGrade(500, 500, 200)).toBe('good');
+    expect(resolveLengthGrade(560, 500, 200)).toBe('good'); // diff 60 ≤ 100
+    expect(resolveLengthGrade(410, 500, 200)).toBe('good'); // diff -90 ≤ 100
+  });
+
+  it('too short / too long name the direction to adjust', () => {
+    expect(resolveLengthGrade(300, 500, 200)).toBe('short'); // diff -200 > 100
+    expect(resolveLengthGrade(700, 500, 200)).toBe('long'); // diff +200 > 100
+  });
+
+  it('honors a custom good fraction', () => {
+    expect(resolveLengthGrade(560, 500, 200, 0.25)).toBe('long'); // 60 > 50
+    expect(resolveLengthGrade(560, 500, 200, 0.5)).toBe('good'); // 60 ≤ 100
   });
 });
 

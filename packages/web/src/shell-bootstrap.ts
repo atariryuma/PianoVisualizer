@@ -207,6 +207,14 @@ export function boot(): void {
     drawGroundFlowers,
   } = _fx;
 
+  // Expanding-ring pulse at a point — the practice per-note "pop" (clean hit)
+  // and the length-OK cue. Bounded so a fast passage can't chain rings and
+  // saturate the ripple pool.
+  const spawnRipple = (x: number, y: number, color: string, radius: number): void => {
+    if (ripples.length > 24) return;
+    ripples.push(new Ripple(x, y, color, radius));
+  };
+
   // ── フリープレイの一期一会演出 (2026-07-19) — 音域更新 / 静寂明けの
   //    一番星 / フレーズ内の大跳躍を、既存プリミティブの上乗せで祝う。
   const _freeplayMoments = FreeplayMoments.createFreeplayMoments({
@@ -416,7 +424,8 @@ export function boot(): void {
     hideIntroHint: () => hideIntroHint(),
     setInputIndicator: () => _midi.setInputIndicator(),
     loadCurrentScore: () => _osmd.loadCurrentScore(),
-    showHitChip: (kind, text) => showHitChip(kind, text),
+    showHitChip: (kind, text, xPx, yPx) => showHitChip(kind, text, xPx, yPx),
+    spawnRipple,
     getCompletePracticeSection: () => completePracticeSection,
     // ループ周回でも1周分の練習時間を記録する (P2-12 × P2-19)。関数宣言で
     // 巻き上げ — 実際の呼び出しはセクション完了時なので前方参照でも安全。

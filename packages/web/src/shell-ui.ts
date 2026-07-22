@@ -111,8 +111,9 @@ export interface ShellUiDeps {
 }
 
 export interface ShellUi {
-  /** showHitChip — invoked from MIDI handlers + score-loader after-load. */
-  showHitChip: (kind: string, text: string) => void;
+  /** showHitChip — invoked from MIDI handlers + score-loader after-load.
+   *  Optional xPx/yPx place the chip at a note's key (default centered). */
+  showHitChip: (kind: string, text: string, xPx?: number, yPx?: number) => void;
   /** intro-hint-ui forwarders. */
   refreshIntroHint: () => void;
   showRunningUI: () => void;
@@ -155,7 +156,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     rescanMidi: deps.rescanMidi,
   } as any);
 
-  const showHitChip = (kind: string, text: string) => _introHintUi.showHitChip(kind, text);
+  const showHitChip = (kind: string, text: string, xPx?: number, yPx?: number) =>
+    _introHintUi.showHitChip(kind, text, xPx, yPx);
 
   // ── Practice journal (must be built before result-card so its
   //    onSectionAttemptDone hook can delegate to _journal.applyAttempt) ──

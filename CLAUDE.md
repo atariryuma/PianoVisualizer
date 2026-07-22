@@ -353,6 +353,30 @@ temporarily limits max gain to prevent amplifying speech.
   flow thresholds.
 - **Quality scoring**: rhythm regularity (IOI coefficient of variation) +
   dynamics variation + pitch stability, weighted 40/35/25.
+- **Per-note feedback grades (real-time, multi-dimensional, 2026-07-22)**: a
+  correct note used to give one flat center burst + a 2-tier chip ("Perfect!" /
+  "Nice!"). Now the two graded dimensions the result card reports (timing +
+  note-length) are shown LIVE, per note, so the kid sees _how_ they did — the
+  reaction that makes practice feel rewarding. Pure selectors in `@piano/core`:
+  `resolveTimingGrade(dtSignedMs, perfectMs, greatMs?)` →
+  `perfect | great | early | late` (direction-aware), and
+  `resolveLengthGrade(heldMs, expectedMs, tolMs, goodFrac?)` →
+  `good | short | long`. The web mapping lives in
+  [`practice-scoring.ts`](packages/web/src/practice-scoring.ts):
+  - **Press (timing)** → a grade-coloured chip (centered; gold=perfect,
+    green=great, blue=early/late) + a **grade-scaled sparkle AT the pressed
+    key** (`noteScreenX(midi)`, tinted by grade, 16→7 particles) + a soft ring
+    (`spawnRipple`) on a clean hit only. Bigger reward for a cleaner note, no
+    shame on the rest. Guided mode is always "perfect" (the note waits).
+  - **Release (length)** → its own colour channel so it doesn't fight the timing
+    chip: a **good hold** shows a cyan pulse at the key (no text); a **short /
+    long** hold shows a gentle low nudge chip (`lengthShort` / `lengthLong`) +
+    amber pulse. Two-sided (good is celebrated), gentle framing (banned-list: no
+    shame). `showHitChip` gained optional `xPx/yPx` so the length chip sits at
+    the key, low, clear of the centered timing verdict.
+  - Kept deliberately soft (modest particle counts, gentle colours) so richer ≠
+    noisier — the app's relaxing feel is preserved. `spawnRipple` is pool-capped
+    (≤24) so fast passages can't saturate.
 - **Encouragement system**: replaces numeric combo display with escalating
   bilingual messages (`Nice! → Great! → ... → Awesome!`), each triggering a
   unique visual effect.

@@ -124,8 +124,9 @@ export interface IntroHintUiDeps {
 
 export interface IntroHintUi {
   /** Float a chip up from the hit zone (free-play / practice
-   *  hit/miss feedback). Debounced. */
-  showHitChip(kind: string, text: string): void;
+   *  hit/miss feedback). Debounced. Optional xPx/yPx place it at a note's
+   *  key + a chosen height (default centered mid-screen). */
+  showHitChip(kind: string, text: string, xPx?: number, yPx?: number): void;
   /** Mic-permission-failed + no-MIDI predicate. */
   noInputAvailable(): boolean;
   /** Show intro hint when no input + hide when one becomes available. */
@@ -151,15 +152,18 @@ export function createIntroHintUi(deps: IntroHintUiDeps): IntroHintUi {
 
   let lastChipMs = 0;
 
-  function showHitChip(kind: string, text: string): void {
+  function showHitChip(kind: string, text: string, xPx?: number, yPx?: number): void {
     const t = now();
     if (t - lastChipMs < chipThrottle) return;
     lastChipMs = t;
     const chip = document.createElement('div');
     chip.className = 'hit-chip ' + kind;
     chip.textContent = text;
-    chip.style.left = '50%';
-    chip.style.top = deps.getHeight() * 0.55 - 30 + 'px';
+    // Default = centered mid-screen (timing verdict). Callers can place a chip
+    // at a note's key (xPx) and lower on the screen (yPx) so a second channel
+    // — the note-length verdict — doesn't overprint the centered timing one.
+    chip.style.left = xPx != null ? xPx + 'px' : '50%';
+    chip.style.top = (yPx != null ? yPx : deps.getHeight() * 0.55) - 30 + 'px';
     document.body.appendChild(chip);
     setTimeout(() => chip.remove(), chipDuration);
   }

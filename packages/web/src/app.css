@@ -2360,9 +2360,25 @@ body:has(#practiceHud.visible) #encouragement {
   text-shadow: 0 0 16px rgba(255, 220, 100, 0.8);
 }
 
-.hit-chip.good {
+.hit-chip.good,
+.hit-chip.great {
   color: #b6f5b3;
   text-shadow: 0 0 14px rgba(140, 255, 150, 0.7);
+}
+
+/* Timing "a little early / late" — soft blue, gently corrective (no shame). */
+.hit-chip.early,
+.hit-chip.late {
+  color: #a9d4ff;
+  text-shadow: 0 0 12px rgba(140, 190, 255, 0.65);
+}
+
+/* Note-length nudges — warm amber, distinct from the timing palette so the
+   two feedback channels read apart. */
+.hit-chip.short,
+.hit-chip.long {
+  color: #ffd08a;
+  text-shadow: 0 0 12px rgba(255, 190, 110, 0.6);
 }
 
 .hit-chip.miss {

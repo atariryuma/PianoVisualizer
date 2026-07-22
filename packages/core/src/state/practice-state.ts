@@ -393,6 +393,62 @@ export function finalizeNoteHold(
 }
 
 // =====================================================================
+// Per-note feedback grades (real-time, multi-dimensional)
+// =====================================================================
+// The section result card already reports accuracy / timing / note-length as
+// end-of-section percentages. These pure helpers turn the SAME two graded
+// dimensions into a live, per-note verdict so the kid SEES how they did on each
+// note — not just "right / wrong" — which is what makes a rhythm game feel
+// responsive and worth practising. Kept in core (pure) so the shell only maps
+// a grade → chip text + effect. Both are direction-aware (early/late,
+// short/long) so the feedback teaches, not just scores.
+
+/** A press's timing verdict. `perfect` = dead on; `great` = very close;
+ *  `early` / `late` = in the window but off, with the direction named so the
+ *  kid learns which way to adjust. */
+export type TimingGrade = 'perfect' | 'great' | 'early' | 'late';
+
+/**
+ * Grade a hit's timing from its signed offset (`dtSignedMs` = elapsed −
+ * note.timeMs, so negative = early, positive = late). The caller only reaches
+ * this on a note that already landed inside the hit window, so every grade is a
+ * "success" — the tiers just say how clean it was. `greatMs` defaults to twice
+ * the perfect window (a musically sensible "still very tight" band).
+ */
+export function resolveTimingGrade(
+  dtSignedMs: number,
+  perfectMs: number,
+  greatMs: number = perfectMs * 2
+): TimingGrade {
+  const dt = Math.abs(dtSignedMs);
+  if (dt <= perfectMs) return 'perfect';
+  if (dt <= greatMs) return 'great';
+  return dtSignedMs < 0 ? 'early' : 'late';
+}
+
+/** A release's note-length verdict. `good` = held about the written length;
+ *  `short` / `long` name the direction to adjust. Positive-inclusive — a good
+ *  hold is celebrated, not just off-length ones flagged. */
+export type LengthGrade = 'good' | 'short' | 'long';
+
+/**
+ * Grade how long a note was held vs its written length. `tolMs` is the same
+ * tolerance the duration score uses; `goodFrac` (default 0.5) is how much of
+ * that tolerance still counts as "good" so the positive band is meaningfully
+ * reachable (a kid doesn't need frame-perfect holds to feel success).
+ */
+export function resolveLengthGrade(
+  heldMs: number,
+  expectedMs: number,
+  tolMs: number,
+  goodFrac: number = 0.5
+): LengthGrade {
+  const diff = heldMs - expectedMs;
+  if (Math.abs(diff) <= Math.max(0, tolMs) * goodFrac) return 'good';
+  return diff < 0 ? 'short' : 'long';
+}
+
+// =====================================================================
 // Star tier evaluation
 // =====================================================================
 
