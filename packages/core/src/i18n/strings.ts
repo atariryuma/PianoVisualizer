@@ -555,6 +555,23 @@ export const T_STRINGS: TranslationTable = {
     jp: 'もどせませんでした — ほぞん先がいっぱい/ブロックされています。変更はありません。',
     de: 'Wiederherstellen fehlgeschlagen — Speicher voll oder blockiert, nichts geändert.',
   },
+  // a11y: settings "About" privacy line (was hardcoded EN+JP, no German).
+  aboutPrivacy: {
+    en: '🔒 No ads · No tracking · Audio stays on device',
+    jp: '🔒 広告なし · トラッキングなし · 音は端末内でのみ処理',
+    de: '🔒 Keine Werbung · Kein Tracking · Audio bleibt auf dem Gerät',
+  },
+  // a11y: canvas chart alt-text for screen readers.
+  radarChartLabel: {
+    en: 'Skills radar chart',
+    jp: 'スキルのレーダーチャート',
+    de: 'Fähigkeiten-Radardiagramm',
+  },
+  historyChartLabel: {
+    en: 'Progress trend chart (accuracy + timing over recent attempts)',
+    jp: '成長グラフ（さいきんの正確さとタイミング）',
+    de: 'Fortschrittsdiagramm (Genauigkeit + Timing der letzten Versuche)',
+  },
   // Composers — last-name katakana for JP (common in JP music ed)
   composerBeethoven: { en: 'L. v. Beethoven', jp: 'ベートーヴェン', de: 'L. v. Beethoven' },
   composerMozart: { en: 'W. A. Mozart', jp: 'モーツァルト', de: 'W. A. Mozart' },
@@ -1037,7 +1054,7 @@ export const T_STRINGS: TranslationTable = {
   journalTabCalendar: { en: '📅 Calendar', jp: '📅 カレンダー', de: '📅 Kalender' },
   // Per-song self-best line (accuracy % + combo). "Best" prefix; the icons
   // (🎯 / 🔥) carry the meaning so the label stays short in every language.
-  journalBestLabel: { en: 'Best', jp: '自己ベスト', de: 'Best' },
+  journalBestLabel: { en: 'Best', jp: '自己ベスト', de: 'Beste' },
   journalEmptyRepertoire: {
     en: 'No songs yet — add one from the title screen.',
     jp: 'まだ曲がありません — タイトル画面から追加してね。',

@@ -71,6 +71,8 @@ export function createShellEffects(deps: ShellEffectsDeps): ShellEffects {
     particles,
     ripples,
     perfTier: deps.perfTier,
+    // a11y: honor the OS reduced-motion preference on the canvas visualizer.
+    reducedMotion: pianoCore.prefersReducedMotion?.() ?? false,
   } as any);
 
   const _themeColors = () => config.THEMES[state.currentTheme].colors;

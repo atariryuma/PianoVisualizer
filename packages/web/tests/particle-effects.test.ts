@@ -104,6 +104,43 @@ describe('Ripple.prototype.update パッチ — dtNorm 貫通', () => {
   });
 });
 
+describe('reduced-motion (a11y)', () => {
+  it('caps particles + kills ambient + shadowBlur when reducedMotion is set', () => {
+    const { deps } = makeFixture();
+    deps.applyPerfTier = true;
+    deps.reducedMotion = true;
+    // Fresh config object so we observe the mutation.
+    const config = {
+      THEMES: [{ colors: ['#fff'] }],
+      NOTE_COLORS: {},
+      SHADOW_BLUR_ENABLED: true,
+      MAX_PARTICLES: 600,
+      AMBIENT_PARTICLE_CHANCE: 0.02,
+    };
+    createParticleEffects({ ...deps, config: config as never });
+    // mid tier caps 600 → 120; combined cap = 120 + 200.
+    expect(config.MAX_PARTICLES).toBe(320);
+    expect(config.AMBIENT_PARTICLE_CHANCE).toBe(0);
+    expect(config.SHADOW_BLUR_ENABLED).toBe(false);
+  });
+
+  it('leaves the full profile when reducedMotion is false', () => {
+    const { deps } = makeFixture();
+    deps.applyPerfTier = true;
+    deps.reducedMotion = false;
+    const config = {
+      THEMES: [{ colors: ['#fff'] }],
+      NOTE_COLORS: {},
+      SHADOW_BLUR_ENABLED: true,
+      MAX_PARTICLES: 600,
+      AMBIENT_PARTICLE_CHANCE: 0.02,
+    };
+    createParticleEffects({ ...deps, config: config as never });
+    expect(config.MAX_PARTICLES).toBe(800); // 600 + 200
+    expect(config.SHADOW_BLUR_ENABLED).toBe(true);
+  });
+});
+
 describe('Ripple.prototype.draw パッチ — 既存挙動の確認（回帰ガード）', () => {
   it('draw(ctx) が flow + useShadow を opts に詰めて core へ委譲する', () => {
     const { pianoCore, coreRippleDraw } = makeFixture();

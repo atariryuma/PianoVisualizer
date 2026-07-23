@@ -31,6 +31,34 @@ export const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
   high: { maxParticles3D: 1200, shadowBlur: true, ambientChance: 0.045, bgStarCount: 120 },
 };
 
+/** True when the OS/browser requests reduced motion. The canvas visualizer
+ *  (falling notes, particles, glow) is JS-driven and doesn't see the CSS
+ *  media query, so callers apply `reduceProfile()` to thin the particle
+ *  pool + kill ambient spawns + shadowBlur. Safe on SSR/happy-dom (returns
+ *  false when matchMedia is unavailable). */
+export function prefersReducedMotion(): boolean {
+  try {
+    return (
+      typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Tone a profile down for reduced-motion: hard-cap the particle pool, drop
+ *  ambient idle spawns to zero, and disable shadowBlur halos. Keeps the app
+ *  usable (notes still fall) while removing the heavy, sustained animation a
+ *  vestibular/photosensitive user opted out of. */
+export function reduceProfile(p: PerfProfile): PerfProfile {
+  return {
+    maxParticles3D: Math.min(p.maxParticles3D, 120),
+    shadowBlur: false,
+    ambientChance: 0,
+    bgStarCount: Math.min(p.bgStarCount, 30),
+  };
+}
+
 export function detectPerfTier(): PerfTier {
   if (typeof navigator === 'undefined') return 'mid';
   // Manual override wins.

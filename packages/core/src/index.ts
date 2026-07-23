@@ -27,7 +27,12 @@ export type {
 } from './adapters/osmd-adapter';
 
 // === Render: device perf tier ===
-export { detectPerfTier, PERF_PROFILES } from './render/perf-tier';
+export {
+  detectPerfTier,
+  PERF_PROFILES,
+  prefersReducedMotion,
+  reduceProfile,
+} from './render/perf-tier';
 export type { PerfTier, PerfProfile } from './render/perf-tier';
 
 // === Render: particle system (3D-projected canvas particles) ===

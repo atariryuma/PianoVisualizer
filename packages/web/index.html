@@ -371,8 +371,9 @@
                is bumped by the release checklist alongside CLAUDE.md. -->
           <div class="settings-row settings-about">
             <span
-              >Piano Visualizer v1.0<br />🔒 No ads · No tracking · Audio stays on device<br />広告なし
-              · トラッキングなし · 音は端末内でのみ処理</span
+              >Piano Visualizer v1.0<br /><span data-i18n="aboutPrivacy"
+                >🔒 No ads · No tracking · Audio stays on device</span
+              ></span
             >
           </div>
         </div>
@@ -395,7 +396,14 @@
           ><span class="summary-value" id="sumTime">0:00</span>
         </div>
         <div class="summary-radar">
-          <canvas id="radarChart" width="200" height="200"></canvas>
+          <canvas
+            id="radarChart"
+            width="200"
+            height="200"
+            role="img"
+            data-i18n-aria-label="radarChartLabel"
+            aria-label="Skills radar chart"
+          ></canvas>
         </div>
         <div class="summary-quests">
           <div class="summary-quests-title" data-i18n="sumQuests">⭐ Quests</div>
@@ -555,7 +563,7 @@
        OSMD draws its own SVG (notes + the wide yellow highlight cursor) here. -->
     <div id="osmdContainer"></div>
     <!-- Section-start banner that flies in at the start of each section -->
-    <div id="sectionBanner"></div>
+    <div id="sectionBanner" role="status" aria-live="polite"></div>
     <!-- Goal-gradient hint chip — "⭐ あと1星で金!" etc. Text is written by
          journal-modal.paintSectionBannerHint (song select / attempt done);
          visibility is a 2.6s flash triggered by showSectionBanner so it rides
@@ -585,9 +593,16 @@
           <span data-i18n="extraPresses">Extra notes</span><span id="resExtra">0</span>
         </div>
         <div class="result-history hidden" id="resHistoryWrap">
-          <canvas id="resHistoryChart" width="280" height="80"></canvas>
+          <canvas
+            id="resHistoryChart"
+            width="280"
+            height="80"
+            role="img"
+            data-i18n-aria-label="historyChartLabel"
+            aria-label="Progress trend chart"
+          ></canvas>
         </div>
-        <div class="result-msg" id="resMsg"></div>
+        <div class="result-msg" id="resMsg" role="status" aria-live="polite"></div>
         <!-- Knowledge-of-Performance coaching: one strength + one specific
              next step, derived from the scored dimensions. Hidden on ★3
              (clean run → celebrate, no coaching) and on listen/guided. -->
@@ -851,7 +866,7 @@
           </div>
         </div>
 
-        <div id="addSongStatus" class="add-song-status"></div>
+        <div id="addSongStatus" class="add-song-status" role="status" aria-live="polite"></div>
 
         <div class="add-song-mylib">
           <div class="settings-section-label" data-i18n="myLibrary">My library</div>
@@ -893,7 +908,13 @@
         </div>
         <div class="settings-help" id="sectionEditHelp"></div>
         <div id="sectionEditRows" style="margin: 10px 0"></div>
-        <div id="sectionEditError" class="add-song-status error" style="min-height: 1em"></div>
+        <div
+          id="sectionEditError"
+          class="add-song-status error"
+          style="min-height: 1em"
+          role="alert"
+          aria-live="assertive"
+        ></div>
         <div style="display: flex; gap: 8px; justify-content: flex-end">
           <button class="settings-btn" id="sectionEditCancelBtn" data-i18n="sectionEditCancel">
             Cancel

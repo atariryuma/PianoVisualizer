@@ -167,6 +167,14 @@ export function boot(): void {
         isOpen: () => _isVisible(DOM.sectionResult),
         close: () => DOM.sectionResult?.classList.remove('visible'),
       },
+      {
+        // a11y (G11): the song panel was the one aria-modal dialog with no
+        // Escape route — a keyboard user could only leave via its Back button.
+        // Escape now backs out to the title (same as Back).
+        priority: 5,
+        isOpen: () => _isVisible(DOM.songPanel),
+        close: () => _ui.returnToTitle(),
+      },
     ],
   }).install();
 

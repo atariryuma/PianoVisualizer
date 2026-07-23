@@ -3747,3 +3747,21 @@ body:has(#practiceHud.visible) #encouragement {
     transform: translateY(0) scale(1);
   }
 }
+
+/* ── Reduced motion (a11y, 2026-07-25) ────────────────────────────────
+   Kid audience may include vestibular / photosensitive users, and the app
+   is animation-heavy (banners, pulses, blooms, toasts). Previously only the
+   title glow honored prefers-reduced-motion. This blanket rule near-instants
+   every CSS animation + transition. The canvas visualizer (falling notes,
+   particles) is throttled separately in JS via matchMedia — see
+   perf-tier / effects (prefersReducedMotion). Keep this LAST so it wins. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

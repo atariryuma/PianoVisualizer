@@ -94,25 +94,14 @@ export default defineConfig(({ mode }) => ({
             // and Workbox threw `add-to-cache-list-conflicting-entries` on
             // SW startup. globPatterns is the right home for these (revision
             // is required for stable URLs to invalidate correctly).
-            manifest: {
-              name: 'Piano Visualizer',
-              short_name: 'PianoViz',
-              description: 'Real-time piano visualizer for upper-elementary children',
-              start_url: './',
-              scope: './',
-              display: 'standalone',
-              background_color: '#0a0a14',
-              theme_color: '#6a5acd',
-              orientation: 'any',
-              icons: [
-                {
-                  src: 'icon.svg',
-                  sizes: 'any',
-                  type: 'image/svg+xml',
-                  purpose: 'any maskable',
-                },
-              ],
-            },
+            // G16 (2026-07-25): DO NOT generate a manifest here. The app ships a
+            // hand-written public/manifest.json linked from index.html; VitePWA
+            // used to also emit manifest.webmanifest + inject a second
+            // <link rel=manifest>. Per spec only the FIRST link wins, so the
+            // generated one was dead weight and the two disagreed on
+            // display/lang/description. `manifest: false` keeps the hand-written
+            // one as the single source of truth (VitePWA still builds the SW).
+            manifest: false,
             workbox: {
               globPatterns: ['**/*.{js,css,html,svg,mxl,xml,json}'],
               // Bump the per-file cache cap for the OSMD chunk (~1.2 MB).

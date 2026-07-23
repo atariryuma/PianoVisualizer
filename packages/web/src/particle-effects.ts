@@ -141,6 +141,10 @@ export interface ParticleEffectsDeps {
   /** PERF_TIER override gate. Default true (apply override at boot).
    *  Tests may pass false to skip the CONFIG mutation. */
   applyPerfTier?: boolean;
+  /** a11y: when the OS requests reduced motion, thin the particle pool +
+   *  kill ambient spawns + shadowBlur (the canvas is JS-driven and doesn't
+   *  see the CSS media query). Default false. */
+  reducedMotion?: boolean;
   /** Optional logger override. Default console.log. */
   log?: (msg: string) => void;
 }
@@ -214,10 +218,21 @@ export function createParticleEffects(deps: ParticleEffectsDeps): ParticleEffect
   // share the lookup. The detection itself is idempotent but
   // duplicating it complicates the test surface.
   const PERF_TIER = deps.perfTier;
-  const PERF_PROFILE = pianoCore.PERF_PROFILES[PERF_TIER];
+  const baseProfile = pianoCore.PERF_PROFILES[PERF_TIER];
+  // a11y: reduced-motion thins the pool + drops ambient/shadowBlur so a
+  // vestibular/photosensitive kid gets the game without the sustained storm.
+  const PERF_PROFILE = deps.reducedMotion
+    ? {
+        ...baseProfile,
+        maxParticles3D: Math.min(baseProfile.maxParticles3D, 120),
+        shadowBlur: false,
+        ambientChance: 0,
+      }
+    : baseProfile;
   log(
     '[PERF] tier=' +
       PERF_TIER +
+      (deps.reducedMotion ? ' (reduced-motion)' : '') +
       ' particles=' +
       PERF_PROFILE.maxParticles3D +
       ' shadowBlur=' +
