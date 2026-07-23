@@ -112,6 +112,93 @@ describe('createPracticeVisibilityController', () => {
     expect(start).toHaveBeenCalledOnce();
   });
 
+  // ─── resume rewind（A1 — 業界標準の resume runway）─────────────────
+
+  it('rewinds the clock + Transport by getResumeRewindMs on resume (rhythm)', () => {
+    const practice = {
+      enabled: true,
+      startAudioTime: 0,
+      mode: 'rhythm',
+      laneDrawFromIdx: 14,
+      _cursorScanIdx: 12,
+      _lastCursorNoteIdx: 12,
+    };
+    let now = 10; // 10s elapsed
+    const start = vi.fn();
+    const transport: {
+      state: string;
+      pause: () => void;
+      start: (t?: number) => void;
+      seconds: number;
+    } = { state: 'started', pause: vi.fn(), start, seconds: 10 };
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({ context: { currentTime: now }, Transport: transport }),
+      getResumeRewindMs: () => 2000,
+      log: vi.fn(),
+    });
+
+    ctrl.pause();
+    now = 20;
+    ctrl.resume();
+
+    // Elapsed rebased to 10s − 2s = 8s; Transport seeked back in lockstep.
+    expect(practice.startAudioTime).toBeCloseTo(20.05 - 8, 5);
+    expect(transport.seconds).toBeCloseTo(8, 5);
+    expect(start).toHaveBeenCalledWith(20.05);
+    // 前進専用の償却カーソルは全リセット（巻き戻し区間を再走査させる）。
+    expect(practice.laneDrawFromIdx).toBe(0);
+    expect(practice._cursorScanIdx).toBe(0);
+    expect(practice._lastCursorNoteIdx).toBe(-1);
+  });
+
+  it('never rewinds guided (the notes wait — no runway needed)', () => {
+    const practice = {
+      enabled: true,
+      startAudioTime: 0,
+      mode: 'guided',
+      laneDrawFromIdx: 6,
+      _cursorScanIdx: 5,
+      _lastCursorNoteIdx: 5,
+    };
+    let now = 10;
+    const transport = { state: 'started', pause: vi.fn(), start: vi.fn(), seconds: 10 };
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({ context: { currentTime: now }, Transport: transport }),
+      getResumeRewindMs: () => 2000,
+      log: vi.fn(),
+    });
+
+    ctrl.pause();
+    now = 20;
+    ctrl.resume();
+
+    expect(practice.startAudioTime).toBeCloseTo(20.05 - 10, 5);
+    expect(transport.seconds).toBe(10);
+    expect(practice.laneDrawFromIdx).toBe(6);
+  });
+
+  it('clamps the rewind at 0 elapsed (pause during count-in)', () => {
+    const practice = { enabled: true, startAudioTime: 0, mode: 'rhythm' };
+    let now = 0.5; // 500ms in — less than the rewind
+    const transport = { state: 'started', pause: vi.fn(), start: vi.fn(), seconds: 0.5 };
+    const ctrl = createPracticeVisibilityController({
+      practice,
+      getTone: () => ({ context: { currentTime: now }, Transport: transport }),
+      getResumeRewindMs: () => 2000,
+      log: vi.fn(),
+    });
+
+    ctrl.pause();
+    now = 5;
+    ctrl.resume();
+
+    // elapsed 0.5s − min(0.5s, 2s) = 0 → restart from the very beginning.
+    expect(practice.startAudioTime).toBeCloseTo(5.05, 5);
+    expect(transport.seconds).toBe(0);
+  });
+
   // ─── explicit pause / resume (P1-6 settings-panel, P2-13 ⏸) ────────
 
   it('pause() freezes + sets practice.paused; resume() rebases + clears it', () => {

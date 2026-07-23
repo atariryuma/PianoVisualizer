@@ -40,6 +40,8 @@ export interface ResultCardPracticeRef {
   handFilter?: 'L' | 'R' | null;
   hits: number;
   misses: number;
+  /** 誤打カウント（rhythm × MIDI）— 0 超で事実行を表示（減点なし）。 */
+  extraPresses?: number;
   sectionCombo: number;
   sectionBestCombo: number;
   timingScoreSum: number;
@@ -126,6 +128,9 @@ export interface ResultCardDom {
   resDuration: HTMLElement;
   resDurationRow: HTMLElement | null;
   resCombo: HTMLElement;
+  /** 誤打の事実行（rhythm のみ・0 は非表示）。optional — 旧 DOM 互換。 */
+  resExtraRow?: HTMLElement | null;
+  resExtra?: HTMLElement | null;
   resMsg: HTMLElement;
   /** Knowledge-of-Performance coaching line (strength + next step). Optional
    *  so partial-DOM tests and older shells degrade gracefully. */
@@ -816,6 +821,13 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.dom.resDuration.textContent = durPct + '%';
     }
     deps.dom.resCombo.textContent = String(deps.practice.sectionBestCombo);
+    // 誤打の事実行（A4 マッシュ耐性の可視化側）— rhythm のみカウントされ、
+    // 0 なら行ごと非表示。数字そのものがフィードバックで、赤も説教もなし。
+    const extraPresses = deps.practice.extraPresses ?? 0;
+    if (deps.dom.resExtraRow) {
+      deps.dom.resExtraRow.style.display = extraPresses > 0 ? '' : 'none';
+      if (deps.dom.resExtra) deps.dom.resExtra.textContent = String(extraPresses);
+    }
 
     // F1: 解錠書き込み側（computeUnlocks）は realSectionIds を使うのに、この
     // Next 可視判定だけ静的 deps.sectionIds(['A1','B','A2'])に取り残されていた。

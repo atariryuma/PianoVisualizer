@@ -218,6 +218,11 @@ export const T_STRINGS: TranslationTable = {
   // Settings — note-name notation + practice-audio volume balance.
   noteNaming: { en: 'Note names', jp: 'おんめいの表示', de: 'Notennamen' },
   noteNamingAuto: { en: 'Auto', jp: 'じどう', de: 'Auto' },
+  // Note fall speed (lane lookahead) — the rhythm-game hi-speed setting.
+  noteSpeed: { en: 'Note speed', jp: 'ノーツの速さ', de: 'Noten-Tempo' },
+  noteSpeedSlow: { en: '🐢 Slow', jp: '🐢 ゆっくり', de: '🐢 Langsam' },
+  noteSpeedNormal: { en: 'Normal', jp: 'ふつう', de: 'Normal' },
+  noteSpeedFast: { en: '🚀 Fast', jp: '🚀 はやい', de: '🚀 Schnell' },
   volumeSection: { en: 'Volume', jp: 'おんりょう', de: 'Lautstärke' },
   volGhost: { en: '👻 Demo piano', jp: '👻 おてほんピアノ', de: '👻 Demo-Klavier' },
   volBacking: { en: '🎶 Melody guide', jp: '🎶 おともパート', de: '🎶 Melodie-Begleitung' },
@@ -256,6 +261,8 @@ export const T_STRINGS: TranslationTable = {
   },
   pausePractice: { en: 'Pause', jp: 'ちょっと休憩', de: 'Pause' },
   resumePractice: { en: 'Resume', jp: 'つづける', de: 'Weiter' },
+  // ↻ クイックリスタート（練習トップバー）— ワンタップで同セクション再挑戦。
+  restartSection: { en: 'Restart', jp: 'さいしょから', de: 'Neu starten' },
   back: { en: 'Back', jp: 'もどる', de: 'Zurück' },
   startPractice: { en: '▶ Start practice', jp: '▶ れんしゅうスタート', de: '▶ Üben starten' },
   startListening: { en: '🎧 Start listening', jp: '🎧 きいてみる', de: '🎧 Anhören' },
@@ -352,6 +359,8 @@ export const T_STRINGS: TranslationTable = {
   timing: { en: 'Timing', jp: 'タイミング', de: 'Timing' },
   noteLength: { en: 'Note length', jp: '音の長さ', de: 'Tonlänge' },
   bestComboLabel: { en: 'Best combo', jp: '連続成功（最高）', de: 'Beste Combo' },
+  // 誤打の事実行（rhythm のみ、0 は非表示）。数字が事実、説教なし。
+  extraPresses: { en: 'Extra notes', jp: 'よけいな音', de: 'Extra-Töne' },
   songSelect: { en: 'Song select', jp: 'きょく選択', de: 'Stück wählen' },
   tryAgainBtn: { en: 'Try again', jp: 'もう一度', de: 'Nochmal' },
   nextBtn: { en: 'Next →', jp: 'つぎへ →', de: 'Weiter →' },

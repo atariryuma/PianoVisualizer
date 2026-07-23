@@ -31,6 +31,8 @@ export interface SettingsPrefs {
   volGhost?: number;
   volBacking?: number;
   volMetronome?: number;
+  /** ノーツ落下速度（レーン先読み倍率）— 音ゲーのハイスピード設定。 */
+  noteSpeed?: 'slow' | 'normal' | 'fast';
 }
 
 /** Practice slice — the panel writes audioOffsetMs into both prefs and
@@ -84,6 +86,10 @@ export interface SettingsPanelDom {
   noteNamingAuto?: HTMLElement | null;
   noteNamingAbc?: HTMLElement | null;
   noteNamingSolfege?: HTMLElement | null;
+  /** ノーツ速度セグメント（🐢ゆっくり / ふつう / 🚀はやい）。 */
+  noteSpeedSlow?: HTMLElement | null;
+  noteSpeedNormal?: HTMLElement | null;
+  noteSpeedFast?: HTMLElement | null;
   volGhostSlider?: HTMLInputElement | null;
   volGhostVal?: HTMLElement | null;
   volBackingSlider?: HTMLInputElement | null;
@@ -130,6 +136,8 @@ export interface SettingsPanelDeps {
   previewToneVolume?(layer: 'ghost' | 'backing' | 'metronome'): void;
   /** 0.15 — refresh the shell's note-name cache after a notation change. */
   onNoteNamingChange?(): void;
+  /** ノーツ速度変更 — 練習中なら recomputePracticeTimings で即反映。 */
+  onNoteSpeedChange?(): void;
   /** 0.15 — download a progress+settings backup file. */
   exportProgressBackup?(): void;
   /** 0.15 — restore from a backup file (throws on bad file; reloads on ok). */
@@ -194,6 +202,7 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
       if (val) val.textContent = String(v);
     }
     refreshNoteNamingSeg();
+    refreshNoteSpeedSeg();
     // Input source pill — reflects what's currently driving onset detection.
     if (deps.midiInput.enabled && deps.midiInput.port?.name) {
       deps.dom.inputStatus.textContent = '🎹 ' + deps.midiInput.port.name;
@@ -310,6 +319,30 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
       deps.prefs.noteNaming = mode;
       refreshNoteNamingSeg();
       deps.onNoteNamingChange?.();
+      deps.savePrefs();
+    });
+  }
+
+  // ── ノーツ落下速度セグメント（🐢 / ふつう / 🚀）──────────────────
+  const speedDefs: Array<{
+    el: HTMLElement | null | undefined;
+    mode: 'slow' | 'normal' | 'fast';
+  }> = [
+    { el: deps.dom.noteSpeedSlow, mode: 'slow' },
+    { el: deps.dom.noteSpeedNormal, mode: 'normal' },
+    { el: deps.dom.noteSpeedFast, mode: 'fast' },
+  ];
+  function refreshNoteSpeedSeg(): void {
+    const current = deps.prefs.noteSpeed ?? 'normal';
+    for (const { el, mode } of speedDefs) {
+      el?.classList.toggle('active', mode === current);
+    }
+  }
+  for (const { el, mode } of speedDefs) {
+    el?.addEventListener('click', () => {
+      deps.prefs.noteSpeed = mode;
+      refreshNoteSpeedSeg();
+      deps.onNoteSpeedChange?.();
       deps.savePrefs();
     });
   }

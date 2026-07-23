@@ -50,6 +50,8 @@ export interface PracticeLanePracticeRef {
   laneDrawFromIdx?: number;
   _cursorScanIdx?: number;
   _lastCursorNoteIdx?: number;
+  /** Live section combo — rhythm mode shows a soft ×N counter in the lane. */
+  sectionCombo?: number;
 }
 
 /** Game-state slice — only `useSynesthesiaMode` is read. */
@@ -161,6 +163,9 @@ export interface PracticeLane {
     countInClickMs?: number;
     countInGoMs?: number;
   }): void;
+  /** セクション開始時に小節線/拍線グリッド（buildLaneBeatGrid — countIn
+   *  アンカー + テンポ scale 済み）を差し替える。null = 線なし。 */
+  setBeatGrid(events: ReadonlyArray<{ timeMs: number; accent: boolean }> | null): void;
 }
 
 export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
@@ -210,6 +215,8 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     midiToPitchName: deps.midiToPitchName,
     noteRestingColor,
     useShadow: deps.useShadow,
+    beatGrid: null as ReadonlyArray<{ timeMs: number; accent: boolean }> | null,
+    sectionCombo: 0,
   };
 
   function setLabels(labels: {
@@ -240,6 +247,10 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
         ? timings.countInClickMs
         : timings.countInMs / beats;
     laneOpts.countInGoMs = timings.countInGoMs ?? timings.countInMs;
+  }
+
+  function setBeatGrid(events: ReadonlyArray<{ timeMs: number; accent: boolean }> | null): void {
+    laneOpts.beatGrid = events;
   }
 
   function draw(timeMs: number): void {
@@ -324,6 +335,8 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     laneOpts.osmdVisible = osmdVisible;
     laneOpts.laneTopOverride = laneTopOverride;
     laneOpts.kbReserve = kbReserve;
+    // ライブコンボは rhythm のみ（guided は切れないカウント、listen は視聴）。
+    laneOpts.sectionCombo = deps.practice.mode === 'rhythm' ? (deps.practice.sectionCombo ?? 0) : 0;
 
     // === Draw + cursor amortization writeback ===
     const translated = laneLeft !== 0;
@@ -336,5 +349,5 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     deps.practice.laneDrawFromIdx = laneView.laneDrawFromIdx;
   }
 
-  return { draw, setLabels, setTimings };
+  return { draw, setLabels, setTimings, setBeatGrid };
 }

@@ -86,6 +86,9 @@ export interface ShellMidiDeps {
   isRunning: () => boolean;
   requestWakeLock: () => Promise<unknown>;
   getTone: () => PracticeVisibility.PracticeVisibilityToneRef | undefined | null;
+  /** 再開リワインド量（ms）— practice-visibility の resume runway。
+   *  省略時 0（従来どおり即時再開）。 */
+  getResumeRewindMs?: () => number;
 }
 
 export interface ShellMidi {
@@ -240,6 +243,7 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
   const _practiceVisibility = PracticeVisibility.createPracticeVisibilityController({
     practice,
     getTone: deps.getTone,
+    getResumeRewindMs: deps.getResumeRewindMs,
   });
 
   // Audio-lifecycle hook (visibilitychange + devicechange) — the same MIDI

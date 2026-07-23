@@ -341,6 +341,29 @@ describe('createPracticeTick — progress HUD', () => {
     createPracticeTick(deps)(1050, false, null);
     expect(deps.dom.ptbProgress.textContent).toBe('INITIAL');
   });
+
+  it('drives the ptbProgressFill gauge width when wired (B1)', () => {
+    const deps = makeDeps({
+      practice: {
+        enabled: true,
+        mode: 'rhythm',
+        sectionNotes: [makeNote(), makeNote()],
+        currentNoteIdx: 0,
+        hits: 10,
+        misses: 2,
+        sectionCombo: 0,
+        _completing: false,
+        _completionTimer: null,
+        _lastProgUpdate: 0,
+        _sectionTargetCount: 48,
+      },
+    });
+    const fill = { style: { width: '' } } as unknown as HTMLElement;
+    (deps.dom as { ptbProgressFill?: HTMLElement }).ptbProgressFill = fill;
+    createPracticeTick(deps)(200, false, null);
+    // 12 / 48 = 25%
+    expect((fill as unknown as { style: { width: string } }).style.width).toBe('25%');
+  });
 });
 
 // ─── section complete ────────────────────────────────────────────────

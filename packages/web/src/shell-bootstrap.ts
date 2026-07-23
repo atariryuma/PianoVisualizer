@@ -479,6 +479,9 @@ export function boot(): void {
     isRunning: () => !!state.running,
     requestWakeLock,
     getTone: () => Tone,
+    // 再開リワインド（resume runway）: ポーズ/バックグラウンド復帰時に約2拍
+    // 巻き戻して助走を作る（rhythm/listen のみ — practice-visibility 側で判定）。
+    getResumeRewindMs: () => Math.min(2500, Math.max(900, _practice.practiceBeatMs() * 2)),
     // I1: MIDI 切断（detach / BLE drop）時に押下中の鍵が幽霊点灯で残らないよう
     // midiState をクリア。midiState は _midiH 由来で後段束縛だが、この thunk は
     // 切断時にしか呼ばれないので前方参照で問題ない（getMidiState と同パターン）。
@@ -546,6 +549,11 @@ export function boot(): void {
     previewToneVolume: (layer: 'ghost' | 'backing' | 'metronome') =>
       _practice.previewToneVolume(layer),
     onNoteNamingChange: () => _practice.refreshLangCaches(),
+    // A3: ノーツ速度変更 — 練習中なら lookahead を即再計算（パネルは
+    // ポーズ中に開くので、位置ジャンプはモーダルの裏で起きる）。
+    onNoteSpeedChange: () => {
+      if (practice.enabled) _practice.recomputePracticeTimings();
+    },
     // 進捗バックアップ（星/スタンプ/練習日 + 設定）。ライブラリ(曲)とは別。
     exportProgressBackup: () => {
       const progress = loadJSON('pianoViz_practice_v1', null);

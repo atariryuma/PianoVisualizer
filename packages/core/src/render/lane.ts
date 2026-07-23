@@ -186,7 +186,22 @@ export interface LaneDrawOptions {
    *  single biggest practice-mode frame cost on iPad 10. Default true so
    *  older callers keep the glow. */
   useShadow?: boolean;
+  /** Beat grid for the lane: horizontal barlines (accent=true) + fainter
+   *  beat lines, sorted ascending by timeMs (same clock as the notes —
+   *  count-in offset + tempo scale baked in). The rhythm-game genre
+   *  standard (Synthesia / Melodics): without it, "which beat is this
+   *  note on" can't be read ahead. Omit / null → no grid drawn. */
+  beatGrid?: ReadonlyArray<{ timeMs: number; accent: boolean }> | null;
+  /** Current section combo (rhythm mode). ≥ COMBO_SHOW_MIN shows a soft
+   *  "×N" counter near the hit line — the genre-standard live combo,
+   *  kept gentle (no flames, no shame on break — it just fades). Pass
+   *  0 / omit to hide (guided / listen). */
+  sectionCombo?: number;
 }
+
+/** Combo counter appears from this streak length — short streaks stay
+ *  quiet so the lane isn't busy on the very first notes. */
+const COMBO_SHOW_MIN = 5;
 
 /**
  * Draw one frame of the practice lane. No-op when `view.enabled` is false.
@@ -287,6 +302,41 @@ export function drawPracticeLane(
   ctx.moveTo(midX, laneTop);
   ctx.lineTo(midX, hitLineY + 50);
   ctx.stroke();
+
+  // Beat grid — horizontal barlines (bright-ish) + beat lines (faint), the
+  // rhythm-game genre standard so "which beat is this note on" reads ahead.
+  // Drawn under the hit-window band + notes. Events are sorted by timeMs;
+  // early-continue / early-break keep the scan cheap even for full songs.
+  const grid = opts.beatGrid;
+  if (grid && grid.length > 0) {
+    const gElapsed = timing.elapsedMs;
+    const gMin = gElapsed - 40 / pxPerMs;
+    const gMax = gElapsed + laneHeight / pxPerMs;
+    const yTop = laneTop + 8;
+    const yBot = laneTop + laneHeight - 4;
+    let lastBeatLineY = Infinity; // 速いテンポで拍線が潰れないよう最小間隔を確保
+    ctx.lineWidth = 1;
+    for (let i = 0; i < grid.length; i++) {
+      const ev = grid[i];
+      if (ev.timeMs < gMin) continue;
+      if (ev.timeMs > gMax) break;
+      const y = hitLineY - (ev.timeMs - gElapsed) * pxPerMs;
+      if (y < yTop || y > yBot) continue;
+      if (!ev.accent) {
+        if (lastBeatLineY - y < 18 && y < lastBeatLineY) continue; // too dense
+        lastBeatLineY = y;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+      } else {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.13)';
+        ctx.lineWidth = 1.5;
+      }
+      ctx.beginPath();
+      ctx.moveTo(padX + 4, y);
+      ctx.lineTo(W - padX - 4, y);
+      ctx.stroke();
+    }
+  }
 
   // Hit window band (asymmetric: small early zone, large late zone)
   const earlyPx = opts.hitWindowEarlyMs * pxPerMs;
@@ -441,6 +491,23 @@ export function drawPracticeLane(
     ctx.font = 'bold 18px sans-serif';
     ctx.fillStyle = cur.hand === 'L' ? 'rgba(180,220,255,1)' : 'rgba(255,200,220,1)';
     ctx.fillText(cur.hand + ' · ' + opts.midiToPitchName(cur.midi), x, hitLineY + 32);
+  }
+
+  // Live combo counter — soft "×N" at the lane's right edge above the hit
+  // line (genre standard, kept gentle: appears from COMBO_SHOW_MIN, fades
+  // silently on a break — the auto-miss already communicates the why).
+  const combo = opts.sectionCombo ?? 0;
+  if (combo >= COMBO_SHOW_MIN) {
+    ctx.save();
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 20px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+    if (useShadow) {
+      ctx.shadowColor = 'rgba(255, 220, 130, 0.7)';
+      ctx.shadowBlur = 10;
+    }
+    ctx.fillStyle = 'rgba(255, 226, 130, 0.8)';
+    ctx.fillText('×' + combo, W - padX - 10, hitLineY - winPx - 14);
+    ctx.restore();
   }
 
   // Boss flair — pulsing pink overlay

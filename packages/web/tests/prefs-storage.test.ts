@@ -156,6 +156,14 @@ describe('sanitizePrefs', () => {
     expect(sanitizePrefs({ welcomeDismissed: true })).toEqual({ welcomeDismissed: true });
   });
 
+  it('keeps a valid noteSpeed and drops invalid values', () => {
+    expect(sanitizePrefs({ noteSpeed: 'slow' })).toEqual({ noteSpeed: 'slow' });
+    expect(sanitizePrefs({ noteSpeed: 'normal' })).toEqual({ noteSpeed: 'normal' });
+    expect(sanitizePrefs({ noteSpeed: 'fast' })).toEqual({ noteSpeed: 'fast' });
+    expect(sanitizePrefs({ noteSpeed: 'ludicrous' })).toEqual({});
+    expect(sanitizePrefs({ noteSpeed: 2 })).toEqual({});
+  });
+
   it('drops non-boolean showScore + welcomeDismissed', () => {
     expect(sanitizePrefs({ showScore: 'yes', welcomeDismissed: 1 })).toEqual({});
   });

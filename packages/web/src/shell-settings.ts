@@ -42,6 +42,8 @@ export interface ShellSettingsDeps {
   /** 音量スライダー調整時（change）のプレビュー発音。 */
   previewToneVolume?: (layer: 'ghost' | 'backing' | 'metronome') => void;
   onNoteNamingChange?: () => void;
+  /** A3 — ノーツ速度変更（練習中は lookahead を即再計算）。 */
+  onNoteSpeedChange?: () => void;
   /** 0.15 — 進捗バックアップ（星/スタンプ/練習日 + 設定）の書き出し/取り込み。 */
   exportProgressBackup?: () => void;
   importProgressBackup?: (file: Blob) => Promise<void>;
@@ -74,6 +76,10 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
       noteNamingAuto: DOM.noteNamingAuto,
       noteNamingAbc: DOM.noteNamingAbc,
       noteNamingSolfege: DOM.noteNamingSolfege,
+      // ノーツ落下速度セグメント（A3）。
+      noteSpeedSlow: DOM.noteSpeedSlow,
+      noteSpeedNormal: DOM.noteSpeedNormal,
+      noteSpeedFast: DOM.noteSpeedFast,
       volGhostSlider: DOM.volGhostSlider,
       volGhostVal: DOM.volGhostVal,
       volBackingSlider: DOM.volBackingSlider,
@@ -105,6 +111,7 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     applyToneVolumes: deps.applyToneVolumes,
     previewToneVolume: deps.previewToneVolume,
     onNoteNamingChange: deps.onNoteNamingChange,
+    onNoteSpeedChange: deps.onNoteSpeedChange,
     exportProgressBackup: deps.exportProgressBackup,
     importProgressBackup: deps.importProgressBackup,
   } as any);

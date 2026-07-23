@@ -752,6 +752,63 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
   });
 });
 
+// ─── matchNoteOnset — mash resistance（A4）──────────────────────────
+// 誤打は減点しない（accuracy = hits/target）が、rhythm × MIDI では
+// sectionCombo を切り + extraPresses を数える。これが無いと全鍵連打で
+// ★が取れてしまい「クリア」の意味が壊れる。マイクは誤検出があるので対象外。
+
+describe('matchNoteOnset — mash resistance (A4)', () => {
+  it('a wrong MIDI key in rhythm breaks sectionCombo + counts an extra press', () => {
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0, sectionCombo: 7, sectionBestCombo: 7 },
+      Tone: { context: { currentTime: 5.04 } },
+    });
+    const ok = fx.scoring.matchNoteOnset(62, true);
+    expect(ok).toBe(false);
+    expect(fx.practice.sectionCombo).toBe(0);
+    expect(fx.practice.extraPresses).toBe(1);
+    // ベストコンボは非減少（結果カードの表示はそのまま）。
+    expect(fx.practice.sectionBestCombo).toBe(7);
+  });
+
+  it('a mic misdetection never breaks the combo (pitch detection is fallible)', () => {
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0, sectionCombo: 7 },
+      Tone: { context: { currentTime: 5.04 } },
+    });
+    const ok = fx.scoring.matchNoteOnset(62, false); // isExact=false → mic
+    expect(ok).toBe(false);
+    expect(fx.practice.sectionCombo).toBe(7);
+    expect(fx.practice.extraPresses ?? 0).toBe(0);
+  });
+
+  it('guided wrong key stays penalty-free (learning mode)', () => {
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'guided', startAudioTime: 0, sectionCombo: 3 },
+      Tone: { context: { currentTime: 5.04 } },
+    });
+    fx.scoring.matchNoteOnset(62, true);
+    expect(fx.practice.sectionCombo).toBe(3);
+    expect(fx.practice.extraPresses ?? 0).toBe(0);
+  });
+
+  it('re-pressing a resolved chord mate is still forgiven (no combo break)', () => {
+    // 和音の弾き直し救済（既存）とマッシュ耐性が両立していること。
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000, hit: true }), note({ midi: 64, timeMs: 5010 })],
+      practice: { mode: 'rhythm', startAudioTime: 0, currentNoteIdx: 1, sectionCombo: 4 },
+      Tone: { context: { currentTime: 5.04 } },
+    });
+    const ok = fx.scoring.matchNoteOnset(60, true); // 解決済みメンバーの弾き直し
+    expect(ok).toBe(false);
+    expect(fx.practice.sectionCombo).toBe(4);
+    expect(fx.practice.extraPresses ?? 0).toBe(0);
+  });
+});
+
 // ─── finalizeNoteHold ──────────────────────────────────────────────
 
 describe('finalizeNoteHold', () => {

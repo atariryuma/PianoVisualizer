@@ -82,6 +82,8 @@ export interface PracticeFlowDom {
   ptbToggleOsmd: HTMLElement;
   /** ⏸ 一時停止ボタン — 旧 DOM には無いので optional。 */
   ptbPause?: HTMLElement | null;
+  /** ↻ クイックリスタート（A2 — 業界標準のワンタップ再挑戦）。optional。 */
+  ptbRestart?: HTMLElement | null;
   resQuit: HTMLElement;
   resRetry: HTMLElement;
   /** "Retry with support" — applies the scaffold strategy published by
@@ -241,6 +243,14 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
   });
   // 設定パネル経由の pause/resume でも表示を同期（bootstrap がイベントを発火）。
   window.addEventListener('practicepausechange', syncPauseBtn);
+
+  // ─── ptbRestart (↻ クイックリスタート) ────────────────────────────
+  // 音ゲー標準のワンタップ再挑戦 — ✕→曲パネル→▶ の3タップを1タップに。
+  // transitionToSection が二重タップ debounce + ポーズラッチ解除を内包する。
+  deps.dom.ptbRestart?.addEventListener('click', () => {
+    if (!deps.practice.enabled && !deps.practice._completing) return;
+    void transitionToSection(deps.practice.sectionIdx);
+  });
 
   // ─── ptbQuit (during-practice quit) ───────────────────────────────
   deps.dom.ptbQuit.addEventListener('click', () => {

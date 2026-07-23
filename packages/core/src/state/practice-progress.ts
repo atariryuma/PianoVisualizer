@@ -67,9 +67,15 @@ export interface SongProgress {
     AttemptRecord | Array<{ d: number; a: number; t: number; s: number; tempoPct?: number }>
   >;
   /** Last practice settings for this song — restored on re-select so the
-   *  kid doesn't have to re-pick tempo / hand / mode every session.
-   *  Optional (absent on older saves + first play). */
-  lastSettings?: { mode?: string; tempoPct?: number; handFilter?: 'L' | 'R' | null };
+   *  kid doesn't have to re-pick tempo / hand / mode / ghost / metronome
+   *  every session. Optional (absent on older saves + first play). */
+  lastSettings?: {
+    mode?: string;
+    tempoPct?: number;
+    handFilter?: 'L' | 'R' | null;
+    ghostOn?: boolean;
+    metronomeOn?: boolean;
+  };
 }
 
 /** Schema version bumped on breaking semantic changes. Payloads with a

@@ -392,6 +392,39 @@ temporarily limits max gain to prevent amplifying speech.
   - Kept deliberately soft (modest particle counts, gentle colours) so richer ≠
     noisier — the app's relaxing feel is preserved. `spawnRipple` is pool-capped
     (≤24) so fast passages can't saturate.
+- **Rhythm-game standard pass（音ゲー業界標準化, 2026-07-23）**: an audit vs
+  genre conventions (Synthesia / Melodics / Rocksmith) closed eight gaps:
+  - **Lane beat grid**: `buildLaneBeatGrid` (section-notes.ts) emits
+    measure/beat lines from the measureGrid (same countIn anchor + tempo scale
+    as the notes, GO downbeat included, closing barline at section end); songs
+    without a grid get a uniform beatMs/beatsPerMeasure fallback
+    (shell-practice.ts). Drawn by `lane.ts` (accent 0.13 / beat 0.05 alpha, beat
+    lines skipped under 18 px spacing).
+  - **Resume runway**: `practice-visibility.ts thaw()` rewinds ≈2 beats
+    (`getResumeRewindMs`, clamp [900, 2500] ms) on pause/background resume for
+    rhythm/listen — Transport `.seconds` seeks back in lockstep and the
+    forward-only amortized cursors (laneDrawFromIdx / \_cursorScanIdx) reset so
+    the rewound span redraws; unresolved notes get a second chance. Guided is
+    exempt (its clock waits).
+  - **Quick restart**: ↻ `#ptbRestart` in the practice top bar — one-tap
+    same-section retry (was ✕ → song panel → ▶, 3 taps).
+  - **Note speed (hi-speed)**: `prefs.noteSpeed` slow/normal/fast (1.45 / 1 /
+    0.7 × lookahead ONLY — judgement windows, count-in, and audio are
+    untouched). Settings-panel segment, persisted, live-applied mid-run via
+    `recomputePracticeTimings`.
+  - **Mash resistance**: a rhythm-mode MIDI wrong-press breaks `sectionCombo`
+    and increments `practice.extraPresses`; the result card shows a
+    "よけいな音 n" fact row (`#resExtraRow`, hidden at 0). No score deduction
+    (accuracy stays hits/target — banned-list gentle), but sweeping every key no
+    longer clears with a full combo. Mic onsets exempt (misdetection).
+  - **Practice-option memory**: per-song `lastSettings` (P2-20) now also carries
+    `ghostOn` / `metronomeOn`.
+  - **Live HUD**: thin section-progress gauge on the top-bar pill
+    (`#ptbProgressFill`, 10 Hz) + a soft `×N` live combo in the lane from 5
+    (rhythm only; fades silently on break — no shame).
+  - **Loop lead-in**: loop laps start at count-in minus 2 clicks
+    (`startPracticeSection(idx, {lapLead:true})` → Transport offset start) —
+    timeline/judgement identical, just less waiting per lap.
 - **Encouragement system**: replaces numeric combo display with escalating
   bilingual messages (`Nice! → Great! → ... → Awesome!`), each triggering a
   unique visual effect.

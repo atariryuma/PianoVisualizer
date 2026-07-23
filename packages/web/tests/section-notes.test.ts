@@ -16,6 +16,7 @@ import {
   buildFullSongNotes,
   buildBackingNotes,
   buildMetronomeEvents,
+  buildLaneBeatGrid,
   fullSongAnchorSec,
   computeHandRanges,
   clusterAdjacentNotes,
@@ -812,5 +813,46 @@ describe('buildMetronomeEvents', () => {
       4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500,
     ]);
     expect(out.filter((e) => e.accent).map((e) => e.timeMs)).toEqual([6000, 7000]);
+  });
+});
+
+// ─── buildLaneBeatGrid（レーンの小節線/拍線 — S1） ────────────────────
+
+describe('buildLaneBeatGrid', () => {
+  const fullBar44 = (startSec: number) => ({ startSec, durSec: 2, beats: 4, beatType: 4 });
+
+  it('グリッドが無い曲は null（呼び出し側が一様グリッドへフォールバック）', () => {
+    const deps = makeDeps({ song: { notes: [note()], sections: [sec(0, 4)] } });
+    expect(buildLaneBeatGrid(0, deps)).toBeNull();
+  });
+
+  it('GO のダウンビート線を含み、セクション終端に閉じの小節線を足す', () => {
+    const deps = makeDeps({
+      song: {
+        notes: [],
+        sections: [sec(0, 4)],
+        measureGrid: [fullBar44(0), fullBar44(2)],
+      },
+      practice: { tempoPct: 100, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildLaneBeatGrid(0, deps)!;
+    // buildMetronomeEvents と違い GO（4000 = 小節0の頭）も含む。
+    // 終端 8000 に閉じの小節線（accent）。
+    expect(out.map((e) => e.timeMs)).toEqual([
+      4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000,
+    ]);
+    expect(out.filter((e) => e.accent).map((e) => e.timeMs)).toEqual([4000, 6000, 8000]);
+  });
+
+  it('テンポ scale がノートと同じ式（tempoPct 50 → 2 倍）', () => {
+    const deps = makeDeps({
+      song: { notes: [], sections: [sec(0, 2)], measureGrid: [fullBar44(0)] },
+      practice: { tempoPct: 50, handFilter: null },
+      countInMs: 4000,
+    });
+    const out = buildLaneBeatGrid(0, deps)!;
+    // 0.5s 間隔の拍 → 1s 間隔。終端 2s → 4s 後。
+    expect(out.map((e) => e.timeMs)).toEqual([4000, 5000, 6000, 7000, 8000]);
   });
 });

@@ -12,9 +12,13 @@
 //   2. matchNoteOnset(detectedMidi, isExact) — the funnel point for
 //      both mic onsets (isExact=false) and MIDI presses (isExact=true).
 //      STRICT match: only the currentNoteIdx (the very next expected
-//      note) is considered. Wrong-note → MISS rather than skipping
-//      ahead in the score and accidentally crediting a same-pitch-
-//      class note further along the timeline. Chord cluster matching
+//      note) is considered — a wrong key never skips ahead in the
+//      score to credit a same-pitch-class note further along the
+//      timeline. A wrong key shows a fact-based "you played X" chip
+//      (no miss counted, no score deduction — accuracy is hits/target);
+//      in rhythm mode a MIDI wrong-press also breaks the section combo
+//      and increments `extraPresses` (mash resistance — otherwise
+//      sweeping every key still clears). Chord cluster matching
 //      (notes within ±CHORD_MATE_TOLERANCE_MS of cur) lets the kid
 //      play chord notes in any order without strict left-to-right
 //      bias.
@@ -129,6 +133,10 @@ export interface PracticeScoringRef {
   durationScoreSum: number;
   durationScoredCount: number;
   pendingHolds: Map<number, PracticeNote>;
+  /** 誤打カウント（rhythm × MIDI のみ）。減点はしない — 結果カードに事実
+   *  として出すだけ + コンボが切れる（マッシュで★が取れる穴を塞ぐ）。
+   *  マイクは誤検出があるので対象外。 */
+  extraPresses?: number;
   startAudioTime: number;
   audioOffsetMs?: number | null;
   /** 明示ポーズ / タブ非表示で凍結中の生（オフセット前）経過ms。
@@ -382,8 +390,17 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       // Wrong-note feedback. Guided always shows it (the score is
       // frozen waiting for the right note). Rhythm shows a throttled,
       // fact-based chip too so the kid SEES which key was off — the
-      // single most useful feedback in the moment. Visualization only:
-      // no score penalty (accuracy is hits/target), no shame copy.
+      // single most useful feedback in the moment. No score deduction
+      // (accuracy is hits/target), no shame copy — but in rhythm mode a
+      // MIDI wrong-press DOES break the section combo + count as an
+      // extra press (mash resistance: without it, sweeping every key
+      // still cleared the section — the "clear" lost its meaning).
+      // Mic onsets are exempt (pitch misdetection would break combos
+      // the kid didn't earn losing).
+      if (deps.practice.mode === 'rhythm' && isExact) {
+        deps.practice.sectionCombo = 0;
+        deps.practice.extraPresses = (deps.practice.extraPresses ?? 0) + 1;
+      }
       // Placed at the PLAYED key (same band as every other verdict chip).
       const now = performance.now();
       if (deps.practice.mode === 'guided') {

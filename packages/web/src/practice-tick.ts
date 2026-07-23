@@ -82,6 +82,9 @@ export interface PracticeTickOsmdRef {
 export interface PracticeTickDom {
   /** Progress text display in the practice top-bar — '12 / 47'. */
   ptbProgress: HTMLElement;
+  /** セクション進捗バー（トップバー下端の細いゲージ、B1）。旧 DOM には
+   *  無いので optional — 無ければテキストのみ更新。 */
+  ptbProgressFill?: HTMLElement | null;
 }
 
 export interface PracticeTickDeps {
@@ -309,11 +312,18 @@ export function createPracticeTick(
     }
     lastTickMs = timeMs;
 
-    // 5. Progress HUD — rate-limited to 10Hz.
+    // 5. Progress HUD — rate-limited to 10Hz. テキスト（12 / 47）に加え、
+    //    トップバー下端の細い進捗バー（B1 — 業界標準のセクション進捗の
+    //    可視化）も同じレートで更新する。
     if (timeMs - deps.practice._lastProgUpdate > 100) {
       deps.practice._lastProgUpdate = timeMs;
       const target = deps.practice._sectionTargetCount || len;
-      deps.dom.ptbProgress.textContent = deps.practice.hits + deps.practice.misses + ' / ' + target;
+      const resolved = deps.practice.hits + deps.practice.misses;
+      deps.dom.ptbProgress.textContent = resolved + ' / ' + target;
+      if (deps.dom.ptbProgressFill && target > 0) {
+        deps.dom.ptbProgressFill.style.width =
+          Math.min(100, Math.round((resolved / target) * 100)) + '%';
+      }
     }
 
     // 6. Section complete?

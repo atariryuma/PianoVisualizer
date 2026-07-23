@@ -14,8 +14,13 @@ export interface PracticeVisibilityPracticeRef {
    *  advance so the AudioContext clock (which keeps ticking) can't drain
    *  the section behind a modal. */
   paused?: boolean;
+  /** 再開リワインドの対象判定に読む（guided はクロックが待つので不要）。 */
+  mode?: string;
   _cursorScanIdx?: number;
   _lastCursorNoteIdx?: number;
+  /** リワインド時に 0 へ戻す — レーンの償却カーソルは前進専用なので、
+   *  巻き戻した区間のタイルを再描画させるには再スキャンが要る。 */
+  laneDrawFromIdx?: number;
   /** 凍結中の生（オフセット前）経過ms。practiceRealElapsedMs が読み、
    *  これが非 null の間だけ経過クロックが凍結する（両バグの根治点）。 */
   _frozenRealElapsedMs?: number | null;
@@ -28,6 +33,8 @@ export interface PracticeVisibilityToneRef {
     state?: string;
     pause?: () => void;
     start?: (time?: number | string) => void;
+    /** Transport 再生位置（秒）。リワインド再開で書き戻す。 */
+    seconds?: number;
   };
 }
 
@@ -35,6 +42,12 @@ export interface PracticeVisibilityDeps {
   practice: PracticeVisibilityPracticeRef;
   getTone: () => PracticeVisibilityToneRef | undefined | null;
   resumeLeadSec?: number;
+  /** 再開リワインド量（ms）— ポーズ/バックグラウンド復帰時に、走行中の
+   *  タイムライン（rhythm / listen）を数拍ぶん巻き戻して助走を作る
+   *  （業界標準の resume runway — Rocksmith / Clone Hero 系）。巻き戻した
+   *  区間の未解決ノートは再挑戦できる。省略 / 0 = 従来どおり即時再開。
+   *  guided はクロックがノートを待つ設計なので常に対象外。 */
+  getResumeRewindMs?: () => number;
   log?: (msg: string) => void;
 }
 
@@ -134,13 +147,36 @@ export function createPracticeVisibilityController(
     const leadSec = frozen.transportWasStarted ? resumeLeadSec : 0;
     const resumeAtSec = toneNowSec(tone) + leadSec;
 
-    deps.practice.startAudioTime = resumeAtSec - frozen.elapsedSec;
-    // Keep the amortized scanner coherent with the frozen time. The next
-    // frame will scan from the old index unless the elapsed time regressed.
-    deps.practice._cursorScanIdx = deps.practice._lastCursorNoteIdx ?? deps.practice._cursorScanIdx;
+    // 再開リワインド（resume runway）: 走行中タイムライン（Transport が
+    // 動いていた = rhythm/listen）なら数拍巻き戻して助走を作る。ゴースト/
+    // メトロノームの Transport イベントも同区間だけ再発火するので音と視覚が
+    // 揃ったまま戻る。guided はノートが待つのでリワインド不要。
+    const rewindMs =
+      frozen.transportWasStarted && deps.practice.mode !== 'guided'
+        ? Math.max(0, deps.getResumeRewindMs?.() ?? 0)
+        : 0;
+    const rewindSec = Math.min(frozen.elapsedSec, rewindMs / 1000);
+    const elapsedSec = frozen.elapsedSec - rewindSec;
+
+    deps.practice.startAudioTime = resumeAtSec - elapsedSec;
+    if (rewindSec > 0) {
+      // 前進専用の償却カーソルを全部リセット — 巻き戻した区間のタイル/
+      // OSMD カーソルを再走査させる（次フレームで安価に追い付く）。
+      deps.practice.laneDrawFromIdx = 0;
+      deps.practice._cursorScanIdx = 0;
+      deps.practice._lastCursorNoteIdx = -1;
+    } else {
+      // Keep the amortized scanner coherent with the frozen time. The next
+      // frame will scan from the old index unless the elapsed time regressed.
+      deps.practice._cursorScanIdx =
+        deps.practice._lastCursorNoteIdx ?? deps.practice._cursorScanIdx;
+    }
 
     if (frozen.transportWasStarted && typeof tone?.Transport?.start === 'function') {
       try {
+        if (rewindSec > 0 && tone.Transport && typeof tone.Transport.seconds === 'number') {
+          tone.Transport.seconds = elapsedSec;
+        }
         tone.Transport.start(resumeAtSec);
       } catch {
         /* user gesture / platform recovery may require a manual restart */
@@ -153,6 +189,7 @@ export function createPracticeVisibilityController(
         ' resume ' +
         JSON.stringify({
           elapsedMs: Math.round(frozen.elapsedSec * 1000),
+          rewindMs: Math.round(rewindSec * 1000),
           leadMs: Math.round(leadSec * 1000),
           transportResumed: frozen.transportWasStarted,
         })

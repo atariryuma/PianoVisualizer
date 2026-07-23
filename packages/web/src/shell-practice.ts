@@ -102,8 +102,8 @@ export interface ShellPractice {
   savePracticeProgress: () => void;
   songProg: () => any;
   recordPracticeDay: () => void;
-  /** Tone.js audio + start/stop. */
-  startPracticeSection: (sectionIdx: number) => Promise<void>;
+  /** Tone.js audio + start/stop. opts.lapLead = ループ周回の短縮リードイン。 */
+  startPracticeSection: (sectionIdx: number, opts?: { lapLead?: boolean }) => Promise<void>;
   stopPracticeAudio: () => void;
   /** Per-frame practice tick — invoked from the render-loop builder. */
   updatePractice: (...args: any[]) => any;
@@ -170,6 +170,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       LANE_LOOKAHEAD_MS = ms;
     },
     getPracticeLane: () => practiceLaneRef.current,
+    // A3: ノーツ速度（先読み時間）3段階 — 設定パネルの prefs.noteSpeed。
+    // slow はゆっくり降りて読みやすく、fast はキビキビ落ちる。
+    getNoteSpeedMult: () =>
+      prefs.noteSpeed === 'slow' ? 1.45 : prefs.noteSpeed === 'fast' ? 0.7 : 1,
     sectionBannerEl: dom.sectionBanner,
     sectionBannerHintEl: dom.sectionBannerHint,
     t,
@@ -276,6 +280,27 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const buildBackingNotes = (sectionIdx: number | null) =>
     SectionNotes.buildBackingNotes(sectionIdx, _sectionNotesArgs());
   const computeHandRanges = (sectionNotes: any[]) => SectionNotes.computeHandRanges(sectionNotes);
+  // S1: レーンの小節線/拍線グリッド。measureGrid のある曲は正確な小節構造
+  // （弱起・複合拍子・拍子変更込み）、無い曲は一様グリッド（beatMs 間隔 +
+  // beatsPerMeasure アクセント）で近似 — メトロノームの一様フォールバックと
+  // 同じ考え方。テンポ・countIn はノートと同じアンカー。
+  const buildLaneBeatGrid = (sectionIdx: number | null) => {
+    const fromGrid = SectionNotes.buildLaneBeatGrid(sectionIdx, _sectionNotesArgs());
+    if (fromGrid) return fromGrid;
+    const song = deps.getCurrentSong();
+    const notes = practice.sectionNotes as Array<{ timeMs?: number; durMs?: number }>;
+    if (!song || !notes.length) return null;
+    const beatMs = _practiceTimings.practiceBeatMs();
+    if (!(beatMs > 0)) return null;
+    const last = notes[notes.length - 1];
+    const endMs = (last.timeMs ?? 0) + (last.durMs ?? 0) + beatMs;
+    const beatsPerBar = song.beatsPerMeasure && song.beatsPerMeasure > 0 ? song.beatsPerMeasure : 4;
+    const out: Array<{ timeMs: number; accent: boolean }> = [];
+    for (let t = COUNT_IN_MS, beat = 0; t <= endMs; t += beatMs, beat++) {
+      out.push({ timeMs: t, accent: beat % beatsPerBar === 0 });
+    }
+    return out;
+  };
 
   const _startPracticeSection = StartPracticeSection.createStartPracticeSection({
     state,
@@ -309,6 +334,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       },
     } as any,
     countInMs: () => COUNT_IN_MS,
+    // B2: ループ周回の短縮リードイン（残り2クリック）の計算用。
+    countInClickMs: () => COUNT_IN_CLICK_MS,
     defaultAudioOffsetMs: deps.defaultAudioOffsetMs,
     remoteLogEnabled: deps.remoteLogEnabled,
     alert: (msg: string) => alert(msg),
@@ -319,14 +346,18 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     setInputIndicator: deps.setInputIndicator,
     requestWakeLock: deps.requestWakeLock,
     showSectionBanner: (sec: any) => _practiceTimings.showSectionBanner(sec),
-    dom: DomBag.pickDom(
-      dom,
-      'ptbSection',
-      'ptbTempo',
-      'ptbProgress',
-      'practiceHud',
-      'osmdContainer'
-    ) as any,
+    dom: {
+      ...DomBag.pickDom(
+        dom,
+        'ptbSection',
+        'ptbTempo',
+        'ptbProgress',
+        'practiceHud',
+        'osmdContainer'
+      ),
+      // 進捗バー（B1）— 旧 DOM には無いので optional 直参照。
+      ptbProgressFill: (dom as any).ptbProgressFill ?? null,
+    } as any,
     loadCurrentScore: deps.loadCurrentScore,
     // sectionIdx を貫通させる — start 時は practice.sectionIdx がまだ
     // 旧セクションを指しているため、開始セクションの拍子/弱起アンカーを
@@ -336,6 +367,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     buildSectionNotes,
     buildFullSongNotes,
     buildBackingNotes,
+    // S1: 小節線/拍線グリッド — セクション開始時にレーンへ差し替え。
+    buildLaneBeatGrid,
+    setLaneBeatGrid: (events: Array<{ timeMs: number; accent: boolean }> | null) =>
+      practiceLaneRef.current?.setBeatGrid?.(events),
     computeHandRanges: computeHandRanges as any,
     osmdAdapter: deps.osmdAdapter,
     Tone: deps.Tone,
@@ -367,8 +402,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
   } as any);
 
-  const startPracticeSection = async (sectionIdx: number) => {
-    await _startPracticeSection(sectionIdx);
+  const startPracticeSection = async (sectionIdx: number, opts?: { lapLead?: boolean }) => {
+    await _startPracticeSection(sectionIdx, opts);
     // Remember this song's settings so re-selecting it restores tempo /
     // hand / mode instead of resetting to guided (P2-20). Best-effort.
     // Listen is a one-off "just hear it" action, not a practice setting —
@@ -382,6 +417,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
           mode: practice.mode,
           tempoPct: practice.tempoPct,
           handFilter: practice.handFilter,
+          // A5: ゴースト/メトロノームも記憶 — 業界標準の「前回の設定を
+          // 覚えている」を練習トグル全体に揃える（loop は周回挙動なので除外）。
+          ghostOn: practice.ghostOn,
+          metronomeOn: practice.metronomeOn,
         };
         _practiceProgress.save();
       }
@@ -392,7 +431,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const stopPracticeAudio = () => _practiceToneAudio.stopPracticeAudio();
 
   const updatePractice = PracticeTick.createPracticeTick({
-    dom: { ptbProgress: dom.ptbProgress },
+    dom: { ptbProgress: dom.ptbProgress, ptbProgressFill: (dom as any).ptbProgressFill ?? null },
     practice,
     // Live wrapper — practice-tick reads `midiInput.enabled` at tick time.
     midiInput: {
@@ -415,7 +454,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     // リセットする前に elapsed を読む必要があるため、この順序が重要）。
     restartSectionForLoop: () => {
       deps.recordPracticeMinutes?.();
-      void startPracticeSection(practice.sectionIdx);
+      // B2: 周回は短縮リードイン（カウントイン後半へスキップ）。
+      void startPracticeSection(practice.sectionIdx, { lapLead: true });
     },
     // Guided ヒント音 (P2-14): おともパートと同じ柔らかい sine (-17dB) で
     // 期待音を短く鳴らす。罰・減点は一切なし（banned-list 準拠の支援）。

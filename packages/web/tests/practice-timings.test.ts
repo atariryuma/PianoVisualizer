@@ -17,6 +17,8 @@ function makeFixture(
     noBanner?: boolean;
     /** 小節グリッド等を持つ song を丸ごと渡す（songBpm より優先）。 */
     song?: PracticeTimingsSong | null;
+    /** A3: ノーツ速度（lookahead 倍率）。省略時は配線なし = 1。 */
+    getNoteSpeedMult?: () => number;
   } = {}
 ) {
   const practice: PracticeTimingsPracticeRef = {
@@ -85,6 +87,7 @@ function makeFixture(
     setCountInClickMs,
     setCountInGoMs,
     setLaneLookaheadMs,
+    getNoteSpeedMult: over.getNoteSpeedMult,
     getPracticeLane: () => practiceLane,
     sectionBannerEl,
     sectionBannerHintEl,
@@ -229,6 +232,26 @@ describe('createPracticeTimings — recomputePracticeTimings', () => {
     expect(fx.computePracticeTimingsFn).toHaveBeenCalledWith(500, {
       meter: { beats: 3, beatType: 4 },
     });
+  });
+
+  // ── A3: ノーツ速度（lookahead 倍率）──────────────────────────────
+  // 倍率は lookahead だけに掛かる — countIn / clickMs / goMs は不変なので
+  // 判定・可聴クリック・ノート timeMs は一切変わらない（視覚速度のみ）。
+
+  it('applies the noteSpeed multiplier to lookahead ONLY (slow 1.45)', () => {
+    const fx = makeFixture({ songBpm: 120, tempoPct: 100, getNoteSpeedMult: () => 1.45 });
+    fx.pt.recomputePracticeTimings();
+    expect(fx.setLaneLookaheadMs).toHaveBeenCalledWith(4000 * 1.45);
+    expect(fx.setCountInMs).toHaveBeenCalledWith(2000); // 不変
+    expect(fx.laneSetTimings).toHaveBeenCalledWith(
+      expect.objectContaining({ laneLookaheadMs: 4000 * 1.45, countInMs: 2000 })
+    );
+  });
+
+  it('guards a broken multiplier (0 / NaN → 1)', () => {
+    const fx = makeFixture({ songBpm: 120, tempoPct: 100, getNoteSpeedMult: () => 0 });
+    fx.pt.recomputePracticeTimings();
+    expect(fx.setLaneLookaheadMs).toHaveBeenCalledWith(4000);
   });
 });
 

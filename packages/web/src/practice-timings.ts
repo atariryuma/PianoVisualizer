@@ -106,6 +106,11 @@ export interface PracticeTimingsDeps {
   /** GO（ダウンビート）時刻 ms（COUNT_IN_GO_MS）。省略可。 */
   setCountInGoMs?: (ms: number) => void;
   setLaneLookaheadMs: (ms: number) => void;
+  /** A3: ノーツ速度（先読み時間）倍率 — prefs.noteSpeed（slow 1.45 /
+   *  normal 1 / fast 0.7）。lookahead だけに掛かる（countIn / ノート
+   *  timeMs は不変 = 判定・音は一切変わらず、落下速度だけ変わる）。
+   *  省略時 1（旧挙動）。 */
+  getNoteSpeedMult?: () => number;
   /** Lazy lookup — practice-lane scaffolding singleton is built
    *  later in the shell; thunk avoids TDZ. */
   getPracticeLane: () => PracticeTimingsLane;
@@ -181,16 +186,21 @@ export function createPracticeTimings(deps: PracticeTimingsDeps): PracticeTiming
     // 保たれる。ノート写像（relSec × speedFactor + countInMs）も不変。
     const goMs = timings.countInMs;
 
+    // A3: ノーツ速度倍率は lookahead（= 降下速度の分母）だけに適用。
+    const speedMult = deps.getNoteSpeedMult?.() ?? 1;
+    const lookaheadMs =
+      timings.laneLookaheadMs * (Number.isFinite(speedMult) && speedMult > 0 ? speedMult : 1);
+
     deps.setCountInMs(timings.countInMs);
     deps.setCountInBeats?.(beats);
     deps.setCountInClickMs?.(clickMs);
     deps.setCountInGoMs?.(goMs);
-    deps.setLaneLookaheadMs(timings.laneLookaheadMs);
+    deps.setLaneLookaheadMs(lookaheadMs);
     // Refresh in lockstep so the first frame's count-in + descent
     // rate match the new section's tempo. カウントダウン数字が可聴
     // クリック列と同じアンカー（GO 逆向き配置）を使うよう追加情報も渡す。
     deps.getPracticeLane().setTimings({
-      laneLookaheadMs: timings.laneLookaheadMs,
+      laneLookaheadMs: lookaheadMs,
       countInMs: timings.countInMs,
       countInBeats: beats,
       countInClickMs: clickMs,

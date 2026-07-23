@@ -448,4 +448,71 @@ describe('drawPracticeLane', () => {
       expect(stub2.calls.filter(isGlossCreate)).toHaveLength(1);
     });
   });
+
+  // ── 拍グリッド（小節線 + 拍線 — S1、音ゲー業界標準） ────────────────
+
+  describe('beat grid', () => {
+    it('draws barlines (accent) brighter than beat lines within the visible window', () => {
+      // elapsed 5000, lookahead 4000 → 可視域はざっくり [5000-α, 9000+α]。
+      const beatGrid = [
+        { timeMs: 6000, accent: true }, // 小節線
+        { timeMs: 7000, accent: false }, // 拍線
+        { timeMs: 20000, accent: true }, // 画面外（早期 break）
+      ];
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ beatGrid }));
+      const strokes = stub.calls
+        .filter((c) => c.method === 'set strokeStyle')
+        .map((c) => c.args[0])
+        .filter((s): s is string => typeof s === 'string');
+      expect(strokes.some((s) => s.includes('0.13'))).toBe(true); // 小節線
+      expect(strokes.some((s) => s.includes('0.05'))).toBe(true); // 拍線
+    });
+
+    it('no grid → no grid strokes (opt-in rendering)', () => {
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ beatGrid: null }));
+      const strokes = stub.calls
+        .filter((c) => c.method === 'set strokeStyle')
+        .map((c) => c.args[0])
+        .filter((s): s is string => typeof s === 'string');
+      expect(strokes.some((s) => s.includes('0.13'))).toBe(false);
+    });
+
+    it('skips beat lines that would bunch tighter than 18px (fast tempo)', () => {
+      // lookahead 4000ms over ~460px lane → 1 beat @ 100ms ≈ 11.5px < 18px。
+      const beatGrid = [
+        { timeMs: 5600, accent: false },
+        { timeMs: 5700, accent: false }, // 間隔 100ms → 潰れるのでスキップ
+      ];
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ beatGrid }));
+      const faint = stub.calls
+        .filter((c) => c.method === 'set strokeStyle')
+        .map((c) => c.args[0])
+        .filter((s): s is string => typeof s === 'string')
+        .filter((s) => s.includes('0.05'));
+      expect(faint.length).toBe(1);
+    });
+  });
+
+  // ── ライブコンボ（×N — B1、rhythm のみ） ──────────────────────────
+
+  describe('live combo counter', () => {
+    it('shows ×N from a streak of 5', () => {
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ sectionCombo: 12 }));
+      const texts = stub.calls
+        .filter((c) => c.method === 'fillText')
+        .map((c) => c.args[0] as string);
+      expect(texts).toContain('×12');
+    });
+
+    it('stays hidden below the threshold and at 0', () => {
+      for (const combo of [0, 4]) {
+        stub.reset();
+        drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ sectionCombo: combo }));
+        const texts = stub.calls
+          .filter((c) => c.method === 'fillText')
+          .map((c) => c.args[0] as string);
+        expect(texts.some((s) => s.startsWith('×'))).toBe(false);
+      }
+    });
+  });
 });

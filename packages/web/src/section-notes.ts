@@ -519,3 +519,57 @@ export function buildMetronomeEvents(
   }
   return out;
 }
+
+/** レーン描画用の拍グリッド（小節線 + 拍線）。buildMetronomeEvents と同じ
+ *  小節グリッド走査・同じテンポ scale / countIn アンカーだが、
+ *
+ *   - GO 以前（カウントイン境界のダウンビート含む）も除外しない — 視覚の
+ *     小節線は「音を出すか」ではなく「小節がどこか」なので GO 自体の線も要る。
+ *   - セクション終端に閉じの小節線（accent）を 1 本足す。
+ *
+ *  リズムゲームの業界標準（Synthesia / Melodics / Rocksmith）どおり、レーンで
+ *  「この音は何拍目か」を先読みできるようにするための純データ。グリッドの
+ *  無い曲は null（呼び出し側が一様グリッドへフォールバック or 線なし）。 */
+export function buildLaneBeatGrid(
+  sectionIdx: number | null,
+  deps: SectionNotesDeps
+): MetronomeSchedulerEvent[] | null {
+  const grid = deps.song.measureGrid;
+  if (!grid || !grid.length) return null;
+
+  let anchorSec: number;
+  let endSec: number;
+  let speedFactor: number;
+  if (sectionIdx === null) {
+    anchorSec = fullSongAnchorSec(deps.song);
+    const last = grid[grid.length - 1];
+    endSec = last.startSec + last.durSec;
+    speedFactor = fullSongSpeedFactor(deps.practice);
+  } else {
+    const sec = deps.song.sections?.[sectionIdx];
+    if (!sec) return [];
+    anchorSec = sec.startSec;
+    endSec = sec.endSec;
+    speedFactor = 100 / deps.practice.tempoPct;
+  }
+
+  const out: MetronomeSchedulerEvent[] = [];
+  for (const m of grid) {
+    if (m.startSec + m.durSec <= anchorSec + GRID_EPS_SEC) continue;
+    if (m.startSec >= endSec - GRID_EPS_SEC) break;
+    const info = meterBeatInfo(m.beats, m.beatType);
+    const fullBarSec = m.durSec / (m.barFrac && m.barFrac > 0 ? m.barFrac : 1);
+    const beatSec = fullBarSec / info.clicksPerBar;
+    if (!(beatSec > 0)) continue;
+    for (let k = 0; k < info.clicksPerBar; k++) {
+      const t = m.startSec + k * beatSec;
+      if (t >= m.startSec + m.durSec - GRID_EPS_SEC) break;
+      if (t < anchorSec - GRID_EPS_SEC) continue;
+      if (t >= endSec - GRID_EPS_SEC) break;
+      out.push({ timeMs: (t - anchorSec) * 1000 * speedFactor + deps.countInMs, accent: k === 0 });
+    }
+  }
+  // 閉じの小節線 — 最後の音の先に「ここで終わる」が見える。
+  out.push({ timeMs: (endSec - anchorSec) * 1000 * speedFactor + deps.countInMs, accent: true });
+  return out;
+}

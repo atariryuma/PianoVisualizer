@@ -194,6 +194,23 @@
               <button class="settings-seg-btn" id="noteNamingSolfege">ドレミ</button>
             </div>
           </div>
+          <!-- Note fall speed (A3) — the rhythm-game "hi-speed" setting,
+               kid-simple 3 steps. Visual approach time only; judgement
+               windows + audio are untouched. -->
+          <div class="settings-row">
+            <span style="font-size: 0.85rem">💫 <span data-i18n="noteSpeed">Note speed</span></span>
+            <div class="settings-seg" role="group">
+              <button class="settings-seg-btn" id="noteSpeedSlow" data-i18n="noteSpeedSlow">
+                🐢 Slow
+              </button>
+              <button class="settings-seg-btn" id="noteSpeedNormal" data-i18n="noteSpeedNormal">
+                Normal
+              </button>
+              <button class="settings-seg-btn" id="noteSpeedFast" data-i18n="noteSpeedFast">
+                🚀 Fast
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Practice-audio volume balance (0.15). Percent of the tuned default
@@ -496,6 +513,17 @@
         >
           ⏸
         </button>
+        <!-- Quick restart (A2) — the genre-standard one-tap retry mid-play,
+             instead of quit → song panel → start (3 taps). -->
+        <button
+          id="ptbRestart"
+          class="ptb-icon-btn"
+          data-i18n-title="restartSection"
+          title="Restart"
+          aria-label="Restart"
+        >
+          ↻
+        </button>
         <button
           id="ptbQuit"
           class="ptb-icon-btn"
@@ -505,6 +533,9 @@
         >
           ✕
         </button>
+        <!-- Section progress gauge (B1) — thin fill along the pill's bottom
+             edge; width is set by the practice tick (resolved / target). -->
+        <div id="ptbProgressFill"></div>
       </div>
     </div>
     <!-- OSMD container lives at body level so it's always rendered (even before practice
@@ -535,6 +566,11 @@
         </div>
         <div class="result-stat">
           <span data-i18n="bestComboLabel">Best combo</span><span id="resCombo">0</span>
+        </div>
+        <!-- Extra (wrong-key) presses — fact row, rhythm mode only, hidden at 0.
+             No deduction, no shame copy: the number itself is the feedback. -->
+        <div class="result-stat" id="resExtraRow" style="display: none">
+          <span data-i18n="extraPresses">Extra notes</span><span id="resExtra">0</span>
         </div>
         <div class="result-history hidden" id="resHistoryWrap">
           <canvas id="resHistoryChart" width="280" height="80"></canvas>

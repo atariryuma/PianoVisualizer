@@ -91,6 +91,8 @@ export interface PracticePartial {
   currentNoteIdx: number;
   hits: number;
   misses: number;
+  /** 誤打カウント（rhythm × MIDI、practice-scoring 加算）。 */
+  extraPresses?: number;
   timingScoreSum: number;
   durationScoreSum: number;
   durationScoredCount: number;
@@ -149,7 +151,9 @@ export interface StartSectionToneRef {
     cancel(): void;
     stop(): void;
     position: number | string;
-    start(time?: number | string): void;
+    /** offset（第2引数）= Transport 再生位置（秒）。ループ周回の短縮
+     *  リードイン（カウントイン後半へスキップ）で使う。 */
+    start(time?: number | string, offset?: number | string): void;
   };
 }
 
@@ -187,6 +191,8 @@ export interface StartSectionDom {
   ptbSection: { textContent: string };
   ptbTempo: { textContent: string };
   ptbProgress: { textContent: string };
+  /** セクション進捗バー（トップバー下端の細いゲージ）。省略可（旧 DOM）。 */
+  ptbProgressFill?: { style: { width: string } } | null;
   practiceHud: { classList: { add(c: string): void } };
   osmdContainer: { classList: { add(c: string): void; remove(c: string): void } };
 }
@@ -214,6 +220,9 @@ export interface StartPracticeSectionDeps {
 
   // Tunables
   countInMs: () => number;
+  /** カウントインのクリック間隔 ms — ループ周回の短縮リードイン
+   *  （残り 2 クリックへスキップ）の計算に使う。省略時はスキップなし。 */
+  countInClickMs?: () => number;
   defaultAudioOffsetMs: number;
   remoteLogEnabled: boolean;
 
@@ -239,6 +248,10 @@ export interface StartPracticeSectionDeps {
   buildFullSongNotes: () => OsmdLikeNote[];
   /** おともパート（Voice 等）の再生タイムライン。null = 全曲。 */
   buildBackingNotes: (idx: number | null) => BackingSchedulerNote[];
+  /** レーンの小節線/拍線グリッド（S1 — 業界標準の拍グリッド）。null = 全曲。
+   *  どちらも省略可（旧シェル互換 → 線なし）。 */
+  buildLaneBeatGrid?: (idx: number | null) => Array<{ timeMs: number; accent: boolean }> | null;
+  setLaneBeatGrid?: (events: Array<{ timeMs: number; accent: boolean }> | null) => void;
   computeHandRanges: (notes: OsmdLikeNote[]) => HandRanges;
 
   // OSMD — `osmdAdapter.cursorTo()` advances the cursor; OSMD's own
@@ -278,8 +291,11 @@ const PRE_AUDIO_ANCHOR_SEC = Number.MAX_SAFE_INTEGER;
 
 export function createStartPracticeSection(
   deps: StartPracticeSectionDeps
-): (sectionIdx: number) => Promise<void> {
-  return async function startPracticeSection(sectionIdx: number): Promise<void> {
+): (sectionIdx: number, opts?: { lapLead?: boolean }) => Promise<void> {
+  return async function startPracticeSection(
+    sectionIdx: number,
+    startOpts?: { lapLead?: boolean }
+  ): Promise<void> {
     deps.hideIntroHint();
     const song = deps.getCurrentSong();
     if (!song) return;
@@ -383,10 +399,15 @@ export function createStartPracticeSection(
     }
 
     deps.practice.handRanges = deps.computeHandRanges(deps.practice.sectionNotes);
+    // レーンの拍グリッド（小節線 + 拍線）— ノートと同じ countIn アンカー +
+    // テンポ scale で構築済みのイベント列を差し替える（グリッドの無い曲は
+    // shell 側が一様グリッドを合成、それも無ければ null = 線なし）。
+    deps.setLaneBeatGrid?.(deps.buildLaneBeatGrid?.(isFullSong ? null : sectionIdx) ?? null);
     deps.practice.laneDrawFromIdx = 0;
     deps.practice.currentNoteIdx = 0;
     deps.practice.hits = 0;
     deps.practice.misses = 0;
+    deps.practice.extraPresses = 0;
     deps.practice.timingScoreSum = 0;
     deps.practice.durationScoreSum = 0;
     deps.practice.durationScoredCount = 0;
@@ -433,6 +454,7 @@ export function createStartPracticeSection(
       0
     );
     deps.dom.ptbProgress.textContent = '0 / ' + deps.practice._sectionTargetCount;
+    if (deps.dom.ptbProgressFill) deps.dom.ptbProgressFill.style.width = '0%';
     deps.dom.practiceHud.classList.add('visible');
     // Sheet panel is OFF by default so the falling-notes lane runs full-height
     // (notes fall from the top of the screen — the game-like default). The 📜
@@ -487,6 +509,17 @@ export function createStartPracticeSection(
       deps.Tone.Transport.stop();
       deps.Tone.Transport.position = 0;
 
+      // B2: ループ周回の短縮リードイン — タイムライン（ノート timeMs /
+      // グリッド / ビープの配置）は同一のまま、クロックと Transport を
+      // カウントイン後半（残り 2 クリック）から開始する。直前に同じ
+      // セクションを弾き終えたばかりなので、毎周のフルカウントインは
+      // 待ち時間でしかない（Rocksmith Riff Repeater / Melodics 準拠）。
+      const lapClickMs = deps.countInClickMs?.() ?? 0;
+      const lapSkipSec =
+        startOpts?.lapLead && lapClickMs > 0
+          ? Math.max(0, deps.countInMs() - 2 * lapClickMs) / 1000
+          : 0;
+
       if (deps.practice.mode === 'guided') {
         // Guided: cursor visible, lane parks current note at hit line.
         // No section timeline, but we DO run the Transport for the
@@ -495,9 +528,10 @@ export function createStartPracticeSection(
         // still-pending beeps. The guided clock reads context.currentTime
         // directly, so a running Transport doesn't affect note timing.
         deps.osmdAdapter.showCursor();
-        deps.practice.startAudioTime = deps.Tone.now();
+        deps.practice.startAudioTime = deps.Tone.now() - lapSkipSec;
         deps.scheduleCountInBeeps(deps.practice.startAudioTime);
-        deps.Tone.Transport.start(deps.practice.startAudioTime);
+        if (lapSkipSec > 0) deps.Tone.Transport.start(deps.Tone.now(), lapSkipSec);
+        else deps.Tone.Transport.start(deps.practice.startAudioTime);
       } else {
         // Rhythm / Listen: full timeline scheduling.
         const ghostActive = deps.practice.mode === 'listen' || !!deps.practice.ghostOn;
@@ -525,9 +559,13 @@ export function createStartPracticeSection(
         // startAudioTime as an ABSOLUTE audio time so Transport.
         // position 0 lines up with beep 0 (relative '+0.05'
         // anchoring would leave a lookAhead-sized gap).
-        deps.practice.startAudioTime = deps.Tone.now() + AUDIO_START_LEAD_SEC;
+        deps.practice.startAudioTime = deps.Tone.now() + AUDIO_START_LEAD_SEC - lapSkipSec;
         deps.scheduleCountInBeeps(deps.practice.startAudioTime);
-        deps.Tone.Transport.start(deps.practice.startAudioTime);
+        if (lapSkipSec > 0) {
+          deps.Tone.Transport.start(deps.practice.startAudioTime + lapSkipSec, lapSkipSec);
+        } else {
+          deps.Tone.Transport.start(deps.practice.startAudioTime);
+        }
         deps.osmdAdapter.showCursor();
       }
 

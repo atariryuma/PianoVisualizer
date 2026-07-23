@@ -565,7 +565,13 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       const progress =
         (deps.practice as { progress?: unknown }).progress ?? deps.loadPracticeProgress();
       const sp = PianoCore.getSongProgress(progress as never, song.id) as {
-        lastSettings?: { mode?: string; tempoPct?: number; handFilter?: 'L' | 'R' | null };
+        lastSettings?: {
+          mode?: string;
+          tempoPct?: number;
+          handFilter?: 'L' | 'R' | null;
+          ghostOn?: boolean;
+          metronomeOn?: boolean;
+        };
       };
       const ls = sp.lastSettings;
       if (!ls) return undefined;
@@ -573,10 +579,15 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         mode: string;
         tempoPct?: number;
         handFilter?: 'L' | 'R' | null;
+        ghostOn?: boolean;
+        metronomeOn?: boolean;
       };
       if (ls.mode) p.mode = ls.mode;
       if (typeof ls.tempoPct === 'number') p.tempoPct = ls.tempoPct;
       if ('handFilter' in ls) p.handFilter = ls.handFilter ?? null;
+      // A5: ゴースト/メトロノームも復元（練習トグル全体で「前回を覚えている」）。
+      if (typeof ls.ghostOn === 'boolean') p.ghostOn = ls.ghostOn;
+      if (typeof ls.metronomeOn === 'boolean') p.metronomeOn = ls.metronomeOn;
       return ls;
     },
     showRunningUI: () => _introHintUi.showRunningUI(),
@@ -601,6 +612,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
         'ptbQuit',
         'ptbToggleOsmd',
         'ptbPause',
+        'ptbRestart',
         'resQuit',
         'resRetry',
         'resNext',

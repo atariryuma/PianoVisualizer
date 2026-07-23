@@ -84,8 +84,10 @@ export interface DomBag {
   ptbSection: HTMLElement;
   ptbTempo: HTMLElement;
   ptbProgress: HTMLElement;
+  ptbProgressFill: HTMLElement;
   ptbToggleOsmd: HTMLElement;
   ptbPause: HTMLElement;
+  ptbRestart: HTMLElement;
   ptbQuit: HTMLElement;
   ptbInput: HTMLElement;
   osmdContainer: HTMLElement;
@@ -101,6 +103,8 @@ export interface DomBag {
   resDuration: HTMLElement;
   resDurationRow: HTMLElement;
   resCombo: HTMLElement;
+  resExtraRow: HTMLElement;
+  resExtra: HTMLElement;
   resMsg: HTMLElement;
   resFocus: HTMLElement;
   resUnlock: HTMLElement;
@@ -169,6 +173,10 @@ export interface DomBag {
   noteNamingAuto: HTMLElement;
   noteNamingAbc: HTMLElement;
   noteNamingSolfege: HTMLElement;
+  // ノーツ落下速度セグメント（A3）。
+  noteSpeedSlow: HTMLElement;
+  noteSpeedNormal: HTMLElement;
+  noteSpeedFast: HTMLElement;
   volGhostSlider: HTMLElement;
   volGhostVal: HTMLElement;
   volBackingSlider: HTMLElement;
@@ -242,8 +250,10 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'ptbSection',
   'ptbTempo',
   'ptbProgress',
+  'ptbProgressFill',
   'ptbToggleOsmd',
   'ptbPause',
+  'ptbRestart',
   'ptbQuit',
   'ptbInput',
   'osmdContainer',
@@ -257,6 +267,8 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'resDuration',
   'resDurationRow',
   'resCombo',
+  'resExtraRow',
+  'resExtra',
   'resMsg',
   'resFocus',
   'resUnlock',
@@ -318,6 +330,9 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'noteNamingAuto',
   'noteNamingAbc',
   'noteNamingSolfege',
+  'noteSpeedSlow',
+  'noteSpeedNormal',
+  'noteSpeedFast',
   'volGhostSlider',
   'volGhostVal',
   'volBackingSlider',

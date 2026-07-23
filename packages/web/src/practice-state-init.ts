@@ -39,6 +39,9 @@ export interface InitialPrefs {
   showScore: boolean;
   /** First-run welcome dismissed (persisted). Optional — absent on cold boot. */
   welcomeDismissed?: boolean;
+  /** ノーツ落下速度（先読み倍率）: slow 1.45 / normal 1 / fast 0.7。
+   *  判定窓・音は不変 — 視覚の降下速度だけ（音ゲーのハイスピード設定）。 */
+  noteSpeed: 'slow' | 'normal' | 'fast';
 }
 
 /** Build the cold-start prefs object (before merging the persisted
@@ -55,6 +58,7 @@ export function createInitialPrefs(): InitialPrefs {
     volBacking: 100,
     volMetronome: 100,
     showScore: false,
+    noteSpeed: 'normal',
   };
 }
 
@@ -97,6 +101,9 @@ export interface InitialPracticeState {
   currentNoteIdx: number;
   hits: number;
   misses: number;
+  /** 誤打カウント（rhythm × MIDI のみ、practice-scoring が加算）。減点なし —
+   *  結果カードに事実として表示 + コンボが切れる（マッシュ耐性）。 */
+  extraPresses: number;
   timingScoreSum: number;
   /** Note-length scoring: only filled in rhythm mode. In guided mode
    *  the cursor freezes on the current note so there's no audio clock
@@ -151,6 +158,7 @@ export function createInitialPractice(audioOffsetMs: number): InitialPracticeSta
     currentNoteIdx: 0,
     hits: 0,
     misses: 0,
+    extraPresses: 0,
     timingScoreSum: 0,
     durationScoreSum: 0,
     durationScoredCount: 0,

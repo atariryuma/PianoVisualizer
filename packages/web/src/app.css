@@ -2024,6 +2024,22 @@ body:has(#practiceHud.visible) #encouragement {
   max-width: 92vw;
   flex-wrap: wrap;
   justify-content: center;
+  /* Clip the section-progress gauge (#ptbProgressFill) to the pill shape. */
+  overflow: hidden;
+}
+
+/* Section progress gauge (B1) — a thin fill along the pill's bottom edge.
+   Width is driven by the practice tick (resolved / target notes). */
+#ptbProgressFill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(255, 215, 107, 0.9), rgba(255, 158, 207, 0.9));
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+  transition: width 0.18s linear;
 }
 
 #practiceTopBar .ptb-section {

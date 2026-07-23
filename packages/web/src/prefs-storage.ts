@@ -52,6 +52,11 @@ export interface PrefsShape {
    *  never re-appears. (Was previously written but not on the accept-list, so
    *  it was dropped on load — the welcome kept re-showing.) */
   welcomeDismissed?: boolean;
+  /** Practice-lane note fall speed (lookahead multiplier): 'slow' = more
+   *  read-ahead time, 'fast' = zippier descent. Judgement windows and the
+   *  audio timeline are untouched — this is purely visual approach speed
+   *  (the rhythm-game "hi-speed" setting, kid-simple 3 steps). */
+  noteSpeed?: 'slow' | 'normal' | 'fast';
 }
 
 /** Minimal localStorage-like surface. The shell hands in the real
@@ -165,6 +170,9 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   }
   if (typeof r.welcomeDismissed === 'boolean') {
     out.welcomeDismissed = r.welcomeDismissed;
+  }
+  if (r.noteSpeed === 'slow' || r.noteSpeed === 'normal' || r.noteSpeed === 'fast') {
+    out.noteSpeed = r.noteSpeed;
   }
   return out;
 }
