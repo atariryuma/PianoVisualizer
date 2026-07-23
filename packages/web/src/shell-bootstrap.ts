@@ -531,6 +531,13 @@ export function boot(): void {
       void rescanMidi();
     },
     connectBleMidi: () => _midi.connectBleMidi(),
+    // ネイティブ iOS: OS ペアリング画面を出したら poller を再起動して 1s
+    // カデンツへ戻す — ペア直後の鍵盤が数秒以内に取り込まれる（プラグインの
+    // listInputs が毎ポーリングで CoreMIDI を真に再列挙するようになった）。
+    onNativePairingShown: () => {
+      stopMidiAutoRescan();
+      startMidiAutoRescan();
+    },
     showSessionSummary: () => showSessionSummary(),
     pausePractice: () => {
       _midi.pausePractice();

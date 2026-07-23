@@ -24,6 +24,7 @@ import * as BleMidiParser from './ble-midi-parser';
 import * as BleMidiConnect from './ble-midi-connect';
 import * as AudioInit from './audio-init';
 import * as PracticeVisibility from './practice-visibility';
+import { hasNativeBleMidiPairing } from './native-midi-polyfill';
 
 /** Mutable per-session MIDI connection state. Shared across the MIDI
  *  cluster (ports / dispatch / rescan / init / indicator) and read by
@@ -206,6 +207,8 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     attachMidiPort: (port: any) => attachMidiPort(port),
     detachMidiPort: (port: any) => _ports.detach(port),
     isAppleMobile: () => _indicator.isAppleMobile(),
+    // ネイティブ iOS: no-port 診断の2行目を「⚙ → 🔵 でつなぐ」へ。
+    hasNativePairing: hasNativeBleMidiPairing,
     showDiagnostic: (makeLines: any) => {
       _diag.showDiag(() => {
         const { line1, line2 } = makeLines();
@@ -224,6 +227,8 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     introHintEl: dom.introHint,
     isAppleMobile: () => _indicator.isAppleMobile(),
     hasRequestMIDIAccess: () => !!nav.requestMIDIAccess,
+    // ネイティブ iOS: 待機ヒントの2行目を実手順（⚙ → 🔵）へ。
+    hasNativePairing: hasNativeBleMidiPairing,
     t,
   });
 

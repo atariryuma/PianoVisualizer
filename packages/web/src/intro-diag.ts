@@ -42,6 +42,11 @@ export interface IntroDiagDeps {
   /** Production: `'requestMIDIAccess' in navigator`. Held by deps so
    *  the test can simulate WebKit-without-Web-MIDI. */
   hasRequestMIDIAccess: () => boolean;
+  /** ネイティブ iOS（Capacitor）の OS 標準 Bluetooth-MIDI ペアリングが
+   *  使えるか。true のとき待機ヒントの2行目は WMB の説明ではなく
+   *  「⚙ → 🔵 でつなぐ」の実手順を出す（WMB 文言はネイティブでは意味不明）。
+   *  省略時 false（旧挙動）。 */
+  hasNativePairing?: () => boolean;
   /** i18n. */
   t: (key: string) => string;
 }
@@ -87,12 +92,17 @@ export function createIntroDiag(deps: IntroDiagDeps): IntroDiag {
   const showMidiWaitingHint = (): void => {
     if (!deps.isAppleMobile() || !deps.hasRequestMIDIAccess()) return;
     // Once per session — re-shows would noise up the lifecycle.
+    // (attach は state._midiWaitingShown を false に戻すので、切断→ゼロ
+    // ポートに戻ったときは再表示できる。)
     if (deps.state._midiWaitingShown) return;
     deps.state._midiWaitingShown = true;
+    const native = !!deps.hasNativePairing?.();
     showDiag(() =>
       setDiagnostic(
         deps.t('diagMidiWaiting') || 'Waiting for MIDI…',
-        deps.t('diagWmbHint') || 'Pair your keyboard in Web MIDI Browser, then return here.'
+        native
+          ? deps.t('diagNativeBleHint') || 'Tap ⚙ then 🔵 to connect a Bluetooth keyboard.'
+          : deps.t('diagWmbHint') || 'Pair your keyboard in Web MIDI Browser, then return here.'
       )
     );
   };

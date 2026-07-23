@@ -59,6 +59,11 @@ export interface MidiRescanDeps {
   /** Read at call time so the platform check stays cheap. */
   isAppleMobile: () => boolean;
 
+  /** ネイティブ iOS の OS ペアリング画面が使えるか — no-port 診断の2行目を
+   *  「⚙ → 🔵 でつなぐ」に切り替える（WMB 文言はネイティブで意味不明）。
+   *  省略時 false（旧挙動）。 */
+  hasNativePairing?: () => boolean;
+
   /** "Render this localized diagnostic on the introHint sticky bar."
    *  The thunk shape is so a language change can re-run the same
    *  closure with fresh translations. The shell wraps showIntroDiag
@@ -248,9 +253,16 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
         if (!silent) {
           // Web MIDI Browser quirk: devices already paired at startup
           // are often invisible — re-pairing usually surfaces them.
+          // Native iOS gets the actual in-app procedure (⚙ → 🔵) instead.
           deps.showDiagnostic(() => ({
             line1: deps.t('diagNoMidiPort'),
-            line2: deps.t(deps.isAppleMobile() ? 'diagWmbHint' : 'diagConnectHint'),
+            line2: deps.t(
+              deps.hasNativePairing?.()
+                ? 'diagNativeBleHint'
+                : deps.isAppleMobile()
+                  ? 'diagWmbHint'
+                  : 'diagConnectHint'
+            ),
           }));
         }
         return false;

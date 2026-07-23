@@ -70,27 +70,49 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func start(_ call: CAPPluginCall) {
-        guard midiClient == 0 else { call.resolve(); return }
-
-        let clientName = "PianoVisualizerMIDIClient" as CFString
-        let status = MIDIClientCreateWithBlock(clientName, &midiClient) { [weak self] (notif: UnsafePointer<MIDINotification>) in
-            self?.handleMIDINotification(notif)
-        }
-        guard status == noErr else {
-            call.reject("MIDIClientCreate failed: \(status)")
+        guard midiClient == 0 else {
+            // Idempotent re-entry (the JS rescan poller re-calls start before
+            // each listInputs): reconcile against live CoreMIDI state so a
+            // source that appeared without a notification is still picked up.
+            syncSources()
+            call.resolve()
             return
         }
 
-        let portName = "PianoVisualizerInputPort" as CFString
-        let portStatus: OSStatus
-        if #available(iOS 14.0, *) {
-            portStatus = MIDIInputPortCreateWithProtocol(midiClient, portName, ._1_0, &inputPort) { [weak self] (eventList, srcConnRefCon) in
-                self?.handleEventList(eventList, srcConnRefCon)
+        // M-iOS (2026-07-23): create the client + port on the MAIN THREAD.
+        // Capacitor executes plugin calls on a background dispatch queue with
+        // no run loop; CoreMIDI setup-change notifications (msgObjectAdded /
+        // msgObjectRemoved) are tied to the thread the client was created on
+        // and can silently NEVER fire for a client created on a run-loop-less
+        // worker thread. That was the "pair the keyboard in another app, then
+        // RESTART this app" symptom: startup enumeration worked, hot-add
+        // notifications never arrived. Apple guidance + every reference shim
+        // (e.g. WebMIDIAPIShimForiOS) create the client on main.
+        var status: OSStatus = noErr
+        var portStatus: OSStatus = noErr
+        let create: () -> Void = { [self] in
+            let clientName = "PianoVisualizerMIDIClient" as CFString
+            status = MIDIClientCreateWithBlock(clientName, &midiClient) { [weak self] (notif: UnsafePointer<MIDINotification>) in
+                self?.handleMIDINotification(notif)
             }
-        } else {
-            portStatus = MIDIInputPortCreateWithBlock(midiClient, portName, &inputPort) { [weak self] (packetList, srcConnRefCon) in
-                self?.handlePacketList(packetList, srcConnRefCon)
+            guard status == noErr else { return }
+
+            let portName = "PianoVisualizerInputPort" as CFString
+            if #available(iOS 14.0, *) {
+                portStatus = MIDIInputPortCreateWithProtocol(midiClient, portName, ._1_0, &inputPort) { [weak self] (eventList, srcConnRefCon) in
+                    self?.handleEventList(eventList, srcConnRefCon)
+                }
+            } else {
+                portStatus = MIDIInputPortCreateWithBlock(midiClient, portName, &inputPort) { [weak self] (packetList, srcConnRefCon) in
+                    self?.handlePacketList(packetList, srcConnRefCon)
+                }
             }
+        }
+        if Thread.isMainThread { create() } else { DispatchQueue.main.sync(execute: create) }
+
+        guard status == noErr else {
+            call.reject("MIDIClientCreate failed: \(status)")
+            return
         }
         guard portStatus == noErr else {
             call.reject("MIDIInputPortCreate failed: \(portStatus)")
@@ -98,12 +120,33 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         // Connect every existing source.
+        syncSources()
+        call.resolve()
+    }
+
+    /// Reconcile `connectedSources` against the LIVE CoreMIDI source list —
+    /// connect anything new, drop anything gone. This is the safety net for
+    /// missed notifications (background-suspended WKWebView, historical
+    /// off-main client creation): the JS auto-rescan poller calls
+    /// start()+listInputs() every few seconds, and each call now performs a
+    /// true re-enumeration instead of echoing a stale snapshot. Previously
+    /// listInputs only returned the internal dictionary, so ONE missed
+    /// notification hid a newly-paired BLE keyboard until app restart.
+    private func syncSources() {
+        guard midiClient != 0, inputPort != 0 else { return }
         let sourceCount = MIDIGetNumberOfSources()
+        var live = Set<MIDIEndpointRef>()
         for i in 0..<sourceCount {
             let src = MIDIGetSource(i)
-            connectSource(src)
+            live.insert(src)
+            connectSource(src)   // dedupes + fires portChange for new ones
         }
-        call.resolve()
+        stateLock.lock()
+        let stale = connectedSources.keys.filter { !live.contains($0) }
+        stateLock.unlock()
+        for src in stale {
+            disconnectSource(src)   // fires portChange(disconnected)
+        }
     }
 
     @objc func stop(_ call: CAPPluginCall) {
@@ -121,6 +164,9 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func listInputs(_ call: CAPPluginCall) {
+        // True re-enumeration on every call (see syncSources) — the JS rescan
+        // poller depends on this to recover from missed notifications.
+        syncSources()
         stateLock.lock()
         let devices = Array(portInfo.values)
         stateLock.unlock()
@@ -180,6 +226,9 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
             )
             let nav = UINavigationController(rootViewController: picker)
             nav.modalPresentationStyle = .formSheet
+            // Swipe-down dismissal bypasses the Done button — hook the
+            // presentation delegate so the post-pairing sweep runs either way.
+            nav.presentationController?.delegate = self
             host.present(nav, animated: true)
             call.resolve()
         }
@@ -187,6 +236,10 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc private func dismissBleMidiPairing() {
         bridge?.viewController?.dismiss(animated: true)
+        // Post-pairing sweep: if the msgObjectAdded notification was missed
+        // (or arrives late), pick the just-paired keyboard up immediately
+        // instead of waiting for the JS poller's next tick.
+        syncSources()
     }
 
     // MARK: - CoreMIDI handlers
@@ -450,5 +503,16 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
             return prop?.takeRetainedValue() as String?
         }
         return nil
+    }
+}
+
+// MARK: - Pairing-sheet swipe dismissal
+
+extension PianoMidiPlugin: UIAdaptivePresentationControllerDelegate {
+    /// The BLE pairing sheet was dismissed by swipe (not the Done button) —
+    /// run the same post-pairing sweep so a keyboard paired moments before
+    /// the swipe attaches immediately.
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        syncSources()
     }
 }

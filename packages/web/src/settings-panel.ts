@@ -128,6 +128,10 @@ export interface SettingsPanelDeps {
    *  auto-rescan, same as USB. Injected by shell-settings from
    *  native-midi-polyfill so this module stays deps-only. */
   nativeBleMidi?: { has(): boolean; show(): Promise<void> } | null;
+  /** ネイティブのペアリング画面を出した直後に呼ばれる — シェルはここで
+   *  auto-rescan poller を再起動して 1s カデンツへ戻す（ペア直後の
+   *  取り込みを速くする）。省略可。 */
+  onNativePairingShown?(): void;
   /** 0.15 — push the prefs volume balance onto live practice synths so a
    *  slider drag is audible immediately (mid-listen/rhythm playback). */
   applyToneVolumes?(): void;
@@ -391,8 +395,12 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     if (deps.nativeBleMidi?.has()) {
       // Native iOS: present the OS Bluetooth-MIDI pairing sheet. No await —
       // the sheet resolves on presentation; the eventual connection arrives
-      // via CoreMIDI hot-plug → portChange → auto-rescan attach.
+      // via CoreMIDI hot-plug → portChange → auto-rescan attach. The shell
+      // hook restarts the rescan poller so the pair lands within ~1 s even
+      // if the hot-plug notification is missed (plugin's listInputs
+      // re-enumerates CoreMIDI on every poll).
       void deps.nativeBleMidi.show();
+      deps.onNativePairingShown?.();
       close();
       return;
     }

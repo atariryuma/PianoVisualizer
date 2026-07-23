@@ -84,6 +84,12 @@ export const T_STRINGS: TranslationTable = {
     jp: 'キーボードをUSB/Bluetoothで接続してから🔄をタップ',
     de: 'Keyboard per USB/Bluetooth anschließen, dann auf 🔄 tippen',
   },
+  // ネイティブ iOS（Capacitor）: アプリ内の OS ペアリング画面への実手順。
+  diagNativeBleHint: {
+    en: 'Tap ⚙ then 🔵 to connect a Bluetooth keyboard',
+    jp: '⚙ → 🔵 でBluetoothキーボードをつなげるよ',
+    de: 'Tippe ⚙ und dann 🔵, um ein Bluetooth-Keyboard zu verbinden',
+  },
   diagDetectedFmt: { en: '🎹 Detected: {v}', jp: '🎹 認識中: {v}', de: '🎹 Erkannt: {v}' },
   diagCouldNotConnect: {
     en: 'Could not connect',

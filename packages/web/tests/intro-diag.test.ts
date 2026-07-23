@@ -10,6 +10,8 @@ function makeFixture(
     isAppleMobile?: boolean;
     hasMidi?: boolean;
     tFallback?: boolean;
+    /** ネイティブ iOS（OS ペアリング画面あり）— 待機ヒントの2行目が変わる。 */
+    hasNativePairing?: boolean;
   } = {}
 ) {
   const state: IntroDiagStateRef = {
@@ -25,7 +27,14 @@ function makeFixture(
   // localization happened), OR returns empty string when tFallback is
   // set (exercises the `||` fallback in showMidiWaitingHint).
   const t = vi.fn((key: string) => (over.tFallback ? '' : key.toUpperCase()));
-  const intro = createIntroDiag({ state, introHintEl, isAppleMobile, hasRequestMIDIAccess, t });
+  const intro = createIntroDiag({
+    state,
+    introHintEl,
+    isAppleMobile,
+    hasRequestMIDIAccess,
+    hasNativePairing: over.hasNativePairing ? () => true : undefined,
+    t,
+  });
   return { state, introHintEl, isAppleMobile, hasRequestMIDIAccess, t, intro };
 }
 
@@ -126,6 +135,13 @@ describe('createIntroDiag — showMidiWaitingHint', () => {
     fx.intro.showMidiWaitingHint();
     expect(fx.introHintEl.innerHTML).toContain('DIAGMIDIWAITING'); // upcased
     expect(fx.introHintEl.innerHTML).toContain('DIAGWMBHINT');
+  });
+
+  it('native iOS: line2 is the in-app procedure (⚙ → 🔵), not the WMB text', () => {
+    const fx = makeFixture({ hasNativePairing: true });
+    fx.intro.showMidiWaitingHint();
+    expect(fx.introHintEl.innerHTML).toContain('DIAGNATIVEBLEHINT');
+    expect(fx.introHintEl.innerHTML).not.toContain('DIAGWMBHINT');
   });
 
   it('falls back to plain English when t() returns empty', () => {

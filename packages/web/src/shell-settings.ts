@@ -35,6 +35,8 @@ export interface ShellSettingsDeps {
   /** Freeze/resume the practice session while the panel is open (P1-6). */
   pausePractice: () => void;
   resumePractice: () => void;
+  /** ネイティブのペアリング画面表示直後 — poller 再起動フック。省略可。 */
+  onNativePairingShown?: () => void;
   /** パネルが閉じるときの後始末（レイテンシ較正の中断など）。 */
   onPanelClose?: () => void;
   /** 0.15 — 音量バランスのライブ反映 + 音名表記キャッシュ更新。 */
@@ -104,6 +106,7 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     connectBleMidi: deps.connectBleMidi,
     // ネイティブ iOS の OS 標準 Bluetooth-MIDI ペアリング（Capacitor 時のみ有効）。
     nativeBleMidi: { has: hasNativeBleMidiPairing, show: showNativeBleMidiPairing },
+    onNativePairingShown: deps.onNativePairingShown,
     showSessionSummary: deps.showSessionSummary,
     pausePractice: deps.pausePractice,
     resumePractice: deps.resumePractice,
