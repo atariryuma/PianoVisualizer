@@ -43,11 +43,22 @@ import { PITCH_MEDIAN_WINDOW_MS, type RecentPitchEntry } from './core-opts';
 /** Vertical band (fraction of screen height) where per-note hit effects spawn —
  *  the play zone near the falling-note hit line, above the keyboard. */
 const HIT_FX_Y_FRAC = 0.72;
+/** Every per-note verdict chip rides the SAME vertical bands at the pressed
+ *  key's x, so feedback reads as one consistent system (they used to be
+ *  scattered: timing centered, length at the key, misses centered). Timing /
+ *  wrong-note / auto-miss verdicts sit above the hit effects; the length
+ *  verdict sits lower (near the keyboard) so press + release chips never
+ *  overprint each other. */
+export const CHIP_Y_FRAC = 0.6;
+export const LENGTH_CHIP_Y_FRAC = 0.82;
+/** Keep chips fully on-screen for edge-of-keyboard notes. */
+export const CHIP_EDGE_PX = 48;
 
-/** Per-timing-grade feedback: chip kind + i18n key + burst spec + tint. Soft on
- *  purpose (modest particle counts, gentle colors) so richer ≠ noisier — the
- *  app stays relaxing. The colour doubles as a learnable signal: gold = spot on,
- *  green = very close, blue = a touch early/late. */
+/** Per-timing-grade feedback: chip kind + i18n key + effect scale + fallback
+ *  tint. The burst/ripple take the NOTE's own colour (synesthesia/theme —
+ *  same palette as free play and the lane tiles) so practice hits feel like
+ *  the free-play visuals; the GRADE lives in the chip colour + effect size +
+ *  the tile bloom. Counts stay modest so richer ≠ noisier. */
 const TIMING_FX: Record<
   TimingGrade,
   { chip: string; textKey: string; color: string; burst: number; energy: number; ring: number }
@@ -56,7 +67,7 @@ const TIMING_FX: Record<
     chip: 'perfect',
     textKey: 'perfect',
     color: '#ffe26b',
-    burst: 16,
+    burst: 20,
     energy: 1.15,
     ring: 230,
   },
@@ -64,12 +75,12 @@ const TIMING_FX: Record<
     chip: 'great',
     textKey: 'gradeGreat',
     color: '#b6f5b3',
-    burst: 11,
+    burst: 13,
     energy: 0.95,
     ring: 175,
   },
-  early: { chip: 'early', textKey: 'gradeEarly', color: '#a9d4ff', burst: 7, energy: 0.7, ring: 0 },
-  late: { chip: 'late', textKey: 'gradeLate', color: '#a9d4ff', burst: 7, energy: 0.7, ring: 0 },
+  early: { chip: 'early', textKey: 'gradeEarly', color: '#a9d4ff', burst: 8, energy: 0.7, ring: 0 },
+  late: { chip: 'late', textKey: 'gradeLate', color: '#a9d4ff', burst: 8, energy: 0.7, ring: 0 },
 };
 
 /** Length-verdict colors — distinct from the timing palette so a release cue
@@ -163,6 +174,14 @@ export interface PracticeScoringDeps {
   /** Expanding-ring pulse at a note's key (the "pop" on a clean hit + the
    *  length-OK cue on release). Optional so partial-DOM tests degrade. */
   spawnRipple?: (x: number, y: number, color: string, radius: number) => void;
+  /** Rising particle stream from the hit zone — the free-play "light pillar".
+   *  Fired on clean (perfect/great) hits only. Optional. */
+  spawnStream?: (x: number, y: number, energy: number, color?: string) => void;
+  /** MIDI → the note's own colour (synesthesia map when enabled, else theme
+   *  palette — the SAME resolution free play and the lane tiles use), so
+   *  practice hit effects match the rest of the app. Optional — falls back to
+   *  the per-grade tint. */
+  noteColor?: (midi: number) => string;
   /** MIDI number → screen x (the key's horizontal position) so per-note
    *  effects land under the key the kid pressed, not dead center. Optional —
    *  falls back to screen center when absent. */
@@ -245,6 +264,15 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       return cur && cur.timeMs != null ? cur.timeMs : deps.tuning.countInMs;
     }
     return realElapsed;
+  }
+
+  /** Chip x for a note's key — clamped so edge-of-keyboard chips stay fully
+   *  on-screen. Undefined (→ CSS-centered) when the shell didn't wire a key
+   *  mapper, keeping partial-DOM tests / older shells working. */
+  function chipX(midi: number): number | undefined {
+    if (!deps.noteScreenX) return undefined;
+    const { W } = deps.getScreen();
+    return Math.max(CHIP_EDGE_PX, Math.min(W - CHIP_EDGE_PX, deps.noteScreenX(midi)));
   }
 
   function matchNoteOnset(detectedMidi: number, isExact: boolean, inputLagMs = 0): boolean {
@@ -356,6 +384,7 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       // fact-based chip too so the kid SEES which key was off — the
       // single most useful feedback in the moment. Visualization only:
       // no score penalty (accuracy is hits/target), no shame copy.
+      // Placed at the PLAYED key (same band as every other verdict chip).
       const now = performance.now();
       if (deps.practice.mode === 'guided') {
         // The RIGHT note pressed early (before the wait-window opens — e.g.
@@ -364,14 +393,24 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
         // (banned-list: no-shame). A genuinely wrong key still shows its
         // fact-based "you played X" chip.
         if (cur.midi !== detectedMidi) {
-          deps.showHitChip('miss', deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }));
+          deps.showHitChip(
+            'miss',
+            deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }),
+            chipX(detectedMidi),
+            deps.getScreen().H * CHIP_Y_FRAC
+          );
         }
       } else if (
         deps.practice.mode === 'rhythm' &&
         now - lastWrongChipMs >= WRONG_NOTE_CHIP_THROTTLE_MS
       ) {
         lastWrongChipMs = now;
-        deps.showHitChip('miss', deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }));
+        deps.showHitChip(
+          'miss',
+          deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }),
+          chipX(detectedMidi),
+          deps.getScreen().H * CHIP_Y_FRAC
+        );
       }
       return false;
     }
@@ -422,21 +461,27 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
         }
       }
     }
+    const screen = deps.getScreen();
     if (showChip) {
-      // Timing verdict — centered so it reads consistently note to note.
-      deps.showHitChip(fx.chip, deps.t(fx.textKey));
+      // Timing verdict — at the pressed key, same band as every other chip.
+      deps.showHitChip(fx.chip, deps.t(fx.textKey), chipX(detectedMidi), screen.H * CHIP_Y_FRAC);
     }
     deps.state.flow = Math.min(100, deps.state.flow + 6 + ts * 4);
     deps.state.combo++;
     if (deps.state.combo > deps.state.bestCombo) deps.state.bestCombo = deps.state.combo;
-    // Grade-scaled sparkle AT the key the kid pressed (not dead center), tinted
-    // by the timing grade, with a soft ring on a clean hit. Bigger reward for a
-    // cleaner note = "worth aiming for perfect" without shame on the rest.
-    const screen = deps.getScreen();
+    // Free-play-style celebration AT the key the kid pressed: burst + ripple in
+    // the NOTE's own colour (synesthesia/theme — the same palette free play and
+    // the lane tiles use), sizes scaled by the timing grade, plus a rising
+    // light stream on clean (perfect/great) hits. The grade signal stays in the
+    // chip colour + effect size + the tile bloom.
     const fxX = deps.noteScreenX ? deps.noteScreenX(detectedMidi) : screen.W * 0.5;
     const fxY = screen.H * HIT_FX_Y_FRAC;
-    deps.spawnBurst(fxX, fxY, fx.burst, fx.energy, fx.color);
-    if (fx.ring > 0) deps.spawnRipple?.(fxX, fxY, fx.color, fx.ring);
+    const color = deps.noteColor?.(detectedMidi) ?? fx.color;
+    deps.spawnBurst(fxX, fxY, fx.burst, fx.energy, color);
+    if (fx.ring > 0) {
+      deps.spawnRipple?.(fxX, fxY, color, fx.ring);
+      deps.spawnStream?.(fxX, fxY, fx.energy, color);
+    }
     // OSMD cursor advancement is driven by the per-frame skip-past
     // loop in updatePracticeFrame.
     return true;
@@ -460,7 +505,7 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     //   • good hold → a soft cyan ring pulse at the key (no text — the distinct
     //     colour reads as "held it right" without adding clutter).
     //   • short / long → a gentle nudge chip placed LOW (near the key), so it
-    //     never overprints the centered timing verdict.
+    //     never overprints the timing verdict in the upper band.
     // Gentle framing, no shame (banned-list).
     const screen = deps.getScreen();
     const lenX = deps.noteScreenX ? deps.noteScreenX(detectedMidi) : screen.W * 0.5;
@@ -473,8 +518,8 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
       deps.showHitChip(
         grade === 'short' ? 'short' : 'long',
         deps.t(grade === 'short' ? 'lengthShort' : 'lengthLong'),
-        lenX,
-        screen.H * 0.82
+        chipX(detectedMidi) ?? lenX,
+        screen.H * LENGTH_CHIP_Y_FRAC
       );
     }
   }

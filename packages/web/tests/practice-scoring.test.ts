@@ -51,6 +51,7 @@ interface Mocks {
   showHitChip: ReturnType<typeof vi.fn>;
   spawnBurst: ReturnType<typeof vi.fn>;
   spawnRipple: ReturnType<typeof vi.fn>;
+  spawnStream: ReturnType<typeof vi.fn>;
   remoteLog: ReturnType<typeof vi.fn>;
 }
 
@@ -61,6 +62,9 @@ function makeFixture(
     tuning?: Partial<PracticeScoringTuning>;
     Tone?: PracticeScoringDeps['Tone'];
     notes?: PracticeNote[];
+    /** Note-colour resolver (free-play palette). Absent by default so the
+     *  grade-tint fallback paths stay covered. */
+    noteColor?: (midi: number) => string;
   } = {}
 ) {
   const state: PracticeScoringStateRef = {
@@ -90,6 +94,7 @@ function makeFixture(
     showHitChip: vi.fn(),
     spawnBurst: vi.fn(),
     spawnRipple: vi.fn(),
+    spawnStream: vi.fn(),
     remoteLog: vi.fn(),
   };
   const deps: PracticeScoringDeps = {
@@ -100,6 +105,8 @@ function makeFixture(
     showHitChip: mocks.showHitChip,
     spawnBurst: mocks.spawnBurst,
     spawnRipple: mocks.spawnRipple,
+    spawnStream: mocks.spawnStream,
+    noteColor: over.noteColor,
     noteScreenX: (midi: number) => midi * 10, // deterministic stand-in
     getScreen: () => ({ W: 800, H: 600 }),
     t: (key, vars) => (vars ? `T(${key},${vars.v})` : `T(${key})`),
@@ -383,7 +390,12 @@ describe('matchNoteOnset — guided mode', () => {
     expect(fx.practice.timingScoreSum).toBe(1); // guided always 1
     expect(fx.state.flow).toBeCloseTo(10); // 0 + 6 + 1*4
     expect(fx.state.combo).toBe(1);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number)
+    );
     expect(fx.mocks.spawnBurst).toHaveBeenCalled();
   });
 
@@ -401,7 +413,12 @@ describe('matchNoteOnset — guided mode', () => {
     const ok = fx.scoring.matchNoteOnset(64, true);
     expect(ok).toBe(false);
     expect(fx.practice.hits).toBe(0);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M64)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'miss',
+      'T(youPlayedFmt,M64)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('correct note pressed EARLY (count-in) → no hit, but no shaming miss chip', () => {
@@ -455,7 +472,12 @@ describe('matchNoteOnset — guided mode', () => {
     const fx = setup({ notes });
     const ok = fx.scoring.matchNoteOnset(48, true);
     expect(ok).toBe(false);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M48)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'miss',
+      'T(youPlayedFmt,M48)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('guided の和音: 途中メンバーはチップ無し、完成の瞬間に Perfect 1 回', () => {
@@ -470,7 +492,12 @@ describe('matchNoteOnset — guided mode', () => {
     expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
     fx.scoring.matchNoteOnset(67, true); // 3/3 — 完成
     expect(fx.mocks.showHitChip).toHaveBeenCalledTimes(1);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number)
+    );
     // flow/combo/バーストは従来どおり毎メンバー発火（押下確認）
     expect(fx.mocks.spawnBurst).toHaveBeenCalledTimes(3);
     expect(fx.practice.hits).toBe(3);
@@ -479,7 +506,12 @@ describe('matchNoteOnset — guided mode', () => {
   it('guided の単音は従来どおり即 Perfect', () => {
     const fx = setup();
     fx.scoring.matchNoteOnset(60, true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('chord-mate match: out-of-order note within tolerance hits', () => {
@@ -559,7 +591,12 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     const fx = setup(5.04);
     const ok = fx.scoring.matchNoteOnset(60, true);
     expect(ok).toBe(true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('inside hit window, past the great band → direction-aware late chip', () => {
@@ -567,23 +604,45 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     const fx = setup(5.12);
     const ok = fx.scoring.matchNoteOnset(60, true);
     expect(ok).toBe(true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('late', 'T(gradeLate)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'late',
+      'T(gradeLate)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
-  it('a perfect hit sparkles AT the key (grade x/colour) + a clean-hit ring', () => {
+  it('a perfect hit sparkles AT the key + ring (grade-tint fallback when no noteColor)', () => {
     const fx = setup(5.04); // dt=40 → perfect
     fx.scoring.matchNoteOnset(60, true);
     // Burst at the pressed key's x (noteScreenX(60)=600), gold tint, in the play band.
-    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 16, 1.15, '#ffe26b');
+    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 20, 1.15, '#ffe26b');
     // Clean hits (perfect / great) add a soft ring; the burst colour matches.
     expect(fx.mocks.spawnRipple).toHaveBeenCalledWith(600, 600 * 0.72, '#ffe26b', 230);
   });
 
-  it('an off-timing hit (early/late) gets a smaller burst and NO ring', () => {
+  it('uses the NOTE colour (free-play palette) for burst + ring + stream when wired', () => {
+    // Note-colour resolution (synesthesia/theme) matches the lane tiles + free
+    // play, so practice hits read as the same visual language.
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0 },
+      Tone: { context: { currentTime: 5.04 } }, // dt=40 → perfect
+      noteColor: () => '#12abcd',
+    });
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 20, 1.15, '#12abcd');
+    expect(fx.mocks.spawnRipple).toHaveBeenCalledWith(600, 600 * 0.72, '#12abcd', 230);
+    // Clean hits also fire the rising light stream (free-play parity).
+    expect(fx.mocks.spawnStream).toHaveBeenCalledWith(600, 600 * 0.72, 1.15, '#12abcd');
+  });
+
+  it('an off-timing hit (early/late) gets a smaller burst, NO ring, NO stream', () => {
     const fx = setup(5.12); // dt=120 → late
     fx.scoring.matchNoteOnset(60, true);
-    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 7, 0.7, '#a9d4ff');
+    expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 8, 0.7, '#a9d4ff');
     expect(fx.mocks.spawnRipple).not.toHaveBeenCalled();
+    expect(fx.mocks.spawnStream).not.toHaveBeenCalled();
   });
 
   it('past late window → no match', () => {
@@ -612,7 +671,12 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     });
     const ok = fx.scoring.matchNoteOnset(60, false); // isExact=false → mic
     expect(ok).toBe(true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('MIDI onset is NOT latency-compensated (exact input)', () => {
@@ -628,7 +692,12 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     const ok = fx.scoring.matchNoteOnset(60, true); // MIDI → no compensation
     expect(ok).toBe(true);
     // 70 > perfect(50) but ≤ great(100) → 'great' (very close, not perfect)
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('great', 'T(gradeGreat)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'great',
+      'T(gradeGreat)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('P1-11: MIDI の per-event inputLagMs（event.timeStamp 由来）は elapsed から減算される', () => {
@@ -643,7 +712,12 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     });
     const ok = fx.scoring.matchNoteOnset(60, true, 70);
     expect(ok).toBe(true);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('perfect', 'T(perfect)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 
   it('wrong note inside the window → throttled fact-based chip (P2-17)', () => {
@@ -651,7 +725,12 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     const fx = setup(5.04);
     const ok = fx.scoring.matchNoteOnset(62, true); // expected 60, played 62
     expect(ok).toBe(false);
-    expect(fx.mocks.showHitChip).toHaveBeenCalledWith('miss', 'T(youPlayedFmt,M62)');
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'miss',
+      'T(youPlayedFmt,M62)',
+      expect.any(Number),
+      expect.any(Number)
+    );
     // A second wrong note within the throttle window is suppressed.
     fx.mocks.showHitChip.mockClear();
     fx.scoring.matchNoteOnset(63, true);

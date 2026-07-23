@@ -136,7 +136,9 @@ describe('createPracticeTick — rhythm auto-miss', () => {
     expect(note.missed).toBe(true);
     expect(deps.practice.misses).toBe(1);
     expect(deps.practice.sectionCombo).toBe(0);
-    expect(deps.showHitChip).toHaveBeenCalledWith('miss', 'missChip');
+    // Fixture wires no noteScreenX/getScreen → the chip degrades to centered
+    // (undefined position args).
+    expect(deps.showHitChip).toHaveBeenCalledWith('miss', 'missChip', undefined, undefined);
   });
 
   it('does NOT mark a note missed when elapsed is within window', () => {

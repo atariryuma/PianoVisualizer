@@ -101,7 +101,12 @@ export interface PracticeTickDeps {
    *  window forward-search is internal to the legacy implementation. */
   matchNoteOnset(detectedMidi: number, fromMidiInput: boolean): void;
   /** Show the floating chip ('miss' / 'perfect' / 'nice') in the HUD. */
-  showHitChip(kind: 'miss' | 'perfect' | 'nice', label: string): void;
+  showHitChip(kind: 'miss' | 'perfect' | 'nice', label: string, xPx?: number, yPx?: number): void;
+  /** MIDI → key screen x + screen dims — used to place the auto-miss chip at
+   *  the missed note's lane position (same band as every other verdict chip).
+   *  Both optional so older shells / partial tests degrade to centered. */
+  noteScreenX?(midi: number): number;
+  getScreen?(): { W: number; H: number };
   /** i18n translator. */
   t(key: string): string;
   /** Section-complete handler — tick fires it after a 600ms grace
@@ -240,7 +245,14 @@ export function createPracticeTick(
           n.missed = true;
           deps.practice.misses++;
           deps.practice.sectionCombo = 0;
-          deps.showHitChip('miss', deps.t('missChip'));
+          // Place the Miss verdict at the missed note's key (same band as the
+          // timing/wrong-note chips) so all per-note feedback reads in one place.
+          const screen = deps.getScreen?.();
+          const x =
+            deps.noteScreenX && screen
+              ? Math.max(48, Math.min(screen.W - 48, deps.noteScreenX(n.midi)))
+              : undefined;
+          deps.showHitChip('miss', deps.t('missChip'), x, screen ? screen.H * 0.6 : undefined);
         }
         if (n.timeMs - elapsed > deps.hitWindowMs) break;
       }

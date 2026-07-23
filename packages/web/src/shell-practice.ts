@@ -64,6 +64,10 @@ export interface ShellPracticeDeps {
   spawnBurst: any;
   /** Expanding-ring pulse at a note's key (clean-hit pop + length-OK cue). */
   spawnRipple?: (x: number, y: number, color: string, radius: number) => void;
+  /** Rising light stream on clean hits — free-play visual parity. */
+  spawnStream?: (x: number, y: number, energy: number, color?: string) => void;
+  /** MIDI → note colour (synesthesia/theme — same palette as free play). */
+  noteColor?: (midi: number) => string;
   getScreen: () => { W: number; H: number };
   /** Prefs persistence — practiceProgress writes through this. */
   prefsStore: any;
@@ -171,6 +175,11 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     t,
   } as any);
 
+  // MIDI → key x, so per-note effects + verdict chips land under the pressed
+  // key (shared by scoring hits and the practice-tick's auto-miss chip).
+  const noteScreenX = (midi: number): number =>
+    ((midi - config.PIANO_KEY_MIN) / config.PIANO_KEY_COUNT) * deps.getScreen().W;
+
   const _practiceScoring = PracticeScoring.createPracticeScoring({
     state,
     practice,
@@ -193,9 +202,9 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     showHitChip: deps.showHitChip,
     spawnBurst: deps.spawnBurst,
     spawnRipple: deps.spawnRipple,
-    // MIDI → key x, so per-note hit effects land under the pressed key.
-    noteScreenX: (midi: number) =>
-      ((midi - config.PIANO_KEY_MIN) / config.PIANO_KEY_COUNT) * deps.getScreen().W,
+    spawnStream: deps.spawnStream,
+    noteColor: deps.noteColor,
+    noteScreenX,
     getScreen: deps.getScreen,
     t,
     midiToName,
@@ -397,6 +406,8 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     medianRecentPitch: () => _practiceScoring.medianRecentPitch(),
     matchNoteOnset: (m: number, exact: boolean) => _practiceScoring.matchNoteOnset(m, exact),
     showHitChip: deps.showHitChip,
+    noteScreenX,
+    getScreen: deps.getScreen,
     t,
     completePracticeSection: () => deps.getCompletePracticeSection()(),
     // ループ周回: 結果カードは出さないが「1周分の練習時間」は記録してから

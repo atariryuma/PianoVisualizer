@@ -83,7 +83,10 @@ describe('computeSongMastery', () => {
   it('returns cold-start summary for an untouched song', () => {
     const sm = computeSongMastery(FUR_ELISE, undefined);
     expect(sm.starsEarned).toBe(0);
-    expect(sm.starsPossible).toBe(9); // 3 sections × 3 stars
+    // (3 sections + the full-song challenge) × 3 stars — the challenge is a
+    // starred row in the song panel, so its stars count toward the totals.
+    expect(sm.starsPossible).toBe(12);
+    expect(sm.fullSongStars).toBe(0);
     expect(sm.seal).toBe('none');
     expect(sm.touched).toBe(false);
     // First section unlocked by default even with no progress record.
@@ -100,7 +103,7 @@ describe('computeSongMastery', () => {
     >[1];
     expect(() => computeSongMastery(FUR_ELISE, corrupt)).not.toThrow();
     const sm = computeSongMastery(FUR_ELISE, corrupt);
-    expect(sm.starsPossible).toBe(9);
+    expect(sm.starsPossible).toBe(12);
     expect(sm.highestTempoUnlocked).toBe(50); // 既定（TEMPO_TIERS[0]=最遅）
     // computeLibraryMastery 経由でも throw しない（boot 経路の再現）。
     expect(() =>
@@ -120,9 +123,20 @@ describe('computeSongMastery', () => {
     const sp = spWith({ stars: { A1: 3, B: 2, A2: 1 } });
     const sm = computeSongMastery(FUR_ELISE, sp);
     expect(sm.starsEarned).toBe(6);
-    expect(sm.starsPossible).toBe(9);
-    expect(sm.percent).toBe(67); // 6/9 = 66.7 → 67
+    expect(sm.starsPossible).toBe(12); // 3 sections + full-song challenge
+    expect(sm.percent).toBe(50); // 6/12
     expect(sm.touched).toBe(true);
+  });
+
+  it('counts the full-song challenge stars into the totals (100% needs the run)', () => {
+    const sp = spWith({ stars: { A1: 3, B: 3, A2: 3 } });
+    sp.sections[FULL_SONG_SECTION_ID] = { stars: 2, bestPct: 84 };
+    const sm = computeSongMastery(FUR_ELISE, sp);
+    expect(sm.fullSongStars).toBe(2);
+    expect(sm.starsEarned).toBe(11); // 9 section stars + 2 challenge stars
+    expect(sm.percent).toBe(92); // 11/12
+    // Seals still walk real sections only — gold does not require the run.
+    expect(sm.seal).toBe('gold');
   });
 
   it('reports correct seal at silver threshold', () => {
@@ -164,27 +178,29 @@ describe('computeLibraryMastery', () => {
   it('returns zero rollup when nothing has been touched', () => {
     const lib = computeLibraryMastery([FUR_ELISE, ALLA_TURCA], defaultPracticeProgress());
     expect(lib.starsEarned).toBe(0);
-    expect(lib.starsPossible).toBe(18); // 2 songs × 9 stars
+    expect(lib.starsPossible).toBe(24); // 2 songs × (3 sections + challenge) × 3
     expect(lib.songsTouched).toBe(0);
     expect(lib.percent).toBe(0);
   });
 
-  it('aggregates star counts across multiple songs', () => {
+  it('aggregates star counts across multiple songs (incl. full-song stars)', () => {
+    const furElise = spWith({ stars: { A1: 3, B: 3, A2: 3 }, tempos: { 100: true } });
+    furElise.sections[FULL_SONG_SECTION_ID] = { stars: 3, bestPct: 95 };
     const progress: PracticeProgress = {
       streakDays: [],
       streakCount: 0,
       songs: {
-        fur_elise: spWith({ stars: { A1: 3, B: 3, A2: 3 }, tempos: { 100: true } }),
+        fur_elise: furElise,
         alla_turca: spWith({ stars: { A: 1, B: 0, C: 0 } }),
       },
     };
     const lib = computeLibraryMastery([FUR_ELISE, ALLA_TURCA], progress);
-    expect(lib.starsEarned).toBe(10);
-    expect(lib.starsPossible).toBe(18);
+    expect(lib.starsEarned).toBe(13); // 9 + 3 (challenge) + 1
+    expect(lib.starsPossible).toBe(24);
     expect(lib.songsTouched).toBe(2);
     expect(lib.songsGold).toBe(1); // platinum counts toward gold
     expect(lib.songsPlatinum).toBe(1);
-    expect(lib.percent).toBe(56);
+    expect(lib.percent).toBe(54); // 13/24
   });
 });
 
@@ -378,12 +394,13 @@ describe('computeFullSongChallenge', () => {
     expect(v.bestPct).toBe(84);
   });
 
-  it('__full never affects seals/mastery (walks real section IDs only)', () => {
+  it('__full counts toward star totals but never toward seals', () => {
     const sp = spWith({ stars: { A1: 1, B: 0, A2: 0 } });
     sp.sections[FULL_SONG_SECTION_ID] = { stars: 3, bestPct: 100 };
     const sm = computeSongMastery(FUR_ELISE, sp);
-    expect(sm.starsEarned).toBe(1); // __full の ★3 は数えない
-    expect(sm.seal).toBe('bronze');
+    expect(sm.starsEarned).toBe(4); // 1 section star + 3 challenge stars
+    expect(sm.fullSongStars).toBe(3);
+    expect(sm.seal).toBe('bronze'); // seals walk real sections only
     // …and the challenge itself stays locked (B/A2 not cleared).
     expect(computeFullSongChallenge(IDS, sp.sections).unlocked).toBe(false);
   });

@@ -363,17 +363,24 @@ temporarily limits max gain to prevent amplifying speech.
   `resolveLengthGrade(heldMs, expectedMs, tolMs, goodFrac?)` →
   `good | short | long`. The web mapping lives in
   [`practice-scoring.ts`](packages/web/src/practice-scoring.ts):
-  - **Press (timing)** → a grade-coloured chip (centered; gold=perfect,
-    green=great, blue=early/late) + a **grade-scaled sparkle AT the pressed
-    key** (`noteScreenX(midi)`, tinted by grade, 16→7 particles) + a soft ring
-    (`spawnRipple`) on a clean hit only. Bigger reward for a cleaner note, no
-    shame on the rest. Guided mode is always "perfect" (the note waits).
+  - **Press (timing)** → a grade-coloured chip (gold=perfect, green=great,
+    blue=early/late) and a **grade-scaled celebration AT the pressed key**:
+    burst and soft ring in the **note's own colour** (synesthesia/theme via
+    `noteColor` — the same palette free play and the lane tiles use, 2026-07-22)
+    plus a rising light **stream** (`spawnStream`) on clean (perfect/great) hits
+    — free-play visual parity. The grade lives in the chip colour, the effect
+    size (20→8 particles), and the tile bloom. Guided mode is always "perfect".
   - **Release (length)** → its own colour channel so it doesn't fight the timing
     chip: a **good hold** shows a cyan pulse at the key (no text); a **short /
     long** hold shows a gentle low nudge chip (`lengthShort` / `lengthLong`) +
     amber pulse. Two-sided (good is celebrated), gentle framing (banned-list: no
-    shame). `showHitChip` gained optional `xPx/yPx` so the length chip sits at
-    the key, low, clear of the centered timing verdict.
+    shame).
+  - **Unified chip placement (2026-07-22)**: every per-note verdict chip —
+    timing, wrong-note "you played X", the tick's auto-Miss, and the length
+    nudge — rides the pressed/missed note's key x (clamped on-screen,
+    `CHIP_EDGE_PX`), in two bands: `CHIP_Y_FRAC` (0.6) for press verdicts,
+    `LENGTH_CHIP_Y_FRAC` (0.82) for release nudges. They used to be scattered
+    (timing/miss centered, length at the key).
   - **Tile hit bloom** (`render/lane.ts` `drawHitBloom`): at the moment of a
     correct press the falling tile itself blooms — two soft, phase-offset light
     rings expanding outward (a water-ripple 爽快感) + a quick bright core flash,
@@ -456,14 +463,18 @@ temporarily limits max gain to prevent amplifying speech.
   `first_full_song_clear` stamp, and can unlock the next tempo tier (★2+, same
   gate as sections). Stars/bestPct/history persist under the reserved
   pseudo-section `FULL_SONG_SECTION_ID = '__full'`
-  (`PianoCore.computeFullSongChallenge` is the pure state selector) so seals,
-  mastery %, and whole-song stamps — which walk real section IDs — are
-  unaffected; the journal shows a 👑 on cleared songs. Loop practice is disabled
-  for the run (the clear card must appear), and a 0★ run keeps the gentle tier0
-  copy + scaffold retry (the "listen first" support keeps the full-song target →
-  full-song listen). Banned-list notes: unlock predicate is deterministic and
-  always visible; the clear is attempt/milestone-based (★1, not perfection); no
-  time pressure.
+  (`PianoCore.computeFullSongChallenge` is the pure state selector). Seals and
+  whole-song stamps walk real section IDs and stay unaffected, but the
+  challenge's stars DO count toward star totals (2026-07-22):
+  `computeSongMastery` adds `fullSongStars` into `starsEarned` and sizes
+  `starsPossible = (sections + 1) × 3`, so the ring %, journal Stars row, and
+  title-strip ⭐ move when the run is cleared (they used to ignore it). The
+  journal shows a 👑 on cleared songs + a 👑★n dot in the section-dots row. Loop
+  practice is disabled for the run (the clear card must appear), and a 0★ run
+  keeps the gentle tier0 copy + scaffold retry (the "listen first" support keeps
+  the full-song target → full-song listen). Banned-list notes: unlock predicate
+  is deterministic and always visible; the clear is attempt/milestone-based (★1,
+  not perfection); no time pressure.
 - **Onboarding + endgame completeness pass（2026-07-21）**: closed the "strong
   middle, weak start, no ending" gap from a game-design review.
   - **First-run welcome** (`first-run-welcome.ts`, `#firstRunWelcome`): a

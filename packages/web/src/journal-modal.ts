@@ -402,6 +402,19 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
         dot.textContent = sec.unlocked ? '★'.repeat(sec.stars) || '·' : '🔒';
         dotsRow.appendChild(dot);
       }
+      // 1曲チャレンジのドット — クリア済みならセクション列の末尾に 👑★n を
+      // 並べる（この星は starsEarned/starsPossible にも算入されている）。
+      if (sm.fullSongStars >= 1) {
+        const dot = document.createElement('div');
+        dot.className = 'jr-dot jr-dot-stars-' + sm.fullSongStars;
+        dot.title =
+          deps.t('fullSongChallengeName') +
+          ' · ' +
+          '★'.repeat(sm.fullSongStars) +
+          '☆'.repeat(3 - sm.fullSongStars);
+        dot.textContent = '★'.repeat(sm.fullSongStars);
+        dotsRow.appendChild(dot);
+      }
       body.appendChild(dotsRow);
 
       const tempos = document.createElement('div');

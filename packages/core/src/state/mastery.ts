@@ -27,11 +27,19 @@ export type SongSeal =
 /** Summary of a single song's progress for the Collection UI. */
 export interface SongMastery {
   songId: string;
-  /** Per-section star + unlock view, in section playback order. */
+  /** Per-section star + unlock view, in section playback order. REAL sections
+   *  only — the full-song challenge is reported via `fullSongStars` so seal /
+   *  near-completion math (which walks this array) keeps its semantics. */
   sections: MasterySectionView[];
-  /** Sum of stars earned across all sections (0..sections.length*3). */
+  /** Best stars on the full-song challenge run (the '__full' pseudo-section,
+   *  0–3). Counted into starsEarned/starsPossible — the challenge is presented
+   *  as a section row with stars, so kids rightly expect those stars to move
+   *  the totals. */
+  fullSongStars: number;
+  /** Stars earned across all sections PLUS the full-song challenge. */
   starsEarned: number;
-  /** Total stars achievable across all sections (sections.length*3). */
+  /** Stars achievable: (sections.length + 1) × 3 — the +1 is the full-song
+   *  challenge, the practice path's visible endpoint. */
   starsPossible: number;
   /** 0–100 completion percent, with endowed-progress floor applied. */
   percent: number;
@@ -133,7 +141,12 @@ export function computeSongMastery(
     sections.push({ id, stars: sec.stars, bestPct: sec.bestPct, unlocked });
     starsEarned += sec.stars;
   }
-  const starsPossible = sectionIds.length * 3;
+  // The full-song challenge run counts toward the song's star totals (it is
+  // shown as a starred row in the song panel). Seals stay section-only —
+  // `sections` deliberately excludes it.
+  const fullSongStars = progress?.sections?.[FULL_SONG_SECTION_ID]?.stars ?? 0;
+  starsEarned += fullSongStars;
+  const starsPossible = sectionIds.length > 0 ? (sectionIds.length + 1) * 3 : 0;
   const highestTempo = progress ? highestUnlockedTempo(progress.unlockedTempos) : 60;
   const tempoTiersUnlocked = progress ? countUnlockedTempos(progress.unlockedTempos) : 1;
   const seal = resolveSongSeal(
@@ -150,6 +163,7 @@ export function computeSongMastery(
   return {
     songId: song.id,
     sections,
+    fullSongStars,
     starsEarned,
     starsPossible,
     percent,
