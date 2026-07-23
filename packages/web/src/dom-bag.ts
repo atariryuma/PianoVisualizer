@@ -145,6 +145,8 @@ export interface DomBag {
   pianistEditSaveBtn: HTMLElement;
   startScreenPianistBadge: HTMLElement;
   firstRunWelcome: HTMLElement;
+  practiceRecap: HTMLElement;
+  titleContinue: HTMLElement;
   journalLibraryRollup: HTMLElement;
   journalRepertoireList: HTMLElement;
   journalStampsGrid: HTMLElement;
@@ -305,6 +307,8 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'pianistEditSaveBtn',
   'startScreenPianistBadge',
   'firstRunWelcome',
+  'practiceRecap',
+  'titleContinue',
   'journalLibraryRollup',
   'journalRepertoireList',
   'journalStampsGrid',

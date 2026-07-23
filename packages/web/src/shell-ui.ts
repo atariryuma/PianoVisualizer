@@ -349,6 +349,105 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     paintStartHereChip();
   }
 
+  // ── J4: practice-session recap ──────────────────────────────────────
+  // Accumulate what happened this practice session (best stars per section,
+  // attempt count), then show a gentle recap card on return-to-title. Session-
+  // scoped, never persisted; no goals / no shortfall copy (banned-list).
+  const _recap = { best: new Map<string, number>(), attempts: 0 };
+  function recordRecapAttempt(input: {
+    songId: string;
+    sectionId: string;
+    stars: number;
+    isListenMode: boolean;
+  }): void {
+    if (input.isListenMode) return; // listening isn't a scored attempt
+    _recap.attempts++;
+    const key = input.songId + ':' + input.sectionId;
+    _recap.best.set(key, Math.max(_recap.best.get(key) ?? 0, input.stars));
+  }
+  function songTitle(songId: string): string {
+    const s = (deps.songs as Record<string, { titleKey?: string }>)[songId];
+    return s?.titleKey ? t(s.titleKey) : songId;
+  }
+  function renderPracticeRecap(): void {
+    const el = dom.practiceRecap;
+    if (!el) return;
+    if (_recap.attempts === 0) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    let clearedSections = 0;
+    let starsThisSession = 0;
+    for (const s of _recap.best.values()) {
+      if (s >= 1) clearedSections++;
+      starsThisSession += s;
+    }
+    // Today's practice minutes (already tracked by recordPracticeMinutes).
+    const prog = (deps.practice as { progress?: { minutesByDay?: Record<string, number> } })
+      .progress;
+    const todayKey = PianoCore.formatDateKey(new Date());
+    const todayMin = Math.round(prog?.minutesByDay?.[todayKey] ?? 0);
+
+    el.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'recap-head';
+    head.textContent = t('recapTitle');
+    el.appendChild(head);
+    const stats = document.createElement('div');
+    stats.className = 'recap-stats';
+    const chip = (txt: string): HTMLElement => {
+      const c = document.createElement('span');
+      c.className = 'recap-chip';
+      c.textContent = txt;
+      return c;
+    };
+    if (clearedSections > 0)
+      stats.appendChild(chip('✅ ' + t('recapClearedFmt', { n: clearedSections })));
+    if (starsThisSession > 0) stats.appendChild(chip('⭐ ' + starsThisSession));
+    if (todayMin >= 1) stats.appendChild(chip('⏱ ' + t('minutesValueFmt', { v: todayMin })));
+    // Attempts always non-zero here — a floor so the card is never empty.
+    if (stats.childElementCount === 0) stats.appendChild(chip('🎹 ' + _recap.attempts));
+    el.appendChild(stats);
+    el.hidden = false;
+  }
+  function resetPracticeRecap(): void {
+    _recap.best.clear();
+    _recap.attempts = 0;
+  }
+
+  // ── J6: "▶ Continue" back into the last practiced song ──────────────
+  function renderContinueButton(): void {
+    const el = dom.titleContinue;
+    if (!el) return;
+    const prog = (deps.practice as { progress?: { lastSongId?: string } }).progress;
+    const lastId = prog?.lastSongId;
+    const songs = deps.songs as Record<string, { id?: string; titleKey?: string }>;
+    if (!lastId || !songs[lastId]) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = 'mode-btn title-continue-btn';
+    btn.innerHTML =
+      '<span class="mode-btn-label">▶ ' +
+      t('continueLabel') +
+      ' <span class="title-continue-song"></span></span>';
+    (btn.querySelector('.title-continue-song') as HTMLElement).textContent = songTitle(lastId);
+    btn.addEventListener('click', () => selectSong(lastId));
+    el.appendChild(btn);
+    el.hidden = false;
+  }
+
+  /** Called on every return-to-title (all paths funnel through practice-flow). */
+  function onReturnedToTitle(): void {
+    renderPracticeRecap();
+    resetPracticeRecap();
+    renderContinueButton();
+  }
+
   // ── Result-card ──
   const SECTION_IDS = ['A1', 'B', 'A2'];
   const _resultCard = ResultCard.createResultCard({
@@ -404,6 +503,13 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     t,
     remoteLogEnabled: deps.remoteLogEnabled,
     onSectionAttemptDone: (input: AttemptCompletionInput) => {
+      // J4: fold into the session recap (skips listen internally).
+      recordRecapAttempt({
+        songId: input.songId,
+        sectionId: input.sectionId,
+        stars: input.stars,
+        isListenMode: input.isListenMode,
+      });
       const earned = _journal.applyAttempt({
         songId: input.songId,
         sectionId: input.sectionId,
@@ -653,6 +759,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       (deps.prefs as any).showScore = visible;
       deps.savePrefs?.();
     },
+    // J4/J6: recap + continue-button refresh on every return-to-title path.
+    onReturnedToTitle,
     t,
   } as any);
   _returnToTitle = _practiceFlow.returnToTitle;
@@ -686,6 +794,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       _journal.renderLibraryStrip();
       renderPianistBadge();
       refreshFirstRun();
+      // J6: seed the continue button at boot (progress is loaded by now).
+      renderContinueButton();
     },
     openJournal: (initialTab?: 'repertoire' | 'stamps' | 'calendar') => _journal.open(initialTab),
     closeJournal: () => _journal.close(),

@@ -557,12 +557,18 @@ temporarily limits max gain to prevent amplifying speech.
     the journal rollup now shows a **medals row** (🥇 gold / 💎 platinum counts
     — previously computed but never rendered) and a **capstone row** for the
     highest library-wide milestone reached (`allTouched` → `allFullCleared` →
-    `allSilver` → `allGold` → `allPlatinum`, positive-only, `capstone*` keys);
-    the same capstone chip rides the title-screen library strip. Two long-tail
-    stamps keep goals alive after one song is maxed: `first_platinum` 💎 (a song
-    to all-3★ + 100% tempo) and `full_song_master` 🎼 (3 distinct songs
-    full-song-cleared). The result-card stretch button no longer dead-ends at
-    100% — when `pickNearCompletion` is empty but songs are touched,
+    `allSilver` → `allGold` → `allPlatinum` → **`libraryMastered`**,
+    positive-only, `capstone*` keys); the same capstone chip rides the
+    title-screen library strip. **`libraryMastered` is the TRUE 100%
+    (2026-07-24, J1)**: every song platinum-sealed AND every full-song challenge
+    three-starred, so it lines up exactly with the mastery ring hitting 100%.
+    Before it, `allPlatinum` (section-only) was the top milestone yet the ring
+    could still read <100% because full-song ★3 wasn't required — the final goal
+    had no name. `LibraryCompletion.fullMastered` counts the ★3 full runs. Two
+    long-tail stamps keep goals alive after one song is maxed: `first_platinum`
+    💎 (a song to all-3★ + 100% tempo) and `full_song_master` 🎼 (3 distinct
+    songs full-song-cleared). The result-card stretch button no longer dead-ends
+    at 100% — when `pickNearCompletion` is empty but songs are touched,
     `pickStretchSong` returns `ADD_SONG_SENTINEL` ('\_\_addsong') and the button
     becomes "➕ add more free songs" (`stretchAddSong`), routing to the add-song
     modal (`openAddSong`).
@@ -593,6 +599,30 @@ temporarily limits max gain to prevent amplifying speech.
   the whole library. (Both the aggregation and the journal render are
   unit-tested — `journal-modal.test.ts` drives the real `render()` through
   `@piano/core` and asserts the growth row + its positive-only suppression.)
+- **Journal "show-what-you-store" pass (2026-07-24, J2–J6)**: an audit found
+  several rhythm-game-standard metrics were being computed/stored then never
+  surfaced. Fixed:
+  - **Per-song self-best** (`SongMastery.bestPct` / `bestCombo`): the journal
+    repertoire book now shows a `🎯 N%  🔥 ×M` best line (touched songs only —
+    an untouched 0%/×0 reads as a scold). `bestCombo` is now persisted per
+    section (`SectionProgress.bestCombo`, non-decreasing, written in
+    `result-card.completePracticeSection`) — previously `sectionBestCombo` fed
+    only stamp predicates then evaporated. `computeSongMastery` takes the max
+    across all sections + the `__full` run.
+  - **Calendar day detail** (J5): a practiced calendar cell is tappable and
+    fills a detail panel with that day's songs · sections · best-★ · ×attempts
+    (seeded to the most-recent practiced day). The `sectionsByDay` data was
+    already collected but only drove the on/off dot.
+  - **Practice-session recap** (J4, `#practiceRecap`): a gentle "🎉 Nice
+    practice!" card on return-to-title after a scored session — cleared count,
+    stars this session, today's minutes. Session-scoped (a `Map` in shell-ui),
+    never persisted, no goals/shortfall. Fires on EVERY return-to-title path via
+    the new `PracticeFlow` dep `onReturnedToTitle` (🏠 / ✕ quit / song-panel
+    Back / result Home all funnel through `returnToTitle`).
+  - **"▶ Continue"** (J6, `#titleContinue`): a one-tap resume into
+    `progress.lastSongId` (written at section start, listen excluded) on the
+    title screen — the standard "continue where you left off" the title screen
+    lacked.
 
 ### Rendering
 

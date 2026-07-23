@@ -100,7 +100,7 @@ export interface ResultCardSong {
 export interface ResultCardSongProgress {
   unlockedTempos: Record<number, boolean>;
   unlockedSections: Record<string, boolean>;
-  sections: Record<string, { stars: number; bestPct: number } | undefined>;
+  sections: Record<string, { stars: number; bestPct: number; bestCombo?: number } | undefined>;
   history: Record<string, Array<{ d: number; a: number; t: number; s: number; tempoPct?: number }>>;
 }
 
@@ -691,6 +691,12 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     const priorBestPct = prog.bestPct;
     if (stars > prog.stars) prog.stars = stars;
     if (accPct > prog.bestPct) prog.bestPct = accPct;
+    // J3: persist the section's lifetime-best combo (non-decreasing) so the
+    // journal can show a self-best combo per song — the rhythm-game headline
+    // metric that was previously computed then thrown away.
+    if (deps.practice.sectionBestCombo > (prog.bestCombo ?? 0)) {
+      prog.bestCombo = deps.practice.sectionBestCombo;
+    }
     sp.sections[progressKey] = prog;
 
     deps.recordPracticeDay();

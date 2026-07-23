@@ -160,3 +160,58 @@ describe('createJournalModal — weekly growth rollup', () => {
     expect(deps.dom.journalLibraryRollup.innerHTML).not.toContain('rollupGrowthLabel');
   });
 });
+
+describe('createJournalModal — J2+J3 per-song self-best line', () => {
+  it('shows best accuracy % + best combo on a touched song', () => {
+    const deps = makeDeps({
+      getProgress: () =>
+        ({
+          streakDays: [],
+          streakCount: 0,
+          earnedStamps: {},
+          songs: {
+            s1: {
+              sections: { a1: { stars: 2, bestPct: 88, bestCombo: 17 } },
+              unlockedTempos: {},
+              unlockedSections: { a1: true },
+              history: {},
+            },
+          },
+        }) as never,
+    });
+    createJournalModal(deps).render();
+    const html = deps.dom.journalRepertoireList.innerHTML;
+    expect(html).toContain('journalBestLabel');
+    expect(html).toContain('88%');
+    expect(html).toContain('×17');
+  });
+
+  it('hides the self-best line on an untouched song (no 0% / ×0 scold)', () => {
+    const deps = makeDeps(); // empty progress → untouched
+    createJournalModal(deps).render();
+    expect(deps.dom.journalRepertoireList.innerHTML).not.toContain('journalBestLabel');
+  });
+});
+
+describe('createJournalModal — J5 calendar day detail', () => {
+  it('lists the songs/sections practiced on a day with history', () => {
+    const now = Date.now();
+    const deps = makeDeps({
+      getProgress: () =>
+        ({
+          streakDays: [],
+          streakCount: 0,
+          earnedStamps: {},
+          songs: {
+            s1: songProgressWithHistory([{ d: now, a: 70, t: 60, s: 2 }]),
+          },
+        }) as never,
+    });
+    createJournalModal(deps).render();
+    const html = deps.dom.journalActivityList.innerHTML;
+    // Song title (furElise key) + section name (feA1 key) appear in the detail.
+    expect(html).toContain('furElise');
+    expect(html).toContain('feA1');
+    expect(html).toContain('jr-cal-detail');
+  });
+});

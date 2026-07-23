@@ -987,10 +987,22 @@ export const T_STRINGS: TranslationTable = {
     de: '⭐ Noch {n} Stern bis „{song}“ aufsteigt!',
   },
   // Modal chrome
+  // J6: title-screen "Continue" back into the last practiced song.
+  continueLabel: { en: 'Continue', jp: 'つづきから', de: 'Weiter' },
+  // J4: practice-session recap card (return-to-title after a scored session).
+  recapTitle: { en: '🎉 Nice practice!', jp: '🎉 おつかれさま！', de: '🎉 Schön geübt!' },
+  recapClearedFmt: {
+    en: '{n} cleared',
+    jp: '{n}こクリア',
+    de: '{n} geschafft',
+  },
   journalTitle: { en: 'Practice journal', jp: '練習ジャーナル', de: 'Übungstagebuch' },
   journalTabRepertoire: { en: '📚 Repertoire', jp: '📚 レパートリー', de: '📚 Repertoire' },
   journalTabStamps: { en: '🏅 Stamps', jp: '🏅 スタンプ', de: '🏅 Stempel' },
   journalTabCalendar: { en: '📅 Calendar', jp: '📅 カレンダー', de: '📅 Kalender' },
+  // Per-song self-best line (accuracy % + combo). "Best" prefix; the icons
+  // (🎯 / 🔥) carry the meaning so the label stays short in every language.
+  journalBestLabel: { en: 'Best', jp: '自己ベスト', de: 'Best' },
   journalEmptyRepertoire: {
     en: 'No songs yet — add one from the title screen.',
     jp: 'まだ曲がありません — タイトル画面から追加してね。',
@@ -1052,9 +1064,16 @@ export const T_STRINGS: TranslationTable = {
     de: '🥇 Ganze Bibliothek in Gold!',
   },
   capstoneAllPlatinum: {
-    en: '🏆 Library mastered — every piece Platinum!',
-    jp: '🏆 ライブラリ完全制覇 — ぜんぶ白金！',
-    de: '🏆 Bibliothek gemeistert — alles Platin!',
+    en: '💎 Every piece Platinum! One goal left: full-song ★★★',
+    jp: '💎 ぜんぶ白金！のこりは通し ★★★ だけ',
+    de: '💎 Alles Platin! Nur noch: ganzes Stück ★★★',
+  },
+  // The TRUE 100% — every piece platinum AND every full-song run three-starred,
+  // so the library mastery ring reads exactly 100%. The named final goal.
+  capstoneLibraryMastered: {
+    en: '👑 True Master — 100%! Every piece, every full run ★★★',
+    jp: '👑 まことのマスター — 100%！ぜんぶ通しで ★★★',
+    de: '👑 Wahrer Meister — 100%! Jedes Stück, jeder Durchlauf ★★★',
   },
   // "Add more songs" CTA that replaces the stretch-piece button once every
   // touched song is maxed out, so the practice path routes to new content

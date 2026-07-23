@@ -144,6 +144,25 @@ describe('computeSongMastery', () => {
     expect(computeSongMastery(FUR_ELISE, sp).seal).toBe('silver');
   });
 
+  it('J2+J3: surfaces the song self-best (max bestPct + max bestCombo across all rows)', () => {
+    const sp = spWith({ stars: { A1: 1, B: 3, A2: 2 } });
+    // spWith seeds bestPct = stars*30 → A1:30, B:90, A2:60. Add combos + a
+    // full-song run that beats them.
+    sp.sections.A1.bestCombo = 8;
+    sp.sections.B.bestCombo = 22;
+    sp.sections.A2.bestCombo = 15;
+    sp.sections[FULL_SONG_SECTION_ID] = { stars: 2, bestPct: 95, bestCombo: 40 };
+    const sm = computeSongMastery(FUR_ELISE, sp);
+    expect(sm.bestPct).toBe(95); // full-song run's 95 beats the sections
+    expect(sm.bestCombo).toBe(40); // full-song run's 40 beats section 22
+  });
+
+  it('J2+J3: self-best defaults to 0 on an untouched song', () => {
+    const sm = computeSongMastery(FUR_ELISE, undefined);
+    expect(sm.bestPct).toBe(0);
+    expect(sm.bestCombo).toBe(0);
+  });
+
   it('reports platinum only when tempo 100 is also unlocked', () => {
     const golden = spWith({
       stars: { A1: 3, B: 3, A2: 3 },
@@ -221,6 +240,7 @@ describe('computeLibraryCompletion', () => {
       gold: 0,
       platinum: 0,
       fullCleared: 0,
+      fullMastered: 0,
       milestone: null,
     });
   });
@@ -279,7 +299,7 @@ describe('computeLibraryCompletion', () => {
     expect(c.milestone).toBe('allGold');
   });
 
-  it('every song platinum → allPlatinum (the summit)', () => {
+  it('every song platinum but full-song NOT 3★ → allPlatinum (not yet true 100%)', () => {
     const c = computeLibraryCompletion(
       LIB,
       prog({
@@ -288,7 +308,26 @@ describe('computeLibraryCompletion', () => {
       })
     );
     expect(c.platinum).toBe(2);
+    expect(c.fullMastered).toBe(0);
     expect(c.milestone).toBe('allPlatinum');
+  });
+
+  it('every song platinum AND full-song ★3 → libraryMastered (true 100%)', () => {
+    const maxed = (ids: string[]) => {
+      const sp = spWith({
+        stars: Object.fromEntries(ids.map((i) => [i, 3])),
+        tempos: { 100: true },
+      });
+      sp.sections[FULL_SONG_SECTION_ID] = { stars: 3, bestPct: 100 };
+      return sp;
+    };
+    const c = computeLibraryCompletion(
+      LIB,
+      prog({ fur_elise: maxed(['A1', 'B', 'A2']), alla_turca: maxed(['A', 'B', 'C']) })
+    );
+    expect(c.platinum).toBe(2);
+    expect(c.fullMastered).toBe(2);
+    expect(c.milestone).toBe('libraryMastered');
   });
 });
 

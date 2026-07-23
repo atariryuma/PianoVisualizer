@@ -149,6 +149,10 @@ export interface PracticeFlowDeps {
   /** 📜 トグルの新しい表示状態を prefs に保存（次セクション/次回起動に反映）。
    *  省略時は保存しない（旧シェル互換）。 */
   setShowScorePref?(visible: boolean): void;
+  /** J4/J6: タイトルへ戻り切った後に呼ばれる（全経路 — 🏠/✕/曲パネル戻る）。
+   *  シェルは練習まとめカード + 「続きから」導線 + マスタリー strip を更新する。
+   *  省略可。 */
+  onReturnedToTitle?(): void;
 }
 
 export interface PracticeFlow {
@@ -232,6 +236,10 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
     if (deps.state.running) deps.resetSession();
     deps.dom.startScreen.style.display = 'flex';
     document.body.classList.add('title-screen');
+    // J4/J6: every return-to-title path funnels through here (🏠 / ✕ quit /
+    // song-panel Back / result-card Home), so the recap + continue-button
+    // refresh lives here rather than in one caller's wrapper.
+    deps.onReturnedToTitle?.();
   }
 
   // ─── ptbPause (⏸ 一時停止 / ▶ 再開) ──────────────────────────────

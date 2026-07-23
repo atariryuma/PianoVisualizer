@@ -389,6 +389,20 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
         body.appendChild(sub);
       }
 
+      // J2+J3: self-best line — the rhythm-game headline the app was already
+      // storing but never showing. Best accuracy % + best combo, self-
+      // referenced (own record, no peer / target). Only once the song is
+      // touched (an untouched 0% / ×0 line reads as a scold, not a goal).
+      if (sm.touched && (sm.bestPct > 0 || sm.bestCombo > 0)) {
+        const best = document.createElement('div');
+        best.className = 'jr-book-best';
+        const parts: string[] = [];
+        if (sm.bestPct > 0) parts.push('🎯 ' + sm.bestPct + '%');
+        if (sm.bestCombo > 0) parts.push('🔥 ×' + sm.bestCombo);
+        best.textContent = deps.t('journalBestLabel') + ' ' + parts.join('  ');
+        body.appendChild(best);
+      }
+
       const dotsRow = document.createElement('div');
       dotsRow.className = 'jr-section-dots';
       for (const sec of sm.sections) {
@@ -520,36 +534,102 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     today.setHours(0, 0, 0, 0);
     const dayKeySet = new Set(progress.streakDays ?? []);
 
-    // Build a Map<dayKey, sectionLabels[]> from history entries.
-    const sectionsByDay = new Map<string, Set<string>>();
+    // J5: build a per-day breakdown (song → section → {attempts, bestStars})
+    // from history entries so a tapped day can show what was actually
+    // practiced. The data was already collected as a bare Set but only used
+    // for the on/off dot — now it drives a detail panel.
+    const songs = deps.getSongs();
+    const titleOf = new Map<string, string>();
+    const secNameOf = new Map<string, string>(); // `${songId}:${secId}` → name
+    for (const song of songs) {
+      titleOf.set(song.id, deps.t(song.titleKey));
+      for (const sec of song.sections) secNameOf.set(song.id + ':' + sec.id, deps.t(sec.nameKey));
+    }
+    interface DayItem {
+      songId: string;
+      secId: string;
+      attempts: number;
+      bestStars: number;
+    }
+    const detailByDay = new Map<string, Map<string, DayItem>>();
     for (const [songId, sp] of Object.entries(progress.songs ?? {})) {
       for (const [secId, hist] of Object.entries(sp.history ?? {})) {
         if (!Array.isArray(hist)) continue;
         for (const h of hist) {
-          if (
-            h != null &&
-            typeof h === 'object' &&
-            'd' in (h as Record<string, unknown>) &&
-            typeof (h as { d?: number }).d === 'number'
-          ) {
-            const d = new Date((h as { d: number }).d);
-            const key = deps.formatDateKey(d);
-            if (!sectionsByDay.has(key)) sectionsByDay.set(key, new Set());
-            sectionsByDay.get(key)?.add(songId + ':' + secId);
-          }
+          const rec = h as { d?: number; s?: number } | null;
+          if (!rec || typeof rec !== 'object' || typeof rec.d !== 'number') continue;
+          const key = deps.formatDateKey(new Date(rec.d));
+          if (!detailByDay.has(key)) detailByDay.set(key, new Map());
+          const dayMap = detailByDay.get(key)!;
+          const mapKey = songId + ':' + secId;
+          const cur = dayMap.get(mapKey) ?? { songId, secId, attempts: 0, bestStars: 0 };
+          cur.attempts++;
+          cur.bestStars = Math.max(cur.bestStars, rec.s ?? 0);
+          dayMap.set(mapKey, cur);
         }
       }
     }
 
+    // Detail panel — populated on cell tap (or the most recent practiced day
+    // by default so it's never empty when there's history).
+    const detail = document.createElement('div');
+    detail.className = 'jr-cal-detail';
+
+    const FULL_ID = PianoCore.FULL_SONG_SECTION_ID;
+    const renderDayDetail = (key: string): void => {
+      detail.innerHTML = '';
+      const dayMap = detailByDay.get(key);
+      const head = document.createElement('div');
+      head.className = 'jr-cal-detail-head';
+      head.textContent = key;
+      detail.appendChild(head);
+      if (!dayMap || dayMap.size === 0) {
+        const none = document.createElement('div');
+        none.className = 'jr-cal-detail-item';
+        none.textContent = deps.t('calendarPracticed');
+        detail.appendChild(none);
+        return;
+      }
+      // Group by song, list sections with attempts + best stars.
+      const items = Array.from(dayMap.values());
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'jr-cal-detail-item';
+        const secName =
+          it.secId === FULL_ID
+            ? '👑 ' + deps.t('fullSongChallengeName')
+            : (secNameOf.get(it.songId + ':' + it.secId) ?? it.secId);
+        const stars = it.bestStars > 0 ? ' ' + '★'.repeat(it.bestStars) : '';
+        row.textContent =
+          (titleOf.get(it.songId) ?? it.songId) +
+          ' · ' +
+          secName +
+          stars +
+          (it.attempts > 1 ? ' ×' + it.attempts : '');
+        detail.appendChild(row);
+      }
+    };
+
+    let lastPracticedKey: string | null = null;
     for (let i = DAYS - 1; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const key = deps.formatDateKey(d);
       const cell = document.createElement('div');
-      const practiced = dayKeySet.has(key) || sectionsByDay.has(key);
+      const practiced = dayKeySet.has(key) || detailByDay.has(key);
       cell.className = 'jr-cal-cell' + (practiced ? ' jr-cal-cell-on' : '');
       cell.title = key + (practiced ? ' · ' + deps.t('calendarPracticed') : '');
       cell.textContent = String(d.getDate());
+      if (practiced) {
+        lastPracticedKey = key;
+        cell.classList.add('jr-cal-cell-clickable');
+        cell.addEventListener('click', () => {
+          for (const c of target.querySelectorAll('.jr-cal-cell-sel'))
+            c.classList.remove('jr-cal-cell-sel');
+          cell.classList.add('jr-cal-cell-sel');
+          renderDayDetail(key);
+        });
+      }
       target.appendChild(cell);
     }
 
@@ -594,6 +674,13 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       '</span></div>' +
       minuteStats;
     activity.appendChild(summary);
+
+    // J5: seed the detail with the most recent practiced day so tapping is
+    // discoverable (the panel isn't blank when there's history).
+    if (lastPracticedKey && detailByDay.has(lastPracticedKey)) {
+      renderDayDetail(lastPracticedKey);
+      activity.appendChild(detail);
+    }
 
     if (lifetimeDays === 0) {
       const empty = document.createElement('div');

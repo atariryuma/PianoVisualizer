@@ -27,6 +27,10 @@ import type { StreakState } from './streak';
 export interface SectionProgress {
   stars: number;
   bestPct: number;
+  /** Best (highest) combo run ever on this section — the rhythm-game
+   *  self-best. Non-decreasing. Optional: absent on pre-0.14 saves; the
+   *  mastery reader defaults it to 0. */
+  bestCombo?: number;
 }
 
 /** A single attempt's record, keyed inside `SongProgress.history`
@@ -98,6 +102,10 @@ export interface PracticeProgress extends StreakState {
    *  as a shortfall (banned-list). Missing on older payloads; the migrator
    *  fills an empty object. */
   minutesByDay: Record<string, number>;
+  /** J6: the last song the player practiced, so the title screen can offer a
+   *  one-tap "▶ Continue" back into it. Optional — absent until the first
+   *  section start; the shell writes it there. */
+  lastSongId?: string;
 }
 
 /** Build a fresh per-song progress bucket — empty sections at 0 stars,

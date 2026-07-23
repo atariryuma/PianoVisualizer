@@ -316,6 +316,59 @@ body[data-layout='desktop'] .add-song-card {
 .first-run-welcome[hidden] {
   display: none;
 }
+
+/* J4: practice-session recap card. */
+.practice-recap {
+  width: min(92vw, 380px);
+  margin: 0 auto var(--sp-6, 12px);
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(120, 220, 160, 0.16), rgba(255, 215, 120, 0.14));
+  border: 1px solid rgba(200, 255, 220, 0.35);
+  text-align: center;
+}
+.practice-recap[hidden] {
+  display: none;
+}
+.recap-head {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+.recap-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.recap-chip {
+  font-size: 0.85rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* J6: title-screen "Continue" button. */
+.title-continue {
+  width: min(92vw, 380px);
+  margin: 0 auto var(--sp-4, 8px);
+}
+.title-continue[hidden] {
+  display: none;
+}
+.title-continue-btn {
+  width: 100%;
+  background: linear-gradient(135deg, rgba(255, 215, 120, 0.22), rgba(255, 160, 200, 0.22));
+  border-color: rgba(255, 220, 150, 0.5);
+}
+.title-continue-song {
+  opacity: 0.85;
+  font-weight: 600;
+}
 .first-run-title {
   font-size: 1.15rem;
   font-weight: 700;
@@ -3348,6 +3401,14 @@ body:has(#practiceHud.visible) #encouragement {
   margin-bottom: 6px;
 }
 
+/* J2+J3: per-song self-best line (best accuracy % + best combo). */
+.jr-book-best {
+  font-size: 0.78rem;
+  color: rgba(255, 220, 150, 0.85);
+  letter-spacing: 0.02em;
+  margin-bottom: 6px;
+}
+
 .jr-section-dots {
   display: flex;
   flex-wrap: wrap;
@@ -3528,6 +3589,33 @@ body:has(#practiceHud.visible) #encouragement {
   background: rgba(255, 215, 0, 0.18);
   color: var(--c-accent-gold-bright);
   box-shadow: 0 0 6px rgba(255, 215, 0, 0.2);
+}
+
+/* J5: tappable practiced days + the per-day detail panel. */
+.jr-cal-cell-clickable {
+  cursor: pointer;
+}
+.jr-cal-cell-sel {
+  outline: 2px solid var(--c-accent-gold-bright);
+  outline-offset: -1px;
+}
+.jr-cal-detail {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--r-md);
+}
+.jr-cal-detail-head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--c-accent-gold-bright);
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.jr-cal-detail-item {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+  padding: 2px 0;
 }
 
 .jr-cal-summary {

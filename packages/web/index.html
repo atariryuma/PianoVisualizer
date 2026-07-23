@@ -34,6 +34,13 @@
            shown only when there's no progress yet (dismissible, kid-safe: no
            blocking gate). Hidden by default. -->
       <div id="firstRunWelcome" class="first-run-welcome" hidden></div>
+      <!-- J4: practice-session recap — a gentle "here's what you did" card shown
+           on return-to-title after a scored session. Built in JS, hidden by
+           default. No goals / no shortfall (banned-list). -->
+      <div id="practiceRecap" class="practice-recap" hidden></div>
+      <!-- J6: "▶ Continue" back into the last practiced song. Built in JS from
+           progress.lastSongId; hidden until there's a last song. -->
+      <div id="titleContinue" class="title-continue" hidden></div>
       <div id="modeButtons">
         <button id="startBtn" class="mode-btn">
           <span class="mode-btn-label">🎨 <span data-i18n="freePlay">Free Play</span></span>

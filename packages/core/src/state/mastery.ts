@@ -12,6 +12,8 @@ export interface MasterySectionView {
   stars: number;
   /** Best accuracy percentage (0–100). */
   bestPct: number;
+  /** Best combo run on this section (0 = none recorded). */
+  bestCombo: number;
   /** True if this section has been unlocked by the player. */
   unlocked: boolean;
 }
@@ -43,6 +45,12 @@ export interface SongMastery {
   starsPossible: number;
   /** 0–100 completion percent, with endowed-progress floor applied. */
   percent: number;
+  /** Best accuracy % across every section + the full-song run (the song's
+   *  self-best headline number). 0 when untouched. */
+  bestPct: number;
+  /** Best combo across every section + the full-song run (the song's
+   *  lifetime best combo). 0 when none recorded. */
+  bestCombo: number;
   /** Seal tier — drives the visual seal on the book cover. */
   seal: SongSeal;
   /** Number of tempo tiers unlocked (60/75/90/100 → up to 4). */
@@ -135,17 +143,25 @@ export function computeSongMastery(
   const sectionIds = song.sectionIds;
   const sections: MasterySectionView[] = [];
   let starsEarned = 0;
+  let bestPct = 0;
+  let bestCombo = 0;
   for (const id of sectionIds) {
     const sec: SectionProgress = progress?.sections?.[id] ?? { stars: 0, bestPct: 0 };
+    const secCombo = sec.bestCombo ?? 0;
     const unlocked = progress?.unlockedSections?.[id] === true || id === sectionIds[0];
-    sections.push({ id, stars: sec.stars, bestPct: sec.bestPct, unlocked });
+    sections.push({ id, stars: sec.stars, bestPct: sec.bestPct, bestCombo: secCombo, unlocked });
     starsEarned += sec.stars;
+    if (sec.bestPct > bestPct) bestPct = sec.bestPct;
+    if (secCombo > bestCombo) bestCombo = secCombo;
   }
   // The full-song challenge run counts toward the song's star totals (it is
   // shown as a starred row in the song panel). Seals stay section-only —
   // `sections` deliberately excludes it.
-  const fullSongStars = progress?.sections?.[FULL_SONG_SECTION_ID]?.stars ?? 0;
+  const fullSongSec = progress?.sections?.[FULL_SONG_SECTION_ID];
+  const fullSongStars = fullSongSec?.stars ?? 0;
   starsEarned += fullSongStars;
+  if ((fullSongSec?.bestPct ?? 0) > bestPct) bestPct = fullSongSec?.bestPct ?? 0;
+  if ((fullSongSec?.bestCombo ?? 0) > bestCombo) bestCombo = fullSongSec?.bestCombo ?? 0;
   const starsPossible = sectionIds.length > 0 ? (sectionIds.length + 1) * 3 : 0;
   const highestTempo = progress ? highestUnlockedTempo(progress.unlockedTempos) : 60;
   const tempoTiersUnlocked = progress ? countUnlockedTempos(progress.unlockedTempos) : 1;
@@ -167,6 +183,8 @@ export function computeSongMastery(
     starsEarned,
     starsPossible,
     percent,
+    bestPct,
+    bestCombo,
     seal,
     tempoTiersUnlocked,
     highestTempoUnlocked: highestTempo,
@@ -212,13 +230,20 @@ export function computeLibraryMastery(
 
 /** The highest library-wide capstone milestone reached. Ordered by prestige;
  *  `null` when nothing library-wide is complete yet. Positive-only — there is
- *  no "you're behind" tier (banned-list: no shame, no false-progress). */
+ *  no "you're behind" tier (banned-list: no shame, no false-progress).
+ *
+ *  `libraryMastered` is the TRUE 100% — every song platinum-sealed AND every
+ *  full-song challenge three-starred, i.e. the library-wide mastery ring hits
+ *  100%. Without it, `allPlatinum` (section-only) could read as "the top" while
+ *  the ring still showed <100% because full-song ★3 wasn't required — the
+ *  final goal had no name. */
 export type LibraryMilestone =
   | 'allTouched'
   | 'allFullCleared'
   | 'allSilver'
   | 'allGold'
-  | 'allPlatinum';
+  | 'allPlatinum'
+  | 'libraryMastered';
 
 export interface LibraryCompletion {
   /** Registered songs considered. */
@@ -233,6 +258,8 @@ export interface LibraryCompletion {
   platinum: number;
   /** Songs whose full-song challenge has been cleared (≥1★ on '__full'). */
   fullCleared: number;
+  /** Songs whose full-song challenge is three-starred (the 100% requirement). */
+  fullMastered: number;
   /** Highest capstone milestone reached, or null. Drives the celebratory row. */
   milestone: LibraryMilestone | null;
 }
@@ -262,6 +289,7 @@ export function computeLibraryCompletion(
   let gold = 0;
   let platinum = 0;
   let fullCleared = 0;
+  let fullMastered = 0;
 
   for (const song of songs) {
     const sp = progress.songs?.[song.id];
@@ -271,21 +299,26 @@ export function computeLibraryCompletion(
     if (rank >= SEAL_RANK.silver) silver++;
     if (rank >= SEAL_RANK.gold) gold++;
     if (rank >= SEAL_RANK.platinum) platinum++;
-    if (computeFullSongChallenge(song.sectionIds, sp?.sections).cleared) fullCleared++;
+    const fsc = computeFullSongChallenge(song.sectionIds, sp?.sections);
+    if (fsc.cleared) fullCleared++;
+    if (fsc.stars >= 3) fullMastered++;
   }
 
   const total = songs.length;
   let milestone: LibraryMilestone | null = null;
   if (total > 0) {
     // Highest prestige first — the first "every song qualifies" wins.
-    if (platinum === total) milestone = 'allPlatinum';
+    // libraryMastered = the true 100% (every song platinum AND its full-song
+    // challenge three-starred → the mastery ring reads exactly 100%).
+    if (platinum === total && fullMastered === total) milestone = 'libraryMastered';
+    else if (platinum === total) milestone = 'allPlatinum';
     else if (gold === total) milestone = 'allGold';
     else if (silver === total) milestone = 'allSilver';
     else if (fullCleared === total) milestone = 'allFullCleared';
     else if (touched === total) milestone = 'allTouched';
   }
 
-  return { total, touched, silver, gold, platinum, fullCleared, milestone };
+  return { total, touched, silver, gold, platinum, fullCleared, fullMastered, milestone };
 }
 
 /** Songs ranked by how few stars remain to reach the next seal. */

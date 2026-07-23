@@ -422,6 +422,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
           ghostOn: practice.ghostOn,
           metronomeOn: practice.metronomeOn,
         };
+        // J6: 「▶ 続きから」用に最後に練習した曲を覚える（listen は除外 —
+        // 「ちょっと聴いただけ」は続きの対象ではない）。
+        const prog = practice.progress as { lastSongId?: string } | null;
+        if (prog) prog.lastSongId = song.id;
         _practiceProgress.save();
       }
     } catch {
