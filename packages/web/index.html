@@ -24,6 +24,11 @@
   </head>
 
   <body>
+    <!-- C1: storage-failure banner. Shown when localStorage is unavailable
+         (private mode / blocked cookies) or a save throws (quota), so a kid
+         isn't silently losing stars/streaks. Built + toggled in JS; hidden
+         by default. Gentle, no-shame copy. -->
+    <div id="saveWarning" class="save-warning" hidden role="status" aria-live="polite"></div>
     <div id="startScreen">
       <h1>Piano Visualizer</h1>
       <!-- Personalized identity badge — McPherson 2015 long-term self-concept.

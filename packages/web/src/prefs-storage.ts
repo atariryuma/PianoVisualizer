@@ -79,17 +79,44 @@ export function safeLocalStorage(): JSONStorage | null {
   }
 }
 
+/** The {load, save} pair + storage-health signals the shell needs to warn
+ *  the user when progress isn't persisting (C1). Every persisted write —
+ *  prefs AND practice progress — funnels through this one `saveJSON`, so a
+ *  single `onSaveError` fans a "your records aren't being saved" banner out
+ *  to both. */
+export interface JSONStore {
+  loadJSON<T>(key: string, fallback: T): T;
+  /** Persist `val`. Returns true on success, false when storage is absent
+   *  (private mode / blocked cookies) or the write threw (quota). */
+  saveJSON(key: string, val: unknown): boolean;
+  /** True when a backing storage exists at all (false ≈ private mode where
+   *  even reading localStorage throws). The shell shows a persistent
+   *  "records won't be saved" banner when this is false. */
+  isPersistent(): boolean;
+  /** Register a callback fired the FIRST time a write fails (storage absent
+   *  or quota). Lets the shell surface the loss instead of swallowing it. */
+  onSaveError(cb: (reason: 'unavailable' | 'quota') => void): void;
+}
+
 /** Build a {load, save} pair against a given storage. The factory
  *  closes over the one-shot quota warning so the same storage can be
  *  silently re-tried throughout the session without console spam. */
 export function createJSONStore(
   storage: JSONStorage = safeLocalStorage() ?? (null as unknown as JSONStorage),
   warn: (msg: string) => void = (m) => console.warn(m)
-): {
-  loadJSON<T>(key: string, fallback: T): T;
-  saveJSON(key: string, val: unknown): void;
-} {
+): JSONStore {
   let quotaWarned = false;
+  let errorFired = false;
+  let errorCb: ((reason: 'unavailable' | 'quota') => void) | null = null;
+  const fireError = (reason: 'unavailable' | 'quota'): void => {
+    if (errorFired) return;
+    errorFired = true;
+    try {
+      errorCb?.(reason);
+    } catch {
+      /* the banner render must never break a save path */
+    }
+  };
 
   function loadJSON<T>(key: string, fallback: T): T {
     if (!storage) return fallback;
@@ -101,10 +128,14 @@ export function createJSONStore(
     }
   }
 
-  function saveJSON(key: string, val: unknown): void {
-    if (!storage) return;
+  function saveJSON(key: string, val: unknown): boolean {
+    if (!storage) {
+      fireError('unavailable');
+      return false;
+    }
     try {
       storage.setItem(key, JSON.stringify(val));
+      return true;
     } catch (e) {
       // Safari Private Mode + storage-full both throw
       // QuotaExceededError. Without this, settings appear to apply
@@ -115,10 +146,19 @@ export function createJSONStore(
         const name = (e as Error)?.name || 'Err';
         warn('[PREFS] localStorage write failed (' + name + '). Settings will not persist.');
       }
+      fireError('quota');
+      return false;
     }
   }
 
-  return { loadJSON, saveJSON };
+  return {
+    loadJSON,
+    saveJSON,
+    isPersistent: () => !!storage,
+    onSaveError: (cb) => {
+      errorCb = cb;
+    },
+  };
 }
 
 /** Validation pass — strip unknown keys, clamp known ones. An out-of-

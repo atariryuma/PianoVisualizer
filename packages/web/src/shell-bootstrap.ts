@@ -96,7 +96,21 @@ export function boot(): void {
   const _prefsStore = PrefsStorage.createJSONStore();
   const { loadJSON, saveJSON } = _prefsStore;
   Object.assign(prefs, PrefsStorage.sanitizePrefs(loadJSON('pianoViz_prefs', {})));
-  const savePrefs = (): void => saveJSON('pianoViz_prefs', prefs);
+  const savePrefs = (): void => {
+    saveJSON('pianoViz_prefs', prefs);
+  };
+
+  // C1: surface "your records aren't being saved" instead of silently losing
+  // stars/streaks. Fires once, from the first failed write (prefs OR practice
+  // progress — both funnel through this store), or immediately at boot when
+  // there's no backing storage at all (private mode). Gentle, no-shame copy.
+  function showSaveWarning(): void {
+    const el = DOM.saveWarning as HTMLElement | undefined;
+    if (!el || !el.hidden) return; // missing, or already shown
+    el.textContent = t('storageWarning');
+    el.hidden = false;
+  }
+  _prefsStore.onSaveError(() => showSaveWarning());
 
   const modalFocus = ModalFocus.createModalFocus({
     document,
@@ -177,6 +191,9 @@ export function boot(): void {
     refreshTitleStrip: () => _ui.refreshJournal(),
   });
   const { t, stageLabel, applyTheme, setLang } = _i18n;
+  // C1: if there's no backing storage at all (private mode), warn now that
+  // records won't persist (t is defined here, after the i18n shell).
+  if (!_prefsStore.isPersistent()) showSaveWarning();
 
   // ── Effects + bg-draw — moved to packages/web/src/shell-effects.ts (batch 110).
   const _fx = ShellEffects.createShellEffects({
@@ -580,10 +597,15 @@ export function boot(): void {
     importProgressBackup: async (file: Blob): Promise<void> => {
       // Throws on a bad/foreign file — settings-panel surfaces the message.
       const { progress, prefs: prefsBlob } = ProgressBackup.parseBackup(await file.text());
-      // Write straight to disk, then reload so every in-memory cache
-      // (prefs object, practice.progress, journal) re-seeds from disk.
-      if (progress != null) saveJSON('pianoViz_practice_v1', progress);
-      if (prefsBlob != null) saveJSON('pianoViz_prefs', prefsBlob);
+      // C2: write, then VERIFY the write actually persisted before reloading.
+      // Previously a quota-full disk swallowed the failure and reloaded anyway
+      // → "restore succeeded" but nothing restored. Now a failed write throws
+      // (surfaced in the settings-panel status) instead of a false success.
+      const okA = progress == null || saveJSON('pianoViz_practice_v1', progress);
+      const okB = prefsBlob == null || saveJSON('pianoViz_prefs', prefsBlob);
+      if (!okA || !okB) {
+        throw new Error(t('restoreFailedStorage'));
+      }
       location.reload();
     },
   });

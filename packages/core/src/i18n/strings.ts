@@ -520,6 +520,24 @@ export const T_STRINGS: TranslationTable = {
     jp: 'オーディオ初期化に失敗しました: {v}\n\nブラウザを更新してリトライしてみてください。',
     de: 'Audio-Start fehlgeschlagen: {v}\n\nLade den Browser neu und versuch es nochmal.',
   },
+  // C3: gentle chip when audio couldn't start (session stays playable, silent).
+  audioStartWarn: {
+    en: '🔇 Sound couldn’t start — you can still play',
+    jp: '🔇 音が出せなかったけど、そのまま弾けるよ',
+    de: '🔇 Ton ging nicht — du kannst trotzdem spielen',
+  },
+  // C1: persistent banner when records can't be saved (private mode / quota).
+  storageWarning: {
+    en: '⚠️ Records can’t be saved right now (private mode?). Progress will only last this session.',
+    jp: '⚠️ いま記録がほぞんできません（プライベートモード？）。がんばりは今回だけになるよ。',
+    de: '⚠️ Fortschritt kann gerade nicht gespeichert werden (Privatmodus?). Nur diese Sitzung bleibt erhalten.',
+  },
+  // C2: restore aborted because the write didn't persist (quota/blocked).
+  restoreFailedStorage: {
+    en: 'Restore failed — storage is full or blocked, nothing was changed.',
+    jp: 'もどせませんでした — ほぞん先がいっぱい/ブロックされています。変更はありません。',
+    de: 'Wiederherstellen fehlgeschlagen — Speicher voll oder blockiert, nichts geändert.',
+  },
   // Composers — last-name katakana for JP (common in JP music ed)
   composerBeethoven: { en: 'L. v. Beethoven', jp: 'ベートーヴェン', de: 'L. v. Beethoven' },
   composerMozart: { en: 'W. A. Mozart', jp: 'モーツァルト', de: 'W. A. Mozart' },

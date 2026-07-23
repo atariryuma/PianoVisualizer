@@ -274,6 +274,10 @@ export interface StartPracticeSectionDeps {
    *  ポーズ解除が stale な凍結時刻で startAudioTime を破壊するため、
    *  セクション開始で必ず解除する（唯一の強制ポイント）。 */
   clearPracticePause?: () => void;
+  /** C3: Tone/Transport がセッション開始で失敗したときに呼ばれる（無音の
+   *  degraded 継続。中断はしない）。シェルは控えめなチップで「音が出せ
+   *  なかった」と知らせる。省略可。 */
+  onAudioStartFailed?: () => void;
 }
 
 const AUDIO_START_LEAD_SEC = 0.05;
@@ -614,6 +618,12 @@ export function createStartPracticeSection(
       }
     } catch (e) {
       console.error('Tone start failed', e);
+      // C3: the session stays playable on a best-effort clock (guided works
+      // fully without a transport; rhythm/listen still drop notes, just
+      // without ghost/metronome/backing audio) — but it must NOT fail
+      // silently. Surface a gentle "audio couldn't start" notice so the kid
+      // isn't running a mute scored session with no idea why.
+      deps.onAudioStartFailed?.();
       // Pin startAudioTime in whichever clock practiceRealElapsedMs is
       // about to read. The formula uses `tone?.context` to pick:
       //   - Tone-clock seconds when tone.context exists

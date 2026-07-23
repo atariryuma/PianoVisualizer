@@ -400,6 +400,9 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     practiceBeatMs: () => _practiceTimings.practiceBeatMs(),
     clearPracticePause: deps.clearPracticePause,
     pickAudioOffsetMs: PianoCore.pickAudioOffsetMs,
+    // C3: audio couldn't start — degraded (silent) but still playable. Tell
+    // the kid with a gentle chip instead of failing silently.
+    onAudioStartFailed: () => deps.showHitChip('miss', t('audioStartWarn')),
   } as any);
 
   const startPracticeSection = async (sectionIdx: number, opts?: { lapLead?: boolean }) => {

@@ -108,6 +108,46 @@ describe('createJSONStore — quota guard', () => {
     expect(warn1).toHaveBeenCalledOnce();
     expect(warn2).toHaveBeenCalledOnce();
   });
+
+  // ─── C1/C2: save-health signals (return value + onSaveError + isPersistent)
+  it('saveJSON returns true on success, false on quota failure', () => {
+    const ok = createJSONStore();
+    expect(ok.saveJSON('k', 1)).toBe(true);
+    const bad = createJSONStore(makeQuotaExceededStorage().storage, () => {});
+    expect(bad.saveJSON('k', 1)).toBe(false);
+  });
+
+  it('saveJSON returns false + fires onSaveError("unavailable") with no storage', () => {
+    const store = createJSONStore(null as unknown as JSONStorage);
+    const cb = vi.fn();
+    store.onSaveError(cb);
+    expect(store.isPersistent()).toBe(false);
+    expect(store.saveJSON('k', 1)).toBe(false);
+    expect(cb).toHaveBeenCalledWith('unavailable');
+  });
+
+  it('onSaveError fires once, with "quota", on the first failed write only', () => {
+    const store = createJSONStore(makeQuotaExceededStorage().storage, () => {});
+    const cb = vi.fn();
+    store.onSaveError(cb);
+    store.saveJSON('a', 1);
+    store.saveJSON('b', 2);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith('quota');
+  });
+
+  it('isPersistent reflects whether a backing storage exists', () => {
+    expect(createJSONStore().isPersistent()).toBe(true);
+    expect(createJSONStore(null as unknown as JSONStorage).isPersistent()).toBe(false);
+  });
+
+  it('a healthy store never fires onSaveError', () => {
+    const store = createJSONStore();
+    const cb = vi.fn();
+    store.onSaveError(cb);
+    store.saveJSON('k', 1);
+    expect(cb).not.toHaveBeenCalled();
+  });
 });
 
 // ─── sanitizePrefs ──────────────────────────────────────────────────

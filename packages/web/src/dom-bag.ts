@@ -147,6 +147,7 @@ export interface DomBag {
   firstRunWelcome: HTMLElement;
   practiceRecap: HTMLElement;
   titleContinue: HTMLElement;
+  saveWarning: HTMLElement;
   journalLibraryRollup: HTMLElement;
   journalRepertoireList: HTMLElement;
   journalStampsGrid: HTMLElement;
@@ -309,6 +310,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'firstRunWelcome',
   'practiceRecap',
   'titleContinue',
+  'saveWarning',
   'journalLibraryRollup',
   'journalRepertoireList',
   'journalStampsGrid',
