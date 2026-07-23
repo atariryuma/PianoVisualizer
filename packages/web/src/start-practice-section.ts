@@ -278,6 +278,10 @@ export interface StartPracticeSectionDeps {
    *  degraded 継続。中断はしない）。シェルは控えめなチップで「音が出せ
    *  なかった」と知らせる。省略可。 */
   onAudioStartFailed?: () => void;
+  /** H1: 演奏対象の音が 0 でセクションを開始できなかったときに呼ばれる。
+   *  `handFilter` が非 null なら「その手には音が無い」ケース。シェルは
+   *  なぜ始まらないかを alert で伝える（無反応で放置しない）。省略可。 */
+  onNoPlayableNotes?: (handFilter: 'L' | 'R' | null) => void;
 }
 
 const AUDIO_START_LEAD_SEC = 0.05;
@@ -395,6 +399,11 @@ export function createStartPracticeSection(
             })
         );
       }
+      // H1: don't strand the kid on a dead Start tap. Tell them WHY nothing
+      // happened — usually a one-hand filter over a passage that hand doesn't
+      // play — so they can switch hands / section instead of tapping into
+      // silence. `onNoPlayableNotes` distinguishes the hand-filter case.
+      deps.onNoPlayableNotes?.(deps.practice.handFilter ?? null);
       return;
     }
 

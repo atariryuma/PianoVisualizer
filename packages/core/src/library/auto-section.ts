@@ -1,8 +1,12 @@
 // Auto-section detection for user-added MusicXML scores.
 //
-// Always emits exactly 3 sections (A1 / B / A2) so the unlock plumbing
-// (SECTION_IDS, songProg().unlockedSections) doesn't need a per-song schema
-// migration. Boundary candidates are scored by musical priority:
+// Emits 3 sections (A1 / B / A2) for any score with ≥3 measures; a very
+// short score (`total < 3`, where a length-thirds split would overlap) gets a
+// SINGLE A1 spanning the whole piece. Consumers must therefore handle a
+// variable section count (1 or 3) — the section editor renders one row per
+// actual section, and the progression reads a song's real `sectionIds` (not
+// the hardcoded A1/B/A2 fallback). Boundary candidates are scored by musical
+// priority:
 //
 //   1. <rehearsal> marks      — composer/editor's explicit roadmap
 //   2. Double bar lines       — strongest structural hint after rehearsal marks

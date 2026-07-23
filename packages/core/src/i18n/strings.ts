@@ -115,6 +115,23 @@ export const T_STRINGS: TranslationTable = {
     jp: '楽譜の読み込みに失敗しました\n{v}',
     de: 'Noten konnten nicht geladen werden\n{v}',
   },
+  // H2: song loaded but the extractor found no sections to play.
+  songNoSections: {
+    en: 'No parts to play in this score yet.',
+    jp: 'この楽譜には弾けるパートがまだありません。',
+    de: 'In diesen Noten gibt es noch keine spielbaren Teile.',
+  },
+  // H1: Start tapped but the section has no playable notes.
+  noPlayableNotes: {
+    en: 'This part has no notes to play. Try another part or “Listen” first.',
+    jp: 'このパートには弾く音がありません。ほかのパートか「きく」を試してね。',
+    de: 'Dieser Teil hat keine spielbaren Noten. Versuch einen anderen Teil oder „Hören“.',
+  },
+  noPlayableNotesHand: {
+    en: 'That hand doesn’t play here. Switch hands (or pick “Both”) and try again.',
+    jp: 'この手はここでは弾かないよ。手をかえる（か「りょうて」）ともう一度。',
+    de: 'Diese Hand spielt hier nicht. Wechsel die Hand (oder „Beide“) und versuch es nochmal.',
+  },
   // Session summary
   sumBestFmt: {
     en: '✨ All-time best: {combo} combo / Flow {flow}% (session #{n})',

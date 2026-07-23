@@ -403,6 +403,11 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     // C3: audio couldn't start — degraded (silent) but still playable. Tell
     // the kid with a gentle chip instead of failing silently.
     onAudioStartFailed: () => deps.showHitChip('miss', t('audioStartWarn')),
+    // H1: no playable notes (usually a one-hand filter over a passage that
+    // hand doesn't play). Explain why Start did nothing instead of stranding
+    // them on the song panel with a dead button.
+    onNoPlayableNotes: (handFilter: 'L' | 'R' | null) =>
+      alert(t(handFilter ? 'noPlayableNotesHand' : 'noPlayableNotes')),
   } as any);
 
   const startPracticeSection = async (sectionIdx: number, opts?: { lapLead?: boolean }) => {

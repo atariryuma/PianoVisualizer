@@ -16,6 +16,7 @@ vi.mock('@piano/core', () => ({
   parseMusicXmlMetadata: vi.fn(() => ({ measureCount: 100 })),
 }));
 
+import { parseMusicXmlMetadata } from '@piano/core';
 import { createSectionEditor, type SectionEditorDeps } from '../src/section-editor';
 
 /** Build a minimal section-editor modal in the live happy-dom document
@@ -150,6 +151,40 @@ describe('createSectionEditor — open()', () => {
     expect(inputs[0]?.value).toBe('1');
     expect(inputs[1]?.value).toBe('31');
     expect(inputs[2]?.value).toBe('71');
+  });
+
+  it('C4: renders a SINGLE row for a < 3-measure score (was unsavable with 3)', async () => {
+    vi.mocked(parseMusicXmlMetadata).mockReturnValueOnce({ measureCount: 2 } as never);
+    const deps = makeDeps({
+      id: 'u1',
+      mimeType: 'application/vnd.recordare.musicxml+xml',
+      mxlBlob: { text: () => Promise.resolve('<x/>') } as unknown as Blob,
+      sectionDefs: [{ id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: 0 }],
+    });
+    const editor = createSectionEditor(deps);
+    await editor.open('u1');
+    const inputs = deps.dom.rows.querySelectorAll<HTMLInputElement>('input[type=number]');
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.value).toBe('1');
+  });
+
+  it('C4: a 1-row short song SAVES (single A1 def, no unsatisfiable B/A2 check)', async () => {
+    vi.mocked(parseMusicXmlMetadata).mockReturnValueOnce({ measureCount: 2 } as never);
+    const rec = {
+      id: 'u1',
+      mimeType: 'application/vnd.recordare.musicxml+xml',
+      mxlBlob: { text: () => Promise.resolve('<x/>') } as unknown as Blob,
+      sectionDefs: [{ id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', startMeasure: 0 }],
+    };
+    const deps = makeDeps(rec);
+    const editor = createSectionEditor(deps);
+    await editor.open('u1');
+    (deps.dom.saveBtn as HTMLElement).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(deps.dom.error.textContent).toBe(''); // no validation error
+    expect(deps.userDbPut).toHaveBeenCalledOnce();
+    expect(deps.onSaved).toHaveBeenCalledOnce();
   });
 
   it('disables the first input (A1 always starts at measure 1)', async () => {

@@ -103,6 +103,15 @@ describe('autoSectionDefs', () => {
     expect(defs[1].startMeasure).toBeLessThan(defs[2].startMeasure);
     expect(defs[2].startMeasure).toBeLessThan(8);
   });
+
+  it('C4: a < 3-measure score collapses to a SINGLE A1 (documented contract)', () => {
+    // 2 measures can't hold 3 distinct sections; the length-thirds split would
+    // overlap. The editor + progression handle the 1-section result.
+    const defs = autoSectionDefs(PLAIN_8, 2, { parser });
+    expect(defs).toHaveLength(1);
+    expect(defs[0].id).toBe('A1');
+    expect(defs[0].startMeasure).toBe(0);
+  });
 });
 
 // ─── partIndex（多パート譜、P2-21） ───────────────────────────────

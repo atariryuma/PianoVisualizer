@@ -212,6 +212,17 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
           safe +
           '</div>' +
           '<div></div>';
+      } else if (currentSong?._loaded) {
+        // H2: genuinely LOADED but 0 sections (empty score / extraction found
+        // nothing). Previously this shared the ⏳ "loading" row → the panel
+        // read as "still loading" forever. Show a distinct, kid-friendly
+        // "no parts to play" message instead.
+        row.style.opacity = '0.85';
+        row.innerHTML =
+          '<div class="section-icon">🎼</div>' +
+          '<div style="font-size:.78rem;color:rgba(255,220,180,.95);line-height:1.35;">' +
+          deps.t('songNoSections') +
+          '</div><div></div>';
       } else {
         row.style.opacity = '0.6';
         row.innerHTML =

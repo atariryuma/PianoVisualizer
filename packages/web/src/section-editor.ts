@@ -69,6 +69,9 @@ export function createSectionEditor(deps: SectionEditorDeps): SectionEditor {
    *  after the open() XML parse so saveSectionEditor can validate
    *  bounds without re-parsing. */
   let totalMeasures = 0;
+  /** C4: how many section rows are rendered (1 for a < 3-measure score, else
+   *  3). save() validates exactly this many. */
+  let numRows = 3;
   /** The record being edited. Captured at open() so save() writes back
    *  to the same object the user picked. */
   let editing: UserSongRecord | null = null;
@@ -108,7 +111,12 @@ export function createSectionEditor(deps: SectionEditorDeps): SectionEditor {
     deps.dom.help.textContent = deps.t('sectionEditHelp', { v: totalMeasures });
     deps.dom.rows.innerHTML = '';
     const labels = ['userSecA1', 'userSecB', 'userSecA2'] as const;
-    for (let i = 0; i < 3; i++) {
+    // C4: a very short score (< 3 measures) can't hold 3 distinct sections —
+    // auto-section emits a single A1 for it, so the editor must render 1 row,
+    // not 3 (previously it always showed 3 and its "B > A1, A2 > B" validation
+    // was unsatisfiable → the song could never be saved).
+    numRows = totalMeasures >= 3 ? 3 : 1;
+    for (let i = 0; i < numRows; i++) {
       const def = rec.sectionDefs[i] ?? { startMeasure: Math.floor((i * totalMeasures) / 3) };
       const row = document.createElement('div');
       row.className = 'sec-edit-row';
@@ -140,39 +148,21 @@ export function createSectionEditor(deps: SectionEditorDeps): SectionEditor {
   async function save(): Promise<void> {
     const inputs = deps.dom.rows.querySelectorAll<HTMLInputElement>('input[type=number]');
     const vals = Array.from(inputs).map((i) => parseInt(i.value, 10) - 1); // 0-based
-    if (
-      vals.some((v) => Number.isNaN(v) || v < 0 || v >= totalMeasures) ||
-      vals[0] !== 0 ||
-      (vals[1] ?? 0) <= (vals[0] ?? 0) ||
-      (vals[2] ?? 0) <= (vals[1] ?? 0)
-    ) {
+    // C4: validate only the rows actually rendered. Bounds + A1@1 always; the
+    // strictly-increasing B/A2 checks apply only when those rows exist.
+    const inRange = vals.every((v) => !Number.isNaN(v) && v >= 0 && v < totalMeasures);
+    const monotonic = vals.every((v, i) => i === 0 || v > vals[i - 1]!);
+    if (!inRange || vals[0] !== 0 || !monotonic) {
       deps.dom.error.textContent = deps.t('sectionEditError');
       return;
     }
     if (!editing) return;
-    editing.sectionDefs = [
-      {
-        id: 'A1',
-        nameKey: 'userSecA1',
-        descKey: 'userSecA1desc',
-        startMeasure: vals[0]!,
-        isBoss: false,
-      },
-      {
-        id: 'B',
-        nameKey: 'userSecB',
-        descKey: 'userSecBdesc',
-        startMeasure: vals[1]!,
-        isBoss: false,
-      },
-      {
-        id: 'A2',
-        nameKey: 'userSecA2',
-        descKey: 'userSecA2desc',
-        startMeasure: vals[2]!,
-        isBoss: true,
-      },
-    ];
+    const defs = [
+      { id: 'A1', nameKey: 'userSecA1', descKey: 'userSecA1desc', isBoss: false },
+      { id: 'B', nameKey: 'userSecB', descKey: 'userSecBdesc', isBoss: false },
+      { id: 'A2', nameKey: 'userSecA2', descKey: 'userSecA2desc', isBoss: true },
+    ] as const;
+    editing.sectionDefs = vals.map((startMeasure, i) => ({ ...defs[i]!, startMeasure }));
     await deps.userDbPut(editing);
     deps.onSaved(editing);
     close();
