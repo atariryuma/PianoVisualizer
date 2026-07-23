@@ -180,14 +180,16 @@ describe('attach', () => {
     expect(midiInput.port).toBeNull();
   });
 
-  it('returns true + no-op when port is already bound', () => {
+  it('returns true + light re-bind when port is already bound (M2 dedupe)', () => {
     const port: MidiPortRef = { name: 'r', state: 'connected' };
-    const { ports, midiInput, mocks } = makePorts();
-    midiInput.port = port;
-    midiInput.enabled = true;
-    expect(ports.attach(port)).toBe(true);
-    // Should NOT call any setters again.
+    const { ports, mocks } = makePorts();
+    expect(ports.attach(port)).toBe(true); // first bind — full attach
+    mocks.setInputIndicator.mockClear();
+    mocks.showHitChip.mockClear();
+    expect(ports.attach(port)).toBe(true); // dedupe — handler re-bind only
     expect(mocks.setInputIndicator).not.toHaveBeenCalled();
+    expect(mocks.showHitChip).not.toHaveBeenCalled();
+    expect(port.onmidimessage).toBeTypeOf('function');
   });
 
   it('returns false on a virtual port (delegated to isVirtualMidiPort)', () => {
@@ -228,14 +230,52 @@ describe('attach', () => {
     expect(port.onmidimessage).toBe(deps.onMidiMessageHandler);
   });
 
-  it('clears the previous port onmidimessage before binding the new one', () => {
-    const oldPort: MidiPortRef = { name: 'Old', onmidimessage: () => {} };
-    const newPort: MidiPortRef = { name: 'New', state: 'connected' };
+  it('KEEPS the previous port bound when a second port attaches (M2 multi-port)', () => {
+    // 旧仕様は新ポートが旧ポートの handler を外していた（単一ポート）。
+    // 業界標準は全入力購読 — 両方生きたまま、primary は先着。
+    const first: MidiPortRef = { name: 'First', state: 'connected' };
+    const second: MidiPortRef = { name: 'Second', state: 'connected' };
     const { ports, midiInput } = makePorts();
-    midiInput.port = oldPort;
-    midiInput.enabled = true;
-    ports.attach(newPort);
-    expect(oldPort.onmidimessage).toBeNull();
+    ports.attach(first);
+    ports.attach(second);
+    expect(first.onmidimessage).toBeTypeOf('function');
+    expect(second.onmidimessage).toBeTypeOf('function');
+    expect(midiInput.port).toBe(first); // primary = 先着（表示名アンカー）
+    expect(midiInput.enabled).toBe(true);
+  });
+
+  it('detach of one port keeps MIDI mode alive through the other (M2)', () => {
+    const first: MidiPortRef = { name: 'First', state: 'connected' };
+    const second: MidiPortRef = { name: 'Second', state: 'connected' };
+    const { ports, midiInput, mocks } = makePorts();
+    ports.attach(first);
+    ports.attach(second);
+    ports.detach(first);
+    // primary が抜けたら残りへ昇格 — mode は落ちない、mic も戻らない。
+    expect(midiInput.enabled).toBe(true);
+    expect(midiInput.port).toBe(second);
+    expect(mocks.resumeMic).not.toHaveBeenCalled();
+    expect(mocks.startMidiAutoRescan).not.toHaveBeenCalled();
+    // 最後の1本が抜けたら通常のフル teardown。
+    ports.detach(second);
+    expect(midiInput.enabled).toBe(false);
+    expect(midiInput.port).toBeNull();
+    expect(mocks.startMidiAutoRescan).toHaveBeenCalled();
+  });
+
+  it('unbindAll clears every bound handler without mic/poller side-effects (BLE takeover)', () => {
+    const first: MidiPortRef = { name: 'First', state: 'connected' };
+    const second: MidiPortRef = { name: 'Second', state: 'connected' };
+    const { ports, mocks } = makePorts();
+    ports.attach(first);
+    ports.attach(second);
+    mocks.resumeMic.mockClear();
+    mocks.startMidiAutoRescan.mockClear();
+    ports.unbindAll();
+    expect(first.onmidimessage).toBeNull();
+    expect(second.onmidimessage).toBeNull();
+    expect(mocks.resumeMic).not.toHaveBeenCalled();
+    expect(mocks.startMidiAutoRescan).not.toHaveBeenCalled();
   });
 
   it('suspends mic on first attach (audio context + mic running)', () => {

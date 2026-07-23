@@ -123,15 +123,18 @@ describe('initWebMIDI — Web MIDI not available', () => {
 });
 
 describe('initWebMIDI — strict-pass attach', () => {
-  it('first connected port wins', async () => {
+  it('binds EVERY connected port (M2 — industry-standard listen-on-all)', async () => {
+    // 旧仕様は先勝ち1ポートのみ → DAW/MIDI 2ポート機種や複数デバイスで
+    // 実鍵盤が列挙順に負けて無反応だった。全 connected ポートをバインドする。
     const ports: MidiPortRef[] = [
       { name: 'A', state: 'connected' },
       { name: 'B', state: 'connected' },
     ];
     const fx = makeFixture({ gatherMidiInputs: vi.fn(() => ports) });
     await fx.init.initWebMIDI();
-    expect(fx.mocks.attachMidiPort).toHaveBeenCalledTimes(1);
-    expect(fx.mocks.attachMidiPort).toHaveBeenCalledWith(ports[0]);
+    expect(fx.mocks.attachMidiPort).toHaveBeenCalledTimes(2);
+    expect(fx.mocks.attachMidiPort).toHaveBeenNthCalledWith(1, ports[0]);
+    expect(fx.mocks.attachMidiPort).toHaveBeenNthCalledWith(2, ports[1]);
     // No need for the rescan poller when something attached.
     expect(fx.mocks.startMidiAutoRescan).not.toHaveBeenCalled();
     expect(fx.mocks.showMidiWaitingHint).not.toHaveBeenCalled();

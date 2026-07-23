@@ -425,10 +425,24 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
   // times for one user action (a single AirPods unplug usually emits
   // 2-3 events).
   function onDeviceChange(): void {
-    if (!deps.isRunning() || !deps.getAudioCtx()) return;
     if (deviceTimer !== null) clearT(deviceTimer);
     deviceTimer = setT(async () => {
       deviceTimer = null;
+
+      // ── MIDI freshness (M4) ─────────────────────────────────────
+      // A device-list mutation often accompanies a USB (re)plug. The
+      // deps for this were documented + passed but never wired: drop
+      // the cached MIDIAccess so the next enumeration is fresh, and
+      // nudge one silent rescan when no MIDI is attached. Runs even
+      // pre-session (title screen) — boot-time init means the access
+      // cache exists from t=0.
+      if (deps.navigator.requestMIDIAccess && !deps.midiInput.enabled) {
+        deps.clearMidiAccessCache();
+        deps.rescanMidi(true).catch(() => {});
+      }
+
+      // ── audio recovery (gated — original behavior) ──────────────
+      if (!deps.isRunning()) return;
       const ctx = deps.getAudioCtx();
       if (!ctx) return;
 

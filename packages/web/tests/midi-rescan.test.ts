@@ -283,12 +283,15 @@ describe('ensureAccess', () => {
     expect(fx.mocks.attachMidiPort).not.toHaveBeenCalled();
   });
 
-  it('wires onstatechange: connected but already enabled → no attach', async () => {
+  it('wires onstatechange: connected while already enabled STILL attaches (M2 multi-port)', async () => {
+    // 2台目の鍵盤 / 2ポート機種のもう片方も束に加わる（attach 側が
+    // 重複バインド・BLE 中の奪取を防ぐ）。
     const fx = makeFixture();
     fx.midiInput.enabled = true;
     await fx.rescan.ensureAccess();
-    fx.access.fireStateChange?.({ port: { name: 'r', state: 'connected', type: 'input' } });
-    expect(fx.mocks.attachMidiPort).not.toHaveBeenCalled();
+    const port = { name: 'r', state: 'connected', type: 'input' };
+    fx.access.fireStateChange?.({ port });
+    expect(fx.mocks.attachMidiPort).toHaveBeenCalledWith(port);
   });
 });
 
@@ -346,14 +349,14 @@ describe('rescan', () => {
     expect(fx.mocks.attachMidiPort).toHaveBeenCalledWith(port);
   });
 
-  it('skips already-enabled in strict pass', async () => {
+  it('strict pass binds even when already enabled (M2 — attach dedupes)', async () => {
     const fx = makeFixture();
     fx.midiInput.enabled = true;
     const port: MidiPortRef = { name: 'r', state: 'connected' };
     fx.access.inputs.set('1', port);
     const ok = await fx.rescan.rescan(true);
-    expect(ok).toBe(false);
-    expect(fx.mocks.attachMidiPort).not.toHaveBeenCalled();
+    expect(ok).toBe(true);
+    expect(fx.mocks.attachMidiPort).toHaveBeenCalledWith(port);
   });
 
   it('Apple mobile: only-unknown-state ports → loose pass attaches (WMB workaround)', async () => {

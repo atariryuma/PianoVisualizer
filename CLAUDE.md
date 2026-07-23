@@ -253,11 +253,39 @@ mic detection. Support is **not uniform across platforms**:
   available to Safari. Don't pair via iOS Settings → Bluetooth either; Roland's
   docs say to pair through the music app.
 
-### MIDI pipeline invariants (2026-05-12)
+### MIDI pipeline invariants (2026-05-12, connection pass 2026-07-23)
 
 The MIDI cluster was reshaped on 2026-05-12 to keep the connection + reflection
-flow platform-uniform and predictable. The contracts the cluster now relies on:
+flow platform-uniform and predictable; a 2026-07-23 "connection smoothness" pass
+(M1-M4) brought the entry points up to industry standard. The contracts the
+cluster now relies on:
 
+- **Boot-time init (M1).** `initWebMIDI()` runs at the END of
+  `shell-bootstrap.boot()` — NOT lazily on song select. Repeat visits with a
+  granted permission connect silently on the title screen; the statechange
+  listener + rescan poller exist from t=0, and native-iOS OS-sheet pairing done
+  on the title screen is no longer dropped (`native-midi-polyfill` portChange
+  needs a live access singleton). `reconnectKnownBle()` fires right after it.
+- **Multi-port binding (M2).** `midi-ports.ts` keeps a `boundPorts` Set and
+  binds the dispatcher to EVERY eligible input (the Chrome-sample "listen on all
+  inputs" pattern) — dual-port keyboards (DAW+MIDI) and multi-device setups no
+  longer lose the real keyboard to enumeration order. `midiInput.port` is the
+  FIRST bound port (display anchor); detach of one port promotes the next and
+  only empties → full teardown (mic resume + poller). `onstatechange` attaches
+  even while `enabled` (attach dedupes); the connected chip fires only on the
+  first port. Mirrored-event dupes die in midi-dispatch's 30 ms dedupe. BLE
+  takeover unbinds the whole set via `unbindAll()`.
+- **BLE auto-reconnect (M3).** Every GATT handshake is timeout-wrapped (15 s;
+  `gatt.connect()` on a non-advertising device pends FOREVER by spec).
+  `gattserverdisconnected` → teardown (mic back immediately) + backoff retries
+  (~23 s) against the same device; `reconnectKnown()` uses
+  `navigator.bluetooth.getDevices` (feature-detected) for chooser-less boot
+  re-pairing. The settings 🔵 button keeps the panel OPEN during the attempt
+  ("接続中…" in the input pill), auto-closes only on success.
+- **devicechange touches MIDI too (M4).** The debounced devicechange handler
+  drops the MIDIAccess cache + fires one silent rescan when MIDI is unattached
+  (runs even pre-session); the audio-recovery half stays `isRunning`-gated.
+  Detach/BLE-drop now restore the mic meter when the mic is actually usable.
 - **`sysex:true` only on Apple mobile.** Boot-time `requestMIDIAccess` is
   `{sysex:false}` everywhere except iPad/iPhone Web MIDI Browser, where BLE-MIDI
   requires sysex. This stops Chrome from surfacing a SysEx permission prompt on

@@ -811,4 +811,17 @@ export function boot(): void {
   practice.progress = loadPracticeProgress();
   _ui.refreshJournal();
   _ui.installStartButtons();
+
+  // ── M1: boot-time MIDI init（業界標準）──────────────────────────
+  // requestMIDIAccess はページロードで要求する — 権限済みの再訪では無音で
+  // 即接続し、タイトル画面から鍵盤が生きる（従来は曲選択/▶まで一切呼ばず、
+  // タイトル画面では鍵盤が完全無反応・ネイティブ iOS の OS ペアリング
+  // イベントも捨てられていた）。ゼロポートなら statechange + ポーラーが
+  // 監視を続け、ホットプラグは即アタッチ。iPad Safari（Web MIDI 無し）は
+  // platformBlocked を立てるだけの安全な no-op。
+  void initWebMIDI();
+  // M3: 既知（許可済み）BLE-MIDI デバイスへのサイレント再接続 —
+  // getDevices 対応ブラウザのみ（非対応・未許可は即 false）。鍵盤の電源が
+  // 入っていれば、前回ペアした BLE 鍵盤がチューザー無しで繋がる。
+  void _midi.reconnectKnownBle();
 }

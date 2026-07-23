@@ -261,6 +261,8 @@ export const T_STRINGS: TranslationTable = {
   },
   pausePractice: { en: 'Pause', jp: 'ちょっと休憩', de: 'Pause' },
   resumePractice: { en: 'Resume', jp: 'つづける', de: 'Weiter' },
+  // BLE 接続試行中の進捗（設定パネルの入力ピル）。
+  bleConnecting: { en: 'Connecting…', jp: 'せつぞく中…', de: 'Verbinde…' },
   // ↻ クイックリスタート（練習トップバー）— ワンタップで同セクション再挑戦。
   restartSection: { en: 'Restart', jp: 'さいしょから', de: 'Neu starten' },
   back: { en: 'Back', jp: 'もどる', de: 'Zurück' },

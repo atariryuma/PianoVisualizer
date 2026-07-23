@@ -396,10 +396,15 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
       close();
       return;
     }
+    // M3: パネルは開いたまま接続を待つ（従来はチューザー表示中に閉じて
+    // いた — 成否のフィードバックが届く場所ごと消えていた）。試行中は
+    // 入力ピルに「接続中…」を出し、成功したら自動で閉じる。失敗/
+    // キャンセルはパネルに戻ってくるので、そのままリトライできる。
+    deps.dom.inputStatus.textContent = '🔵 ' + deps.t('bleConnecting');
     void deps.connectBleMidi?.().finally(() => {
       refresh();
+      if (deps.midiInput.enabled) close();
     });
-    close();
   });
 
   deps.dom.resetBtn?.addEventListener('click', () => {

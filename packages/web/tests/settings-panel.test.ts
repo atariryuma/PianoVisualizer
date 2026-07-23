@@ -274,13 +274,17 @@ describe('createSettingsPanel — secondary buttons', () => {
     expect(deps.dom.panel.classList.contains('visible')).toBe(false);
   });
 
-  it('BLE button calls deps.connectBleMidi + closes panel', () => {
+  it('BLE button calls deps.connectBleMidi, shows progress, and KEEPS the panel open (M3)', () => {
+    // 旧仕様はチューザー表示中にパネルを閉じていた — 失敗/キャンセルの
+    // フィードバックが届く場所ごと消えていた。試行中は入力ピルに
+    // 「接続中…」を出し、成功（midiInput.enabled）時だけ自動で閉じる。
     const deps = makeDeps();
     const panel = createSettingsPanel(deps);
     panel.open();
     (deps.dom.bleBtn as HTMLElement).click();
     expect(deps.connectBleMidi).toHaveBeenCalledOnce();
-    expect(deps.dom.panel.classList.contains('visible')).toBe(false);
+    expect(deps.dom.panel.classList.contains('visible')).toBe(true);
+    expect(deps.dom.inputStatus.textContent).toContain('bleConnecting');
   });
 
   it('reset button does nothing when state.running is false', () => {

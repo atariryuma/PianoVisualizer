@@ -674,6 +674,47 @@ describe('createAudioLifecycle — devicechange', () => {
     expect(fx.warn).toHaveBeenCalledOnce();
     expect(fx.warn.mock.calls[0][0]).toContain('node closed');
   });
+
+  // ─── M4: MIDI freshness on devicechange（従来コメントだけで未配線） ──
+
+  it('M4: MIDI 未接続なら devicechange でキャッシュ破棄 + サイレント rescan', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setMidiEnabled(false);
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    expect(fx.clearMidiAccessCache).toHaveBeenCalled();
+    expect(fx.rescanMidi).toHaveBeenCalledWith(true);
+  });
+
+  it('M4: MIDI 接続中は devicechange で触らない（statechange が担当）', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setMidiEnabled(true);
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    expect(fx.clearMidiAccessCache).not.toHaveBeenCalled();
+    expect(fx.rescanMidi).not.toHaveBeenCalled();
+  });
+
+  it('M4: セッション前（isRunning=false）でも MIDI 側だけは走る', async () => {
+    // boot-time init（M1）でアクセスキャッシュはタイトル画面から存在する —
+    // タイトル画面での USB 抜き差しにも追従できるように。
+    const fx = makeLifecycleFixture();
+    fx.setRunning(false);
+    fx.setMidiEnabled(false);
+    fx.setAudioCtx({ state: 'running', resume: async () => {} });
+    fx.install();
+    fx.fireDeviceChange();
+    fx.flushTimers(300);
+    await Promise.resolve();
+    expect(fx.rescanMidi).toHaveBeenCalledWith(true);
+    expect(fx.recover).not.toHaveBeenCalled(); // audio 側は従来どおりゲート
+  });
 });
 
 describe('createAudioLifecycle — visibilitychange', () => {

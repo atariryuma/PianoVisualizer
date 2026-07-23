@@ -131,11 +131,13 @@ export function createMidiInit(deps: MidiInitDeps): MidiInit {
       // Strict pass — by-the-spec, attach only `state === 'connected'`.
       // This is the "normal" path that fires on desktop Chrome, Steam
       // Deck, Android Chrome, and the future Capacitor native build.
+      // M2: bind EVERY connected port (industry-standard "listen on all
+      // inputs") — dual-port keyboards and multi-device setups no
+      // longer lose the real keyboard to enumeration order.
       let attached = false;
       for (const port of allPorts) {
         if (port.state === 'connected' && deps.attachMidiPort(port)) {
           attached = true;
-          break;
         }
       }
 

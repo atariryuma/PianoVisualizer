@@ -16,6 +16,17 @@
 //      teardown plus a "resume mic + restart rescan poller" path
 //      so a hot-replug recovers without the user noticing.
 //
+//      M2 (2026-07-23): MULTI-PORT binding — the industry-standard Web
+//      MIDI pattern is to listen on ALL inputs (Chrome samples do the
+//      same), not to pick one. Dual-port keyboards (Roland/Yamaha
+//      "DAW"/"MIDI" pairs) and multi-device setups previously lost the
+//      real keyboard to enumeration order. attach() now adds each
+//      eligible port to a bound set; `midiInput.port` stays the FIRST
+//      bound port (display name / indicator). detach() removes one
+//      port and only tears the whole MIDI mode down when the set
+//      empties. Duplicate events from mirrored ports are absorbed by
+//      the dispatcher's 30 ms note-on dedupe (midi-dispatch.ts).
+//
 //   3. verifyMidiAlive() — visibility-resume probe. iOS Web MIDI
 //      Browser silently kills the onmidimessage handler when the page
 //      goes background; the port object stays valid but events stop
@@ -81,9 +92,13 @@ export interface MidiPortsInputRef extends MidiIndicatorMidiInput {
 export interface MidiPortsStateRef {
   micSuspended: boolean;
   /** Mic-permission state — drives whether detach should restart
-   *  the auto-rescan poller. */
+   *  the auto-rescan poller + whether the mic meter re-shows. */
   micPermissionFailed?: boolean;
   micIntentionallySkipped?: boolean;
+  /** intro-diag の「MIDI 待機中」ヒントの once-per-session ガード。
+   *  attach で false に戻す — 後の切断でゼロポートに戻ったとき、
+   *  ヒントが再表示できるように（M4）。 */
+  _midiWaitingShown?: boolean;
 }
 
 export interface MidiPortsBleRef {
@@ -138,17 +153,21 @@ export interface MidiPortsDeps {
 }
 
 export interface MidiPorts {
-  /** Open + attach a single port. Returns true on success, false on
-   *  skip (virtual port). The caller iterates its candidate list and
-   *  stops on the first true. */
+  /** Open + bind ONE port into the bound set (M2: callers bind every
+   *  eligible port, not just the first). Returns true on success or
+   *  already-bound, false on skip (virtual port / BLE active). */
   attach(port: MidiPortRef | null): boolean;
-  /** Symmetric detach — runs only if the same port is still bound
-   *  (idempotent under double-detach). */
+  /** Remove one port from the bound set. Full MIDI-mode teardown
+   *  (enabled=false, mic resume, poller restart) only when the set
+   *  empties. Idempotent under double-detach. */
   detach(port: MidiPortRef | BlePortMarker | null): void;
-  /** Visibility-resume health probe. Re-binds the handler on a still-
-   *  alive port; detaches when the port has vanished from the inputs
-   *  map. Returns false when there's no port to verify (no-op). */
+  /** Visibility-resume health probe. Re-binds handlers on still-alive
+   *  bound ports; drops vanished ones. Returns false when nothing
+   *  bound survives (no-op → false). */
   verifyAlive(access: MidiAccessRef | null): Promise<boolean>;
+  /** BLE 接続への移譲: 全 Web MIDI ポートのハンドラを外して束を空にする
+   *  （mic/poller の副作用なし — 呼び出し側の BLE が入力の主導権を持つ）。 */
+  unbindAll(): void;
 }
 
 // ─── pure helper (also exported for tests) ─────────────────────────
@@ -188,8 +207,19 @@ export function gatherMidiInputs(access: MidiAccessRef | null | undefined): Midi
 // ─── attach / detach / verify factory ─────────────────────────────
 
 export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
+  /** M2: every currently-bound Web MIDI input. `midiInput.port` is the
+   *  FIRST bound port (primary — drives the indicator's display name);
+   *  the dispatcher is bound to every member. */
+  const boundPorts = new Set<MidiPortRef>();
+
   function attach(port: MidiPortRef | null): boolean {
-    if (!port || deps.midiInput.port === port) return true;
+    if (!port) return true;
+    if (boundPorts.has(port)) {
+      // Already bound — re-bind the handler (cheap, idempotent; WMB can
+      // silently kill handlers) and report success.
+      port.onmidimessage = deps.onMidiMessageHandler;
+      return true;
+    }
     if (deps.isVirtualMidiPort(port)) {
       console.log('[MIDI] skip virtual/system port: ' + port.name);
       return false;
@@ -205,10 +235,6 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
       return false;
     }
     const wasMidiOn = deps.midiInput.enabled;
-    const prev = deps.midiInput.port;
-    if (prev && 'onmidimessage' in prev) {
-      (prev as MidiPortRef).onmidimessage = null;
-    }
 
     // @WMB-WORKAROUND (Phase 0d): explicit port.open() before the
     // handler bind. The Web MIDI spec says assigning onmidimessage
@@ -237,8 +263,10 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     // dropped (mic ignores it because MIDI is "on", and the MIDI
     // dispatcher isn't bound yet).
     port.onmidimessage = deps.onMidiMessageHandler;
+    boundPorts.add(port);
 
-    deps.midiInput.port = port;
+    // Primary port = first bound (display name / indicator anchor).
+    if (!deps.midiInput.port) deps.midiInput.port = port;
     deps.midiInput.enabled = true;
     deps.midiInput.lastEventTime = 0;
 
@@ -252,7 +280,14 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     deps.refreshIntroHint?.();
     deps.micMeter?.classList.remove('visible');
     deps.stopMidiAutoRescan();
-    deps.showHitChip?.('good', deps.t('midiConnectedFmt', { v: port.name || 'MIDI' }));
+    // M4: allow the waiting hint to re-show if this session later drops
+    // back to zero ports (the guard was once-per-session).
+    deps.state._midiWaitingShown = false;
+    // Connected chip only for the FIRST port — a dual-port keyboard
+    // (DAW+MIDI) binding both ports shouldn't fire two celebrations.
+    if (!wasMidiOn) {
+      deps.showHitChip?.('good', deps.t('midiConnectedFmt', { v: port.name || 'MIDI' }));
+    }
     console.log(
       '[MIDI] connected: ' +
         port.name +
@@ -260,16 +295,36 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
         port.state +
         ' connection=' +
         port.connection +
+        ' bound=' +
+        boundPorts.size +
         ')'
     );
     return true;
   }
 
   function detach(port: MidiPortRef | BlePortMarker | null): void {
-    if (!port || deps.midiInput.port !== port) return;
+    // Handles both real bound ports and the BLE marker / legacy single
+    // primary (marker is never in boundPorts — matched via midiInput.port).
+    if (!port) return;
+    const isBound = boundPorts.has(port as MidiPortRef);
+    if (!isBound && deps.midiInput.port !== port) return;
     if ('onmidimessage' in port) {
       (port as MidiPortRef).onmidimessage = null;
     }
+    boundPorts.delete(port as MidiPortRef);
+
+    // Promote the next bound port to primary when the primary left.
+    if (deps.midiInput.port === port) {
+      const next = boundPorts.values().next();
+      deps.midiInput.port = next.done ? null : next.value;
+    }
+    if (boundPorts.size > 0) {
+      // Still MIDI-driven through the remaining port(s) — no mode flip.
+      deps.setInputIndicator();
+      console.log('[MIDI] port detached — ' + boundPorts.size + ' port(s) still bound');
+      return;
+    }
+
     deps.midiInput.port = null;
     deps.midiInput.enabled = false;
     deps.setInputIndicator();
@@ -282,6 +337,11 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     // keep playing acoustically without restarting the app.
     if (deps.hasAudioCtx() && deps.state.micSuspended) {
       deps.resumeMic();
+      // M4: re-show the mic meter — the mic is live again but nothing
+      // used to restore the meter until the next showRunningUI.
+      if (!deps.state.micPermissionFailed && !deps.state.micIntentionallySkipped) {
+        deps.micMeter?.classList.add('visible');
+      }
     }
     // Always restart silent polling — the previous policy only kicked
     // it back on when the mic was unavailable, but that left the
@@ -303,21 +363,52 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     if (deps.getBleMidi().connected) return true;
 
     const ports = gatherMidiInputs(access);
-    const currentPort = deps.midiInput.port;
-    const stillThere = ports.find((p) => p === currentPort && p.state === 'connected');
-    if (!stillThere) {
-      try {
-        detach(currentPort);
-      } catch {
-        /* idempotent — ignore double-detach errors */
+    // Legacy / externally-seeded single-port state (midiInput.port set
+    // without going through attach — some tests + defensive): fall back
+    // to the original single-port membership check.
+    if (boundPorts.size === 0) {
+      const currentPort = deps.midiInput.port as MidiPortRef;
+      const stillThere = ports.find((p) => p === currentPort && p.state === 'connected');
+      if (!stillThere) {
+        try {
+          detach(currentPort);
+        } catch {
+          /* idempotent */
+        }
+        return false;
       }
-      return false;
+      currentPort.onmidimessage = deps.onMidiMessageHandler;
+      return true;
     }
-    // Re-bind unconditionally. Cheap; idempotent on a healthy port;
-    // required on a suspended one.
-    (currentPort as MidiPortRef).onmidimessage = deps.onMidiMessageHandler;
-    return true;
+    // M2: check every bound port; drop the dead, re-bind the survivors.
+    // Iterate over a snapshot — detach() mutates the set.
+    for (const bound of Array.from(boundPorts)) {
+      const stillThere = ports.find((p) => p === bound && p.state === 'connected');
+      if (!stillThere) {
+        try {
+          detach(bound);
+        } catch {
+          /* idempotent — ignore double-detach errors */
+        }
+      } else {
+        // Re-bind unconditionally. Cheap; idempotent on a healthy port;
+        // required on a suspended one (WMB kills handlers in background).
+        bound.onmidimessage = deps.onMidiMessageHandler;
+      }
+    }
+    return deps.midiInput.enabled;
   }
 
-  return { attach, detach, verifyAlive };
+  function unbindAll(): void {
+    for (const p of boundPorts) {
+      try {
+        p.onmidimessage = null;
+      } catch {
+        /* detached port — best effort */
+      }
+    }
+    boundPorts.clear();
+  }
+
+  return { attach, detach, verifyAlive, unbindAll };
 }

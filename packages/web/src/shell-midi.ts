@@ -104,6 +104,9 @@ export interface ShellMidi {
   attachMidiPort(port: any): boolean;
   /** Live BLE-MIDI connect — settings panel button. */
   connectBleMidi(): Promise<void>;
+  /** M3: 既知（許可済み）BLE デバイスへの起動時サイレント再接続。
+   *  getDevices 非対応・デバイス無しは即 false。Never throws. */
+  reconnectKnownBle(): Promise<boolean>;
   /** Drain the dispatch redelivery dedupe — called from session-reset. */
   resetMidiDispatch(): void;
   /** Freeze the practice clock + pause Transport (settings panel / ⏸). */
@@ -281,6 +284,14 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
       get micSuspended() {
         return state.micSuspended;
       },
+      // M4: BLE 切断時の micMeter 復帰判定に使う（マイクが実際に使える
+      // ときだけメーターを再表示）。
+      get micPermissionFailed() {
+        return state.micPermissionFailed;
+      },
+      get micIntentionallySkipped() {
+        return state.micIntentionallySkipped;
+      },
     },
     suspendMic: deps.suspendMic,
     resumeMic: deps.resumeMic,
@@ -293,6 +304,8 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     parsePacket: (buf: any) =>
       BleMidiParser.parseBleMidiPacket(buf, (s, a, b) => _dispatch.dispatch(s, a, b)),
     startMidiAutoRescan: () => _rescan.startAutoRescan(),
+    // M2: BLE 接続時に Web MIDI の全バインドを外す（複数ポート束対応）。
+    unbindWebPorts: () => _ports.unbindAll(),
     clearHeldNotes: deps.clearHeldMidiNotes,
     t,
     alert: (msg: any) => alert(msg),
@@ -312,6 +325,7 @@ export function createShellMidi(deps: ShellMidiDeps): ShellMidi {
     connectBleMidi: async () => {
       await _bleConnect.connect();
     },
+    reconnectKnownBle: async () => _bleConnect.reconnectKnown(),
     resetMidiDispatch: () => _dispatch.reset(),
     // Explicit practice pause/resume (settings panel, ⏸ button) — shares
     // the freeze/resume machinery with tab-visibility so the two can't

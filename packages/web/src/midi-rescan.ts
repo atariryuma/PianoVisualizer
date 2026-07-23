@@ -208,7 +208,10 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
         const port = e.port;
         if (!port || port.type !== 'input') return;
         console.log('[MIDI] state change: "' + port.name + '" → ' + port.state);
-        if (port.state === 'connected' && !deps.midiInput.enabled) deps.attachMidiPort(port);
+        // M2: attach even when MIDI is already enabled — a second
+        // keyboard / a dual-port device's other port joins the bound
+        // set (attach dedupes already-bound ports + refuses under BLE).
+        if (port.state === 'connected') deps.attachMidiPort(port);
         else if (port.state === 'disconnected') deps.detachMidiPort(port);
       };
 
@@ -253,12 +256,15 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
         return false;
       }
 
-      // Strict pass — by-the-spec.
+      // Strict pass — by-the-spec. M2: bind EVERY connected port
+      // (industry-standard "listen on all inputs"); success if any bound.
+      let attachedAny = false;
       for (const port of ports) {
-        if (port.state === 'connected' && !deps.midiInput.enabled && deps.attachMidiPort(port)) {
-          return true;
+        if (port.state === 'connected' && deps.attachMidiPort(port)) {
+          attachedAny = true;
         }
       }
+      if (attachedAny) return true;
       // @WMB-WORKAROUND: WMB pre-paired BLE keyboards on iPad can show
       // up with state='unknown' until first open(). Gated to Apple
       // mobile so desktop / Android don't accidentally attach a

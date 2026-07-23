@@ -167,6 +167,12 @@ function makeFixture(over: Partial<BleMidiConnectDeps> = {}): Fixture {
           : undefined;
       },
     } as BleMidiConnectDeps['navigator'],
+    // M3: 既定はタイマー無効化 — withTimeout は発火せず、GATT 切断後の
+    // auto-reconnect もスケジュールされない（リアルタイマーがテスト境界を
+    // 跨いで再接続を走らせる汚染を防ぐ）。再接続系のテストは自前の
+    // setTimeout シムで上書きする。
+    setTimeout: vi.fn(() => 0),
+    clearTimeout: vi.fn(),
     ...over,
   };
 
@@ -390,6 +396,113 @@ describe('connect — failure paths', () => {
     fx.setRequestDevice(vi.fn().mockResolvedValue(device));
     await createBleMidiConnect(fx.deps).connect();
     expect(fx.alert).toHaveBeenCalledWith(expect.stringContaining('BLE device exposes no GATT'));
+  });
+});
+
+// ─── M3: reconnectKnown（起動時サイレント再接続） ───────────────────
+
+describe('reconnectKnown', () => {
+  function withGetDevices(fx: Fixture, devices: BleDevice[]): void {
+    // navigator getter を getDevices 付きで置き換える。
+    (fx.deps as { navigator: unknown }).navigator = {
+      bluetooth: {
+        requestDevice: vi.fn(),
+        getDevices: vi.fn().mockResolvedValue(devices),
+      },
+    };
+  }
+
+  it('getDevices 非対応ブラウザは即 false（feature-detect）', async () => {
+    const fx = makeFixture();
+    fx.setRequestDevice(vi.fn()); // bluetooth はあるが getDevices なし
+    await expect(createBleMidiConnect(fx.deps).reconnectKnown()).resolves.toBe(false);
+  });
+
+  it('既知デバイスがあればチューザー無しで handshake して true', async () => {
+    const fx = makeFixture();
+    const { device } = makeFakeDevice({ gattConnected: true });
+    withGetDevices(fx, [device]);
+    const ok = await createBleMidiConnect(fx.deps).reconnectKnown();
+    expect(ok).toBe(true);
+    expect(fx.bleMidi.connected).toBe(true);
+    expect(fx.midiInput.enabled).toBe(true);
+    expect(fx.showHitChip).toHaveBeenCalledWith('good', expect.stringContaining('Roland GO'));
+  });
+
+  it('別入力が確立済みなら何もしない', async () => {
+    const fx = makeFixture();
+    const { device } = makeFakeDevice({ gattConnected: true });
+    withGetDevices(fx, [device]);
+    fx.midiInput.enabled = true; // USB が先に繋がった
+    await expect(createBleMidiConnect(fx.deps).reconnectKnown()).resolves.toBe(false);
+    expect(fx.bleMidi.connected).toBe(false);
+  });
+
+  it('1台目が失敗（電波外）でも2台目を試す', async () => {
+    const fx = makeFixture();
+    const dead = makeFakeDevice({ serverThrows: 'connect' });
+    const alive = makeFakeDevice({ gattConnected: true });
+    withGetDevices(fx, [dead.device, alive.device]);
+    const ok = await createBleMidiConnect(fx.deps).reconnectKnown();
+    expect(ok).toBe(true);
+    expect(fx.bleMidi.connected).toBe(true);
+    expect(fx.alert).not.toHaveBeenCalled(); // サイレント経路 — alert なし
+  });
+});
+
+// ─── M3: auto-reconnect（GATT 切断後のバックオフ再試行） ────────────
+
+describe('auto-reconnect after GATT drop', () => {
+  it('切断 → バックオフ後に同じデバイスへ再 handshake', async () => {
+    // setTimeout シム: コールバックを溜めて手動で発火。
+    const pending: Array<() => void> = [];
+    const fx = makeFixture({
+      setTimeout: ((cb: () => void) => {
+        pending.push(cb);
+        return pending.length;
+      }) as never,
+      clearTimeout: vi.fn() as never,
+    });
+    const { device, disconnectListeners } = makeFakeDevice({ gattConnected: true });
+    fx.setRequestDevice(vi.fn().mockResolvedValue(device));
+    await createBleMidiConnect(fx.deps).connect();
+    expect(fx.bleMidi.connected).toBe(true);
+
+    // GATT 切断 → teardown + 再接続タイマーが積まれる（pending の末尾。
+    // 先頭側には成功済み handshake の stale なタイムアウト cb がいる）。
+    const beforeDrop = pending.length;
+    disconnectListeners[0]?.();
+    expect(fx.bleMidi.connected).toBe(false);
+    expect(fx.midiInput.enabled).toBe(false);
+    expect(fx.resumeMic).not.toHaveBeenCalled(); // micSuspended=false のまま
+    expect(pending.length).toBe(beforeDrop + 1);
+
+    // 再試行を発火 → handshake が成功して復帰。
+    pending[pending.length - 1]();
+    await vi.waitFor(() => {
+      expect(fx.bleMidi.connected).toBe(true);
+    });
+    expect(fx.midiInput.enabled).toBe(true);
+  });
+
+  it('再試行前に別入力が確立していたら中止', async () => {
+    const pending: Array<() => void> = [];
+    const fx = makeFixture({
+      setTimeout: ((cb: () => void) => {
+        pending.push(cb);
+        return pending.length;
+      }) as never,
+      clearTimeout: vi.fn() as never,
+    });
+    const { device, disconnectListeners } = makeFakeDevice({ gattConnected: true });
+    fx.setRequestDevice(vi.fn().mockResolvedValue(device));
+    await createBleMidiConnect(fx.deps).connect();
+    disconnectListeners[0]?.();
+    fx.midiInput.enabled = true; // USB が先に復帰した
+    const before = pending.length;
+    pending[before - 1]?.(); // 再試行発火
+    await Promise.resolve();
+    expect(fx.bleMidi.connected).toBe(false); // 奪わない
   });
 });
 
