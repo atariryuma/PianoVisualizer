@@ -783,6 +783,39 @@ describe('createAudioLifecycle — visibilitychange', () => {
     expect(fx.recover).toHaveBeenCalledOnce();
   });
 
+  it("iOS 'interrupted' ctx (phone call/Siri) resumes like suspended", async () => {
+    // 'interrupted' is an iOS-only state the old code never branched on → the
+    // context stayed stuck after a call. Now treated like 'suspended'.
+    let st = 'interrupted';
+    const ctx = {
+      get state() {
+        return st;
+      },
+      resume: vi.fn(async () => {
+        st = 'running';
+      }),
+    };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx as never);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(ctx.resume).toHaveBeenCalledOnce();
+    expect(fx.recover).not.toHaveBeenCalled(); // resume took → no recreate
+  });
+
+  it("iOS 'interrupted' that won't resume → recover()", async () => {
+    const ctx = {
+      state: 'interrupted' as string,
+      resume: vi.fn(async () => {}), // stays interrupted
+    };
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(ctx as never);
+    fx.install();
+    await fx.fireVisibility('visible');
+    expect(ctx.resume).toHaveBeenCalledOnce();
+    expect(fx.recover).toHaveBeenCalledOnce();
+  });
+
   it('visible + MIDI alive (verifyAlive=true) → no rescan', async () => {
     const fx = makeLifecycleFixture();
     fx.setMidiEnabled(true);

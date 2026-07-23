@@ -75,7 +75,10 @@ export function updateAGC(timeMs: number, postGainRms: number, deps: AgcControll
 
   // Pre-gain RMS = post-gain / current-gain. If the room itself is
   // quiet, don't crank the mic up trying to hit target.
-  const preGainRms = s.agcSmoothedRms / s.agcGain;
+  // Guard the divisor: today AGC_MIN_GAIN=1.0 so agcGain is never 0, but the
+  // core twin (agc.ts) guards this and the shipped path didn't — a future
+  // minGain ≤ 0 would yield Infinity/NaN gain and a dead mic. Cheap insurance.
+  const preGainRms = s.agcSmoothedRms / Math.max(s.agcGain, 1e-6);
   if (preGainRms < t.silenceFloor) return;
 
   // Voice suppression — clamp max gain when the onset detector has

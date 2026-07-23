@@ -296,8 +296,13 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
       await acquire();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-
       console.warn('[AUDIO] Failed to resume mic:', msg || e);
+      // H5: previously this only logged — a MIDI-unplug whose mic re-acquire
+      // failed left "listening" state with no working input and no UI signal.
+      // Mirror the boot-path failure so the intro hint + meter reflect reality.
+      deps.state.micPermissionFailed = true;
+      deps.refreshIntroHint?.();
+      if (deps.micMeterEl) deps.micMeterEl.classList.remove('visible');
     }
   }
 

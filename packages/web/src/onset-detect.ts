@@ -277,6 +277,14 @@ export function updateMultiFeatureOnset(
   // Practice mode tightens the threshold so non-pitched sounds (voice,
   // key noise, chair creaks, claps) can't masquerade as notes.
   let harmonicity = 0;
+  // H6 (2026-07-25): harmonicityOk defaults TRUE when YIN found no pitch
+  // (currentPitchHz ≤ pitchMinHz). This is DELIBERATE, not a bypass bug: an
+  // onset IS the attack transient, and a piano attack is broadband — YIN
+  // frequently can't lock a fundamental in that first frame, so demanding
+  // harmonicity there would reject real notes. The gate still needs 4 of the
+  // 5 features (flux/spread/flatness/crest + harmonicity), so a no-pitch frame
+  // must pass the other 4 on its own merits; harmonicity only *adds* rejection
+  // power once a pitch exists. Keep the true-default.
   let harmonicityOk = true;
   if (currentPitchHz > t.pitchMinHz) {
     const fundamentalBin = Math.round(currentPitchHz / binHz);

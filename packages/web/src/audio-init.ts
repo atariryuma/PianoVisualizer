@@ -446,7 +446,7 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
       const ctx = deps.getAudioCtx();
       if (!ctx) return;
 
-      if (ctx.state === 'suspended') {
+      if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') {
         try {
           await ctx.resume();
         } catch {
@@ -481,14 +481,19 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
     if (ctx) {
       // iOS suspend ≠ resumable. If state stayed 'running' through
       // the bg round-trip we can keep going; otherwise full recreate.
-      if (ctx.state === 'suspended') {
+      // 'interrupted' is an iOS-only state (phone call / Siri / another
+      // audio app) that the old code never branched on — it left the
+      // context stuck. Treat it like 'suspended': try resume, recreate
+      // if that doesn't take.
+      const needsResume = ctx.state === 'suspended' || (ctx.state as string) === 'interrupted';
+      if (needsResume) {
         try {
           await ctx.resume();
         } catch {
           /* ignore */
         }
-        // If still suspended after resume(), context is dead — recreate.
-        if (ctx.state === 'suspended') {
+        // If still not running after resume(), context is dead — recreate.
+        if (ctx.state !== 'running') {
           await deps.recover();
         }
       }

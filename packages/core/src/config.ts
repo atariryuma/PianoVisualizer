@@ -92,7 +92,14 @@ export const CONFIG = {
   // Harmonicity gate. Partial-count + tolerance live in audio/harmonicity.ts
   // (DEFAULTS); the legacy CONFIG.HARMONICITY_PARTIALS / BIN_TOLERANCE were
   // never wired through, so deleted to stop future tunings being silent no-ops.
-  HARMONICITY_MIN: 0.0, // free-play: lenient so chords aren't rejected
+  //
+  // ⚠ DRIFT FIX (2026-07-25): this value MUST match the SHIPPED tuning in
+  // packages/web/src/piano-config.ts. Production runs the WEB onset detector
+  // (onset-detect.ts) with the web CONFIG; this core CONFIG only drives the
+  // core-side audio twins (onset.ts/agc.ts), which are exercised by tests but
+  // NOT on the production path. They had drifted (core 0.0 vs web 0.1), so the
+  // tested value ≠ the shipped value. Realigned to 0.1. Keep them in lockstep.
+  HARMONICITY_MIN: 0.1, // free-play: reject taps/clatter (matches web piano-config)
   HARMONICITY_MIN_PRACTICE: 0.12, // practice: light filter for voice/key clatter
 
   // Session confidence

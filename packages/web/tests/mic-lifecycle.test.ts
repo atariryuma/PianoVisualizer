@@ -304,6 +304,19 @@ describe('createMicLifecycle — resume', () => {
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
+
+  it('H5: a failed resume() flags micPermissionFailed + refreshes the hint', async () => {
+    // MIDI unplug whose mic re-acquire fails used to only log → "listening"
+    // with no working input and no UI signal. Now it mirrors the boot path.
+    const fx = makeFixture({ gumReject: new Error('NotAllowed') });
+    fx.state.micSuspended = true;
+    fx.state.micPermissionFailed = false;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await fx.lc.resume();
+    expect(fx.state.micPermissionFailed).toBe(true);
+    expect(fx.refreshIntroHint).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });
 
 // ─── decideInitialInputMode (Phase 0d batch 64) ────────────────────

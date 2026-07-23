@@ -375,6 +375,10 @@ export function createPianoConfig(): PianoConfig {
     // だけを弾く小さな床を入れる。実音・和音は練習の 0.12（実音を通す実績）
     // より十分低いこの値を余裕で超えるので巻き込まない。効き過ぎる場合は
     // デバッグ表示の harmonicity 値 + onsetReason(REJ:harm) を見て調整可。
+    // ⚠ This is the SHIPPED tuning (production runs this web config). Keep it
+    // in lockstep with packages/core/src/config.ts HARMONICITY_MIN — they
+    // drifted (core 0.0 vs web 0.1) so the tested core algorithm no longer
+    // matched what shipped; realigned 2026-07-25.
     HARMONICITY_MIN: 0.1, // free-play: タップ/衝撃音を弾く（実音を通す練習 0.12 の直下 = 安全側）
     HARMONICITY_MIN_PRACTICE: 0.12, // practice: light filter for voice/key clatter
 
