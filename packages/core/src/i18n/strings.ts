@@ -868,9 +868,9 @@ export const T_STRINGS: TranslationTable = {
   addSongTabFile: { en: '📁 File', jp: '📁 ファイル', de: '📁 Datei' },
   addSongTabUrl: { en: '🔗 URL', de: '🔗 URL' },
   addSongLibraryHelp: {
-    en: 'Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.',
-    jp: 'MuseTrainer のパブリックドメイン曲（jsDelivr経由）。タップでダウンロード。',
-    de: 'Kostenlose gemeinfreie Stücke von MuseTrainer (jsDelivr CDN). Zum Herunterladen tippen.',
+    en: 'Free public-domain pieces, bundled with the app. Tap to add.',
+    jp: 'アプリ内蔵のパブリックドメイン曲。タップでついか。',
+    de: 'Kostenlose gemeinfreie Stücke, in der App enthalten. Zum Hinzufügen tippen.',
   },
   addSongFilePick: {
     en: 'Choose .mxl / .musicxml / .xml file',

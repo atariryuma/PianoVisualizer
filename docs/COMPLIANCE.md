@@ -57,11 +57,15 @@ minimum to get a first build submitted.
 
 ## Pre-flight (every build)
 
-- [ ] `REMOTE_LOG_ENABLED` resolves to `false` in mobile build (verify via grep
-      of bundled `legacy-app.js` — string `/log` should not appear except in
-      comments). The current code gates by `location.hostname` checks, but
-      Capacitor's `capacitor://localhost` would falsely match `localhost` — use
-      a build-time `--define` flag to force-disable.
+- [x] `REMOTE_LOG_ENABLED` is force-`false` in the native build via a build-time
+      define. `packages/web/vite.config.ts` sets
+      `__REMOTE_LOG_DISABLED__ = (mode === 'mobile')`; `remote-log.ts`
+      short-circuits `isRemoteLogEnabled()` on it BEFORE the localStorage
+      override, so the `--mode mobile` (App Store) bundle physically cannot POST
+      to `/log` — even a `localStorage.pianoViz_remoteLog='1'` can't turn it
+      back on. The LAN-dev build (default mode, served by `https_server` for
+      `server.log`) keeps its localhost/LAN gate. (`legacy-app.js` is retired —
+      Phase 0e; ignore the old grep target.)
 - [ ] No external links surfaced in UI when running with
       `Capacitor.isNativePlatform()` true. (Kids-only requirement — relaxed for
       our 4+/Education listing, but we still ship none, which keeps the "no
@@ -92,15 +96,25 @@ minimum to get a first build submitted.
 - [ ] Privacy Policy URL → `docs/PRIVACY.md` published to GitHub Pages or static
       host
 - [ ] Privacy Nutrition Label: "Data Not Collected"
-- [ ] App Privacy Manifest (`PrivacyInfo.xcprivacy`) — Capacitor 6 generates a
-      baseline; verify Tone.js / OSMD / JSZip 3rd-party manifests are included
+- [ ] App Privacy Manifest (`PrivacyInfo.xcprivacy`) — written + target
+      membership (see below). NOTE: Tone.js / OSMD / JSZip are **JS bundled into
+      the web assets**, not native SDKs, so they carry no `.xcprivacy`. The pods
+      that ship bundled privacy manifests are the **Capacitor plugins**
+      (`@capacitor-community/bluetooth-le`, `haptics`, `preferences`,
+      `filesystem`, `splash-screen`, `status-bar`, `app`) — CocoaPods copies
+      their manifests automatically; nothing to author for them.
 - [ ] Per-score license documentation PDF(s) → see `docs/LICENSES/`
 - [ ] Screenshots: iPad Pro 12.9" (req'd), iPad 11", iPhone 6.7" (the 3
       mandatory sizes as of 2025)
 - [ ] Age rating questionnaire (re-do under 2025 system before 2026-01-31
       deadline)
-- [ ] App Review Information:
-      `<<paste PD score license summary here so reviewer can find it>>`
+- [ ] App Review Information (paste into App Store Connect → App Review Notes):
+      "All music is public-domain. The two built-in pieces (Beethoven's Für
+      Elise, Mozart's Turkish March) and the ~57-piece in-app library are the
+      app's OWN MusicXML transcriptions of PD compositions, bundled in the app
+      (no runtime catalog fetch). Per-piece provenance is in
+      `docs/LICENSES/README.md`. The app collects no data and contains no
+      third-party analytics/ads/SDKs; audio is processed on-device only."
 
 ### App-target privacy manifest (M2 — manual Xcode step)
 
@@ -108,17 +122,17 @@ minimum to get a first build submitted.
   (skips the per-upload export-compliance question; jsDelivr HTTPS is exempt).
 - **The manifest file is written** at
   `packages/mobile/ios/App/App/PrivacyInfo.xcprivacy` (NSPrivacyTracking=false,
-  no collected data, UserDefaults reason `CA92.1` for the Capacitor Preferences
-  plugin). `plutil -lint` passes. Apple may emit `ITMS-91053` at upload without
-  it, so declaring UserDefaults at the app level is the safe default.
+  no collected data). Required-reason APIs declared: UserDefaults `CA92.1`
+  (Capacitor Preferences plugin), **FileTimestamp `C617.1` + DiskSpace `E174.1`
+  (added 2026-07-25** — the bundled `@capacitor/filesystem` plugin reads file
+  metadata / free space for the on-device user-song library; declared
+  proactively to avoid an `ITMS-91053` upload flag). `plutil -lint` passes.
 - **Only remaining step (manual, ~30 s in Xcode):** the file exists on disk but
   is not yet a member of the App target in the `.pbxproj`. `cap sync` won't add
   it. In Xcode: **Project navigator → drag `PrivacyInfo.xcprivacy` into the
   `App` group** (or right-click the `App` group → _Add Files to "App"…_ → select
   it) → in the dialog make sure **Target = App is checked**. Build once to
-  confirm it's picked up. If Apple later flags an additional required-reason API
-  at upload, add that category to the same file (e.g. FileTimestamp `C617.1`,
-  DiskSpace `E174.1`).
+  confirm it's picked up.
 
 ### Code-review follow-ups (from the 2026-07-21 full audit)
 
@@ -162,12 +176,13 @@ Only genuinely-latent (harmless-today) notes remain, not worth changing now:
 > provides functionality unavailable in mobile Safari (Web MIDI API is not
 > implemented in WebKit, see WebKit Bug 107250).
 >
-> All bundled and downloadable music is in the public domain. Source: the
-> [musetrainer/library](https://github.com/musetrainer/library) repository,
-> serving works by composers who died over 70 years ago (Beethoven, Mozart,
-> Chopin, etc.). Pinned to commit `<SHA>` so the catalog cannot change between
-> binary releases. Per-score documentation is at:
-> https://github.com/atariryuma/piano-visualizer/tree/main/docs/LICENSES
+> All music is public domain. There is **no runtime catalog fetch** — every
+> score ships inside the binary: the two built-in pieces plus the in-app "Add a
+> song" library are the app's OWN MusicXML transcriptions of PD compositions by
+> composers who died over 70 years ago (Beethoven, Mozart, etc.). (The former
+> third-party `musetrainer/library` jsDelivr dependency was removed 2026-07-21;
+> nothing is loaded at runtime.) Per-score provenance is at:
+> https://github.com/atariryuma/PianoVisualizer/tree/main/docs/LICENSES
 
 ## Google Play
 

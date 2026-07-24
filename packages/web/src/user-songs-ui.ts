@@ -78,6 +78,10 @@ export interface UserSongsUiDom {
   dropZone: HTMLElement | null;
   urlInput: HTMLInputElement | null;
   fetchBtn: HTMLButtonElement | null;
+  /** H3: PD attestation for the URL tab (arbitrary user content). Separate
+   *  from the file-tab `pdCheckbox` because the tabs are distinct DOM.
+   *  Optional so older shells / tests without it fall back to gated=false. */
+  urlPdCheckbox: HTMLInputElement | null;
   status: HTMLElement;
   myList: HTMLElement;
   /** Container for start-screen tiles — populated by `renderUserSongButtons`. */
@@ -788,6 +792,12 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
     if (!deps.dom.urlInput || !deps.dom.fetchBtn) return;
     const url = (deps.dom.urlInput.value || '').trim();
     if (!url) return;
+    // H3: same PD attestation gate as file/drop — a pasted URL is arbitrary
+    // user content, so require the public-domain confirmation before fetching.
+    if (!deps.dom.urlPdCheckbox?.checked) {
+      setStatus(deps.t('addSongPdAttest'), true);
+      return;
+    }
     setStatus(deps.t('addSongFetch') + '…');
     deps.dom.fetchBtn.disabled = true;
     try {

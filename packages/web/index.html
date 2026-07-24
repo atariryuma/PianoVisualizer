@@ -802,7 +802,7 @@
 
         <div class="add-song-tab-body" data-tab-body="library">
           <div class="settings-help" data-i18n="addSongLibraryHelp">
-            Free public-domain pieces from MuseTrainer (jsDelivr CDN). Tap to download.
+            Free public-domain pieces, bundled with the app. Tap to add.
           </div>
           <input
             type="search"
@@ -861,6 +861,15 @@
           <button class="settings-btn primary" id="addSongFetchBtn" data-i18n="addSongFetch">
             ⬇ Download
           </button>
+          <!-- H3: URL imports are arbitrary user content and must carry the
+               same public-domain attestation as file/drop (the file-tab
+               checkbox is in a different, hidden tab). -->
+          <label class="add-song-attest">
+            <input type="checkbox" id="addSongUrlPdCheckbox" />
+            <span data-i18n="addSongPdAttest"
+              >I confirm this score is public domain or my own work</span
+            >
+          </label>
           <div class="settings-help" data-i18n="addSongUrlHelp">
             Paste a direct .mxl / .musicxml URL (must be CORS-enabled, e.g. jsDelivr).
           </div>

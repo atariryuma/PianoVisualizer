@@ -68,7 +68,12 @@ jobs:
       - name: Swift syntax check
         working-directory: packages/plugins/capacitor-piano-midi/ios/Plugin
         run: |
-          # We can't fully build without a host Capacitor project (Pods/Capacitor.framework
-          # isn't on disk). Use swiftc -parse to just check syntax.
+          # Cheap smoke check only — `swiftc -parse` can't resolve `import
+          # Capacitor` (Capacitor.framework isn't on disk in this standalone
+          # context), so real compile errors on framework symbols are expected
+          # and non-fatal here. The AUTHORITATIVE native gate is ios.yml, which
+          # after `cap sync` + `pod install` runs a real `xcodebuild build`
+          # (simulator, no signing) that compiles + links this plugin's Swift
+          # for real and FAILS on a genuine error.
           swiftc -parse PianoMidiPlugin.swift -framework CoreMIDI -framework CoreBluetooth -framework AVFoundation 2>&1 | tee /tmp/swift.log || \
-            echo "::warning ::Swift parse had errors (expected if Capacitor.framework not present); review /tmp/swift.log"
+            echo "::notice ::swiftc -parse can't resolve import Capacitor here (expected); the real compile gate is ios.yml's xcodebuild step."

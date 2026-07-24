@@ -76,7 +76,17 @@ const DEFAULT_ENDPOINT_URL = '/log';
 
 /** Decide whether remote logging should be on at boot time. Pure;
  *  reads only the storage override (if any) and location. */
+/** Build-time hard-disable (Vite `define`, true only in `--mode mobile`).
+ *  Guarded with typeof so tests / non-Vite contexts see `undefined` and fall
+ *  through to the runtime gates. */
+declare const __REMOTE_LOG_DISABLED__: boolean | undefined;
+
 export function isRemoteLogEnabled(deps: RemoteLogDeps = {}): boolean {
+  // H4: the App Store build compiles this to `if (true) return false`, so the
+  // off-device POST path is physically absent from the shipped native bundle —
+  // no localStorage override can turn it back on. Tests (where the constant is
+  // undefined) and dev/LAN builds fall through to the runtime gates below.
+  if (typeof __REMOTE_LOG_DISABLED__ !== 'undefined' && __REMOTE_LOG_DISABLED__) return false;
   if (deps.forceEnabled !== undefined) return deps.forceEnabled;
   // localStorage のグローバルアクセサ評価は、Cookie 全ブロック環境や
   // sandbox iframe で SecurityError を投げる（typeof でも発火）。boot の

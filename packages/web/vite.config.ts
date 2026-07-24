@@ -33,6 +33,13 @@ export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
     __BUILD_DATE__: JSON.stringify(BUILD_DATE),
+    // H4: hard-disable the off-device remote-log POST path in the NATIVE
+    // (App Store) build. Native ships on https://localhost, which the runtime
+    // hostname heuristic false-positives, and a localStorage override could
+    // otherwise force-enable POSTing — breaking the "no tracking / audio stays
+    // on device" promise. The LAN-dev build (default mode, served by
+    // https_server for server.log) keeps its localhost/LAN gate.
+    __REMOTE_LOG_DISABLED__: JSON.stringify(mode === 'mobile'),
   },
   // Relative `./` so the same build artifact works under any base path:
   //   - `/`                       (LAN dev via https_server.ps1, Capacitor wrapper)

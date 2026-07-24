@@ -68,8 +68,11 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
-          bundler-cache: true
-          working-directory: packages/mobile/ios
+          # bundler-cache:true requires a Gemfile.lock in working-directory,
+          # which doesn't exist yet (no Fastfile shipped) → the step used to
+          # fail. Off until a Gemfile is committed; the Fastlane step below is
+          # already guarded on `[ -f Gemfile ]`.
+          bundler-cache: false
 
       - if: steps.check.outputs.skip == 'false'
         name: Select Xcode 15.4
@@ -91,6 +94,26 @@ jobs:
         name: Pod install
         working-directory: packages/mobile/ios/App
         run: pod install --repo-update
+
+      # C7 (2026-07-25): actually COMPILE + LINK the app (incl. the native MIDI
+      # plugin's Swift/CoreMIDI code) for the simulator, no signing needed.
+      # Before this, CI ran through pod install then skipped to a no-op
+      # Fastlane — the plugin Swift, the exact surface of the recent MIDI
+      # fixes, was never compiled in CI (only a syntax-only `swiftc -parse`
+      # in plugin.yml that couldn't resolve `import Capacitor`). This step is
+      # the real native gate; it fails the build on a Swift compile/link error.
+      - if: steps.check.outputs.skip == 'false'
+        name: Xcode build (simulator, no signing) — verifies native plugin compiles
+        working-directory: packages/mobile/ios
+        run: |
+          xcodebuild \
+            -workspace App/App.xcworkspace \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
       - if: steps.check.outputs.skip == 'false'
         name: Fastlane lane

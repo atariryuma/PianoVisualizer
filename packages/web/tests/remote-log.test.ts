@@ -65,6 +65,23 @@ describe('isRemoteLogEnabled', () => {
     ).toBe(true);
   });
 
+  it('H4: build-time __REMOTE_LOG_DISABLED__ hard-off beats even the "1" override', () => {
+    // The App Store bundle compiles this to `if (true) return false`, so no
+    // localStorage override can re-enable off-device POSTing.
+    vi.stubGlobal('__REMOTE_LOG_DISABLED__', true);
+    try {
+      expect(
+        isRemoteLogEnabled({
+          storage: fakeStorage({ pianoViz_remoteLog: '1' }),
+          location: fakeLocation('https:', 'localhost'),
+          forceEnabled: true,
+        })
+      ).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('storage override "0" wins over the host check', () => {
     expect(
       isRemoteLogEnabled({

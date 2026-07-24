@@ -13,7 +13,17 @@
 	     bundled Capacitor Preferences plugin (and Capacitor bridge state).
 	     Reason CA92.1 = "Access info from the app itself / same app group",
 	     which is exactly how it's used (local settings only, never sent off
-	     device). -->
+	     device).
+
+	     FileTimestamp (C617.1) + DiskSpace (E174.1) are declared because the
+	     bundled @capacitor/filesystem plugin reads file metadata / free space
+	     for user-imported scores stored on-device. C617.1 = "display file
+	     timestamps to the person using the device / access for the app
+	     itself"; E174.1 = "write/optimise using available space for the app
+	     itself". Both are local-only (on-device score library), never sent
+	     off device — matching the "audio stays on device / no tracking"
+	     posture. Declared proactively to avoid the ITMS upload flag rather
+	     than reacting to a rejection. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>
@@ -22,6 +32,22 @@
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>E174.1</string>
 			</array>
 		</dict>
 	</array>

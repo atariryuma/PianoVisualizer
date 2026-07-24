@@ -69,7 +69,13 @@ function makeDeps(over: Partial<JournalModalDeps> = {}): JournalModalDeps {
     t: vi.fn((key: string, vars?: Record<string, unknown>) =>
       vars ? key + JSON.stringify(vars) : key
     ),
-    formatDateKey: (d: Date) => d.toISOString().slice(0, 10),
+    // Local-date key (matches production PianoCore.formatDateKey). toISOString
+    // uses UTC and drifts `today` 00:00-local vs `now` across the day boundary
+    // depending on timezone + time-of-day (was a flaky J5 day-match).
+    formatDateKey: (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`,
     ...over,
   };
 }

@@ -37,6 +37,7 @@ function makeDom(): UserSongsUiDom {
       <div id="drop-zone"></div>
       <input id="url-input" />
       <button id="fetch-btn"></button>
+      <input id="url-pd-checkbox" type="checkbox" />
       <span id="status"></span>
       <div id="my-list"></div>
       <div id="user-song-list"></div>
@@ -59,6 +60,7 @@ function makeDom(): UserSongsUiDom {
     dropZone: document.getElementById('drop-zone'),
     urlInput: document.getElementById('url-input') as HTMLInputElement,
     fetchBtn: document.getElementById('fetch-btn') as HTMLButtonElement,
+    urlPdCheckbox: document.getElementById('url-pd-checkbox') as HTMLInputElement,
     status: document.getElementById('status') as HTMLElement,
     myList: document.getElementById('my-list') as HTMLElement,
     userSongList: document.getElementById('user-song-list') as HTMLElement,
@@ -434,6 +436,7 @@ describe('createUserSongsUi — file + url fetch', () => {
   it('url fetch posts the trimmed URL through addUserSongFromUrl', async () => {
     const deps = makeDeps();
     createUserSongsUi(deps);
+    deps.dom.urlPdCheckbox!.checked = true; // H3: PD attestation required
     deps.dom.urlInput!.value = '  https://x/test.mxl  ';
     deps.dom.fetchBtn!.click();
     await Promise.resolve();
@@ -442,6 +445,17 @@ describe('createUserSongsUi — file + url fetch', () => {
       'https://x/test.mxl',
       expect.objectContaining({ source: 'url' })
     );
+  });
+
+  it('H3: url fetch is BLOCKED until the PD attestation box is checked', async () => {
+    const deps = makeDeps();
+    createUserSongsUi(deps);
+    deps.dom.urlPdCheckbox!.checked = false;
+    deps.dom.urlInput!.value = 'https://x/test.mxl';
+    deps.dom.fetchBtn!.click();
+    await Promise.resolve();
+    expect(deps.addUserSongFromUrl).not.toHaveBeenCalled();
+    expect(deps.dom.status.textContent).toContain('addSongPdAttest');
   });
 });
 
