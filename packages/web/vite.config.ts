@@ -110,7 +110,17 @@ export default defineConfig(({ mode }) => ({
             // one as the single source of truth (VitePWA still builds the SW).
             manifest: false,
             workbox: {
-              globPatterns: ['**/*.{js,css,html,svg,mxl,xml,json}'],
+              // `musicxml` is NOT covered by `xml` — a glob alternative is a
+              // literal suffix, and "…arabesque.musicxml" does not end in
+              // ".xml". Leaving it out silently excluded 36 of the 58 library
+              // scores from the precache: every one of our own transcriptions
+              // and every OpenScore Lied (the 22 musetrainer files are .mxl, so
+              // only those were ever cached). They still LOADED — an uncached
+              // request just goes to the network — so the gap was invisible
+              // online and only bit offline, which is exactly when a practice
+              // app on an iPad at a piano needs them. It also made a freshly
+              // added score look like it "didn't ship" until the SW rotated.
+              globPatterns: ['**/*.{js,css,html,svg,mxl,xml,musicxml,json}'],
               // Bump the per-file cache cap for the OSMD chunk (~1.2 MB).
               maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
               // Phase 0b.3 follow-up: takeover semantics for users still

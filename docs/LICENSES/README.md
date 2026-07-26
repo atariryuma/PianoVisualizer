@@ -19,13 +19,13 @@ All are public-domain compositions and clean for a paid, worldwide release.
 
 ## Song library (`assets/library/`)
 
-**57 pieces**, all bundled (offline; no runtime fetch), graded beginner →
+**58 pieces**, all bundled (offline; no runtime fetch), graded beginner →
 advanced, from three provenance-clean sources. Every entry's `license` +
 `source` is embedded in `manifest.json` and machine-checked by the generator +
 `bundled-library.test.ts` (license ∈ {PD, CC0}, composer died > 70 yrs, source
 present, no orphans).
 
-1. **18 our own transcriptions** (`*.musicxml`, `license: PD`) — engraved by us
+1. **19 our own transcriptions** (`*.musicxml`, `license: PD`) — engraved by us
    via [`scripts/gen-library-scores.mjs`](../../scripts/gen-library-scores.mjs);
    both layers clean (composition PD + engraving authored by us).
 2. **22 full solo-piano scores from musetrainer** (`*.mxl`, `license: PD`) — see
@@ -44,6 +44,39 @@ present, no orphans).
 (Our earlier simplified drafts of Minuet in G, Gymnopédie, Prelude in C,
 Nocturne Op. 9/2, Prelude Op. 28/4 and Moonlight were replaced by the full
 scores in §2.)
+
+#### 1b — Engraved FROM a named public-domain edition
+
+One entry in §1 is not a melody reduction but a full two-hand transcription, so
+its provenance is recorded per-file rather than as "generated":
+
+| File                            | Piece                                                         | Source edition                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `burgmuller_arabesque.musicxml` | Burgmüller (1806–1874), L'Arabesque, Op. 100 No. 2 (2 初中級) | [Mutopia Project](https://www.mutopiaproject.org/ftp/BurgmullerJFF/O100/25EF-02/), ref. `Mutopia-2013/01/12-203`, from Collection Litolff (19th c.) |
+
+**Both layers are clean, with no attribution or share-alike attached.** The
+composition is PD (composer died 1874). The source engraving was **placed in the
+public domain by its typesetter** (Bas Wassink; bar 17 corrected by Chris Sawer)
+— Mutopia states `licence: Public Domain` in the piece's own `.rdf`, and the
+engraved PDF carries the same statement. This is a stronger grant than §2's
+faithful-transcription theory, and unlike a CC-BY / CC-BY-SA file it imposes
+nothing on us downstream.
+
+**Why not IMSLP.** IMSLP was checked first and is a dead end for this piece:
+every public-domain copy of Op. 100 there is a page scan (1851 Benoît aîné, ca.
+1852 Schott, 1903 Schirmer …), and the only machine-readable _Arabesque_ on the
+page — Jürgen Knuth's engraving files — is **CC BY-NC-SA 3.0**. The
+non-commercial clause rules it out of a paid app, so it was not used. Mutopia is
+the one clean machine-readable source. Neither the Mutopia nor the Knuth
+engraving was copied: we emit our own MusicXML.
+
+**How the notes were verified.** Pitches and rhythms were resolved from the
+Mutopia LilyPond source by a parser, then checked **note for note against
+Mutopia's own MIDI render** — 106 right-hand + 177 left-hand onsets, all 283
+identical, zero mismatches. Nothing in that piece was written from memory. The
+generated file re-checks as 108 + 177 through OSMD (the extra two are the
+tie-stop notes, which MIDI merges into their tie-start). Re-run that check if
+the tokens are ever edited.
 
 ### 2 — Full solo-piano scores from `musetrainer/library` (⚠️ license caveat)
 

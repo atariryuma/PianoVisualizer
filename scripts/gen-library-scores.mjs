@@ -62,13 +62,18 @@ function parsePitch(p) {
   return { step: m[1], alter: m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0, octave: Number(m[3]) };
 }
 
-// Parse a token → { dur, type, dots, rest? , pitches:[{step,alter,octave}] }
+// Parse a token → { dur, type, dots, rest? , tie?, pitches:[{step,alter,octave}] }
+// A trailing "~" starts a tie; the next event with the same pitch stops it.
 function parseToken(tok) {
-  const [main, durRaw] = tok.split(':');
+  const tie = tok.endsWith('~');
+  const [main, durRaw] = (tie ? tok.slice(0, -1) : tok).split(':');
   const { dur, type, dots } = durOf(durRaw || 'q');
-  if (main === 'r') return { rest: true, dur, type, dots };
+  if (main === 'r') {
+    if (tie) throw new Error('a rest cannot start a tie');
+    return { rest: true, dur, type, dots };
+  }
   const pitches = main.split('+').map(parsePitch);
-  return { pitches, dur, type, dots };
+  return { pitches, dur, type, dots, tie };
 }
 
 function pitchXml(p, indent) {
@@ -191,6 +196,258 @@ function buildScore(p) {
   L.push('  </part>');
   L.push('</score-partwise>');
   return { xml: L.join('\n') + '\n', measureCount: measures.length };
+}
+
+// ── Grand-staff pieces (`staves: 2`) ─────────────────────────────────────────
+// A real two-hand transcription: `rh` + `lh` token arrays, packed into bars
+// independently and then interleaved with <backup>. Adds the four things a
+// piano score needs beyond the single-staff path: ties, repeat/volta barlines,
+// mid-piece clef changes, and fermatas.
+//
+// The single-staff emitter above is left untouched ON PURPOSE — it produces
+// the 18 already-shipped .musicxml files byte-for-byte, and a shared "improved"
+// emitter would rewrite all of them for no reason.
+
+/** Note element for the grand staff. MusicXML child order is fixed by the DTD:
+ *  chord, pitch, duration, tie, voice, type, dot, accidental, staff, notations. */
+/** Beam count for a note type. NB `n.type` is the MusicXML type NAME
+ *  ('16th', 'eighth'), not a number — TYPE above maps the token letter
+ *  straight to it. 0 = never beamed. */
+const BEAM_LEVELS = { whole: 0, half: 0, quarter: 0, eighth: 1, '16th': 2, '32nd': 3 };
+function beamLevels(type) {
+  return BEAM_LEVELS[type] ?? 0;
+}
+
+/** Beat-wise automatic beaming, the standard engraving rule: consecutive
+ *  flagged notes are beamed together within a beat, and a rest or a beat
+ *  boundary breaks the group. Without this OSMD draws every sixteenth with its
+ *  own flag, which is unreadable at this density (and nothing like the printed
+ *  source). Returns one array of {level, kind} per event, indexed alongside it. */
+function autoBeams(bar, beatDiv) {
+  const out = bar.map(() => []);
+  let pos = 0;
+  const spans = [];
+  let cur = [];
+  bar.forEach((n, i) => {
+    const beat = Math.floor(pos / beatDiv);
+    const endsInSameBeat = Math.floor((pos + n.dur - 1) / beatDiv) === beat;
+    const beamable = !n.rest && beamLevels(n.type) > 0 && endsInSameBeat;
+    if (beamable && (cur.length === 0 || cur.beat === beat)) {
+      if (cur.length === 0) cur.beat = beat;
+      cur.push(i);
+    } else {
+      if (cur.length > 1) spans.push(cur);
+      cur = [];
+      if (beamable) {
+        cur.beat = beat;
+        cur.push(i);
+      }
+    }
+    pos += n.dur;
+  });
+  if (cur.length > 1) spans.push(cur);
+
+  for (const span of spans) {
+    const maxLvl = Math.max(...span.map((i) => beamLevels(bar[i].type)));
+    for (let lvl = 1; lvl <= maxLvl; lvl++) {
+      // sub-runs of consecutive notes that actually carry this beam level
+      let run = [];
+      const flush = () => {
+        if (run.length > 1) {
+          run.forEach((i, k) =>
+            out[i].push({
+              level: lvl,
+              kind: k === 0 ? 'begin' : k === run.length - 1 ? 'end' : 'continue',
+            })
+          );
+        }
+        run = [];
+      };
+      for (const i of span) {
+        if (beamLevels(bar[i].type) >= lvl) run.push(i);
+        else flush();
+      }
+      flush();
+    }
+  }
+  return out;
+}
+
+function noteXml2(n, voice, staff, stopPitches, fermata, beams) {
+  if (n.rest) {
+    const out = [
+      '      <note>',
+      '        <rest/>',
+      `        <duration>${n.dur}</duration>`,
+      `        <voice>${voice}</voice>`,
+      `        <type>${n.type}</type>`,
+    ];
+    for (let i = 0; i < n.dots; i++) out.push('        <dot/>');
+    out.push(`        <staff>${staff}</staff>`, '      </note>');
+    return out.join('\n');
+  }
+  const lines = [];
+  n.pitches.forEach((p, idx) => {
+    const key = `${p.step}${p.alter}${p.octave}`;
+    const stops = stopPitches.has(key);
+    lines.push('      <note>');
+    if (idx > 0) lines.push('        <chord/>');
+    lines.push(...pitchXml(p, '        '));
+    lines.push(`        <duration>${n.dur}</duration>`);
+    if (stops) lines.push('        <tie type="stop"/>');
+    if (n.tie) lines.push('        <tie type="start"/>');
+    lines.push(`        <voice>${voice}</voice>`, `        <type>${n.type}</type>`);
+    for (let i = 0; i < n.dots; i++) lines.push('        <dot/>');
+    if (p.alter) lines.push(`        <accidental>${p.alter === 1 ? 'sharp' : 'flat'}</accidental>`);
+    lines.push(`        <staff>${staff}</staff>`);
+    // Beams ride the chord's first note only (MusicXML puts them once per
+    // note-column, not once per pitch).
+    if (idx === 0) {
+      for (const b of beams || []) lines.push(`        <beam number="${b.level}">${b.kind}</beam>`);
+    }
+    const notations = [];
+    if (stops) notations.push('          <tied type="stop"/>');
+    if (n.tie) notations.push('          <tied type="start"/>');
+    if (fermata && idx === 0) notations.push('          <fermata/>');
+    if (notations.length) {
+      lines.push('        <notations>', ...notations, '        </notations>');
+    }
+    lines.push('      </note>');
+  });
+  return lines.join('\n');
+}
+
+function clefXml(sign, line, number) {
+  return `        <clef number="${number}"><sign>${sign}</sign><line>${line}</line></clef>`;
+}
+
+function buildGrandStaff(p) {
+  const [beats, beatType] = p.time;
+  const capacity = beats * ((DIVISIONS * 4) / beatType);
+  if (!Number.isInteger(capacity)) throw new Error(`${p.id}: bad time signature`);
+  const rh = packMeasures(p.rh.map(parseToken), capacity, p.pickup || 0);
+  const lh = packMeasures(p.lh.map(parseToken), capacity, p.pickup || 0);
+  if (rh.length !== lh.length) {
+    throw new Error(`${p.id}: staff bar counts differ (rh ${rh.length}, lh ${lh.length})`);
+  }
+
+  // Repeat/volta lookup, keyed by 1-based measure number.
+  const fwd = new Set();
+  const endingStart = new Map();
+  const endingStop = new Map();
+  for (const r of p.repeats || []) {
+    fwd.add(r.from);
+    endingStart.set(r.ending1, '1');
+    endingStop.set(r.ending1, { number: '1', type: 'stop', repeat: true });
+    endingStart.set(r.ending2, '2');
+    endingStop.set(r.ending2, { number: '2', type: 'discontinue', repeat: false });
+  }
+  const clefAt = new Map(); // measure → [{staff, sign, line}]
+  for (const c of p.clefChanges || []) {
+    if (!clefAt.has(c.measure)) clefAt.set(c.measure, []);
+    clefAt.get(c.measure).push(c);
+  }
+  const fermataAt = new Set(p.fermatas || []);
+
+  const L = [];
+  L.push('<?xml version="1.0" encoding="UTF-8"?>');
+  L.push(
+    '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">'
+  );
+  L.push('<score-partwise version="3.1">');
+  L.push('  <work>');
+  L.push(`    <work-title>${p.title}</work-title>`);
+  L.push('  </work>');
+  L.push('  <identification>');
+  L.push(`    <creator type="composer">${p.composer}</creator>`);
+  L.push(
+    `    <rights>${p.rights || 'Public-domain composition; engraving authored by Piano Visualizer.'}</rights>`
+  );
+  L.push('    <encoding><software>Piano Visualizer library generator</software></encoding>');
+  L.push('  </identification>');
+  L.push('  <part-list>');
+  L.push('    <score-part id="P1">');
+  L.push('      <part-name>Piano</part-name>');
+  L.push(
+    '      <score-instrument id="P1-I1"><instrument-name>Piano</instrument-name></score-instrument>'
+  );
+  L.push(
+    '      <midi-instrument id="P1-I1"><midi-channel>1</midi-channel><midi-program>1</midi-program></midi-instrument>'
+  );
+  L.push('    </score-part>');
+  L.push('  </part-list>');
+  L.push('  <part id="P1">');
+
+  // Ties are declared on the STARTING note; the stop lands on the next event
+  // of the same pitch in that staff. Tracked per staff across bar lines.
+  const pending = { 1: new Set(), 2: new Set() };
+  const beatDiv = (DIVISIONS * 4) / beatType;
+  const emitStaff = (bar, voice, staff, fermata) => {
+    const beams = autoBeams(bar, beatDiv);
+    return bar.map((n, i) => {
+      const stops = pending[staff];
+      const xml = noteXml2(n, voice, staff, stops, fermata, beams[i]);
+      pending[staff] = new Set();
+      if (n.tie) for (const q of n.pitches) pending[staff].add(`${q.step}${q.alter}${q.octave}`);
+      return xml;
+    });
+  };
+
+  rh.forEach((bar, i) => {
+    const num = i + 1;
+    L.push(`    <measure number="${num}">`);
+    if (fwd.has(num)) {
+      L.push('      <barline location="left">');
+      L.push('        <bar-style>heavy-light</bar-style>');
+      L.push('        <repeat direction="forward"/>');
+      L.push('      </barline>');
+    }
+    if (endingStart.has(num)) {
+      L.push('      <barline location="left">');
+      L.push(`        <ending number="${endingStart.get(num)}" type="start"/>`);
+      L.push('      </barline>');
+    }
+    if (i === 0) {
+      L.push('      <attributes>');
+      L.push(`        <divisions>${DIVISIONS}</divisions>`);
+      L.push(`        <key><fifths>${p.fifths || 0}</fifths></key>`);
+      L.push(`        <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>`);
+      L.push('        <staves>2</staves>');
+      L.push(clefXml('G', 2, 1));
+      L.push(clefXml('F', 4, 2));
+      L.push('      </attributes>');
+      if (p.tempo) {
+        L.push('      <direction placement="above"><direction-type>');
+        L.push(
+          `        <metronome><beat-unit>quarter</beat-unit><per-minute>${p.tempo}</per-minute></metronome>`
+        );
+        L.push(`      </direction-type><sound tempo="${p.tempo}"/></direction>`);
+      }
+    } else if (clefAt.has(num)) {
+      L.push('      <attributes>');
+      for (const c of clefAt.get(num)) L.push(clefXml(c.sign, c.line, c.staff));
+      L.push('      </attributes>');
+    }
+    const fer = fermataAt.has(num);
+    L.push(...emitStaff(bar, 1, 1, fer));
+    L.push(`      <backup><duration>${capacity}</duration></backup>`);
+    L.push(...emitStaff(lh[i], 5, 2, fer));
+    const stop = endingStop.get(num);
+    const last = num === rh.length;
+    if (stop || last) {
+      L.push('      <barline location="right">');
+      if (stop?.repeat) L.push('        <bar-style>light-heavy</bar-style>');
+      else if (last) L.push('        <bar-style>light-heavy</bar-style>');
+      if (stop) L.push(`        <ending number="${stop.number}" type="${stop.type}"/>`);
+      if (stop?.repeat) L.push('        <repeat direction="backward"/>');
+      L.push('      </barline>');
+    }
+    L.push('    </measure>');
+  });
+
+  L.push('  </part>');
+  L.push('</score-partwise>');
+  return { xml: L.join('\n') + '\n', measureCount: rh.length };
 }
 
 // ── Public-domain pieces (our own transcriptions / arrangements) ─────────────
@@ -1061,6 +1318,282 @@ const PIECES = [
       'G#4:e',
     ],
   },
+
+  // ---- Grand staff (staves: 2) — real two-hand transcriptions ----
+  //
+  // Engraved from the Mutopia Project's PUBLIC-DOMAIN edition (typeset by Bas
+  // Wassink from Collection Litolff, 19th c.; bar 17 corrected by Chris Sawer;
+  // reference Mutopia-2013/01/12-203). Both layers are clean: the composition
+  // is PD (Burgmüller 1806–1874) and the source engraving was placed in the
+  // public domain by its typesetter — no attribution or share-alike attaches.
+  //
+  // Every pitch below was resolved from that edition's LilyPond source by a
+  // parser, then checked NOTE FOR NOTE against Mutopia's own MIDI render:
+  // 106 right-hand + 177 left-hand onsets, all 283 identical. Nothing here was
+  // written from memory. If you edit these tokens, re-run that check.
+  //
+  // (IMSLP was the obvious first stop and is a dead end for this piece: its
+  // public-domain copies are page scans, and the only machine-readable
+  // Arabesque there is CC BY-NC-SA — non-commercial, so unusable in a paid
+  // app. Mutopia is the one clean machine-readable source.)
+  {
+    id: 'burgmuller_arabesque',
+    title: "L'Arabesque, Op. 100 No. 2",
+    titleJp: 'アラベスク',
+    composer: 'Johann Friedrich Burgmüller',
+    composerJp: 'ブルクミュラー',
+    died: 1874,
+    level: 2,
+    time: [2, 4],
+    fifths: 0, // A minor
+    tempo: 152,
+    staves: 2,
+    rights:
+      'Public-domain composition; engraved from the Mutopia Project public-domain edition (Mutopia-2013/01/12-203).',
+    source: 'https://www.mutopiaproject.org/ftp/BurgmullerJFF/O100/25EF-02/',
+    note: 'Engraved from the Mutopia Project PD edition (typesetter placed it in the public domain); verified against its MIDI.',
+    repeats: [
+      { from: 3, ending1: 10, ending2: 11 },
+      { from: 12, ending1: 27, ending2: 28 },
+    ],
+    clefChanges: [
+      // The left hand carries the sixteenths in bars 17-19 and climbs to A4 —
+      // the source edition switches it to treble there rather than stacking
+      // ledger lines.
+      { measure: 17, staff: 2, sign: 'G', line: 2 },
+      { measure: 20, staff: 2, sign: 'F', line: 4 },
+    ],
+    fermatas: [33],
+    rh: [
+      'r:h', // 1
+      'r:h', // 2
+      'A4:s',
+      'B4:s',
+      'C5:s',
+      'B4:s',
+      'A4:e',
+      'r:e', // 3
+      'A4:s',
+      'B4:s',
+      'C5:s',
+      'D5:s',
+      'E5:e',
+      'r:e', // 4
+      'D5:s',
+      'E5:s',
+      'F5:s',
+      'G5:s',
+      'A5:e',
+      'r:e', // 5
+      'A5:s',
+      'B5:s',
+      'C6:s',
+      'D6:s',
+      'E6:e',
+      'r:e', // 6
+      'r:e',
+      'E5:e',
+      'E5:e',
+      'F5:e', // 7
+      'D5:e',
+      'r:e',
+      'D5:q~', // 8
+      'D5:e',
+      'G5:e',
+      'D5:e',
+      'E5:e', // 9
+      'C5:e',
+      'r:e',
+      'E5:q', // 10 — 1st ending
+      'C5:q',
+      'C6:e',
+      'r:e', // 11 — 2nd ending
+      'E5:q.',
+      'B4:e', // 12
+      'C5:q.',
+      'A4:e', // 13
+      'E5:q.',
+      'B4:e', // 14
+      'C5:q.',
+      'A4:e', // 15
+      'A5:q.',
+      'E5:e', // 16
+      'F5:q.',
+      'E5:e', // 17
+      'D5:e',
+      'C5:e',
+      'B4:e',
+      'A4:e', // 18
+      'G#4:q',
+      'E5:q', // 19
+      'A4:s',
+      'B4:s',
+      'C5:s',
+      'B4:s',
+      'A4:e',
+      'r:e', // 20
+      'A4:s',
+      'B4:s',
+      'C5:s',
+      'D5:s',
+      'E5:e',
+      'r:e', // 21
+      'D5:s',
+      'E5:s',
+      'F5:s',
+      'G5:s',
+      'A5:e',
+      'r:e', // 22
+      'A5:s',
+      'B5:s',
+      'C6:s',
+      'D6:s',
+      'E6:e',
+      'r:e', // 23
+      'r:e',
+      'B4:e',
+      'B4:e',
+      'C5:e', // 24
+      'A4:q',
+      'E5:q~', // 25
+      'E5:e',
+      'B4:e',
+      'B4:e',
+      'C5:e', // 26
+      'A4:h', // 27 — 1st ending
+      'A4:s',
+      'B4:s',
+      'C5:s',
+      'B4:s',
+      'A4:e',
+      'r:e', // 28 — 2nd ending
+      'D5:s',
+      'E5:s',
+      'F5:s',
+      'G5:s',
+      'A5:e',
+      'r:e', // 29
+      'A5:s',
+      'B5:s',
+      'C6:s',
+      'B5:s',
+      'A5:e',
+      'r:e', // 30
+      'D6:s',
+      'E6:s',
+      'F6:s',
+      'G6:s',
+      'A6:e',
+      'r:e', // 31
+      'E4:s',
+      'D4:s',
+      'C4:s',
+      'B3:s',
+      'A3:e',
+      'r:e', // 32
+      'C5+A5:h', // 33
+    ],
+    lh: [
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 1
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 2
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 3
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 4
+      'A3+D4+F4:q',
+      'A3+D4+F4:q', // 5
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 6
+      'G3+C4+E4:q',
+      'G3+C4+E4:q', // 7
+      'G3+B3+F4:q',
+      'G3+B3+F4:q', // 8
+      'G3+B3+F4:q',
+      'G3+B3+F4:q', // 9
+      'C4+E4:e',
+      'r:e',
+      'E4:q', // 10 — 1st ending
+      'C4+E4:q.',
+      'r:e', // 11 — 2nd ending
+      'G#3:s',
+      'A3:s',
+      'B3:s',
+      'A3:s',
+      'G#3:e',
+      'r:e', // 12
+      'A3:s',
+      'B3:s',
+      'C4:s',
+      'D4:s',
+      'E4:e',
+      'r:e', // 13
+      'G#3:s',
+      'A3:s',
+      'B3:s',
+      'A3:s',
+      'G#3:e',
+      'r:e', // 14
+      'A3:s',
+      'B3:s',
+      'C4:s',
+      'D4:s',
+      'E4:e',
+      'r:e', // 15
+      'C#4:s',
+      'D4:s',
+      'E4:s',
+      'D4:s',
+      'C#4:e',
+      'r:e', // 16
+      'D4:s',
+      'E4:s',
+      'F4:s',
+      'G4:s',
+      'A4:e',
+      'G4:e', // 17
+      'F4:e',
+      'E4:e',
+      'D4:e',
+      'D#4:e', // 18
+      'E4:e',
+      'D4:e',
+      'C4:e',
+      'B3:e', // 19
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 20
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 21
+      'A3+D4+F4:q',
+      'A3+D4+F4:q', // 22
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 23
+      'A3+D4+E4:q',
+      'A3+D4+E4:q', // 24
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 25
+      'A3+D4+E4:q',
+      'A3+D4+E4:q', // 26
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 27 — 1st ending
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 28 — 2nd ending
+      'A3+D4+F4:q',
+      'A3+D4+F4:q', // 29
+      'A3+C4+E4:q',
+      'A3+C4+E4:q', // 30
+      'A3+D4+F4:q',
+      'A3+D4+F4:q', // 31
+      'E3:s',
+      'D3:s',
+      'C3:s',
+      'B2:s',
+      'A2:e',
+      'r:e', // 32
+      'A3+E4:h', // 33
+    ],
+  },
 ];
 
 // ── External bundled scores (already in assets/library/, NOT generated) ──────
@@ -1483,7 +2016,7 @@ const manifest = { version: 1, scores: [] };
 let total = 0;
 for (const p of PIECES) {
   if (p.skip || SUPERSEDED.has(p.id)) continue;
-  const { xml, measureCount } = buildScore(p);
+  const { xml, measureCount } = p.staves === 2 ? buildGrandStaff(p) : buildScore(p);
   const file = `${p.id}.musicxml`;
   writeFileSync(join(OUT_DIR, file), xml, 'utf8');
   manifest.scores.push({
@@ -1497,8 +2030,11 @@ for (const p of PIECES) {
     level: p.level,
     levelJp: LEVEL_JP[p.level],
     license: 'PD',
-    source: 'generated',
-    note: 'Own transcription of a public-domain composition',
+    // Default provenance = "we wrote the notes out ourselves". A piece may
+    // override when it was engraved FROM a specific public-domain edition —
+    // then the manifest names it, so the row is auditable (Guideline 5.2.3).
+    source: p.source || 'generated',
+    note: p.note || 'Own transcription of a public-domain composition',
   });
   total++;
 
