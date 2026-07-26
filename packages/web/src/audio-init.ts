@@ -54,6 +54,16 @@ export const MIC_CONSTRAINTS: MediaStreamConstraints = {
   },
 };
 
+/** Below this hidden duration the context's own `running` is believed. A brief
+ *  app-switch does not freeze it, and the probe below sits in front of the
+ *  player returning to the app. */
+const CTX_LIVENESS_MIN_HIDDEN_MS = 30_000;
+
+/** How long to watch `currentTime` before calling the clock frozen. Two 60 fps
+ *  render quanta — long enough that a live context has certainly advanced,
+ *  short enough to be invisible on resume. */
+const CTX_LIVENESS_PROBE_MS = 40;
+
 /** Pinned to 48000 Hz so AirPods (which flip between 24kHz input and 48kHz
  *  output) don't cause stutter when the mic activates. Browsers do automatic
  *  resampling — we eat the SRC cost in exchange for stability.
@@ -376,6 +386,10 @@ export interface AudioLifecycleDeps {
   /** Timer hooks — tests inject vi.useFakeTimers() shims. */
   setTimeout?: (cb: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
+  /** Wall clock. Only used to measure how long the page stayed hidden, which
+   *  is what decides whether the AudioContext's self-reported state is
+   *  believed. Injectable so that decision is testable. */
+  now?: () => number;
 
   // ── logging ───────────────────────────────────────────────────
   /** Defaults to `console.warn`. */
@@ -397,6 +411,7 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
   const setT = deps.setTimeout ?? ((cb, ms) => setTimeout(cb, ms));
   const clearT = deps.clearTimeout ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
   const warn = deps.warn ?? ((m: string) => console.warn(m));
+  const now = deps.now ?? (() => Date.now());
   const doc = deps.document ?? (typeof document !== 'undefined' ? document : null);
 
   let installed = false;
@@ -468,12 +483,46 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
   // handlers. On every resume we refresh all three so the kid can
   // pick up exactly where they left off without seeing a phantom
   // "connection error".
+  /** When the page went hidden (epoch ms), or null while visible. Only a LONG
+   *  background stay makes the liveness probe below worth its cost.
+   *  `null` rather than 0 — 0 is a legitimate reading from an injected clock,
+   *  and a sentinel that collides with a real value is a bug waiting for the
+   *  one test that starts its clock at zero. */
+  let hiddenAtMs: number | null = null;
+
+  /**
+   * Does this context's clock actually advance?
+   *
+   * `state === 'running'` is the context's own claim, and after a long
+   * WKWebView background trip that claim can be false: the state survives, the
+   * clock does not, and every note is scheduled onto a frozen timeline —
+   * silence, with nothing anywhere reporting a fault. That is what WebKit Bugs
+   * 237878 / 261554 are about, and it is why this file already recreates rather
+   * than resumes elsewhere.
+   *
+   * The MIDI half of this same handler has always verified rather than trusted
+   * (`verifyMidiAlive` — "we THINK MIDI is connected; check the port responds").
+   * The audio half trusted a self-reported state. Same background trip, same
+   * class of corpse, one of the two checked.
+   *
+   * `currentTime` is the honest test: it advances only while the context is
+   * genuinely rendering.
+   */
+  async function clockIsAdvancing(ctx: { currentTime: number }): Promise<boolean> {
+    const t0 = ctx.currentTime;
+    await new Promise((r) => setT(() => r(undefined), CTX_LIVENESS_PROBE_MS));
+    return ctx.currentTime > t0;
+  }
+
   async function onVisibilityChange(): Promise<void> {
     if (!doc) return;
     if (doc.visibilityState !== 'visible') {
+      hiddenAtMs = now();
       deps.onHidden?.();
       return;
     }
+    const hiddenForMs = hiddenAtMs != null ? now() - hiddenAtMs : 0;
+    hiddenAtMs = null;
     deps.onVisible?.();
     if (deps.isRunning()) deps.requestWakeLock();
 
@@ -494,6 +543,15 @@ export function createAudioLifecycle(deps: AudioLifecycleDeps): AudioLifecycle {
         }
         // If still not running after resume(), context is dead — recreate.
         if (ctx.state !== 'running') {
+          await deps.recover();
+        }
+      } else if (hiddenForMs > CTX_LIVENESS_MIN_HIDDEN_MS) {
+        // It says 'running'. After a long background stay, verify that.
+        // Gated on the duration because a brief app-switch is the common case
+        // and does not produce this failure — the probe costs a frame there for
+        // nothing, and this runs in front of the player coming back.
+        if (!(await clockIsAdvancing(ctx))) {
+          warn('[AUDIO] context claimed running but its clock is frozen — recreating');
           await deps.recover();
         }
       }

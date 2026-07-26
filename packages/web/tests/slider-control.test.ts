@@ -236,6 +236,35 @@ describe('installSlider', () => {
     expect(el.value).toBe('0');
   });
 
+  it('follows a PROGRAMMATIC value write — the calibration result path', () => {
+    // `refreshAudioOffsetUI` and `refresh()` both seed with `slider.value = v`,
+    // which fires no event. A native range repaints itself from its value, so
+    // owning the paint silently dropped that: a calibration measured 260 ms,
+    // the number updated, and the bar did not move.
+    const { el, padOf, install } = makeSlider({ min: '-50', max: '400', value: '40' });
+    install();
+    const wrap = padOf();
+    const fracOf = (): number => parseFloat(wrap.style.getPropertyValue('--slider-f'));
+    expect(fracOf()).toBeCloseTo((40 - -50) / (400 - -50), 6);
+    el.value = '260';
+    expect(fracOf(), 'the paint must track the value model').toBeCloseTo(
+      (260 - -50) / (400 - -50),
+      6
+    );
+    // Reading it back is unchanged — the property is still the value model.
+    expect(el.value).toBe('260');
+  });
+
+  it('restores the plain value property on dispose', () => {
+    const { el, install } = makeSlider({ value: '10' });
+    const ctl = install();
+    expect(Object.getOwnPropertyDescriptor(el, 'value')).toBeTruthy();
+    ctl.dispose();
+    expect(Object.getOwnPropertyDescriptor(el, 'value')).toBeUndefined();
+    el.value = '55';
+    expect(el.value).toBe('55');
+  });
+
   it('measures the track ONCE per gesture, not once per frame', () => {
     // `getBoundingClientRect` forces a style+layout flush, and the render loop
     // has already written DOM styles by the time the coalescing rAF runs — so a

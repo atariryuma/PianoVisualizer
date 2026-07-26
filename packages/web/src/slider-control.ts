@@ -104,25 +104,57 @@ export function installSlider(el: RangeEl): SliderControl {
   wrap.append(track, thumb);
 
   /**
-   * Position the thumb from the value. Expressed as a percentage of the track
-   * with the same half-thumb inset the hit-test uses, so it needs no
-   * measurement — correct before the panel has ever been laid out, and after
-   * any resize or orientation change, for free.
+   * Position the thumb from the value.
+   *
+   * ONE number is published — the 0..1 fraction — and CSS turns it into a
+   * position with the same half-thumb inset the hit-test uses. So it needs no
+   * measurement (correct before the panel has ever been laid out, and after any
+   * resize or orientation change, for free), the thumb and the fill cannot drift
+   * apart because they read the same variable, and a drag frame writes one
+   * custom property instead of parsing two `calc()` strings.
    */
   const paint = (): void => {
     const f = fractionOf(el);
-    const half = THUMB_PX / 2;
-    thumb.style.left = `calc(${half}px + ${f} * (100% - ${THUMB_PX}px))`;
-    fill.style.width = `calc(${half}px + ${f} * (100% - ${THUMB_PX}px))`;
+    wrap.style.setProperty('--slider-f', String(f));
     // No `aria-valuenow` write: the element IS a native range, which publishes
     // its own value to AT. Setting the attribute as well dirtied the a11y tree a
     // second time on every drag frame and could only ever agree with `value`.
   };
   paint();
-  // Repaint whenever the value changes — ours, the keyboard's, or `refresh()`
-  // seeding it from prefs.
+  // Repaint whenever the value changes. TWO sources, because they are genuinely
+  // different and covering only one is what broke this:
+  //
+  //  1. Events — a keyboard arrow key, or our own dispatch from a drag. The
+  //     browser mutates the value internally there, so no property setter runs.
   el.addEventListener('input', paint);
   el.addEventListener('change', paint);
+  //  2. The `value` PROPERTY itself. `refresh()` seeding from prefs and the
+  //     calibration result both do `slider.value = String(v)`, which fires no
+  //     event at all — a native range repaints itself from its value so this
+  //     never had to be thought about, and taking over the paint silently
+  //     dropped it. The reported symptom: a calibration measured 260 ms, the
+  //     number updated, and the bar stayed where it was.
+  //
+  //     Hooking the property rather than exporting a `repaint()` for callers to
+  //     remember keeps the module's own promise — "the input stays the value
+  //     model" — true in BOTH directions. A writer that doesn't know this
+  //     control exists still gets a correct thumb.
+  const valueDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el) as object, 'value');
+  if (valueDesc?.get && valueDesc.set) {
+    const nativeGet = valueDesc.get;
+    const nativeSet = valueDesc.set;
+    Object.defineProperty(el, 'value', {
+      configurable: true,
+      enumerable: false,
+      get(this: RangeEl): string {
+        return nativeGet.call(this) as string;
+      },
+      set(this: RangeEl, v: string): void {
+        nativeSet.call(this, v);
+        paint();
+      },
+    });
+  }
 
   /** Which event family owns the gesture. Both are wired, so without this a
    *  `touchmove` would also drive a drag a pointer had started — the two would
@@ -235,6 +267,9 @@ export function installSlider(el: RangeEl): SliderControl {
     dispose(): void {
       el.removeEventListener('input', paint);
       el.removeEventListener('change', paint);
+      // Drop the own-property override so the element goes back to the
+      // prototype's plain accessor.
+      if (valueDesc?.get && valueDesc.set) delete (el as unknown as Record<string, unknown>).value;
       // Detach the handlers too: removing the node from the DOM leaves them
       // live, so a disposed control would still act on events sent to the orphan.
       wrap.removeEventListener('pointerdown', onPointerDown);

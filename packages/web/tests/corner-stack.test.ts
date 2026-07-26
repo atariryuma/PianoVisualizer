@@ -115,6 +115,15 @@ describe('top-right corner stack', () => {
     // hit-test drift apart, which is the exact failure this control already had.
     const thumb = ruleBody('.slider-thumb');
     expect(thumb, 'size must read the token').toMatch(/width:\s*var\(--thumb-px/);
+    // Position comes from the ONE fraction the control publishes, and the fill
+    // reads the SAME expression. Hand-coding either one is how the thumb and
+    // the fill (or the paint and the hit-test) drift apart.
+    expect(thumb, 'the thumb positions from --slider-f').toMatch(
+      /left:\s*calc\([^;]*var\(--slider-f/
+    );
+    expect(ruleBody('.slider-fill'), 'the fill positions from --slider-f').toMatch(
+      /width:\s*calc\([^;]*var\(--slider-f/
+    );
     expect(thumb, 'the centring offset is derived from it too').toMatch(
       /margin:\s*calc\(var\(--thumb-px/
     );

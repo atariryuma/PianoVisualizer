@@ -383,18 +383,29 @@ interface LifecycleFx {
   clearMidiAccessCache: ReturnType<typeof vi.fn>;
   setRunning: (b: boolean) => void;
   setAudioCtx: (
-    ctx: { state: 'suspended' | 'running'; resume: () => Promise<void> } | null
+    ctx: {
+      state: 'suspended' | 'running';
+      resume: () => Promise<void>;
+      currentTime?: number;
+    } | null
   ) => void;
   setMidiEnabled: (b: boolean) => void;
   setHasRequestMIDIAccess: (b: boolean) => void;
   warn: ReturnType<typeof vi.fn>;
   /** Drive the fake setTimeout queue manually. */
   flushTimers: (ms: number) => void;
+  /** Advance the injected wall clock (drives the "how long was it hidden"
+   *  gate that decides whether the context's `running` is believed). */
+  advanceWallClock: (ms: number) => void;
 }
 
 function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): LifecycleFx {
   let running = true;
-  let ctx: { state: 'suspended' | 'running'; resume: () => Promise<void> } | null = null;
+  let ctx: {
+    state: 'suspended' | 'running';
+    resume: () => Promise<void>;
+    currentTime?: number;
+  } | null = null;
   let midiEnabled = false;
   let hasRequestMIDIAccess = true;
 
@@ -436,6 +447,10 @@ function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): Lifecycle
     }
   );
 
+  // Injected wall clock — separate from the timer queue, because the hidden
+  // DURATION and the probe DELAY are two different things the tests drive.
+  let wallMs = 0;
+
   // Manual fake timers so we can flush devicechange debounce
   // synchronously inside tests.
   const queue: Array<{ id: number; cb: () => void; fireAt: number }> = [];
@@ -476,6 +491,7 @@ function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): Lifecycle
     startMidiAutoRescan,
     document: docStub,
     setTimeout: setT as unknown as AudioLifecycleDeps['setTimeout'],
+    now: () => wallMs,
     clearTimeout: clearT as unknown as AudioLifecycleDeps['clearTimeout'],
     warn,
     ...over,
@@ -512,6 +528,9 @@ function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): Lifecycle
       hasRequestMIDIAccess = b;
     },
     warn,
+    advanceWallClock: (ms) => {
+      wallMs += ms;
+    },
     flushTimers: (ms) => {
       nowMs += ms;
       const ready = queue.filter((q) => q.fireAt <= nowMs);
@@ -520,6 +539,73 @@ function makeLifecycleFixture(over: Partial<AudioLifecycleDeps> = {}): Lifecycle
     },
   };
 }
+
+describe('createAudioLifecycle — a context that LIES about running', () => {
+  // The failure this covers is silent by construction: after a long WKWebView
+  // background stay the AudioContext can keep `state === 'running'` while its
+  // clock stops, so every note is scheduled onto a frozen timeline and nothing
+  // anywhere reports a fault — the app simply plays nothing until it is
+  // relaunched. The MIDI half of this same handler has always verified rather
+  // than trusted (`verifyMidiAlive`); the audio half did not.
+
+  /** Resolve the pending liveness probe and let the handler finish. */
+  const settleProbe = async (fx: LifecycleFx): Promise<void> => {
+    fx.flushTimers(100);
+    await new Promise((r) => setImmediate(r));
+  };
+
+  const frozenCtx = () => ({
+    state: 'running' as const,
+    resume: async () => {},
+    currentTime: 12.5,
+  });
+  const liveCtx = () => {
+    let t = 12.5;
+    return {
+      state: 'running' as const,
+      resume: async () => {},
+      get currentTime() {
+        return (t += 0.05);
+      },
+    };
+  };
+
+  it('recreates when the clock did NOT advance after a long background stay', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(frozenCtx());
+    fx.install();
+    await fx.fireVisibility('hidden');
+    fx.advanceWallClock(9 * 60 * 60 * 1000); // overnight, as observed on device
+    await fx.fireVisibility('visible');
+    await settleProbe(fx);
+    expect(fx.recover).toHaveBeenCalledTimes(1);
+    expect(fx.warn.mock.calls.flat().join(' ')).toContain('clock is frozen');
+  });
+
+  it('leaves a genuinely live context alone', async () => {
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(liveCtx());
+    fx.install();
+    await fx.fireVisibility('hidden');
+    fx.advanceWallClock(9 * 60 * 60 * 1000);
+    await fx.fireVisibility('visible');
+    await settleProbe(fx);
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+
+  it('does not probe at all after a brief app-switch', async () => {
+    // The probe sits in front of the player coming back, and a short switch
+    // does not produce this failure — so the common path must not pay for it.
+    const fx = makeLifecycleFixture();
+    fx.setAudioCtx(frozenCtx());
+    fx.install();
+    await fx.fireVisibility('hidden');
+    fx.advanceWallClock(3000);
+    await fx.fireVisibility('visible');
+    await settleProbe(fx);
+    expect(fx.recover).not.toHaveBeenCalled();
+  });
+});
 
 describe('createAudioLifecycle — install / uninstall', () => {
   it('install() registers both listeners; second install is a no-op', async () => {

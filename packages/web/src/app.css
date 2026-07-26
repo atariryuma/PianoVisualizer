@@ -894,12 +894,19 @@ body.title-screen #homeBtn {
   left: 0;
   top: 0;
   bottom: 0;
+  /* Same expression as the thumb's `left`, same variable — the fill ends
+     exactly under the thumb's centre at every value, including the ends. */
+  width: calc(var(--thumb-px, 28px) / 2 + var(--slider-f, 0) * (100% - var(--thumb-px, 28px)));
   background: linear-gradient(90deg, rgba(108, 224, 255, 0.55), rgba(108, 224, 255, 0.85));
 }
 
 .slider-thumb {
   position: absolute;
   top: 50%;
+  /* Position from the fraction slider-control.ts publishes on the wrap. Both
+     this and .slider-fill read the SAME variable with the SAME expression, and
+     it is the expression valueAtX() inverts — paint and hit-test cannot drift. */
+  left: calc(var(--thumb-px, 28px) / 2 + var(--slider-f, 0) * (100% - var(--thumb-px, 28px)));
   width: var(--thumb-px, 28px);
   height: var(--thumb-px, 28px);
   /* Pull back by half so the box centres on the `left` the JS sets. Derived,
