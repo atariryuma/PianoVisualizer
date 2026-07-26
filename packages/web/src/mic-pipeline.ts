@@ -65,8 +65,9 @@ export interface MicPipelinePracticeRef {
  *  spawn is skipped entirely to avoid double-spawn / fight YIN's
  *  octave guesses. `lastEventTime` lingers as a field for telemetry
  *  but the gating used to read it with a 2 s window, which let
- *  mic-derived visuals slip in during gaps between presses; we now
- *  trust the attach/detach invariant in midi-ports.ts instead. */
+ *  mic-derived visuals slip in during gaps between presses; the gate is now
+ *  `isMidiActive()` — the resolved input source, so a player who pinned the
+ *  mic keeps mic visuals even with a keyboard plugged in. */
 export interface MicPipelineMidiRef {
   enabled: boolean;
   lastEventTime: number;
@@ -153,7 +154,9 @@ export interface MicPipelineDeps {
   // ─── State refs ───────────────────────────────────────────────────
   state: MicPipelineState;
   practice: MicPipelinePracticeRef;
-  midiInput: MicPipelineMidiRef;
+  /** Is MIDI the input that drives scoring + visuals? (prefs.inputSource ×
+   *  a port being attached — see ShellMidi.isMidiActive.) Read per frame. */
+  isMidiActive: () => boolean;
   /** Shared midiState — mic-pipeline writes `activeNotes` entries
    *  (with TTL) + drives the chord-window detector when MIDI is
    *  off. Optional so existing test fixtures that don't care about
@@ -311,7 +314,7 @@ export function tickMicPipeline(
     // 作成はオンセット（isGoodNote）経路だけに限定する。
     if (
       deps.midiState &&
-      !deps.midiInput.enabled &&
+      !deps.isMidiActive() &&
       deps.state.debugIsActivePlay &&
       pitchResult.pitch > deps.config.PITCH_MIN_HZ
     ) {
@@ -322,14 +325,15 @@ export function tickMicPipeline(
       }
     }
 
-    // v13: When a MIDI keyboard is attached, MIDI events drive visuals
+    // v13: When MIDI is the active input, MIDI events drive visuals
     // (polyphonic, velocity-aware). Skip the mic-derived single-pitch
     // path so we don't double-spawn or fight YIN's octave guesses.
-    // Plain `enabled` check — the old "active within 2 s" window let
-    // mic-derived visuals slip in during silent gaps between presses,
-    // which is exactly when the user expects the visualization to be
-    // quiet too.
-    if (!deps.midiInput.enabled && isGoodNote && pitchResult.pitch > deps.config.PITCH_MIN_HZ) {
+    // `isMidiActive()`, not `midiInput.enabled` — a player who pinned the mic
+    // keeps mic visuals with a keyboard plugged in. (Also not the old "MIDI
+    // active within 2 s" window: that let mic-derived visuals slip in during
+    // silent gaps between presses, which is exactly when the user expects the
+    // visualization to be quiet too.)
+    if (!deps.isMidiActive() && isGoodNote && pitchResult.pitch > deps.config.PITCH_MIN_HZ) {
       const note = deps.freqToNote(pitchResult.pitch);
       if (note) {
         // v10: Synesthesia mode color.

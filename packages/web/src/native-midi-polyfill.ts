@@ -15,6 +15,8 @@
 // ネイティブ由来で performance.now() と起点が違いうるが、midi-dispatch の
 // 遅延補正は「負値・非有限・1s 超は 0 クランプ」なので安全に縮退する。
 
+import { diag as diagSink } from './diag-sink';
+
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
   isPluginAvailable?: (name: string) => boolean;
@@ -39,6 +41,16 @@ interface PianoMidiPluginLike {
   // iOS のみ: OS 標準 Bluetooth-MIDI ペアリング画面（CABTMIDICentralViewController）
   // を表示。ペア後は CoreMIDI ホットプラグ → portChange で USB と同経路。
   showBleMidiPairing(): Promise<void>;
+  // iOS のみ: AVAudioSession の実測遅延。WebKit が AudioContext.outputLatency
+  // に 0 を返すため、iOS では自動検出の唯一の情報源。
+  getAudioLatency(): Promise<{
+    outputLatencyMs: number;
+    ioBufferMs: number;
+    inputLatencyMs: number;
+    portType: string;
+    portName: string;
+    available: boolean;
+  }>;
   addListener(
     eventName: 'midiMessage' | 'portChange',
     listener: (event: never) => void
@@ -97,6 +109,52 @@ export function showNativeBleMidiPairing(): Promise<void> {
   return nativeBlePairing ? nativeBlePairing() : Promise.resolve();
 }
 
+/** このページの Web MIDI が「自前のポリフィル」かどうか。
+ *
+ *  `navigator.requestMIDIAccess` の存在だけでは、他人の iOS WKWebView ラッパ
+ *  （Web MIDI Browser）と自分たちのネイティブアプリを区別できない。前者は
+ *  getUserMedia が壊れているのでマイク取得を避けるべきで、後者は
+ *  NSMicrophoneUsageDescription を持ちマイクが正常に動く。両者を同じ条件で
+ *  判定していたため、自前アプリが「マイクが壊れた環境」に誤分類され、鍵盤が
+ *  無い iPad が入力ゼロのまま固定されていた（mic-lifecycle 参照）。 */
+let polyfillInstalled = false;
+
+export function isNativeMidiPolyfillInstalled(): boolean {
+  return polyfillInstalled;
+}
+
+/** ネイティブの音声出力遅延（AVAudioSession）。WebKit は AudioContext.
+ *  outputLatency に 0 を返すので、iOS では OS 側から取るしかない。install
+ *  成功時のみ非 null。 */
+let nativeAudioLatency: (() => Promise<NativeAudioLatencySnapshot | null>) | null = null;
+
+/** AVAudioSession から見た出力遅延のスナップショット（ms）。
+ *  プラグイン側は inputLatency / portType も返すが、読む所が無いので載せない
+ *  ——必要になったら1行で足せる。 */
+export interface NativeAudioLatencySnapshot {
+  /** 出力遅延（ioBuffer 込み）。両方の呼び出し側が必ず outMs+baseMs を足して
+   *  base を 0 として扱っていたので、合計はここで一度だけ作る。 */
+  outMs: number;
+  /** 出力経路名（"GO:PIANO88 AUDIO" 等）。校正値が「どの経路で測ったか」の
+   *  スタンプに使う — 経路が変われば校正値は無効。 */
+  portName: string;
+}
+
+/** ネイティブで音声遅延を測れるか（= iOS の Capacitor 実行時）。 */
+export function hasNativeAudioLatency(): boolean {
+  return nativeAudioLatency != null;
+}
+
+/**
+ * OS が報告する音声出力遅延を読む。Web / 非対応環境と、セッションが値を
+ * 返さない場合は null（「0ms の端末」ではなく「不明」として扱うため）。
+ *
+ * 経路が変わると値も変わるので、呼ぶ側は毎回読む — キャッシュは嘘になる。
+ */
+export function readNativeAudioLatency(): Promise<NativeAudioLatencySnapshot | null> {
+  return nativeAudioLatency ? nativeAudioLatency() : Promise.resolve(null);
+}
+
 /** requestMIDIAccess polyfill を navigator へ設置。成功で true。
  *  Web 配信（Capacitor 無し）や本物の Web MIDI がある環境では何もしない。 */
 export function installNativeMidiPolyfill(
@@ -109,7 +167,7 @@ export function installNativeMidiPolyfill(
 
   // ここから先はネイティブアプリ確定。設置の成否は実機で唯一の手掛かりなので
   // 必ずログを残す（Capacitor が console.log をネイティブログへ転送する）。
-  const diag = (m: string) => console.log('[MIDI-NATIVE] ' + m);
+  const diag = (m: string) => diagSink('MIDI-NATIVE', m);
 
   if (typeof nav.requestMIDIAccess === 'function') {
     diag('real Web MIDI already present — native polyfill not needed');
@@ -214,7 +272,22 @@ export function installNativeMidiPolyfill(
   // で分岐する（Android は scanBle/connectBle を将来配線）。
   if (cap.getPlatform?.() === 'ios') {
     nativeBlePairing = () => plugin.showBleMidiPairing();
+    // AVAudioSession の実測遅延。ここが iOS で自動検出を成立させる唯一の経路。
+    nativeAudioLatency = async () => {
+      try {
+        const r = await plugin.getAudioLatency();
+        // available=false / 0 は「不明」。0ms の端末として扱ってはいけない。
+        if (!r?.available || !(r.outputLatencyMs > 0)) return null;
+        return {
+          outMs: r.outputLatencyMs + (r.ioBufferMs || 0),
+          portName: r.portName || '',
+        };
+      } catch {
+        return null; // 旧プラグインが同梱された場合など
+      }
+    };
   }
+  polyfillInstalled = true;
   diag('polyfill installed — navigator.requestMIDIAccess now backed by CoreMIDI/BLE');
   return true;
 }

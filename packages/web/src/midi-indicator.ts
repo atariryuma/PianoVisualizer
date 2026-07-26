@@ -54,8 +54,22 @@ export interface MidiIndicatorDeps {
    *  only ever call it with the indicator-specific keys below. */
   t: (key: string, vars?: Record<string, string>) => string;
   /** True when the auto-rescan poller is alive (a port hasn't shown
-   *  up yet but Web MIDI is supported). Drives the ⏳ waiting state. */
+   *  up yet but Web MIDI is supported). Legacy fallback for the ⏳ state when
+   *  `getInputStatus` isn't wired — it is a poor proxy (the poller runs whenever
+   *  no port is attached, including a perfectly working mic session), which is
+   *  why the resolved status supersedes it. */
   isRescanRunning: () => boolean;
+  /** The resolved input situation (@piano/core describeInputSource): which
+   *  source is live, whether ANY input is live (`waiting`), and whether an
+   *  attached keyboard is deliberately idle. The pill is a statement about the
+   *  live input, so this — not `midiInput.enabled` and not the poller — decides
+   *  what it says. Optional: absent → the pre-selector behaviour. */
+  getInputStatus?: () => {
+    active: 'midi' | 'mic';
+    midiAttached: boolean;
+    waiting: boolean;
+    midiIdle: boolean;
+  };
   /** True when Web MIDI itself is implemented (i.e.
    *  `navigator.requestMIDIAccess` exists). Pulled in via a thunk so
    *  tests can override; the legacy shell just reads `navigator`. */
@@ -138,7 +152,13 @@ export function createMidiIndicator(deps: MidiIndicatorDeps): MidiIndicator {
   function refreshBadge(): void {
     const badge = deps.dom.midiBadge;
     if (!badge) return;
-    if (deps.midiInput.enabled && deps.midiInput.port?.name) {
+    // The badge names the device we are LISTENING to, so it follows the resolved
+    // source. Reading `enabled` alone kept it showing "🎹 GO:PIANO88 Bluetooth"
+    // after the player picked 🎙️ — which is what "I switched to the mic but
+    // Bluetooth is still connected" actually was. The port stays bound (so
+    // switching back is instant); the app just stops claiming it.
+    const usingMidi = (deps.getInputStatus?.()?.active ?? 'midi') === 'midi';
+    if (usingMidi && deps.midiInput.enabled && deps.midiInput.port?.name) {
       badge.textContent = '🎹 ' + deps.midiInput.port.name;
       badge.classList.add('visible');
     } else {
@@ -150,17 +170,30 @@ export function createMidiIndicator(deps: MidiIndicatorDeps): MidiIndicator {
   function setInputIndicator(): void {
     // v13: Toggle a body class so CSS can reserve bottom space for
     // the virtual keyboard (lifts #stageLabel, #noteDisplay,
-    // #debugOverlay).
+    // #debugOverlay). Keyed on `enabled`, not on the resolved source: with a
+    // keyboard attached its presses still light the on-screen keys even when the
+    // player pinned the mic, so the space is genuinely needed.
     document.body.classList.toggle('midi-on', !!deps.midiInput.enabled);
     refreshBadge();
     const pill = deps.dom.ptbInput;
     if (!pill) return;
 
+    // The pill states WHICH INPUT IS LIVE, so it reads the resolved source, not
+    // the hardware flag and — crucially — not the rescan poller's state.
+    //
+    // Using the poller as a proxy for "no input yet" is what made the free-play
+    // pill say 🎹⏳ "waiting for MIDI" while the settings panel said 🎙️: the
+    // poller runs from boot whenever no port is attached, so on a mic session
+    // with no keyboard every condition was true at once. `waiting` from
+    // @piano/core answers the actual question — is ANY input live? — so the
+    // hourglass now appears only when nothing is listening.
+    const status = deps.getInputStatus?.();
+
     // Pill is emoji-only on every layout — saves topbar width on the
     // narrow phone case + frees horizontal room for the centered
     // section name on iPad. Mode + device name stay accessible via
     // title (long-press / hover) and aria-label (screen readers).
-    if (deps.midiInput.enabled) {
+    if (deps.midiInput.enabled && (status?.active ?? 'midi') === 'midi') {
       pill.textContent = '🎹';
       pill.classList.add('midi');
       pill.classList.remove('midi-waiting');
@@ -169,7 +202,11 @@ export function createMidiIndicator(deps: MidiIndicatorDeps): MidiIndicator {
       });
       pill.setAttribute('aria-label', pill.title);
     } else if (
-      deps.isRescanRunning() &&
+      // Nothing is listening yet (pinned to a keyboard that hasn't arrived, or
+      // the mic is unusable) — a keyboard is the remedy either way, so invite
+      // one. When the mic IS live this branch is skipped: the app is not
+      // waiting, it is already hearing the player.
+      (status ? status.waiting : deps.isRescanRunning()) &&
       deps.hasRequestMIDIAccess() &&
       !deps.isPracticeActive?.()
     ) {

@@ -8,6 +8,19 @@
 // `view.laneDrawFromIdx` is an amortized cursor — the draw call mutates it
 // forward as notes scroll past so subsequent frames don't re-scan the prefix.
 
+// The judgement types come from state/ rather than being re-declared
+// structurally here: the lane DRAWS the judgement contract, so if a boundary
+// field is ever renamed the lane must fail to compile, not silently mis-draw.
+// (render/keyboard.ts already imports `Hand` from state for the same reason.)
+import {
+  forEachJudgeError,
+  judgeHits,
+  TIMING_TIER_ORDER,
+  TIMING_TIER_STYLE,
+} from '../state/practice-state';
+import type { JudgeErrorRing, JudgeProfile, JudgeTally } from '../state/practice-state';
+import { clamp } from '../util/format';
+
 // Module-scope gradient cache. The lane's L/R fills + center divider share
 // the same vertical extent every frame and only change on resize / score
 // panel toggle, but the previous code re-allocated all three CanvasGradient
@@ -164,12 +177,16 @@ export interface LaneDrawOptions {
    *  countInMs より後ろになる（可聴クリック列と同じアンカー）。
    *  省略時 countInMs（旧挙動互換）。 */
   countInGoMs?: number;
-  /** Early side of the hit window (above the line, in ms). */
-  hitWindowEarlyMs: number;
-  /** Late side of the hit window (below the line, in ms). */
-  hitWindowMs: number;
-  /** Inner Perfect zone half-width in ms. */
-  perfectMs: number;
+  /** Judgement boundaries of the ACTIVE input path (@piano/core JudgeProfile,
+   *  symmetric). The drawn zones ARE the game's promise about when a press
+   *  counts, so they must track the profile actually in force (MIDI and mic
+   *  differ, and strictness scales both) rather than a captured constant —
+   *  otherwise the lane shows one contract and the scoring applies another. */
+  judgeProfile: JudgeProfile;
+  /** Recent signed offsets for the hit-error bar. Pass the live ring — it is
+   *  read, never written. Omit / null → no bar (guided / listen, where timing
+   *  isn't graded). */
+  errorRing?: JudgeErrorRing | null;
   /** Localized hand label, left lane. */
   laneLabelL: string;
   /** Localized hand label, right lane. */
@@ -192,16 +209,192 @@ export interface LaneDrawOptions {
    *  standard (Synthesia / Melodics): without it, "which beat is this
    *  note on" can't be read ahead. Omit / null → no grid drawn. */
   beatGrid?: ReadonlyArray<{ timeMs: number; accent: boolean }> | null;
-  /** Current section combo (rhythm mode). ≥ COMBO_SHOW_MIN shows a soft
-   *  "×N" counter near the hit line — the genre-standard live combo,
+  /** Current section combo (rhythm mode). ≥ COMBO_SHOW_MIN shows the live
+   *  combo counter above the hit line — the genre-standard centred readout,
    *  kept gentle (no flames, no shame on break — it just fades). Pass
    *  0 / omit to hide (guided / listen). */
   sectionCombo?: number;
+  /** Running judgement counts for this attempt (rhythm mode) — the live
+   *  "how am I doing" panel every rhythm game has. Pass `practice.judge`
+   *  (@piano/core JudgeTally) straight through: the same object every frame,
+   *  and the accuracy is derived here with integer math, so the panel costs
+   *  no per-frame allocation. Omit / null → nothing drawn (guided / listen,
+   *  where there is no timing verdict to count).
+   *
+   *  Before this existed the lane showed a lone `×N` combo, which says
+   *  nothing about accuracy, nothing about how clean the hits were, and
+   *  disappears the moment it breaks — the player had no way to read their
+   *  own state mid-run. */
+  judge?: JudgeTally | null;
 }
 
 /** Combo counter appears from this streak length — short streaks stay
  *  quiet so the lane isn't busy on the very first notes. */
 const COMBO_SHOW_MIN = 5;
+
+/** Row pitch + panel geometry for the live judgement panel. Labels and colours
+ *  come from the shared judgement vocabulary (`TIMING_TIER_STYLE`) — a verdict
+ *  and its running total have to read as one language. */
+const JUDGE_ROW_H = 13;
+const JUDGE_LABEL_GAP = 34;
+/** Dim a tier that hasn't happened yet rather than hiding it: the player can
+ *  see what the tiers ARE before earning them. */
+const JUDGE_ROW_ALPHA_ZERO = 0.4;
+const JUDGE_ROW_ALPHA = 0.92;
+
+/** Hit-error bar geometry. */
+const ERROR_BAR_W = 190;
+const ERROR_BAR_H = 7;
+
+/**
+ * Fill for the three judgement bands, OUTER → INNER (good, great, perfect).
+ * Exported because the same scale is drawn on three surfaces — the lane's hit
+ * zone, the live hit-error bar, and the result card's error distribution — and
+ * they only teach one window if the colours and the tier order match. Three
+ * hand-copied triples had already drifted to three different alpha sets.
+ */
+export const JUDGE_BAND_FILL: readonly [string, string, string] = Object.freeze([
+  'rgba(255, 200, 230, 0.20)',
+  'rgba(170, 255, 200, 0.17)',
+  'rgba(170, 255, 200, 0.32)',
+] as const);
+
+/** Centre reference line for a judgement scale — "on the beat is here". */
+const JUDGE_CENTRE_FILL = 'rgba(255, 255, 255, 0.78)';
+
+/**
+ * Draw a horizontal ±goodMs judgement scale: the three tier bands outer → inner
+ * plus the centre reference. Shared by the lane's live hit-error bar and the
+ * result card's error distribution, which are the same scale at two sizes.
+ *
+ * Returns the ms → px factor so the caller can place its own marks on the scale.
+ */
+export function drawJudgeScale(
+  ctx: CanvasRenderingContext2D,
+  profile: JudgeProfile,
+  cx: number,
+  top: number,
+  halfW: number,
+  h: number
+): number {
+  const pxPerMs = halfW / profile.goodMs;
+  ctx.fillStyle = JUDGE_BAND_FILL[0];
+  ctx.fillRect(cx - halfW, top, halfW * 2, h);
+  const greatW = Math.min(profile.greatMs, profile.goodMs) * pxPerMs;
+  ctx.fillStyle = JUDGE_BAND_FILL[1];
+  ctx.fillRect(cx - greatW, top, greatW * 2, h);
+  const perfectW = Math.min(profile.perfectMs, profile.goodMs) * pxPerMs;
+  ctx.fillStyle = JUDGE_BAND_FILL[2];
+  ctx.fillRect(cx - perfectW, top, perfectW * 2, h);
+  ctx.fillStyle = JUDGE_CENTRE_FILL;
+  ctx.fillRect(cx - 0.5, top - 4, 1, h + 8);
+  return pxPerMs;
+}
+
+/**
+ * Draw the hit-error bar: a centred scale spanning ±goodMs with the tier bands
+ * marked, a centre line, and one fading tick per recent press.
+ *
+ * This is how DIRECTION is communicated — deliberately as a distribution
+ * rather than as a per-note "early/late" label (see @piano/core's note on
+ * JudgeErrorRing). A player reads three different things off it that no label
+ * could carry at once: whether the cloud sits left or right of centre (bias),
+ * how wide it is (consistency), and where the last press landed.
+ *
+ * Ticks fade by RECENCY INDEX, not wall-clock age, so the bar needs no
+ * timestamps and behaves identically however the practice clock is running.
+ */
+function drawErrorBar(
+  ctx: CanvasRenderingContext2D,
+  ring: JudgeErrorRing,
+  profile: JudgeProfile,
+  cx: number,
+  cy: number
+): void {
+  if (profile.goodMs <= 0) return;
+  const halfW = ERROR_BAR_W / 2;
+  const top = cy - ERROR_BAR_H / 2;
+
+  ctx.save();
+  const pxPerMsBar = drawJudgeScale(ctx, profile, cx, top, halfW, ERROR_BAR_H);
+
+  // Recent presses, newest brightest. One fillStyle for the whole loop and
+  // globalAlpha for the fade — building an `rgba(...)` string per tick meant up
+  // to 32 string builds + CSS colour parses EVERY FRAME (~1,900/s), the same
+  // per-frame churn the gradient caches at the top of this file removed.
+  const maxAge = Math.max(1, ring.len - 1);
+  ctx.fillStyle = 'rgb(255, 248, 220)';
+  forEachJudgeError(ring, (dt, age) => {
+    const x = cx + clamp(dt * pxPerMsBar, -halfW, halfW);
+    ctx.globalAlpha = 0.9 * (1 - age / (maxAge + 1));
+    ctx.fillRect(x - 1, top - 2, 2, ERROR_BAR_H + 4);
+  });
+  ctx.restore();
+}
+
+/**
+ * Draw the live judgement panel: accuracy percentage over a per-tier count
+ * column, top-right inside the lane. Right-aligned at fixed offsets (no
+ * measureText) so the two columns line up at any digit count.
+ */
+function drawJudgePanel(
+  ctx: CanvasRenderingContext2D,
+  judge: JudgeTally,
+  rightX: number,
+  topY: number,
+  useShadow: boolean
+): void {
+  const hits = judgeHits(judge);
+  const judged = hits + judge.miss;
+  const panelW = JUDGE_LABEL_GAP + 52;
+  const panelH = 26 + TIMING_TIER_ORDER.length * JUDGE_ROW_H + 6;
+  const panelX = rightX - panelW + 8;
+
+  ctx.save();
+  // Soft backing so the readout stays legible over falling tiles without
+  // hiding them (notes this high in the lane are still seconds away).
+  ctx.fillStyle = 'rgba(12, 8, 26, 0.42)';
+  roundRect(ctx, panelX, topY - 6, panelW, panelH, 10);
+  ctx.fill();
+
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.shadowBlur = 0;
+
+  // Accuracy — the headline. `--` until the first note is judged, so a run
+  // never opens at a discouraging 0%.
+  ctx.font = 'bold 17px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+  ctx.fillStyle = 'rgba(255, 245, 220, 0.95)';
+  if (useShadow) {
+    ctx.shadowColor = 'rgba(255, 220, 130, 0.5)';
+    ctx.shadowBlur = 6;
+  }
+  const accText = judged > 0 ? Math.round((hits / judged) * 100) + '%' : '--';
+  ctx.fillText(accText, rightX, topY + 6);
+  ctx.shadowBlur = 0;
+
+  // Two passes over the tiers — all labels, then all counts — so `ctx.font`
+  // (a CSS shorthand parse on every assignment) is set twice per frame instead
+  // of once per row per column.
+  const rowY = topY + 26;
+  ctx.font = 'bold 9px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+  for (let i = 0; i < TIMING_TIER_ORDER.length; i++) {
+    const key = TIMING_TIER_ORDER[i];
+    ctx.fillStyle = TIMING_TIER_STYLE[key].color;
+    ctx.globalAlpha = judge[key] > 0 ? JUDGE_ROW_ALPHA : JUDGE_ROW_ALPHA_ZERO;
+    ctx.fillText(TIMING_TIER_STYLE[key].label, rightX - JUDGE_LABEL_GAP, rowY + i * JUDGE_ROW_H);
+  }
+  ctx.font = 'bold 11px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+  for (let i = 0; i < TIMING_TIER_ORDER.length; i++) {
+    const key = TIMING_TIER_ORDER[i];
+    ctx.fillStyle = TIMING_TIER_STYLE[key].color;
+    ctx.globalAlpha = judge[key] > 0 ? JUDGE_ROW_ALPHA : JUDGE_ROW_ALPHA_ZERO;
+    ctx.fillText(String(judge[key]), rightX, rowY + i * JUDGE_ROW_H);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
 
 /**
  * Draw one frame of the practice lane. No-op when `view.enabled` is false.
@@ -338,13 +531,18 @@ export function drawPracticeLane(
     }
   }
 
-  // Hit window band (asymmetric: small early zone, large late zone)
-  const earlyPx = opts.hitWindowEarlyMs * pxPerMs;
-  const latePx = opts.hitWindowMs * pxPerMs;
-  const perfectPx = opts.perfectMs * pxPerMs;
-  ctx.fillStyle = 'rgba(255, 200, 230, 0.20)';
-  ctx.fillRect(padX, hitLineY - earlyPx, usableW, earlyPx + latePx);
-  ctx.fillStyle = 'rgba(170, 255, 200, 0.30)';
+  // Judgement bands, outer → inner, so all three tiers read at a glance:
+  // pink = GOOD (in the window at all), soft green = GREAT, bright core =
+  // PERFECT. Symmetric, because every published tap-note window in the genre
+  // is (see @piano/core's judgement notes).
+  const goodPx = opts.judgeProfile.goodMs * pxPerMs;
+  const greatPx = opts.judgeProfile.greatMs * pxPerMs;
+  const perfectPx = opts.judgeProfile.perfectMs * pxPerMs;
+  ctx.fillStyle = JUDGE_BAND_FILL[0];
+  ctx.fillRect(padX, hitLineY - goodPx, usableW, goodPx * 2);
+  ctx.fillStyle = JUDGE_BAND_FILL[1];
+  ctx.fillRect(padX, hitLineY - greatPx, usableW, greatPx * 2);
+  ctx.fillStyle = JUDGE_BAND_FILL[2];
   ctx.fillRect(padX, hitLineY - perfectPx, usableW, perfectPx * 2);
 
   // Hit line — thick + glow so it reads over the score area
@@ -358,7 +556,7 @@ export function drawPracticeLane(
   ctx.lineTo(W - padX, hitLineY);
   ctx.stroke();
   ctx.restore();
-  const winPx = earlyPx;
+  const winPx = goodPx;
 
   const { lhMin, lhMax, rhMin, rhMax } = view.handRanges;
   const noteX = (n: LaneNoteView): number => {
@@ -493,21 +691,50 @@ export function drawPracticeLane(
     ctx.fillText(cur.hand + ' · ' + opts.midiToPitchName(cur.midi), x, hitLineY + 32);
   }
 
-  // Live combo counter — soft "×N" at the lane's right edge above the hit
-  // line (genre standard, kept gentle: appears from COMBO_SHOW_MIN, fades
-  // silently on a break — the auto-miss already communicates the why).
+  // Live combo — centred above the hit line, number over a small COMBO
+  // caption. Centre is the genre-standard placement because that is where the
+  // player's eyes already are; the previous small `×N` at the right edge was
+  // outside the reading path and easy to miss entirely. Still gentle: it
+  // appears from COMBO_SHOW_MIN and simply stops being drawn on a break (the
+  // MISS verdict already says why — no shame copy, banned-list).
   const combo = opts.sectionCombo ?? 0;
   if (combo >= COMBO_SHOW_MIN) {
+    // Grows a little with the streak, capped so a long run can't dominate
+    // the lane. 30 px at 5, 40 px from 50.
+    const comboPx = Math.min(40, 30 + Math.floor(combo / 10) * 2);
     ctx.save();
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 20px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+    ctx.textAlign = 'center';
     if (useShadow) {
       ctx.shadowColor = 'rgba(255, 220, 130, 0.7)';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 12;
     }
-    ctx.fillStyle = 'rgba(255, 226, 130, 0.8)';
-    ctx.fillText('×' + combo, W - padX - 10, hitLineY - winPx - 14);
+    ctx.fillStyle = 'rgba(255, 232, 160, 0.92)';
+    ctx.font = 'bold ' + comboPx + 'px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+    ctx.fillText(String(combo), midX, hitLineY - winPx - 46);
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 10px "Hiragino Maru Gothic ProN", "Quicksand", sans-serif';
+    ctx.fillStyle = 'rgba(255, 226, 160, 0.7)';
+    ctx.fillText('COMBO', midX, hitLineY - winPx - 32);
     ctx.restore();
+  }
+
+  // Live judgement panel — running accuracy + per-tier counts, top-right of
+  // the lane. Drawn after the notes so it stays readable, before the count-in
+  // overlay so the countdown wins the frame it owns.
+  // NOTE on cost: this panel is ~11 fillText + 2 font parses per frame for a
+  // value that changes ~10×/s, and the hit-error bar below is up to 32 fillRect
+  // for a picture that is pixel-identical between presses. The right fix is an
+  // offscreen bitmap invalidated by a tally version counter — NOT skipping the
+  // draw while the tally is empty: the `--` opening state is deliberate (a run
+  // must not open on a discouraging 0%), so it has to stay on screen.
+  if (opts.judge) {
+    drawJudgePanel(ctx, opts.judge, W - padX - 10, laneTop + 34, useShadow);
+  }
+
+  // Hit-error bar — the direction/consistency read-out, just below the hit
+  // line where the eye already is after a press.
+  if (opts.errorRing && opts.errorRing.len > 0) {
+    drawErrorBar(ctx, opts.errorRing, opts.judgeProfile, midX, hitLineY + 52);
   }
 
   // Boss flair — pulsing pink overlay

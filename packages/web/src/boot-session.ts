@@ -18,6 +18,8 @@
 //   7. finally: clear state.starting + (start-only) reset the
 //      loading pip.
 
+import { setButtonBusy } from './touch-feedback';
+
 export interface BootSessionDeps {
   /** Live state — read + written. */
   state: {
@@ -93,6 +95,11 @@ export function installStartButton(btn: HTMLElement, deps: BootSessionDeps): voi
 export function installSongStartButton(btn: HTMLElement, deps: BootSessionDeps): void {
   btn.addEventListener('click', async () => {
     if (deps.state.starting) return;
+    // Visible acknowledgement for the whole await chain below (audio init +
+    // score load + OSMD render — seconds on a cold start). Without it this
+    // button looked identical before and after the tap, which reads as
+    // "the tap didn't register" and invites a second, wasted tap.
+    setButtonBusy(btn, true);
     // Guard the WHOLE handler, not just the cold-boot branch. The
     // running===true branch below skips audio init but still awaits
     // startPracticeSection; without setting `starting` here, a double-
@@ -128,6 +135,7 @@ export function installSongStartButton(btn: HTMLElement, deps: BootSessionDeps):
       deps.songPanel?.classList.add('visible');
     } finally {
       deps.state.starting = false;
+      setButtonBusy(btn, false);
     }
   });
 }

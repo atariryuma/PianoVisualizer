@@ -70,9 +70,9 @@ function makeDeps(over: Partial<PracticeLaneDeps> = {}): PracticeLaneDeps {
     noteNames: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const,
     laneLookaheadMs: 1500,
     countInMs: 1500,
-    hitWindowEarlyMs: 50,
-    hitWindowMs: 130,
-    perfectMs: 35,
+    // Judgement bands come from the ACTIVE input path's profile, read fresh
+    // each frame so a mid-section keyboard hot-plug moves the drawn bands too.
+    getJudgeProfile: () => ({ perfectMs: 35, greatMs: 80, earlyMs: 50, lateMs: 130 }),
     drawPracticeLane: vi.fn(),
     laneLabelL: 'L',
     laneLabelR: 'R',

@@ -39,6 +39,9 @@ export interface RenderLoopWireupDeps {
    *  the wireup site — read fresh per builder call via getter. */
   getPractice: () => any;
   getMidiInput: () => any;
+  /** Is MIDI the input that drives scoring + visuals (prefs.inputSource ×
+   *  attached)? Deferred like the refs above — ShellMidi is built later. */
+  isMidiActive: () => boolean;
   /** midiState — built by ShellMidiHandlers (after the wireup site
    *  in shell-bootstrap), so deferred via getter. mic-pipeline writes
    *  TTL-managed `activeNotes` entries here so mic-only sessions get
@@ -166,7 +169,7 @@ export function wireRenderLoop(deps: RenderLoopWireupDeps): { tick: (timeMs: num
           updateGameState: deps.updateGameState,
           state: deps.state,
           practice: deps.getPractice(),
-          midiInput: deps.getMidiInput(),
+          isMidiActive: deps.isMidiActive,
           // Mic → midiState bridge (Opt-2 + Opt-3, 2026-05-12). Lets
           // mic-only sessions light up the keyboard for detected
           // pitches + drive chord detection on arpeggios（R2-4 で

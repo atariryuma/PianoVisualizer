@@ -12,6 +12,10 @@ function makeFixture(
     tFallback?: boolean;
     /** ネイティブ iOS（OS ペアリング画面あり）— 待機ヒントの2行目が変わる。 */
     hasNativePairing?: boolean;
+    /** requestMIDIAccess が自前ポリフィル（= 自分たちのネイティブアプリ）。 */
+    ownWebMidiPolyfill?: boolean;
+    /** prefs.inputSource === 'midi'（キーボード固定）。 */
+    midiPinned?: boolean;
   } = {}
 ) {
   const state: IntroDiagStateRef = {
@@ -33,6 +37,8 @@ function makeFixture(
     isAppleMobile,
     hasRequestMIDIAccess,
     hasNativePairing: over.hasNativePairing ? () => true : undefined,
+    isOwnWebMidiPolyfill: () => over.ownWebMidiPolyfill ?? false,
+    getInputSourcePref: () => (over.midiPinned ? 'midi' : 'auto'),
     t,
   });
   return { state, introHintEl, isAppleMobile, hasRequestMIDIAccess, t, intro };
@@ -101,6 +107,33 @@ describe('createIntroDiag — clearCache', () => {
 });
 
 describe('createIntroDiag — showMidiWaitingHint', () => {
+  it('skips on OUR OWN native build — the mic is a working input', () => {
+    // What the user actually saw on device: free play opened with
+    // "🎹 MIDI待機中… tap ⚙ then 🔵" while the microphone was live and the
+    // settings panel said mic. The gate is `isAppleMobile && requestMIDIAccess
+    // exists`, and on the native build that function exists because WE install
+    // it — so our own app was treated like Web MIDI Browser, where the mic
+    // genuinely is unavailable.
+    const fx = makeFixture({ ownWebMidiPolyfill: true });
+    fx.intro.showMidiWaitingHint();
+    expect(fx.introHintEl.classList.contains('visible')).toBe(false);
+    expect(fx.state.lastIntroDiag).toBe(null);
+  });
+
+  it('DOES show on our own build when the player pinned the keyboard', () => {
+    // Then nothing else is listening, so "waiting for a keyboard" is the truth.
+    const fx = makeFixture({ ownWebMidiPolyfill: true, midiPinned: true });
+    fx.intro.showMidiWaitingHint();
+    expect(fx.introHintEl.classList.contains('visible')).toBe(true);
+  });
+
+  it('still shows in a FOREIGN iOS wrapper (the hint keeps its purpose)', () => {
+    // Web MIDI Browser: no mic at all, so a keyboard really is the only way in.
+    const fx = makeFixture({ ownWebMidiPolyfill: false });
+    fx.intro.showMidiWaitingHint();
+    expect(fx.introHintEl.classList.contains('visible')).toBe(true);
+  });
+
   it('skips when not Apple-mobile', () => {
     const fx = makeFixture({ isAppleMobile: false });
     fx.intro.showMidiWaitingHint();

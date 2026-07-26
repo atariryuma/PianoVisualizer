@@ -30,6 +30,8 @@ export interface ShellRenderLoopDeps {
    *  the shell — getter thunks defer the read to fire-time. */
   getPractice: () => any;
   getMidiInput: () => any;
+  /** Is MIDI the input that drives scoring + visuals? (ShellMidi.isMidiActive) */
+  isMidiActive: () => boolean;
   /** midiState getter — built downstream by ShellMidiHandlers, so
    *  flows in via a thunk like the draw helpers. mic-pipeline uses
    *  this to light up the keyboard + drive chord detection for
@@ -98,6 +100,7 @@ export function createShellRenderLoop(deps: ShellRenderLoopDeps): ShellRenderLoo
     state: deps.state,
     getPractice: deps.getPractice,
     getMidiInput: deps.getMidiInput,
+    isMidiActive: deps.isMidiActive,
     getMidiState: deps.getMidiState,
     cwOpts: deps.cwOpts,
     config: deps.config,

@@ -11,7 +11,17 @@ body {
   overflow: hidden;
   background: #0a0a14;
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-  touch-action: none;
+  /* `pan-x pan-y`, NOT `none`. touch-action is intersected down the whole
+     ancestor chain, so `none` here disabled touch panning for EVERY nested
+     scroll container (.settings-card / .song-card / .result-card /
+     .journal-card / #osmdContainer all have overflow-y:auto). A swipe in a
+     long panel then did nothing at all, and — because a moved touch never
+     synthesizes a click — the lift didn't register as a tap either. That is
+     the "タップしても反応しないことがある" bug. `pan-x pan-y` still excludes
+     BOTH pinch-zoom and double-tap-zoom (they are not pan behaviors), so the
+     "never zoom the whole app" rule is unchanged; the game surface itself
+     opts out again via #canvas below. */
+  touch-action: pan-x pan-y;
   -webkit-user-select: none;
   user-select: none;
   /* ネイティブアプリ挙動: iOS の文字自動拡大（回転時のインフレ）を止め、
@@ -63,6 +73,13 @@ body {
   --sp-8: 32px;
   --sp-10: 40px;
 
+  /* Minimum finger target. Apple HIG 44 pt / Material 48 dp; 44 is the
+     stricter of the two and this ships iOS-first. Every rule in the file that
+     enforces the floor — the end-of-file block for text-sized controls, and
+     the handful of icon buttons whose 44 px IS their geometry — reads it from
+     here, so the number is stated once. */
+  --tap-min: 44px;
+
   /* Shadow scale — soft + colored, not hard black. Matches the
          "particle aurora" backdrop better than a stark drop shadow. */
   --shadow-soft: 0 4px 16px rgba(80, 40, 120, 0.25);
@@ -100,6 +117,29 @@ body {
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+
+  /* === Top-right corner stack ===
+         Row 1 is the ⚙/🏠 bar; every row below is DERIVED from the row above
+         plus that row's own height, so a control changing size moves the whole
+         stack instead of silently overlapping it.
+
+         This used to be four independently hand-computed `max()` pairs with the
+         bar's 32 px height baked into each. Raising the buttons to the 44 px
+         touch-target floor therefore pushed the bar's bottom edge down THROUGH
+         #playTime and #qualityScore, which both still assumed 32 — the timer
+         rendered inside the 🏠 button. Deriving the rows makes that class of
+         regression impossible. */
+  --stack-row1: max(16px, calc(var(--safe-top) + 12px));
+  --stack-gap: 6px;
+  /* #playTime / #qualityScore — first row clear of the bar. */
+  --stack-row2: calc(var(--stack-row1) + var(--tap-min) + var(--stack-gap));
+  /* #playTime's own line box (0.75rem text) — what row 3 has to clear. */
+  --stack-row2-h: 16px;
+  /* #questDisplay — below the timer. */
+  --stack-row3: calc(var(--stack-row2) + var(--stack-row2-h) + 8px);
+  /* Quest dots' own height, for the phone-width #qualityScore drop. */
+  --stack-row3-h: 22px;
+  --stack-row4: calc(var(--stack-row3) + var(--stack-row3-h) + 8px);
 
   /* === Top cluster (practiceTopBar pill + 🏠/⚙ button) ===
          JS (syncLayout) overrides this with the measured bottom of those
@@ -206,6 +246,10 @@ body[data-layout='desktop'] .add-song-card {
   position: fixed;
   top: 0;
   left: 0;
+  /* The play surface takes no browser gestures at all (no pan, no zoom, no
+     double-tap) — this is where html/body's old blanket `touch-action: none`
+     actually belonged. Nothing here scrolls, so opting out costs nothing. */
+  touch-action: none;
 }
 
 #startScreen {
@@ -514,7 +558,8 @@ body[data-layout='phone-portrait'] #startScreen p {
        below the settings panel modal (60) which it launches. */
 #themeBar {
   position: fixed;
-  top: max(16px, calc(var(--safe-top) + 12px));
+  /* Row 1 of the top-right corner stack (see --stack-row1). */
+  top: var(--stack-row1);
   right: max(16px, var(--safe-right));
   z-index: 55;
   display: flex;
@@ -601,15 +646,20 @@ body.title-screen #homeBtn {
 
 /* Settings panel — consolidates theme, synesthesia, audio calibration,
        MIDI controls, and debug toggle. Opened via the ⚙ button in the top-right. */
+/* 44×44 — the iOS HIG minimum touch target. Was 32×32, which is small
+   enough that a finger centred on the glyph lands partly outside the
+   element and the tap silently does nothing (this cluster also sits right
+   next to the screen edge, where there is no room to recover). Every
+   frequently-tapped control in this file is held to the same floor. */
 #settingsBtn {
-  width: 32px;
-  height: 32px;
+  width: var(--tap-min);
+  height: var(--tap-min);
   border: none;
   background: rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   cursor: pointer;
-  font-size: 18px;
-  line-height: 32px;
+  font-size: 20px;
+  line-height: var(--tap-min);
   text-align: center;
   transition:
     background 0.3s,
@@ -779,46 +829,120 @@ body.title-screen #homeBtn {
   font-weight: 500;
 }
 
-.settings-slider {
+/* Slider — painted here, driven by slider-control.ts. There is no native
+   range chrome left: `-webkit-appearance: none` plus track/thumb pseudo-elements
+   is what forced the code to GUESS where the browser had drawn the thumb, and
+   every mismatch between that guess and the paint showed up on device as "I
+   tapped where I meant and nothing moved". The thumb below is positioned by the
+   same expression the hit-test uses, so the two cannot disagree. */
+.slider-wrap {
+  position: relative;
+  display: block;
   width: 100%;
-  -webkit-appearance: none;
-  appearance: none;
+  height: var(--tap-min);
+  /* Overshoot above the floor, via `.tap-bleed`. Capped by the row rhythm: a
+     bleed larger than half the vertical gap between two stacked sliders puts
+     them in one hit strip, resolved by DOM order. `.settings-slider-row` stacks
+     on `--sp-2` plus a `--fs-sm` label ≈ 24 px, so 10 px keeps a margin.
+     `.opt-toggle` sets none — its rows are ~38 px apart and already share a
+     column, so any overshoot there would start trading taps between rows. */
+  --tap-bleed: 10px;
+  /* The gesture is ours; the browser must not claim the finger for a pan. */
+  touch-action: none;
+}
+
+/* The touch area comes from `.tap-bleed` (see the touch-target block at the end
+   of this file). 44 px is the HIG floor, and a floor is not enough for a control
+   whose only visual cue is a 6 px line and a 28 px dot: a finger hides what it
+   is aiming at, so people press high, and the device trace caught exactly that —
+   presses landing on the "100 %" read-out in the label row above (`target=val`,
+   `target=volBackingVal`) with nothing under them. Material asks 48 dp for the
+   same reason. */
+
+/* The input stays for the VALUE and for keyboard / VoiceOver — visually hidden,
+   not display:none, so it remains focusable and announced.
+   Scoped to `.slider-wrap >`, which only exists once `installSlider` has run:
+   an input that was never upgraded then still shows its native chrome and works,
+   instead of being invisible AND inert. CSS must not assume the JS ran. */
+.slider-wrap > .settings-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  /* No `appearance: none` — resetting the chrome of an element that is fully
+     transparent and out of hit-testing does nothing. It is also the property
+     that made earlier versions guess where the thumb had been drawn. */
+}
+
+.slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
   height: 6px;
-  background: linear-gradient(90deg, rgba(108, 224, 255, 0.35) 0%, rgba(108, 224, 255, 0.12) 100%);
+  transform: translateY(-50%);
   border-radius: var(--r-pill);
-  outline: none;
-  margin: var(--sp-2) 0;
+  background: rgba(108, 224, 255, 0.14);
+  overflow: hidden;
 }
 
-.settings-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 28px;
-  height: 28px;
+.slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(108, 224, 255, 0.55), rgba(108, 224, 255, 0.85));
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: var(--thumb-px, 28px);
+  height: var(--thumb-px, 28px);
+  /* Pull back by half so the box centres on the `left` the JS sets. Derived,
+     not 14: the two must move together or the paint and the hit-test disagree. */
+  margin: calc(var(--thumb-px, 28px) / -2) 0 0 calc(var(--thumb-px, 28px) / -2);
   border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, #fff, var(--c-accent-cyan) 70%);
-  cursor: pointer;
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.35),
     0 0 0 4px rgba(108, 224, 255, 0.2);
-  transition: transform var(--t-fast) var(--ease-spring);
-}
-.settings-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.08);
-}
-.settings-slider:active::-webkit-slider-thumb {
-  transform: scale(1.12);
+  pointer-events: none;
 }
 
-.settings-slider::-moz-range-thumb {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #fff, var(--c-accent-cyan) 70%);
-  cursor: pointer;
-  border: none;
+/* Press feedback. Without it a press that lands correctly is indistinguishable
+   from one that misses — the player has no way to learn where the control is. */
+.slider-wrap.is-dragging .slider-thumb {
+  transform: scale(1.15);
+}
+
+/* Keyboard focus has to be visible on the painted control, since the element
+   that actually receives focus is the hidden input. */
+.slider-wrap:focus-within .slider-thumb {
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.35),
-    0 0 0 4px rgba(108, 224, 255, 0.2);
+    0 0 0 6px rgba(108, 224, 255, 0.45);
+}
+
+.settings-latency-info {
+  font-size: var(--fs-xs);
+  color: rgba(180, 220, 255, 0.85);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
+.settings-latency-info:empty {
+  display: none;
+}
+
+/* "Can't be measured here" is a call to action, not a reading — warmer tint so
+   it reads as guidance rather than as a number. */
+.settings-latency-info.is-unmeasurable {
+  color: rgba(255, 214, 150, 0.9);
+  line-height: 1.45;
 }
 
 .settings-help {
@@ -860,8 +984,8 @@ body.title-screen #homeBtn {
 
 #questDisplay {
   position: fixed;
-  /* Below #playTime (see the corner-stack contract at #playTime). */
-  top: max(76px, calc(var(--safe-top) + 72px));
+  /* Row 3 — below #playTime (see the stack tokens in :root). */
+  top: var(--stack-row3);
   right: 16px;
   z-index: 5;
   display: flex;
@@ -1228,9 +1352,9 @@ body.midi-on #noteDisplay {
 
 #qualityScore {
   position: fixed;
-  /* Below the ⚙🏠 bar (bottom = max(48, safe+44)) — the old fixed 55px
-     sat inside the bar's band on iPad (safe-top 24) and notch phones. */
-  top: max(58px, calc(var(--safe-top) + 54px));
+  /* Centered, but it still has to clear the ⚙🏠 bar's band — same row as the
+     timer (see the stack tokens in :root). */
+  top: var(--stack-row2);
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -1251,7 +1375,7 @@ body.midi-on #noteDisplay {
    stack's band — drop it below the quest dots entirely. */
 @media (max-width: 520px) {
   #qualityScore {
-    top: max(100px, calc(var(--safe-top) + 96px));
+    top: var(--stack-row4);
   }
 }
 
@@ -1281,15 +1405,16 @@ body.midi-on #debugOverlay {
 }
 
 /* Top-bar circular icon button. */
+/* 44×44 — same touch-target floor as #settingsBtn (see the note there). */
 #homeBtn {
-  width: 32px;
-  height: 32px;
+  width: var(--tap-min);
+  height: var(--tap-min);
   border: none;
   background: rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   cursor: pointer;
-  font-size: 18px;
-  line-height: 32px;
+  font-size: 20px;
+  line-height: var(--tap-min);
   text-align: center;
   transition:
     background 0.3s,
@@ -1547,20 +1672,17 @@ body.midi-on #debugOverlay {
   margin-top: 14px;
 }
 
-/* v11: Play Time Display
-   Top-right corner stack contract (all right:16, top-anchored):
-     #themeBar   top max(16, safe+12), 32px tall → bottom max(48, safe+44)
-     #playTime   below the bar + 6px gap
-     #questDisplay below the time + ~8px gap (see its rule)
-   The old fixed top:50/55 ignored safe-area — on iPad (safe-top 24) and
-   notch iPhones the ⚙/🏠 buttons rendered on top of the time + quest
-   dots, and the time/quest rows overlapped each other by 9px. */
+/* v11: Play Time Display — row 2 of the top-right corner stack.
+   The rows are derived in :root (--stack-row1..4) rather than hand-computed
+   here; see the comment there for what that fixes. Keep `font-size` and
+   --stack-row2-h in agreement — row 3 clears this element's line box. */
 #playTime {
   position: fixed;
-  top: max(54px, calc(var(--safe-top) + 50px));
+  top: var(--stack-row2);
   right: 16px;
   z-index: 4;
   font-size: 0.75rem;
+  line-height: var(--stack-row2-h);
   color: rgba(255, 255, 255, 0.25);
   pointer-events: none;
 }
@@ -1645,6 +1767,17 @@ body[data-layout='desktop'] #modeButtons {
 .mode-btn:disabled {
   cursor: wait;
   opacity: 0.85;
+}
+
+/* Async-busy marker (touch-feedback.setButtonBusy). Any control that kicks
+   off a slow await — song start, retry, next section: score fetch + OSMD
+   render can run for seconds — is dimmed and un-hittable for the duration,
+   so the tap is visibly acknowledged instead of looking dropped. Static
+   (no animation) so it still reads under prefers-reduced-motion. */
+button.is-busy {
+  cursor: wait;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 /* Loading-state swap: show "Starting..." text while audio init is running.
@@ -2135,7 +2268,14 @@ body:has(#practiceHud.visible) #encouragement {
   color: rgba(255, 220, 230, 0.85);
 }
 
+/* The input pill is a READ-OUT, not a button — so it needs no 44 px tap target,
+   but it sits in a row of 44 px controls and the floor rules only match
+   `#practiceTopBar button`. Left to its text-derived height it was ~24 px,
+   visibly short beside the 📜 / ⏸ / ↻ / ✕ icons. Match the row. */
 #practiceTopBar .ptb-input {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
   font-size: 1rem;
   padding: 2px 8px;
   border-radius: 12px;
@@ -2157,48 +2297,65 @@ body:has(#practiceHud.visible) #encouragement {
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #fff;
-  font-size: 0.75rem;
-  padding: 3px 10px;
-  border-radius: 12px;
+  font-size: 0.8rem;
+  padding: 0 12px;
+  border-radius: 14px;
   cursor: pointer;
+  /* 44 px floor. These were `padding: 3px 10px` on a 0.75rem font → ~24 px
+     tall, and the ≤520px override took them to ~15 px. Mid-practice these
+     are the ONLY controls on screen (pause / restart / quit / score), so a
+     missed tap here is the most visible instance of "reacts badly".
+     `flex-shrink: 0` keeps them at full size when the pill runs out of
+     room — before, flex shrank them and `overflow: hidden` on the pill
+     then clipped the trailing ✕ clean off the screen. */
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  flex-shrink: 0;
 }
 
 #practiceTopBar button:active {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Icon-only buttons (📜 score toggle, ✕ quit) — emoji-sized so they
-       read at a glance on every layout, with a square-ish tap region that
-       still meets the 32 px iOS minimum. Title attr carries the localized
-       label for hover / long-press. */
+/* Icon-only buttons (📜 score toggle, ⏸ pause, ↻ restart, ✕ quit) — emoji
+       sized so they read at a glance on every layout, in a square 44×44 tap
+       region (iOS HIG minimum). Title attr carries the localized label for
+       hover / long-press. */
 #practiceTopBar .ptb-icon-btn {
-  font-size: 1rem;
+  font-size: 1.1rem;
   line-height: 1;
-  padding: 4px 9px;
-  min-width: 32px;
+  padding: 0;
+  width: var(--tap-min);
+  min-width: var(--tap-min);
+  height: var(--tap-min);
   text-align: center;
 }
 
 /* Narrow-viewport overrides — phone widths (≤520 px) regardless of
-       orientation. The default topBar wraps to 3-4 rows on portrait phones
-       (section name + tempo + progress + MIDI/MIC pill + 楽譜 + やめる all
-       together exceed ~360px), and the wrapped bar covers the score top.
-       Force the bar to one compact row + ellipsis the section name so the
-       OSMD strip below it stays visible.
+       orientation. Four 44 px buttons + the section/tempo/progress read-outs
+       cannot share one 360 px row, so the READ-OUTS shrink and the row is
+       allowed to WRAP; the buttons keep their full tap size.
+       This used to be `flex-wrap: nowrap` + `overflow: hidden`, which made
+       the pill silently amputate whichever controls didn't fit (on a portrait
+       phone that was the ↻ and ✕) — they were invisible AND untappable.
+       Wrapping is safe now: the topBar bottom is measured at runtime and
+       flows into --top-cluster-bottom, which OSMD reads, so a two-row pill
+       pushes the score down instead of covering it.
        NOTE: OSMD position no longer overridden here — see :root and the
-       body[data-layout="..."] selectors above. The topBar bottom is measured
-       at runtime and flows into --top-cluster-bottom, which OSMD reads. */
+       body[data-layout="..."] selectors above. */
 @media (max-width: 520px) {
   #practiceTopBar {
     font-size: 0.72rem;
-    gap: 5px;
-    padding: 4px 9px;
-    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 4px 8px;
+    flex-wrap: wrap;
     max-width: 96vw;
-    overflow: hidden;
   }
+  /* Text read-outs absorb the width squeeze (min-width:0 lets them actually
+     shrink inside the flex row) so the controls never have to. */
   #practiceTopBar .ptb-section {
     max-width: 30vw;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2208,8 +2365,8 @@ body:has(#practiceHud.visible) #encouragement {
     padding: 1px 5px;
   }
   #practiceTopBar button {
-    font-size: 0.68rem;
-    padding: 2px 7px;
+    font-size: 0.75rem;
+    padding: 0 8px;
     white-space: nowrap;
   }
 }
@@ -2285,6 +2442,210 @@ body:has(#practiceHud.visible) #encouragement {
   border-bottom: none;
 }
 
+/* ── Result headline + badges + disclosure ─────────────────────────────
+   The card had grown to ~14 visible rows: five stat rows plus a full analytics
+   panel, with `timing %` restating what the per-tier counts already show. The
+   genre puts ONE number and a rank up front, the tier counts as a compact
+   breakdown, and the deviation analysis one step away (beatmania's Player
+   Analyze, osu!'s stats panel). This block is that hierarchy. */
+.result-headline {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--sp-6);
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+
+.result-headline-acc span,
+.result-headline-combo span {
+  display: block;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.result-headline-acc span {
+  font-size: var(--fs-display);
+  color: var(--c-accent-gold-bright, #ffe27a);
+  text-shadow: 0 0 24px rgba(255, 220, 120, 0.45);
+}
+
+.result-headline-combo span {
+  font-size: var(--fs-2xl);
+  color: rgba(255, 226, 160, 0.9);
+}
+
+.result-headline-acc small,
+.result-headline-combo small {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Milestone chips. Celebration only — there is deliberately no negative
+   counterpart (banned-list: reward attempts and milestones, never shame). */
+.result-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: var(--sp-2);
+}
+
+.result-badges:empty {
+  display: none;
+}
+
+.result-badges > span {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+}
+
+.result-badges > span.badge-fc {
+  color: #b6f5b3;
+  background: rgba(140, 255, 150, 0.12);
+}
+
+.result-badges > span.badge-ap {
+  color: #ffe26b;
+  background: rgba(255, 220, 100, 0.14);
+}
+
+.result-badges > span.badge-record {
+  color: #ffb0dc;
+  background: rgba(255, 140, 200, 0.14);
+}
+
+/* Disclosure for the analysis. A plain button so it is keyboard- and
+   screen-reader-operable; `aria-expanded` is kept in sync in result-card.ts. */
+.result-details-toggle {
+  display: block;
+  width: 100%;
+  margin: var(--sp-3) 0 0;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--r-md);
+  color: rgba(255, 255, 255, 0.6);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.result-details-toggle:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.result-details {
+  text-align: left;
+  padding-top: var(--sp-2);
+}
+
+.result-details[hidden] {
+  display: none;
+}
+
+/* ── Per-note judgement breakdown (result card) ────────────────────────
+   The result used to report only rolled-up percentages, so a run that
+   produced 40 individual verdicts ended as "Timing 78%" — no breakdown, no
+   direction, nothing tying the number back to what the player had just been
+   shown note by note. This block is that missing analysis: the same tally
+   the lane HUD shows live, plus the deviation read-out that says which way
+   the playing leaned and what to change. */
+.result-judge {
+  margin: 6px 0 4px;
+  text-align: left;
+}
+
+.result-judge-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 6px;
+}
+
+/* Proportional stacked bar — the shape of the run at a glance, before any
+   numbers are read. Segment widths are set inline as percentages. */
+.result-judge-bar {
+  display: flex;
+  height: 8px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  margin-bottom: 8px;
+}
+
+.result-judge-bar > span {
+  display: block;
+  height: 100%;
+}
+
+.result-judge-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.78rem;
+  margin-bottom: 6px;
+}
+
+/* One "PERFECT 24" pair. The label keeps the untranslated judgement
+   vocabulary; only the count changes per run. Zero counts dim rather than
+   disappear so the set of tiers stays readable as a scale. */
+.result-judge-rows > span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-judge-rows > span.is-zero {
+  opacity: 0.4;
+}
+
+.result-judge-rows > span > b {
+  font-weight: 700;
+}
+
+/* Hit-error distribution canvas — width tracks the card so the ms scale is
+   readable; the chart itself is drawn in result-card.drawErrorDistribution. */
+.result-judge-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 2px 0 4px;
+}
+
+/* Conditions the run was judged under (strictness · input). Quiet — it is
+   provenance for the numbers above, not a headline. */
+.result-judge-cond {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 6px;
+  letter-spacing: 0.04em;
+}
+
+.result-judge-cond:empty {
+  display: none;
+}
+
+.result-judge-note {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(200, 230, 255, 0.85);
+  margin: 2px 0;
+}
+
+.result-judge-note:empty {
+  display: none;
+}
+
 .result-history {
   margin: 10px auto 4px;
   /* 左右パディングを 0 に（縦のみ残す）→ グラフをカード内容幅いっぱいに
@@ -2316,6 +2677,19 @@ body:has(#practiceHud.visible) #encouragement {
   color: rgba(255, 220, 240, 0.75);
   margin: 14px 0 6px;
   letter-spacing: 0.05em;
+}
+
+/* What a non-scored run (listen / guided) produced: the practice time it
+   credited. Deliberately quiet — it is a fact, not a verdict, and it sits where
+   the stars would be on a scored card, so it must not read as a score. */
+.result-no-score-facts {
+  font-size: 0.9rem;
+  color: rgba(215, 230, 255, 0.85);
+  background: rgba(140, 175, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 10px auto 4px;
+  display: inline-block;
 }
 
 /* Knowledge-of-Performance coaching line. Calm teal accent (a "look here
@@ -2448,13 +2822,18 @@ body:has(#practiceHud.visible) #encouragement {
   text-shadow: 0 0 16px rgba(255, 220, 100, 0.8);
 }
 
-.hit-chip.good,
 .hit-chip.great {
   color: #b6f5b3;
   text-shadow: 0 0 14px rgba(140, 255, 150, 0.7);
 }
 
-/* Timing "a little early / late" — soft blue, gently corrective (no shame). */
+/* GOOD — the third timing tier: soft blue, encouraging rather than corrective
+   (the note counted). Same colour the lane's GOOD band, the live judge panel
+   and the result breakdown use, so one verdict looks the same everywhere.
+   `.early` / `.late` are retained as aliases: those tiers were retired when
+   direction moved to the error distribution, but a stale caller must not fall
+   through to unstyled white text. */
+.hit-chip.good,
 .hit-chip.early,
 .hit-chip.late {
   color: #a9d4ff;
@@ -3746,6 +4125,203 @@ body:has(#practiceHud.visible) #encouragement {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* ── Touch-action policy, tier 3: interactive controls ────────────────
+   The policy has three tiers and they only work together:
+
+     root (html, body)   pan-x pan-y   — scroll yes, zoom never
+     scroll containers   pan-y         — the panel that actually scrolls
+     THIS TIER           manipulation  — a control is not a pan surface
+
+   Tier 3 was missing, and that is what made controls inside a scrolling
+   panel feel sluggish: with only the inherited `pan-y`, every press on a
+   button is also a candidate pan gesture, so WebKit has to wait and see
+   whether the finger is starting a scroll before it can dispatch the tap.
+   `manipulation` says "this element is not something you scroll by" — the
+   press is a press immediately. (It also drops the double-tap-zoom wait,
+   which is why `manipulation` is the conventional value for controls.)
+
+   Range sliders and rhythmic tap pads get `none` instead: they consume the
+   drag/tap themselves, so allowing ANY pan on them means the panel scrolls
+   out from under the finger mid-gesture. */
+/* TIER 2 — the nested scrollers. Every one of these has `overflow-y: auto`
+   and needs panning re-declared explicitly, so that a future ancestor
+   tightening `touch-action` cannot make the panel unscrollable by touch;
+   `contain` stops the gesture leaking to the page once the panel hits its
+   end. The rationale used to be pasted, verbatim, at all six rule sites. */
+.settings-card,
+.summary-card,
+.song-card,
+.result-card,
+#osmdContainer,
+/* max-height + overflow-y are set inline in index.html for this one. */
+#addSongLibraryList {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+/* TIER 3 — controls. */
+button,
+input,
+select,
+textarea,
+label,
+[role='button'],
+[role='switch'],
+[role='radio'],
+[role='tab'],
+.theme-dot,
+.opt-toggle,
+.journal-tab,
+.add-song-tab,
+/* Non-semantic clickables — divs with a click listener. They have to be named
+   individually because there is no attribute to match on; the generic
+   selectors above already cover everything that is a real <button> or carries
+   an ARIA role (`.pianist-avatar-cell` is a <button role="radio">, so it was
+   listed here for nothing). Giving these three `role="button"` would fold them
+   into the list above AND buy screen-reader support — but a role without
+   tabindex + Enter/Space handling announces a button that the keyboard can't
+   reach, so that is a change with its own scope, not a drive-by. */
+.jr-book-clickable,
+.jr-cal-cell-clickable,
+#addSongLibraryList .lib-row {
+  touch-action: manipulation;
+}
+
+/* TIER 4 — elements whose gesture WE implement. `none` means "the browser
+   handles no panning or zooming here"; every touch is delivered to JS.
+
+   This tier is defined by WHO OWNS THE GESTURE, not by what kind of element it
+   is. `manipulation` still permits PANNING, so a JS-driven drag inside a
+   `pan-y` scroller can be ceded to the scroll mid-gesture — a tap works and a
+   drag does not. Anything whose drag is implemented in JS belongs here.
+   (Note: `touch-action` does NOT govern native form-control activation — the
+   Pointer Events spec is explicit — so putting `none` on a control whose drag
+   the BROWSER implements neither helps nor hurts it.) */
+#canvas,
+.slider-wrap,
+#calibrateBtn.is-tapping {
+  touch-action: none;
+}
+
+/* Rhythmic tap surfaces own the whole touch. The tap-along calibration turns
+   its button into a tap pad (one pointerdown per tap, see
+   latency-calibration.ts) and it lives inside the scrolling settings card, so
+   with panning allowed every tap nudged the panel and the target moved out
+   from under the finger. It also grows into a real pad while running: a
+   settings-button-sized target is the wrong shape for something the user is
+   asked to tap in time with a beat. */
+#calibrateBtn.is-tapping {
+  /* touch-action: none is declared with the rest of tier 4 above. */
+  min-height: 96px;
+  font-size: var(--fs-lg);
+  background: linear-gradient(135deg, rgba(255, 140, 200, 0.3), rgba(140, 100, 255, 0.3));
+  border-color: rgba(255, 200, 230, 0.6);
+}
+
+/* ── Minimum touch targets (2026-07-25) ───────────────────────────────
+   Most controls in this file were sized from their TEXT (`padding: 6px 12px`
+   on a 0.8rem font ≈ 25 px tall), so a tap centred on the label could land
+   outside the box and do nothing at all — the direct cause of "tap sometimes
+   doesn't respond". This block grows those boxes to `--tap-min` WITHOUT
+   changing their visual size. It sits at the end of the file (before the
+   reduced-motion override) so it wins over the text-derived paddings above at
+   equal specificity — keep it last.
+
+   It is not the only place the floor appears, and it should not claim to be:
+   the icon buttons whose 44 px IS their geometry (#settingsBtn, #homeBtn,
+   #practiceTopBar button, .ptb-icon-btn) declare it with their own design,
+   because splitting a round button's width/height/line-height away from its
+   border-radius would be worse than the repetition. They all read
+   `--tap-min`, so the FLOOR itself is defined exactly once.
+
+   A blanket `button, input { min-height: var(--tap-min) }` would remove the
+   enumeration entirely, and it is the right shape — but it silently reflows
+   every inline control in the file (row action buttons, `.jr-dot`, the toggle
+   pill), so it wants a device pass of its own rather than a drive-by.
+
+   Purely decorative / non-interactive elements are intentionally NOT listed. */
+.settings-close,
+.settings-btn,
+.settings-seg-btn,
+.journal-tab,
+.add-song-tab,
+.hand-btn,
+.tempo-btn,
+.song-actions button,
+.song-preflight-hint button,
+.result-actions button,
+.self-assess-btns button,
+.summary-actions button,
+.first-run-actions button,
+.pianist-card-edit,
+.pianist-card-cta,
+#addSongLibraryList .lib-row,
+#addSongMyList .my-row .my-remove,
+#addSongMyList .my-row .my-action-btn,
+.practice-song-tile-wrap > .my-remove {
+  min-height: var(--tap-min);
+}
+
+/* Square icon-only controls: the width floor matters as much as the height. */
+.settings-close,
+#addSongMyList .my-row .my-action-btn,
+#addSongMyList .my-row .my-remove,
+.practice-song-tile-wrap > .my-remove,
+.theme-dot,
+#synesthesiaToggle {
+  min-width: var(--tap-min);
+}
+
+/* The ✕ / ⚙ style round controls keep a circular look at the larger size. */
+.settings-close {
+  width: var(--tap-min);
+  height: var(--tap-min);
+}
+
+.theme-dot,
+#synesthesiaToggle {
+  width: var(--tap-min);
+  height: var(--tap-min);
+}
+
+/* Touch area bigger than the paint — ONE mechanism, one token.
+   Some controls must stay visually small: a 44 px-tall pill switch would look
+   clumsy beside its label, and a slider is a 6 px line plus a 28 px dot by
+   convention. A `::before` with no content extends the hit region without
+   taking layout space, so nothing moves.
+   The height is `max(floor, own height + bleed on each side)`, so an already-
+   tall control still gets its bleed and a small one is lifted to the floor —
+   the two cases that used to be two hand-written rules with two different
+   numbers, one of which (the slider's ±12 px) referenced `--tap-min` not at all.
+   `left/right: 0` keeps the expansion inside the control's own column so it
+   cannot steal taps from a label beside it. */
+.tap-bleed,
+.opt-toggle,
+.slider-wrap {
+  position: relative;
+}
+
+.tap-bleed::before,
+.opt-toggle::before,
+.slider-wrap::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: max(var(--tap-min), calc(100% + 2 * var(--tap-bleed, 0px)));
+  transform: translateY(-50%);
+}
+
+/* Segmented / tab controls center their label once the box is 44 px tall. */
+.settings-seg-btn,
+.journal-tab,
+.add-song-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ── Reduced motion (a11y, 2026-07-25) ────────────────────────────────

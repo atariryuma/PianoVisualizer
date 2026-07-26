@@ -16,6 +16,15 @@
 //      legacy callsites read those fields directly; folding to the
 //      core shape would require a rewrite of every read.
 
+import {
+  createJudgeTally,
+  createJudgeErrorRing,
+  type JudgeTally,
+  type JudgeErrorRing,
+  type JudgeStrictness,
+  type InputSourcePref,
+} from '@piano/core';
+
 /** Persisted user preferences. Keys mirror legacy-app.js's PrefsShape
  *  JSDoc typedef. */
 export interface InitialPrefs {
@@ -42,6 +51,24 @@ export interface InitialPrefs {
   /** ノーツ落下速度（先読み倍率）: slow 1.45 / normal 1 / fast 0.7。
    *  判定窓・音は不変 — 視覚の降下速度だけ（音ゲーのハイスピード設定）。 */
   noteSpeed: 'slow' | 'normal' | 'fast';
+  /** 判定の厳しさ。アクティブな JudgeProfile の全境界に倍率をかける
+   *  （easy 1.3 / normal 1 / strict 0.7）。osu! の OD・StepMania の
+   *  TimingWindowScale と同じ「見える・選べる難易度」— これが無いと
+   *  MIDI 接続で判定窓が黙って変わることになる。 */
+  judgeStrictness: JudgeStrictness;
+  /** どのデバイスで音を拾うか。'auto' はハードウェア追従（MIDI ポートが
+   *  結線されていれば MIDI）、'midi' / 'mic' は明示固定。
+   *  「MIDI が繋がっているか」（ハードの事実）と「MIDI で採点するか」
+   *  （ルーティングの決定）を分離するための唯一の入力
+   *  — @piano/core input-source.ts に理由を全部書いてある。 */
+  inputSource: InputSourcePref;
+  /** How the saved `audioOffsetMs` was measured. A touch-measured offset does
+   *  not apply to keyboard play, and an offset measured on one output route does
+   *  not apply to another — keeping both lets the app tell the player when the
+   *  stored value has gone stale (the standard "recalibrate after a hardware
+   *  change" advice, detected instead of merely documented). */
+  audioOffsetSource?: 'midi' | 'touch';
+  audioOffsetRoute?: string;
 }
 
 /** Build the cold-start prefs object (before merging the persisted
@@ -59,6 +86,8 @@ export function createInitialPrefs(): InitialPrefs {
     volMetronome: 100,
     showScore: false,
     noteSpeed: 'normal',
+    judgeStrictness: 'normal',
+    inputSource: 'auto',
   };
 }
 
@@ -110,6 +139,18 @@ export interface InitialPracticeState {
    *  to compare against. */
   durationScoreSum: number;
   durationScoredCount: number;
+  /** Per-note judgement counts + timing-deviation accumulators for this
+   *  attempt (@piano/core JudgeTally). Written by practice-scoring (press /
+   *  release grades) and practice-tick (auto-miss); read by the lane's live
+   *  HUD and the result card's breakdown. Single source of truth: the sums
+   *  above feed the STAR maths, this feeds everything the player is SHOWN,
+   *  so the live chips and the result table can never disagree.
+   *  Reset in place at section start (never reallocated). */
+  judge: JudgeTally;
+  /** 直近の誤差リング — レーンの誤差バー（方向・ばらつきの可視化）用。
+   *  段は品質のみを持つので、方向はこのリングと集計統計だけが持つ。
+   *  スナップショットには載らない描画専用の状態。 */
+  judgeErrors: JudgeErrorRing;
   pendingHolds: Map<number, unknown>;
   sectionCombo: number;
   sectionBestCombo: number;
@@ -162,6 +203,8 @@ export function createInitialPractice(audioOffsetMs: number): InitialPracticeSta
     timingScoreSum: 0,
     durationScoreSum: 0,
     durationScoredCount: 0,
+    judge: createJudgeTally(),
+    judgeErrors: createJudgeErrorRing(),
     pendingHolds: new Map(),
     sectionCombo: 0,
     sectionBestCombo: 0,

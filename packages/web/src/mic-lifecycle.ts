@@ -38,6 +38,8 @@
 
 import type { RecentPitchEntry } from './core-opts';
 
+import { isPinnedTo, type InputSourcePref } from '@piano/core';
+
 export interface MicLifecycleStateRef {
   micSuspended: boolean;
   micPermissionFailed: boolean;
@@ -106,6 +108,20 @@ export interface MicLifecycleDeps {
   /** Mutable midi state ref — only `enabled` is read after
    *  initWebMIDI() probes for a connected keyboard. */
   midiInput?: MicLifecycleMidiRef;
+  /** Is MIDI the ACTIVE input (prefs.inputSource × attached)? Decides whether
+   *  boot acquires the mic at all. Optional — older shells fall back to
+   *  `midiInput.enabled`, i.e. the pre-selector behaviour. */
+  isMidiActive?: () => boolean;
+  /** The player's input-source setting. Pinned to `mic` pre-empts the
+   *  iOS-WKWebView "don't even ask" default and skips the startup MIDI probe —
+   *  see resume() and decideInitialInputMode(). */
+  getInputSourcePref?: () => InputSourcePref;
+  /** Is `navigator.requestMIDIAccess` OUR OWN native polyfill (Capacitor build)
+   *  rather than a third-party iOS wrapper's? Decides whether the
+   *  "this wrapper's getUserMedia is broken" skip applies at all — our app's
+   *  mic works and is declared in Info.plist. Optional; absent → treated as
+   *  foreign, i.e. the previous behaviour. */
+  isOwnWebMidiPolyfill?: () => boolean;
   /** Probe Web MIDI. Production: `() => initWebMIDI()` from the
    *  shell. Errors are swallowed (handled inside initWebMIDI). */
   initWebMIDI?: () => Promise<void>;
@@ -118,6 +134,8 @@ export interface MicLifecycleDeps {
   /** Mic-acquisition safety-net timeout in ms. Default 20000 —
    *  long enough to span the iOS permission dialog. */
   micAcquireTimeoutMs?: number;
+  /** Monotonic clock for the startup phase timings. Default performance.now. */
+  now?: () => number;
   /** Setter for the `setTimeout` hook used by the timeout race —
    *  tests inject a fake timer driver. */
   setTimeout?: (cb: () => void, ms: number) => unknown;
@@ -139,6 +157,8 @@ export type InitialInputMode =
 export interface MicLifecycle {
   acquire(): Promise<unknown>;
   suspend(): void;
+  /** Bring the mic back up. Consults `getInputSourcePref` itself: a pinned 🎙️
+   *  outranks the platform "don't even ask" heuristic. See the impl. */
   resume(): Promise<void>;
   /** Boot-time input source decision. Must be called after the
    *  audio graph is built (acquire() wires the mic into gainNode).
@@ -149,6 +169,16 @@ export interface MicLifecycle {
    *  per audio session. */
   decideInitialInputMode(): Promise<InitialInputMode>;
 }
+
+/**
+ * Longest the startup MIDI probe may delay the microphone.
+ *
+ * 1.2 s: the probe is normally already settled (boot fires it and midi-init
+ * shares the promise), so this is a stall bound, not a budget. Long enough for a
+ * cold CoreMIDI enumeration over the Capacitor bridge, short enough that a hung
+ * bridge costs a beat of startup rather than the whole session's input.
+ */
+export const MIDI_PROBE_TIMEOUT_MS = 1200;
 
 export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
   // Concurrency lock — see header comment. Lives in the factory
@@ -230,12 +260,18 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
         gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
         gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
         deps.state.micSuspended = false;
-        // Clear any stale failure flag from a prior race-timeout —
-        // if the user eventually clicked Allow after the safety-net
-        // timeout fired, we still get here and need to update the UI
-        // gates that read this flag.
-        if (deps.state.micPermissionFailed) {
+        // Both "we couldn't get the mic" flags are stale the moment we DO get
+        // it, and clearing either has the same UI consequence, so it is one
+        // block rather than two identical ones:
+        //   • micPermissionFailed — a prior race-timeout fired, then the user
+        //     clicked Allow anyway and we landed here.
+        //   • micIntentionallySkipped — "we chose not to even ASK on this
+        //     platform". We just asked and it worked. Leaving it set would
+        //     silently re-block the next resume(), keep the background MIDI
+        //     poller running, and stop the meter appearing on a later detach.
+        if (deps.state.micPermissionFailed || deps.state.micIntentionallySkipped) {
           deps.state.micPermissionFailed = false;
+          deps.state.micIntentionallySkipped = false;
           deps.refreshIntroHint?.();
           if (deps.micMeterEl) deps.micMeterEl.classList.add('visible');
         }
@@ -291,7 +327,18 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
     // I3: iOS Web MIDI Browser 等で「意図的にマイク取得をスキップ」した端末
     // （micIntentionallySkipped）では、切断契機の resume でも壊れている
     // getUserMedia を呼びに行かない（縮退方針を守る）。
-    if (deps.state.micIntentionallySkipped) return;
+    //
+    // ただしプレイヤーが 🎙️ を明示的に選んでいるなら試す — 推測より意思が強い。
+    // その判定はここで行う: この関数が `micIntentionallySkipped` を所有していて、
+    // pref も持っている。呼び出し側に `{explicit}` として聞くと、同じ述語が
+    // 呼び出し地点で生の `=== 'mic'` に戻り、名前を1つに統一した意味が消える。
+    //
+    // ネイティブ iOS ビルドは起動ごとにこのフラグを立てる（MIDI ポリフィルが
+    // `isApple && hasMidi` を真にする）ので、これが無いと 🎙️ は出荷先の
+    // プラットフォームで「押しても何も起きないボタン」になる。試すのは安全:
+    // 失敗は下の catch が micPermissionFailed を立てて理由を表示する。
+    const micPinned = isPinnedTo(deps.getInputSourcePref?.() ?? 'auto', 'mic');
+    if (deps.state.micIntentionallySkipped && !micPinned) return;
     try {
       await acquire();
     } catch (e) {
@@ -312,30 +359,87 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
     const setT = deps.setTimeout ?? ((cb, ms) => setTimeout(cb, ms));
     const clearT =
       deps.clearTimeout ?? ((h: unknown) => clearTimeout(h as ReturnType<typeof setTimeout>));
+    const now = deps.now ?? (() => performance.now());
     const timeoutMs = deps.micAcquireTimeoutMs ?? 20000;
 
-    // Probe MIDI BEFORE asking for the mic. If a MIDI keyboard is
-    // already plugged in, we skip getUserMedia entirely — no
-    // permission prompt, no privacy LED, no idle CPU on YIN/FFT.
-    // The user gesture from the start-button click is still alive,
-    // so getUserMedia later (on MIDI detach) works without re-prompting.
-    if (deps.initWebMIDI) {
+    const t0 = now();
+    const micExplicitlyChosen = isPinnedTo(deps.getInputSourcePref?.() ?? 'auto', 'mic');
+
+    // No stream exists yet, so say so for the whole decision. `initAudio()`
+    // stopped awaiting this (the play screen must not wait on an OS device
+    // open), which means the ~430 ms it takes is now a window the UI is awake
+    // for — and with `micSuspended` still false from boot, `describeInputSource`
+    // reported `active: 'mic', waiting: false` throughout it: the app claiming
+    // to be listening before the microphone was open. Every branch below sets
+    // the final value; this makes the in-flight state honest rather than
+    // optimistic.
+    deps.state.micSuspended = true;
+
+    // ── Phase 1: settle the MIDI question, but only when its answer matters ──
+    //
+    // Probing before asking for the mic is what keeps a keyboard user free of a
+    // permission prompt, a privacy LED, and idle YIN/FFT. But it is ON THE
+    // CRITICAL PATH to the microphone, so it runs under two conditions:
+    //
+    //   • SKIPPED ENTIRELY when the player pinned the mic. No MIDI answer can
+    //     change the decision, so waiting for one is pure startup latency on the
+    //     exact path that user cares about.
+    //   • BOUNDED otherwise. Boot already fired this probe and it now shares its
+    //     promise (midi-init), so normally this resolves instantly — but a
+    //     stalled CoreMIDI bridge would otherwise strand the session with no
+    //     input at all and no explanation. Past the deadline we proceed to the
+    //     mic; if a keyboard does turn up later, `attach()` takes over normally.
+    let probeMs = 0;
+    if (deps.initWebMIDI && !micExplicitlyChosen) {
+      let probeTimer: unknown = null;
       try {
-        await deps.initWebMIDI();
+        await Promise.race([
+          deps.initWebMIDI(),
+          new Promise<void>((resolve) => {
+            probeTimer = setT(resolve, MIDI_PROBE_TIMEOUT_MS);
+          }),
+        ]);
       } catch {
         /* fall back to mic */
       }
+      if (probeTimer !== null) clearT(probeTimer);
+      probeMs = now() - t0;
     }
 
-    if (deps.midiInput?.enabled) {
-      log('[AUDIO] MIDI detected — skipping microphone acquisition');
+    // MIDI is the ACTIVE input → no mic at all. Two ways to get here: a
+    // keyboard is attached under 'auto', or the player pinned 'midi' (in which
+    // case we skip getUserMedia even with nothing attached — they asked for
+    // keyboard-only, and prompting for a microphone they said not to use would
+    // be the app overriding an explicit choice).
+    if (deps.isMidiActive?.() ?? deps.midiInput?.enabled) {
+      log(
+        '[AUDIO] MIDI is the active input — skipping microphone acquisition' +
+          (deps.midiInput?.enabled ? '' : ' (pinned to keyboard, none attached yet)')
+      );
       deps.state.micSuspended = true;
       return { mode: 'midi-detected' };
     }
 
     const isApple = deps.isAppleMobile?.() ?? false;
     const hasMidi = deps.hasRequestMIDIAccess?.() ?? false;
-    if (isApple && hasMidi) {
+    // The skip below targets a FOREIGN iOS WKWebView wrapper — Web MIDI Browser
+    // and friends — whose getUserMedia is consistently broken. Our OWN native
+    // Capacitor app is not one of those: it ships
+    // NSMicrophoneUsageDescription and the mic is hardware-verified on device.
+    //
+    // It was being caught by the same test anyway, because the test is "does
+    // navigator.requestMIDIAccess exist" and on the native build that function
+    // is OUR polyfill. One condition standing for two different environments:
+    // the result was that a native iPad with no keyboard attached had NO INPUT
+    // AT ALL — MIDI declared, zero ports, mic never asked for — and `auto`
+    // could never recover from it.
+    const ownPolyfill = deps.isOwnWebMidiPolyfill?.() ?? false;
+    const foreignWebMidi = hasMidi && !ownPolyfill;
+    // An explicit 🎙️ choice is stronger evidence than any platform guess, so it
+    // pre-empts the skip even in a wrapper we distrust (failing honestly via the
+    // catch in acquire() if the mic really is broken there) — resolved above,
+    // since it also decides whether the MIDI probe runs at all.
+    if (isApple && foreignWebMidi && !micExplicitlyChosen) {
       // Web MIDI Browser (or any iOS WKWebView wrapper that polyfills
       // Web MIDI): mic permission is consistently broken on iOS
       // WKWebView wrappers, so we skip it on purpose. Note we set
@@ -365,6 +469,19 @@ export function createMicLifecycle(deps: MicLifecycleDeps): MicLifecycle {
         }),
       ]);
       if (timer !== null) clearT(timer);
+      // Startup timing, because "the mic takes a while to come up" is a
+      // stopwatch question and the device log had no way to answer it. The split
+      // matters: a slow MIDI probe is ours to fix, a slow getUserMedia is the OS.
+      const doneMs = now();
+      log(
+        '[AUDIO] mic ready in ' +
+          Math.round(doneMs - t0) +
+          'ms (midi-probe ' +
+          Math.round(probeMs) +
+          'ms, getUserMedia ' +
+          Math.round(doneMs - t0 - probeMs) +
+          'ms)'
+      );
       return { mode: 'mic-acquired' };
     } catch (e) {
       if (timer !== null) clearT(timer);

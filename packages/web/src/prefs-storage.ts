@@ -18,6 +18,8 @@
 /** Shape of the on-disk prefs payload. Mirrors the typedef in
  *  legacy-app.js (PrefsShape). Kept narrow on purpose — adding a new
  *  key here also requires extending sanitizePrefs's accept-list. */
+import { isInputSourcePref } from '@piano/core';
+
 export interface PrefsShape {
   theme?: number;
   synesthesia?: boolean;
@@ -57,6 +59,15 @@ export interface PrefsShape {
    *  audio timeline are untouched — this is purely visual approach speed
    *  (the rhythm-game "hi-speed" setting, kid-simple 3 steps). */
   noteSpeed?: 'slow' | 'normal' | 'fast';
+  judgeStrictness?: 'easy' | 'normal' | 'strict';
+  /** Which device drives note detection: 'auto' follows the hardware (a bound
+   *  MIDI port wins), 'midi' / 'mic' pin it explicitly. Persisted because an
+   *  input choice that resets on reload is not a choice — and because the
+   *  judgement windows differ per path, so the input silently changing means
+   *  the difficulty silently changing (@piano/core input-source.ts). */
+  inputSource?: 'auto' | 'midi' | 'mic';
+  audioOffsetSource?: 'midi' | 'touch';
+  audioOffsetRoute?: string;
 }
 
 /** Minimal localStorage-like surface. The shell hands in the real
@@ -211,8 +222,24 @@ export function sanitizePrefs(raw: unknown): Partial<PrefsShape> {
   if (typeof r.welcomeDismissed === 'boolean') {
     out.welcomeDismissed = r.welcomeDismissed;
   }
+  if (r.audioOffsetSource === 'midi' || r.audioOffsetSource === 'touch') {
+    out.audioOffsetSource = r.audioOffsetSource;
+  }
+  if (typeof r.audioOffsetRoute === 'string' && r.audioOffsetRoute.length <= 120) {
+    out.audioOffsetRoute = r.audioOffsetRoute;
+  }
+  if (
+    r.judgeStrictness === 'easy' ||
+    r.judgeStrictness === 'normal' ||
+    r.judgeStrictness === 'strict'
+  ) {
+    out.judgeStrictness = r.judgeStrictness;
+  }
   if (r.noteSpeed === 'slow' || r.noteSpeed === 'normal' || r.noteSpeed === 'fast') {
     out.noteSpeed = r.noteSpeed;
+  }
+  if (isInputSourcePref(r.inputSource)) {
+    out.inputSource = r.inputSource;
   }
   return out;
 }

@@ -74,6 +74,8 @@ export function boot(): void {
     remoteLogEnabled: REMOTE_LOG_ENABLED,
     getPractice: () => practice,
     getMidiInputEnabled: () => midiInput?.enabled ?? false,
+    isMidiActive: () => _midi.isMidiActive(),
+    getInputSourcePref: () => prefs.inputSource,
     initWebMIDI: () => initWebMIDI(),
     isAppleMobile: () => isAppleMobile(),
     refreshIntroHint: () => refreshIntroHint(),
@@ -284,6 +286,7 @@ export function boot(): void {
     getScreen: _vp.getScreen,
     getPractice: () => practice,
     getMidiInput: () => midiInput,
+    isMidiActive: () => _midi.isMidiActive(),
   });
   const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
     _gameUpdate;
@@ -319,6 +322,7 @@ export function boot(): void {
     remoteLogEnabled: REMOTE_LOG_ENABLED,
     getPractice: () => practice,
     getMidiInput: () => midiInput,
+    isMidiActive: () => _midi.isMidiActive(),
     getMidiState: () => midiState,
     cwOpts: CW_OPTS,
     getUpdatePractice: () => updatePractice,
@@ -443,7 +447,7 @@ export function boot(): void {
     getOsmd,
     syncLayout: _vp.syncLayout,
     getScreen: _vp.getScreen,
-    getMidiInput: () => midiInput,
+    isMidiActive: () => _midi.isMidiActive(),
     getMidiState: () => midiState,
     getCurrentSong: () => currentSong,
     hideIntroHint: () => hideIntroHint(),
@@ -492,6 +496,7 @@ export function boot(): void {
     navigator,
     getAudioCtx: _audio.getAudioCtx,
     dom: DomBag.pickDom(DOM, 'midiBadge', 'ptbInput', 'introHint', 'micMeter'),
+    getInputSourcePref: () => prefs.inputSource,
     suspendMic: _audio.suspendMic,
     resumeMic: _audio.resumeMic,
     recover: _audio.recover,
@@ -501,6 +506,9 @@ export function boot(): void {
     getOnMidiNoteOff: () => onMidiNoteOff,
     getOnMidiCC: () => onMidiCC,
     getMatchNoteOnset: () => _practice.matchNoteOnset,
+    // 較正中は鍵盤の押下をタップとして消費する（_calibration は後で作られる
+    // ので getter 経由の遅延バインド）。
+    getOnCalibrationTap: () => _calibration?.tapFromInstrument,
     isRunning: () => !!state.running,
     requestWakeLock,
     getTone: () => Tone,
@@ -529,13 +537,21 @@ export function boot(): void {
   //    そくてい」。クリック列に合わせた 10 タップの中央値を audioOffsetMs へ。
   const _calibration = LatencyCalibration.createLatencyCalibration({
     dom: { btn: DOM.calibrateBtn, status: DOM.calibrateStatus },
+    isMidiActive: () => _midi.isMidiActive(),
+    // 測定時の出力経路を記録するため（イヤホン交換後の「測り直して」検出）。
+    getAudioRoute: () => _settings?.getAudioRoute?.(),
     getTone: () => Tone as never,
     ensureInstruments: () => _practice.ensureToneInstruments(),
     getMetronome: () => _practice.getToneInstruments().metronome,
     t,
-    onResult: (v) => {
+    onResult: (v, meta) => {
       prefs.audioOffsetMs = v;
       practice.audioOffsetMs = v;
+      // Store HOW it was measured. Without this a saved offset is
+      // uninterpretable later: touch-measured does not apply to keyboard play,
+      // and an offset measured on one output route does not apply to another.
+      prefs.audioOffsetSource = meta.source;
+      prefs.audioOffsetRoute = meta.route;
       savePrefs();
       refreshSettingsPanel();
     },
@@ -547,6 +563,7 @@ export function boot(): void {
     prefs,
     practice,
     state,
+    getTone: () => Tone as unknown as { context?: unknown },
     midiInput,
     defaultAudioOffsetMs: DEFAULT_AUDIO_OFFSET_MS,
     savePrefs,
@@ -556,6 +573,8 @@ export function boot(): void {
       void rescanMidi();
     },
     connectBleMidi: () => _midi.connectBleMidi(),
+    applyInputSourcePref: () => _midi.applyInputSourcePref(),
+    getInputStatus: () => _midi.getInputStatus(),
     // ネイティブ iOS: OS ペアリング画面を出したら poller を再起動して 1s
     // カデンツへ戻す — ペア直後の鍵盤が数秒以内に取り込まれる（プラグインの
     // listInputs が毎ポーリングで CoreMIDI を真に再列挙するようになった）。
@@ -683,6 +702,7 @@ export function boot(): void {
     getCurrentSong: () => currentSong,
     laneLookaheadMs: _practice.getLaneLookaheadMs(),
     countInMs: _practice.getCountInMs(),
+    getJudgeProfile: _practice.getJudgeProfile,
   });
   _practice.setPracticeLane(_practiceLane.instance);
   function drawPracticeLane(timeMs: number): void {
@@ -719,18 +739,20 @@ export function boot(): void {
   // 練習時間（分）の累積 (P2-19)。所要 = practiceRealElapsedMs（ポーズ・
   // タブ非表示中は clock rebase で除外済み）。累積のみ・目標/未達表示なし。
   // 結果カード（ShellUi）とループ周回（ShellPractice）の両方から呼ばれる。
-  function recordPracticeMinutesImpl(): void {
+  function recordPracticeMinutesImpl(): number {
     try {
       const prog = (practice.progress ?? loadPracticeProgress()) as PianoCore.PracticeProgress;
       practice.progress = prog as never;
-      PianoCore.recordPracticeMinutes(
+      const added = PianoCore.recordPracticeMinutes(
         prog,
         PianoCore.formatDateKey(new Date()),
         practiceRealElapsedMs() / 60000
       );
       savePracticeProgress();
+      return added;
     } catch {
       /* 時間記録は非クリティカル — 完了フローを止めない */
+      return 0;
     }
   }
 
@@ -744,6 +766,8 @@ export function boot(): void {
     state,
     practice,
     midiInput,
+    isMidiActive: () => _midi.isMidiActive(),
+    getInputStatus: () => _midi.getInputStatus(),
     midiState,
     modalFocus,
     playStampCelebration: () => _practice.playStampCelebration(),

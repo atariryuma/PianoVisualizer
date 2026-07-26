@@ -201,13 +201,16 @@ export function recordPracticeMinutes(
   progress: PracticeProgress,
   dateKey: string,
   minutes: number
-): void {
-  if (!Number.isFinite(minutes) || minutes <= 0) return;
+): number {
+  if (!Number.isFinite(minutes) || minutes <= 0) return 0;
   const add = Math.min(minutes, MAX_MINUTES_PER_ATTEMPT);
   if (!progress.minutesByDay || typeof progress.minutesByDay !== 'object') {
     progress.minutesByDay = {};
   }
   progress.minutesByDay[dateKey] = (progress.minutesByDay[dateKey] ?? 0) + add;
+  // Return the CLAMPED amount: the caller shows the player what was credited,
+  // and an uncapped elapsed (tab left open for an hour) is not it.
+  return add;
 }
 
 /** Lifetime total practice minutes (float — callers round for display). */

@@ -268,6 +268,37 @@ describe('createUserSongsStore — addFromBlob', () => {
     expect(rec.mimeType).toBe(PLAIN_MIME);
   });
 
+  // ── content beats the filename (2026-07-26 regression) ──────────────
+  // The bytes are ground truth. A wrong/guessed name used to win and fed
+  // plain XML to JSZip ("Can't find end of central directory").
+
+  it('treats plain XML as XML even when the filename claims .mxl', async () => {
+    const fx = makeFixture();
+    const rec = await fx.store.addFromBlob(makeBlob('<score-partwise/>', ''), {
+      filename: 'untitled.mxl',
+    });
+    expect(fx.unzip).not.toHaveBeenCalled();
+    expect(rec.mimeType).toBe(PLAIN_MIME);
+  });
+
+  it('treats a real zip as .mxl even when the filename claims .xml', async () => {
+    const fx = makeFixture({ unzipResult: '<from-zip/>' });
+    const rec = await fx.store.addFromBlob(makeBlob('PKzzzz', ''), {
+      filename: 'mislabelled.xml',
+    });
+    expect(fx.unzip).toHaveBeenCalled();
+    expect(rec.mimeType).toBe(ZIP_MIME);
+  });
+
+  it('tolerates a UTF-8 BOM before the XML declaration', async () => {
+    const fx = makeFixture();
+    const rec = await fx.store.addFromBlob(makeBlob('\uFEFF<?xml version="1.0"?>', ''), {
+      filename: 'bom.mxl',
+    });
+    expect(fx.unzip).not.toHaveBeenCalled();
+    expect(rec.mimeType).toBe(PLAIN_MIME);
+  });
+
   it('throws when measureCount < 1', async () => {
     const fx = makeFixture({ parseResult: { measureCount: 0 } });
     await expect(
@@ -367,6 +398,25 @@ describe('createUserSongsStore — addFromUrl', () => {
     // returning title='My Song' the derived filename is only used for
     // mime-detection; record.source should be 'url'.
     expect(rec.source).toBe('url');
+  });
+
+  it('derives the filename from a RELATIVE url (bundled-library shape)', async () => {
+    // The bundled catalog hands out `assets/library/x.musicxml` — no scheme, no
+    // leading slash. Single-arg `new URL()` throws on that, so every library add
+    // used to fall back to the name `untitled.mxl` and get unzipped as a zip.
+    const fx = makeFixture({ parseResult: { measureCount: 1 } });
+    fx.fetchFn.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => '0' },
+      async blob() {
+        return makeBlob('<score-partwise/>', '');
+      },
+    } as unknown as Response);
+    const rec = await fx.store.addFromUrl('assets/library/burgmuller_arabesque.musicxml');
+    expect(fx.unzip).not.toHaveBeenCalled();
+    expect(rec.mimeType).toBe(PLAIN_MIME);
+    expect(rec.title).toBe('burgmuller_arabesque');
   });
 
   it('falls back to "untitled.mxl" when URL has no path', async () => {

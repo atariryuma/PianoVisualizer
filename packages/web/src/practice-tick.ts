@@ -10,8 +10,8 @@
 //      / expected / next note for telemetry.
 //   2. Auto-mark notes (rhythm: missed-when-window-expires; listen:
 //      auto-advance to keep OSMD cursor synced with the audio).
-//   3. Match an incoming mic onset to a note (only when no MIDI keyboard
-//      is connected — MIDI scoring is fed via matchNoteOnset directly
+//   3. Match an incoming mic onset to a note (only when MIDI is not the
+//      active input — MIDI scoring is fed via matchNoteOnset directly
 //      from the Web MIDI noteOn handler, not from here).
 //   4. Skip past resolved notes so the next-expected pointer keeps up.
 //   5. Update progress HUD (rate-limited to 10Hz).
@@ -22,6 +22,9 @@
 //     progress persistence; tied to result-card render.
 //   • drawPracticeLane — render concern, runs in the render-loop batch.
 //   • The MIDI noteOn → matchNoteOnset path (chord-window dispatch).
+
+import { recordMissJudgement, type JudgeProfile, type JudgeTally } from '@piano/core';
+import { CHIP_Y_FRAC, PRESS_CHIP_CHANNEL, clampChipX } from './practice-scoring';
 
 /** Practice slice the tick reads + writes. */
 export interface PracticeTickPracticeRef {
@@ -42,6 +45,9 @@ export interface PracticeTickPracticeRef {
   hits: number;
   misses: number;
   sectionCombo: number;
+  /** 判定カウンタ。auto-miss はここにも積む（MISS チップと同一ソース）。
+   *  必須 — createInitialPractice が常に生成する。 */
+  judge: JudgeTally;
   _completing: boolean;
   _completionTimer: ReturnType<typeof setTimeout> | null;
   _dbgNextLog?: number;
@@ -60,12 +66,6 @@ export interface PracticeTickNote {
   hit?: boolean;
   missed?: boolean;
   _filtered?: boolean;
-}
-
-/** MIDI input gate — when `enabled` is true, mic onsets are ignored
- *  for scoring. The MIDI noteOn handler feeds matchNoteOnset directly. */
-export interface PracticeTickMidiInput {
-  enabled: boolean;
 }
 
 /** OSMD cursor accessor — the tick reads `cursor.iterator.CurrentMeasureIndex`
@@ -90,21 +90,36 @@ export interface PracticeTickDom {
 export interface PracticeTickDeps {
   dom: PracticeTickDom;
   practice: PracticeTickPracticeRef;
-  midiInput: PracticeTickMidiInput;
   /** Live OSMD instance for the cursor read-out (diagnostic only).
    *  May be null between section transitions. */
   getOsmd(): PracticeTickOsmdRef | null;
   /** Practice elapsed-ms accessor — driven by Tone.now() in the shell. */
   practiceElapsedMs(): number;
-  /** Hit window in ms (PianoCore.HIT_WINDOW_MS). */
-  hitWindowMs: number;
+  /** Is MIDI the input we score? Gates the mic-onset path — see
+   *  ShellMidi.isMidiActive (prefs.inputSource × a port being attached). */
+  isMidiActive(): boolean;
+  /** Judgement boundaries of the ACTIVE input path — read fresh on every tick,
+   *  not captured once. The two paths have different windows (see @piano/core
+   *  JudgeProfile) and a keyboard can be hot-plugged mid-section; a captured
+   *  value would auto-miss notes the scoring would still have accepted (or hold
+   *  them past their deadline).
+   *
+   *  Same dep shape the lane and the scoring take, so there is one answer to
+   *  "which windows are in force". (This used to be `number | (() => number)`
+   *  — a union that existed only so one test fixture could pass a bare number.) */
+  getJudgeProfile(): JudgeProfile;
   /** Stable pitch helper — running median of recent samples. */
   medianRecentPitch(): number | null;
   /** Score an incoming onset against the note timeline. The chord-
    *  window forward-search is internal to the legacy implementation. */
   matchNoteOnset(detectedMidi: number, fromMidiInput: boolean): void;
-  /** Show the floating chip ('miss' / 'perfect' / 'nice') in the HUD. */
-  showHitChip(kind: 'miss' | 'perfect' | 'nice', label: string, xPx?: number, yPx?: number): void;
+  /** Show the floating chip in the HUD. The tick's only verdict is the
+   *  auto-MISS (a note whose window expired unplayed), hence the single kind —
+   *  the graded press/release chips are emitted by practice-scoring.
+   *  `channel` is the throttle bucket: the auto-miss is a PRESS verdict, so it
+   *  shares the press budget with the timing / wrong-note chips rather than
+   *  competing with the release (note-length) nudges. */
+  showHitChip(kind: 'miss', label: string, xPx?: number, yPx?: number, channel?: string): void;
   /** MIDI → key screen x + screen dims — used to place the auto-miss chip at
    *  the missed note's lane position (same band as every other verdict chip).
    *  Both optional so older shells / partial tests degrade to centered. */
@@ -152,6 +167,8 @@ export function createPracticeTick(
   ): void {
     if (!deps.practice.enabled || deps.practice.paused) return;
     const elapsed = deps.practiceElapsedMs();
+    // Late edge of the active input path's window (see the dep's note).
+    const hitWindowMs = deps.getJudgeProfile().goodMs;
     const notes = deps.practice.sectionNotes;
     const len = notes.length;
 
@@ -244,20 +261,27 @@ export function createPracticeTick(
       for (let i = deps.practice.currentNoteIdx; i < len; i++) {
         const n = notes[i];
         if (n.hit || n.missed) continue;
-        if (elapsed > n.timeMs + deps.hitWindowMs) {
+        if (elapsed > n.timeMs + hitWindowMs) {
           n.missed = true;
           deps.practice.misses++;
           deps.practice.sectionCombo = 0;
+          // Same tally the live HUD + result breakdown read, so the MISS the
+          // player sees flash here is the MISS they're counted afterwards.
+          recordMissJudgement(deps.practice.judge);
           // Place the Miss verdict at the missed note's key (same band as the
           // timing/wrong-note chips) so all per-note feedback reads in one place.
           const screen = deps.getScreen?.();
           const x =
-            deps.noteScreenX && screen
-              ? Math.max(48, Math.min(screen.W - 48, deps.noteScreenX(n.midi)))
-              : undefined;
-          deps.showHitChip('miss', deps.t('missChip'), x, screen ? screen.H * 0.6 : undefined);
+            deps.noteScreenX && screen ? clampChipX(deps.noteScreenX(n.midi), screen.W) : undefined;
+          deps.showHitChip(
+            'miss',
+            deps.t('missChip'),
+            x,
+            screen ? screen.H * CHIP_Y_FRAC : undefined,
+            PRESS_CHIP_CHANNEL
+          );
         }
-        if (n.timeMs - elapsed > deps.hitWindowMs) break;
+        if (n.timeMs - elapsed > hitWindowMs) break;
       }
     } else if (deps.practice.mode === 'listen') {
       for (let i = deps.practice.currentNoteIdx; i < len; i++) {
@@ -268,13 +292,13 @@ export function createPracticeTick(
       }
     }
 
-    // 3. Match an incoming mic onset. While a MIDI keyboard is
-    //    connected, mic is fully suppressed for *scoring* — sustained
-    //    piano sound, ambient noise, or the kid's voice between MIDI
-    //    presses can otherwise credit a wrong note (especially under
-    //    the chord-forgiveness forward-search). Visualizer effects
-    //    keep their own recency window (see drawMidiBeams path).
-    if (!deps.midiInput.enabled && isOnsetNote && pitchHz != null && pitchHz > 0) {
+    // 3. Match an incoming mic onset. While MIDI is the ACTIVE input, the mic
+    //    is fully suppressed for *scoring* — sustained piano sound, ambient
+    //    noise, or the kid's voice between MIDI presses can otherwise credit a
+    //    wrong note (especially under the chord-forgiveness forward-search).
+    //    `isMidiActive()` and not "a port is attached": a player who pinned the
+    //    mic is scored on the mic even with a keyboard connected.
+    if (!deps.isMidiActive() && isOnsetNote && pitchHz != null && pitchHz > 0) {
       const stablePitch = deps.medianRecentPitch() || pitchHz;
       const detectedMidi = Math.round(12 * Math.log2(stablePitch / 440) + 69);
       deps.matchNoteOnset(detectedMidi, false);
@@ -330,7 +354,7 @@ export function createPracticeTick(
     let isComplete = deps.practice.currentNoteIdx >= len;
     if (!isComplete && deps.practice.mode !== 'guided') {
       const last = notes[len - 1];
-      isComplete = !!(last && elapsed > last.timeMs + last.durMs + deps.hitWindowMs + 400);
+      isComplete = !!(last && elapsed > last.timeMs + last.durMs + hitWindowMs + 400);
     }
     if (!deps.practice._completing && isComplete) {
       deps.practice._completing = true;

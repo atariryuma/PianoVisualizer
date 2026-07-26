@@ -69,6 +69,13 @@ export class PianoMidiWeb extends WebPlugin implements PianoMidiPlugin {
     /* no-op on web */
   }
 
+  /** No web equivalent: the whole reason this method exists is that the web
+   *  audio stack refuses to report output latency on Apple platforms. On the web
+   *  build the tap-along calibration remains the only way to measure it. */
+  async getAudioLatency(): Promise<never> {
+    throw this.unavailable('Audio output latency is only readable natively (AVAudioSession).');
+  }
+
   async scanBle(): Promise<{ devices: Array<{ id: string; name: string }> }> {
     // Web fallback uses Web Bluetooth instead — this is invoked by the mobile
     // shell, never by the web shell. Web shell uses its own bleMidi flow.

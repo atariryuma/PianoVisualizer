@@ -13,7 +13,10 @@ import type { MidiInputRef } from './shell-midi';
 import type { InitialGameState } from './game-state-init';
 import type { InitialPrefs, InitialPracticeState } from './practice-state-init';
 import type { DomBag } from './dom-bag';
+import type * as PianoCore from '@piano/core';
 import * as SettingsPanel from './settings-panel';
+import * as ShellHelpers from './shell-helpers';
+import { hasNativeAudioLatency, readNativeAudioLatency } from './native-midi-polyfill';
 import { hasNativeBleMidiPairing, showNativeBleMidiPairing } from './native-midi-polyfill';
 
 export interface ShellSettingsDeps {
@@ -30,7 +33,19 @@ export interface ShellSettingsDeps {
   modalFocus: any;
   /** Action thunks fired by panel buttons. */
   rescanMidi: () => void;
-  connectBleMidi: () => void;
+  /** 実装は shell-midi の `async connectBleMidi()`。settings-panel は戻り値の
+   *  `.finally()` を呼ぶので Promise であることが必須 — ここが `() => void`
+   *  だったのは誤りで、call site の `as any` に隠れていた。 */
+  connectBleMidi: () => Promise<unknown>;
+  /** ShellMidi.applyInputSourcePref — 選択の反映（アクティブ入力の再解決 +
+   *  マイクの suspend/resume）。パネル自身は prefs を書くだけ。 */
+  applyInputSourcePref: () => Promise<void>;
+  /** ShellMidi.getInputStatus — 表示用の入力状況（生きている入力・待機中か・
+   *  繋がっているのに使っていないキーボードがあるか）。 */
+  getInputStatus: () => PianoCore.InputSourceStatus;
+  /** Live Tone handle — the settings panel reads AudioContext latency from it
+   *  to show what the device actually costs. Null before audio starts. */
+  getTone?: () => { context?: unknown } | null;
   showSessionSummary: () => void;
   /** Freeze/resume the practice session while the panel is open (P1-6). */
   pausePractice: () => void;
@@ -52,6 +67,8 @@ export interface ShellSettingsDeps {
 }
 
 export interface ShellSettings {
+  /** Current audio output route name (native only), or undefined. */
+  getAudioRoute?: () => string | undefined;
   open: () => void;
   close: () => void;
   refresh: () => void;
@@ -59,40 +76,45 @@ export interface ShellSettings {
 
 export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
   const { dom: DOM } = deps;
+
+  /** Last resolved native reading (AVAudioSession). `outMs` already includes the
+   *  ioBuffer — one figure, so nothing downstream can add the buffer twice.
+   *  Re-read on every panel open because the output route can change under us. */
+  let nativeLatency: { outMs: number; portName?: string } | null = null;
+
+  /** Synchronous web fallback — 0 on Apple platforms, which the panel reports
+   *  as "can't be measured" rather than as a 0 ms device. */
+  const audioContextLatency = (): ShellHelpers.ReportedContextLatency | null =>
+    ShellHelpers.readContextLatencyMs(
+      deps.getTone?.()?.context as ShellHelpers.LatencyReportingContext | undefined
+    );
   const _settings = SettingsPanel.createSettingsPanel({
+    // Spread the bag, then override ONLY the genuinely renamed entries.
+    // Hand-listing the identity-named controls (audioOffset*, noteNaming*,
+    // noteSpeed*, judge*, vol*, backup*) was pure duplication, and the
+    // duplication is what broke the judgement-strictness segment: it was added
+    // to index.html, to the DOM bag, to SettingsPanelDom and to the click
+    // handlers, but not to this literal, so it was silently dead on device.
+    // Anything named the same on both sides is now wired for free, forever.
     dom: {
+      ...DOM,
       panel: DOM.settingsPanel,
       openBtn: DOM.settingsBtn,
       closeBtn: DOM.settingsCloseBtn,
-      audioOffsetSlider: DOM.audioOffsetSlider,
-      audioOffsetVal: DOM.audioOffsetVal,
-      audioOffsetAuto: DOM.audioOffsetAuto,
-      audioOffsetReset: DOM.audioOffsetReset,
       rescanBtn: DOM.settingsRescanBtn,
       bleBtn: DOM.settingsBleBtn,
       resetBtn: DOM.settingsResetBtn,
       inputStatus: DOM.settingsInputStatus,
       debugToggle: DOM.settingsDebugToggle,
-      debugOverlay: DOM.debugOverlay,
-      // 0.15 — 音名表記セグメント + 音量スライダー。
-      noteNamingAuto: DOM.noteNamingAuto,
-      noteNamingAbc: DOM.noteNamingAbc,
-      noteNamingSolfege: DOM.noteNamingSolfege,
-      // ノーツ落下速度セグメント（A3）。
-      noteSpeedSlow: DOM.noteSpeedSlow,
-      noteSpeedNormal: DOM.noteSpeedNormal,
-      noteSpeedFast: DOM.noteSpeedFast,
-      volGhostSlider: DOM.volGhostSlider,
-      volGhostVal: DOM.volGhostVal,
-      volBackingSlider: DOM.volBackingSlider,
-      volBackingVal: DOM.volBackingVal,
-      volMetronomeSlider: DOM.volMetronomeSlider,
-      volMetronomeVal: DOM.volMetronomeVal,
-      // 0.15 — 進捗バックアップ。
-      backupExportBtn: DOM.backupExportBtn,
-      backupImportBtn: DOM.backupImportBtn,
-      backupImportFile: DOM.backupImportFile,
-      backupStatus: DOM.backupStatus,
+      // The DOM bag is deliberately element-subtype-agnostic (everything is
+      // HTMLElement), so the handful of controls the panel needs as inputs are
+      // narrowed here — the one thing the removed `as any` was legitimately
+      // covering.
+      audioOffsetSlider: DOM.audioOffsetSlider as HTMLInputElement,
+      volGhostSlider: DOM.volGhostSlider as HTMLInputElement,
+      volBackingSlider: DOM.volBackingSlider as HTMLInputElement,
+      volMetronomeSlider: DOM.volMetronomeSlider as HTMLInputElement,
+      backupImportFile: DOM.backupImportFile as HTMLInputElement,
     },
     prefs: deps.prefs,
     practice: deps.practice,
@@ -104,10 +126,22 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     modalFocus: deps.modalFocus,
     rescanMidi: deps.rescanMidi,
     connectBleMidi: deps.connectBleMidi,
+    // 入力ソース選択（おまかせ / 🎹 / 🎙️）。パネルは prefs を書くだけで、
+    // 実際にマイクを起こす／落とすのは shell-midi 側（唯一の解決地点）。
+    applyInputSourcePref: deps.applyInputSourcePref,
+    getInputStatus: deps.getInputStatus,
     // ネイティブ iOS の OS 標準 Bluetooth-MIDI ペアリング（Capacitor 時のみ有効）。
     nativeBleMidi: { has: hasNativeBleMidiPairing, show: showNativeBleMidiPairing },
     onNativePairingShown: deps.onNativePairingShown,
     showSessionSummary: deps.showSessionSummary,
+    // Read the LIVE context every refresh — plugging in headphones changes the
+    // output route and therefore the latency, so a cached value would lie.
+    // Native reading FIRST. WebKit reports 0 for AudioContext.outputLatency on
+    // every Apple platform, so on iOS the AudioContext path can only ever say
+    // "unknown" — AVAudioSession is where the real number lives. The bridge
+    // call is async, so the resolved value is cached and the panel is asked to
+    // repaint; the AudioContext value is the synchronous fallback for web.
+    getAudioLatency: () => nativeLatency ?? audioContextLatency(),
     pausePractice: deps.pausePractice,
     resumePractice: deps.resumePractice,
     onClose: deps.onPanelClose,
@@ -117,15 +151,56 @@ export function createShellSettings(deps: ShellSettingsDeps): ShellSettings {
     onNoteSpeedChange: deps.onNoteSpeedChange,
     exportProgressBackup: deps.exportProgressBackup,
     importProgressBackup: deps.importProgressBackup,
-  } as any);
+  });
 
   // Boot-time seed — honor the persisted-prefs debug overlay state
   // across reloads.
   _settings.applyDebug(deps.prefs.debug);
 
+  /** Re-read the OS latency, then repaint. Async because it crosses the
+   *  Capacitor bridge; the panel shows the AudioContext fallback until it
+   *  resolves (one frame later, in practice). */
+  function refreshNativeLatency(): void {
+    if (!hasNativeAudioLatency()) return;
+    // The only consumer of this reading is DOM inside the panel. `refresh()` is
+    // also bound as the shell's `refreshSettingsPanel` and fires on every
+    // language toggle and every calibration result, so without this the app
+    // crossed the Capacitor bridge to repaint a hidden element. `open()` calls
+    // this unconditionally, which covers the case that matters.
+    if (!DOM.settingsPanel?.classList.contains('visible')) return;
+    void readNativeAudioLatency().then((r) => {
+      const next = r ? { outMs: r.outMs, portName: r.portName || undefined } : null;
+      // Repaint only on a CHANGE. Both callers (`open` / `refresh`) already
+      // paint synchronously right after asking for this, so an unconditional
+      // repaint here meant two full panel paints per open for a value that is
+      // the same on all but the first read after a route change.
+      if (next?.outMs === nativeLatency?.outMs && next?.portName === nativeLatency?.portName) {
+        return;
+      }
+      nativeLatency = next;
+      _settings.refresh();
+    });
+  }
+
   return {
-    open: _settings.open,
+    /** Live output-route name, for stamping onto a calibration measurement. */
+    getAudioRoute: () => nativeLatency?.portName,
+    open: () => {
+      // ORDER MATTERS: open first, then measure. `refreshNativeLatency()` skips
+      // the bridge call when the panel isn't `.visible` (so a langchange or a
+      // calibration result can't cross it to repaint a hidden element) — and
+      // `_settings.open()` is what adds that class. Calling them the other way
+      // round made the probe a no-op on the one path that needs it, which is
+      // also why no `getAudioLatency` call appears in the device log.
+      _settings.open();
+      // Route can have changed since last time (AirPods connected, headphones
+      // unplugged), so re-measure on every open rather than caching once.
+      refreshNativeLatency();
+    },
     close: _settings.close,
-    refresh: _settings.refresh,
+    refresh: () => {
+      refreshNativeLatency();
+      _settings.refresh();
+    },
   };
 }

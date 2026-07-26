@@ -28,9 +28,7 @@ function baseOpts(over: Partial<LaneDrawOptions> = {}): LaneDrawOptions {
     kbReserve: 80,
     laneLookaheadMs: 4000,
     countInMs: 4000,
-    hitWindowEarlyMs: 80,
-    hitWindowMs: 220,
-    perfectMs: 50,
+    judgeProfile: { perfectMs: 50, greatMs: 120, goodMs: 220 },
     laneLabelL: 'L hand',
     laneLabelR: 'R hand',
     countInGoLabel: 'GO!',
@@ -493,26 +491,180 @@ describe('drawPracticeLane', () => {
     });
   });
 
-  // ── ライブコンボ（×N — B1、rhythm のみ） ──────────────────────────
+  // ── ライブコンボ（中央の COMBO 表示、rhythm のみ） ────────────────
+
+  /** fillText で描かれた文字列だけを取り出す。 */
+  function drawnTexts(): string[] {
+    return stub.calls.filter((c) => c.method === 'fillText').map((c) => c.args[0] as string);
+  }
 
   describe('live combo counter', () => {
-    it('shows ×N from a streak of 5', () => {
+    it('shows the count + COMBO caption from a streak of 5', () => {
       drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ sectionCombo: 12 }));
-      const texts = stub.calls
-        .filter((c) => c.method === 'fillText')
-        .map((c) => c.args[0] as string);
-      expect(texts).toContain('×12');
+      const texts = drawnTexts();
+      expect(texts).toContain('12');
+      expect(texts).toContain('COMBO');
+    });
+
+    it('centers the readout on the lane divider (genre-standard placement)', () => {
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ sectionCombo: 12 }));
+      const comboCall = stub.calls.find((c) => c.method === 'fillText' && c.args[0] === 'COMBO');
+      // padX 24 + halfW → screenW 800 なら midX = 400。
+      expect(comboCall?.args[1]).toBe(400);
+      expect(stub.calls.some((c) => c.method === 'set textAlign' && c.args[0] === 'center')).toBe(
+        true
+      );
     });
 
     it('stays hidden below the threshold and at 0', () => {
       for (const combo of [0, 4]) {
         stub.reset();
         drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ sectionCombo: combo }));
-        const texts = stub.calls
-          .filter((c) => c.method === 'fillText')
-          .map((c) => c.args[0] as string);
-        expect(texts.some((s) => s.startsWith('×'))).toBe(false);
+        expect(drawnTexts()).not.toContain('COMBO');
       }
+    });
+  });
+
+  // ── 判定帯（3段・左右対称） ────────────────────────────────────────
+
+  describe('judgement bands', () => {
+    /** The three judgement bands are the only full-lane-width fills here
+     *  (screenW 800 − padX 24 × 2 = 752); the lane halves are 376 wide. */
+    const bandRects = (): number[][] =>
+      stub.calls
+        .filter((c) => c.method === 'fillRect')
+        .map((c) => c.args as number[])
+        .filter((a) => a[2] === 752);
+
+    it('paints all three tiers nested and symmetric about the hit line', () => {
+      drawPracticeLane(
+        stub.ctx,
+        baseView(),
+        baseTiming(),
+        baseOpts({ judgeProfile: { perfectMs: 50, greatMs: 120, goodMs: 220 } })
+      );
+      const bands = bandRects();
+      expect(bands.length).toBe(3);
+      // One shared centre — symmetric windows, as every published tap-note
+      // window in the genre is.
+      const centres = bands.map((a) => a[1] + a[3] / 2);
+      for (const cy of centres) expect(cy).toBeCloseTo(centres[0], 6);
+      // Nested outer → inner in draw order (good, great, perfect).
+      expect(bands[0][3]).toBeGreaterThan(bands[1][3]);
+      expect(bands[1][3]).toBeGreaterThan(bands[2][3]);
+      // Heights are the ms boundaries doubled, in the lane's px-per-ms scale.
+      expect(bands[0][3] / bands[2][3]).toBeCloseTo(220 / 50, 6);
+    });
+
+    it('scales the drawn bands with the profile (strictness / input path)', () => {
+      const outerHeight = (goodMs: number): number => {
+        stub.reset();
+        drawPracticeLane(
+          stub.ctx,
+          baseView(),
+          baseTiming(),
+          baseOpts({ judgeProfile: { perfectMs: goodMs / 4, greatMs: goodMs / 2, goodMs } })
+        );
+        return bandRects()[0][3];
+      };
+      // The bands ARE the game's promise about when a press counts, so a wider
+      // window must draw a taller band — they can never be stale relative to
+      // the scoring.
+      expect(outerHeight(300)).toBeGreaterThan(outerHeight(150));
+    });
+  });
+
+  // ── ヒット誤差バー（方向・ばらつきの可視化） ──────────────────────
+
+  describe('hit-error bar', () => {
+    const ring = (values: number[]) => {
+      const buf = new Float32Array(32);
+      values.forEach((v, i) => (buf[i] = v));
+      return { buf, idx: values.length, len: values.length };
+    };
+
+    it('is drawn once presses exist', () => {
+      const before = stub.countCalls('fillRect');
+      drawPracticeLane(
+        stub.ctx,
+        baseView(),
+        baseTiming(),
+        baseOpts({ errorRing: ring([10, -20, 35]) })
+      );
+      expect(stub.countCalls('fillRect')).toBeGreaterThan(before);
+    });
+
+    it('places a tick left of centre for an early press and right for a late one', () => {
+      // The bar is centred on the lane divider (midX = 400 at screenW 800).
+      const tickX = (dt: number): number => {
+        stub.reset();
+        drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ errorRing: ring([dt]) }));
+        // The tick is the last 2px-wide fillRect drawn.
+        const ticks = stub.calls
+          .filter((c) => c.method === 'fillRect')
+          .map((c) => c.args as number[])
+          .filter((a) => a[2] === 2);
+        // rect is drawn at x-1 with width 2 → centre is left + 1.
+        return ticks[ticks.length - 1][0] + 1;
+      };
+      expect(tickX(-100)).toBeLessThan(400);
+      expect(tickX(100)).toBeGreaterThan(400);
+      // Symmetric offsets land symmetrically about the centre.
+      expect(400 - tickX(-100)).toBeCloseTo(tickX(100) - 400, 5);
+    });
+
+    it('is not drawn when there are no presses yet, or no ring at all', () => {
+      const baseline = (() => {
+        stub.reset();
+        drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({}));
+        return stub.countCalls('fillRect');
+      })();
+      stub.reset();
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ errorRing: ring([]) }));
+      expect(stub.countCalls('fillRect')).toBe(baseline);
+    });
+  });
+
+  // ── ライブ判定パネル（accuracy + 判定内訳、rhythm のみ） ──────────
+
+  describe('live judgement panel', () => {
+    const judge = { perfect: 6, great: 3, good: 1, miss: 2 };
+
+    it('draws every tier label with its count', () => {
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ judge }));
+      const texts = drawnTexts();
+      // Tiers carry QUALITY only — there is deliberately no EARLY / LATE tier.
+      for (const label of ['PERFECT', 'GREAT', 'GOOD', 'MISS']) {
+        expect(texts).toContain(label);
+      }
+      expect(texts).not.toContain('EARLY');
+      expect(texts).not.toContain('LATE');
+      expect(texts).toContain('6');
+      expect(texts).toContain('3');
+      expect(texts).toContain('2');
+    });
+
+    it('shows running accuracy as hits / judged', () => {
+      // 10 hits (6+3+1) of 12 judged → 83%.
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ judge }));
+      expect(drawnTexts()).toContain('83%');
+    });
+
+    it('shows -- rather than 0% before the first verdict', () => {
+      drawPracticeLane(
+        stub.ctx,
+        baseView(),
+        baseTiming(),
+        baseOpts({ judge: { perfect: 0, great: 0, good: 0, miss: 0 } })
+      );
+      const texts = drawnTexts();
+      expect(texts).toContain('--');
+      expect(texts).not.toContain('0%');
+    });
+
+    it('draws nothing when no tally is passed (guided / listen)', () => {
+      drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({}));
+      expect(drawnTexts()).not.toContain('PERFECT');
     });
   });
 });

@@ -12,6 +12,7 @@
 // and stub it as a plain object.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createJudgeTally } from '@piano/core';
 import {
   createPracticeTick,
   type PracticeTickDeps,
@@ -31,7 +32,7 @@ function makeNote(over: Partial<PracticeTickNote> = {}): PracticeTickNote {
 }
 
 function makeDeps(over: Partial<PracticeTickDeps> = {}): PracticeTickDeps {
-  const practice: PracticeTickPracticeRef = {
+  const basePractice: PracticeTickPracticeRef = {
     enabled: true,
     mode: 'rhythm',
     sectionNotes: [],
@@ -42,14 +43,15 @@ function makeDeps(over: Partial<PracticeTickDeps> = {}): PracticeTickDeps {
     _completing: false,
     _completionTimer: null,
     _lastProgUpdate: 0,
+    judge: createJudgeTally(),
   };
   return {
     dom: { ptbProgress: { textContent: '' } as unknown as HTMLElement },
-    practice,
-    midiInput: { enabled: false },
+    isMidiActive: () => false,
     getOsmd: () => null,
     practiceElapsedMs: vi.fn(() => 0),
-    hitWindowMs: 200,
+    // Same dep shape production passes. `goodMs` is the auto-miss deadline.
+    getJudgeProfile: () => ({ perfectMs: 50, greatMs: 125, goodMs: 200 }),
     medianRecentPitch: vi.fn(() => null),
     matchNoteOnset: vi.fn(),
     showHitChip: vi.fn(),
@@ -59,6 +61,9 @@ function makeDeps(over: Partial<PracticeTickDeps> = {}): PracticeTickDeps {
     remoteLog: vi.fn(),
     noteStateLabel: vi.fn(() => ''),
     ...over,
+    // MERGED, not replaced: a test that overrides two practice fields should
+    // not silently drop the ones every real session has (judge, the counters).
+    practice: { ...basePractice, ...over.practice },
   };
 }
 
@@ -138,7 +143,44 @@ describe('createPracticeTick — rhythm auto-miss', () => {
     expect(deps.practice.sectionCombo).toBe(0);
     // Fixture wires no noteScreenX/getScreen → the chip degrades to centered
     // (undefined position args).
-    expect(deps.showHitChip).toHaveBeenCalledWith('miss', 'missChip', undefined, undefined);
+    expect(deps.showHitChip).toHaveBeenCalledWith(
+      'miss',
+      'missChip',
+      undefined,
+      undefined,
+      'press'
+    );
+  });
+
+  it('records the miss in the judgement tally the result card reads', () => {
+    const judge = createJudgeTally();
+    const note = makeNote({ timeMs: 100 });
+    const deps = makeDeps({
+      practiceElapsedMs: () => 400,
+      practice: {
+        enabled: true,
+        mode: 'rhythm',
+        sectionNotes: [note],
+        currentNoteIdx: 0,
+        hits: 0,
+        misses: 0,
+        sectionCombo: 5,
+        judge,
+        _completing: false,
+        _completionTimer: null,
+        _lastProgUpdate: 0,
+      },
+    });
+    createPracticeTick(deps)(500, false, null);
+    // The MISS the player just saw flash IS the MISS they get counted.
+    expect(judge.miss).toBe(1);
+    expect(deps.showHitChip).toHaveBeenCalledWith(
+      'miss',
+      'missChip',
+      undefined,
+      undefined,
+      'press'
+    );
   });
 
   it('does NOT mark a note missed when elapsed is within window', () => {
@@ -239,7 +281,7 @@ describe('createPracticeTick — listen auto-advance', () => {
 describe('createPracticeTick — mic onset matching', () => {
   it('matches the mic onset when MIDI is disabled', () => {
     const deps = makeDeps({
-      midiInput: { enabled: false },
+      isMidiActive: () => false,
       medianRecentPitch: () => 440, // A4 → MIDI 69
     });
     createPracticeTick(deps)(0, true, 442);
@@ -248,7 +290,7 @@ describe('createPracticeTick — mic onset matching', () => {
 
   it('skips matching when MIDI is enabled (mic suppressed for scoring)', () => {
     const deps = makeDeps({
-      midiInput: { enabled: true },
+      isMidiActive: () => true,
       medianRecentPitch: () => 440,
     });
     createPracticeTick(deps)(0, true, 442);

@@ -36,6 +36,8 @@ export interface ShellGameUpdateDeps {
   /** practice / midiInput forward-declared in the shell — getter access. */
   getPractice: () => any;
   getMidiInput: () => any;
+  /** Is MIDI the input that drives scoring + visuals? (ShellMidi.isMidiActive) */
+  isMidiActive: () => boolean;
   config: PianoConfig;
   /** session-confidence ring buffer + cap. */
   sessionRing: Array<{ timeMs: number; isPiano: boolean }>;
@@ -255,6 +257,7 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
     state,
     getPractice: deps.getPractice,
     getMidiInput: deps.getMidiInput,
+    isMidiActive: deps.isMidiActive,
     getPitchMedianFrames: () => CoreOpts.PITCH_MEDIAN_FRAMES,
     config: deps.config,
     qhOptsMic: deps.coreOpts.qhOptsMic,

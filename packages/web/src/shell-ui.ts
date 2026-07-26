@@ -40,6 +40,11 @@ export interface ShellUiDeps {
   state: InitialGameState;
   practice: InitialPracticeState;
   midiInput: MidiInputRef;
+  /** Is MIDI the input that drives scoring + visuals? (prefs.inputSource ×
+   *  a port being attached — ShellMidi.isMidiActive.) */
+  isMidiActive: () => boolean;
+  /** ShellMidi.getInputStatus — the resolved input situation. */
+  getInputStatus?: () => { active: 'midi' | 'mic'; waiting: boolean };
   /** G5: Journal モーダルのフォーカストラップ＋復元に使う（settings 等と共通）。 */
   modalFocus?: { open(el: HTMLElement): void; close(el: HTMLElement): void };
   /** SE（最小版）: スタンプ獲得時の控えめな祝福音（結果画面）。省略可。 */
@@ -112,8 +117,10 @@ export interface ShellUiDeps {
 
 export interface ShellUi {
   /** showHitChip — invoked from MIDI handlers + score-loader after-load.
-   *  Optional xPx/yPx place the chip at a note's key (default centered). */
-  showHitChip: (kind: string, text: string, xPx?: number, yPx?: number) => void;
+   *  Optional xPx/yPx place the chip at a note's key (default centered);
+   *  optional `channel` gives a feedback dimension its own throttle budget
+   *  (see intro-hint-ui) so two channels can't swallow each other. */
+  showHitChip: (kind: string, text: string, xPx?: number, yPx?: number, channel?: string) => void;
   /** intro-hint-ui forwarders. */
   refreshIntroHint: () => void;
   showRunningUI: () => void;
@@ -148,6 +155,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     dom: DomBag.pickDom(dom, 'introHint', 'startScreen', 'hud', 'micMeter') as any,
     state: deps.state,
     midiInput: deps.midiInput,
+    isMidiActive: deps.isMidiActive,
+    getInputStatus: deps.getInputStatus,
     practice: deps.practice,
     t,
     getHeight: deps.getHeight,
@@ -156,8 +165,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     rescanMidi: deps.rescanMidi,
   } as any);
 
-  const showHitChip = (kind: string, text: string, xPx?: number, yPx?: number) =>
-    _introHintUi.showHitChip(kind, text, xPx, yPx);
+  const showHitChip = (kind: string, text: string, xPx?: number, yPx?: number, channel?: string) =>
+    _introHintUi.showHitChip(kind, text, xPx, yPx, channel);
 
   // ── Practice journal (must be built before result-card so its
   //    onSectionAttemptDone hook can delegate to _journal.applyAttempt) ──
@@ -462,7 +471,26 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'resDuration',
       'resDurationRow',
       'resCombo',
+      // 誤打の事実行。result-card は読むのにここに無く、A4 の「よけいな音 n」は
+      // 一度も表示されていなかった（dom-wiring.test.ts が検出）。
+      'resExtraRow',
+      'resExtra',
+      'resBadges',
+      'resDetails',
+      'resDetailsToggle',
+      'resJudge',
+      'resJudgeTitle',
+      'resJudgeBar',
+      'resJudgeRows',
+      'resJudgeErrorChart',
+      'resJudgeSpread',
+      'resJudgeTendency',
+      'resJudgeHoldTitle',
+      'resJudgeHoldRows',
+      'resJudgeHold',
+      'resJudgeCond',
       'resMsg',
+      'resNoScoreFacts',
       'resFocus',
       'resUnlock',
       'resSelfAssess',
@@ -488,6 +516,10 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     recordPracticeMinutes: deps.recordPracticeMinutes,
     savePracticeProgress: deps.savePracticeProgress,
     computeStars: PianoCore.computeStars,
+    summarizeJudgements: PianoCore.summarizeJudgements,
+    // 判定条件のスナップショット（リザルトに表示 + 履歴に記録）。
+    getJudgeStrictness: () => deps.prefs.judgeStrictness,
+    isExactInput: () => !!deps.midiInput.enabled,
     resolveResultTier: PianoCore.resolveResultTier,
     pickSectionFocus: PianoCore.pickSectionFocus,
     planSectionScaffold: PianoCore.planSectionScaffold,

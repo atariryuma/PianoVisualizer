@@ -20,8 +20,18 @@
 // into legacy-app globals.
 
 /** Persistent prefs slice the settings panel reads + writes. */
+import { MIN_REPORTED_OUT_LATENCY_MS } from '@piano/core';
+import { diag } from './diag-sink';
+import { installSlider } from './slider-control';
+
+import type { InputSourcePref, InputSourceStatus } from '@piano/core';
+
 export interface SettingsPrefs {
   audioOffsetMs: number | null;
+  /** How the stored offset was measured. Drives the staleness warning: an
+   *  offset measured on one output route does not apply to another. */
+  audioOffsetSource?: 'midi' | 'touch';
+  audioOffsetRoute?: string;
   /** Phase 0d batch 70 fold — whether the debug overlay starts on. */
   debug: boolean;
   /** 0.15 — note-name notation + practice-audio volume balance.
@@ -33,10 +43,13 @@ export interface SettingsPrefs {
   volMetronome?: number;
   /** ノーツ落下速度（レーン先読み倍率）— 音ゲーのハイスピード設定。 */
   noteSpeed?: 'slow' | 'normal' | 'fast';
+  judgeStrictness?: 'easy' | 'normal' | 'strict';
+  inputSource?: InputSourcePref;
 }
 
 /** Practice slice — the panel writes audioOffsetMs into both prefs and
  *  practice so the running session picks up the change instantly. */
+
 export interface SettingsPracticeRef {
   audioOffsetMs: number;
   /** 練習セッション中か。「セッションの結果」ボタンはフリープレイ専用サマリー
@@ -71,6 +84,8 @@ export interface SettingsPanelDom {
   audioOffsetSlider: HTMLInputElement;
   audioOffsetVal: HTMLElement;
   audioOffsetAuto: HTMLElement;
+  /** 実測遅延の専用行。説明文の末尾に紛れさせず、値のすぐ下に出す。 */
+  audioLatencyInfo: HTMLElement | null;
   audioOffsetReset: HTMLElement | null;
   rescanBtn: HTMLElement | null;
   bleBtn: HTMLElement | null;
@@ -87,6 +102,21 @@ export interface SettingsPanelDom {
   noteNamingAbc?: HTMLElement | null;
   noteNamingSolfege?: HTMLElement | null;
   /** ノーツ速度セグメント（🐢ゆっくり / ふつう / 🚀はやい）。 */
+  /** Judgement-strictness segment. REQUIRED, not optional, deliberately: an
+   *  optional DOM field plus `el?.addEventListener` means a control that was
+   *  never wired up compiles clean, passes every test, and is simply dead on
+   *  device — which is exactly what happened to this segment. Requiring the
+   *  field makes the compiler point at the call site that forgot it. `null` is
+   *  still allowed so a partial-DOM test can opt out EXPLICITLY. */
+  /** Input-source segment (auto / keyboard / mic). Required-nullable so a call
+   *  site that forgets to wire them fails to compile rather than shipping a
+   *  dead control — the judgement segment shipped inert exactly that way. */
+  inputSrcAuto: HTMLElement | null;
+  inputSrcMidi: HTMLElement | null;
+  inputSrcMic: HTMLElement | null;
+  judgeEasy: HTMLElement | null;
+  judgeNormal: HTMLElement | null;
+  judgeStrict: HTMLElement | null;
   noteSpeedSlow?: HTMLElement | null;
   noteSpeedNormal?: HTMLElement | null;
   noteSpeedFast?: HTMLElement | null;
@@ -149,6 +179,18 @@ export interface SettingsPanelDeps {
   /** Show the session-summary modal (Reset button). Only fires when
    *  `state.running` is true. */
   showSessionSummary?(): void;
+  /** Live audio-output latency, in ms. Null when it can't be determined. Read
+   *  on every panel refresh — never cached — so the number always reflects the
+   *  current output route (plugging in headphones changes it drastically).
+   *  On native iOS this comes from AVAudioSession; on the web it comes from
+   *  AudioContext, which WebKit reports as 0. */
+  getAudioLatency?(): { outMs: number; portName?: string } | null;
+  /** Apply a changed input-source choice: resolve the active source and bring
+   *  the mic up or down to match (ShellMidi.applyInputSourcePref). */
+  applyInputSourcePref?(): Promise<void>;
+  /** Classified input situation for the read-out — which source is live, is it
+   *  waiting on hardware, is a connected keyboard deliberately idle. */
+  getInputStatus?(): InputSourceStatus;
   /** Pause the practice session while the panel is open (freeze clock +
    *  pause Transport). Called from open(); resume from close(). Optional
    *  so tests / non-practice contexts can omit it. Without this, a kid who
@@ -195,6 +237,67 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     deps.dom.audioOffsetSlider.value = String(value);
     deps.dom.audioOffsetVal.textContent = String(value);
     deps.dom.audioOffsetAuto.textContent = isAuto ? deps.t('autoDetectedFmt', { v: value }) : '';
+    // The measured hardware latency gets its OWN line directly under the value
+    // it explains. It first shipped appended to the end of a long help
+    // paragraph in small print, and only after a section had been played — so
+    // the one number that answers "is a 200 ms offset normal?" was unfindable.
+    // Read on demand from the live AudioContext, so it is present whenever
+    // audio is alive rather than depending on having started a section.
+    if (deps.dom.audioLatencyInfo) {
+      const probed = deps.getAudioLatency?.();
+      const el = deps.dom.audioLatencyInfo;
+      const hasOffset = deps.prefs.audioOffsetMs != null;
+      // ONE text build and ONE class decision. This used to write textContent
+      // three times and add/remove `is-unmeasurable` across four independent
+      // conditions, so the class ended up carrying two unrelated meanings by
+      // whichever branch ran last.
+      const parts: string[] = [];
+      let suspect = false;
+
+      if (probed == null) {
+        // Audio hasn't started yet — nothing honest to say.
+      } else if (probed.outMs > MIN_REPORTED_OUT_LATENCY_MS) {
+        parts.push(
+          deps.t('audioOffsetMeasuredFmt', { v: Math.round(probed.outMs) }) +
+            (probed.portName ? '（' + probed.portName + '）' : '')
+        );
+      } else {
+        // A reported 0 is NOT a 0 ms device — it means the platform declined to
+        // measure (iOS WKWebView always does). Printing "0 ms" as if it were a
+        // reading is worse than useless, and it is exactly what made a tester
+        // ask whether a 210 ms offset was normal. Say what it means, and point
+        // at the one path that does work here.
+        parts.push(deps.t('audioOffsetUnmeasurable'));
+        suspect = true;
+      }
+
+      // A stored offset goes stale along TWO axes, because the measurement
+      // captures the whole round trip: the OUTPUT route it was heard through,
+      // and the INPUT the player answered with. Only the first was checked, and
+      // `audioOffsetSource` was written at every calibration and then never read
+      // by anything — so the app knew the value had been measured by tapping the
+      // screen and never said so.
+      const measuredRoute = deps.prefs.audioOffsetRoute;
+      const liveRoute = probed?.portName;
+      if (hasOffset && measuredRoute && liveRoute && measuredRoute !== liveRoute) {
+        parts.push(deps.t('audioOffsetStaleFmt', { v: measuredRoute }));
+        suspect = true;
+      }
+      // A touch-measured offset carries 20-50 ms of screen-touch latency,
+      // against ~5 ms for a keyboard. Applying it to instrument play puts the
+      // player permanently off the beat by that difference — the reason
+      // calibration locks to the live input in the first place. Only flagged
+      // once an input IS live: with no mic and no keyboard there is no better
+      // measurement to offer, and nagging about it would be noise.
+      const inputLive = deps.getInputStatus?.()?.waiting === false;
+      if (hasOffset && deps.prefs.audioOffsetSource === 'touch' && inputLive) {
+        parts.push(deps.t('audioOffsetInputStale'));
+        suspect = true;
+      }
+
+      el.textContent = parts.join(' · ');
+      el.classList.toggle('is-unmeasurable', suspect);
+    }
   }
 
   function refresh(): void {
@@ -207,13 +310,30 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     }
     refreshNoteNamingSeg();
     refreshNoteSpeedSeg();
-    // Input source pill — reflects what's currently driving onset detection.
-    if (deps.midiInput.enabled && deps.midiInput.port?.name) {
+    refreshJudgeSeg();
+    refreshInputSrcSeg();
+    // Input pill — what is ACTUALLY driving onset detection right now, which is
+    // not the same as what is plugged in. Three states the player has to be
+    // able to tell apart, because two of them look like a bug otherwise:
+    //   • keyboard live            → 🎹 <device name>
+    //   • pinned to keyboard, none → waiting (NOT "mic input")
+    //   • mic live, keyboard idle  → 🎙️ … + "not using <device>"
+    const status = deps.getInputStatus?.();
+    const portName = deps.midiInput.port?.name;
+    if (status?.active === 'midi') {
+      deps.dom.inputStatus.textContent = status.midiAttached
+        ? '🎹 ' + (portName || deps.t('input'))
+        : '🎹 ' + deps.t('inputWaitingMidi');
+    } else if (deps.midiInput.enabled && deps.midiInput.port?.name && !status) {
+      // No classifier wired (older shell / partial test) — legacy behaviour.
       deps.dom.inputStatus.textContent = '🎹 ' + deps.midiInput.port.name;
-    } else if (deps.state.micSuspended) {
-      deps.dom.inputStatus.textContent = '🎙️ ' + deps.t('micStandby');
     } else {
-      deps.dom.inputStatus.textContent = '🎙️ ' + deps.t('micInput');
+      const micLabel = deps.state.micSuspended ? deps.t('micStandby') : deps.t('micInput');
+      // A connected-but-ignored keyboard is stated out loud: it is the one
+      // state a player is guaranteed to read as a broken app otherwise.
+      const idleNote =
+        status?.midiIdle && portName ? ' ・ ' + deps.t('inputMidiIdleFmt', { v: portName }) : '';
+      deps.dom.inputStatus.textContent = '🎙️ ' + micLabel + idleNote;
     }
     // BLE button — Web Bluetooth (Chrome / Edge desktop, Android Chrome),
     // or the native iOS OS pairing sheet (Capacitor build). Hide only when
@@ -258,6 +378,63 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
   deps.dom.panel.addEventListener('click', (e) => {
     if (e.target === deps.dom.panel) close();
   });
+
+  // Gesture trace — ONE channel, capture-phase, self-retiring.
+  //
+  // "The slider doesn't move on iOS" survived two fixes aimed at the wrong layer
+  // because a device log cannot show a gesture. These outcomes are each a
+  // different bug and the trace tells them apart:
+  //   • no `down`            → the element isn't being hit (geometry / overlay)
+  //   • `down` but no `move` → it is hit but the drag is suppressed
+  //                            (touch-action / a scroll container claiming it)
+  //   • both                 → the value moves and something else fails to show it
+  // `isTrusted` matters because the slider dispatches synthetic `input` events
+  // itself — an earlier reading of "input fired with no pointerdown" could not
+  // tell a real gesture from our own echo, and that ambiguity sent the diagnosis
+  // the wrong way.
+  //
+  // There used to be a SECOND channel: an `onEvent` callback the slider control
+  // called from every move, which re-found the element by id and measured it.
+  // Capture phase on the panel necessarily sees the same events first, so that
+  // one only added a stringly-typed debug seam to a reusable control's API and a
+  // forced layout per move — inside the very drag it was measuring.
+  const TRACE_EVENTS = ['pointerdown', 'pointermove', 'pointercancel', 'touchstart', 'touchmove'];
+  let traceBudget = 24;
+  const traceGesture = (e: Event): void => {
+    const t = e.target as HTMLElement | null;
+    diag('GESTURE', {
+      type: e.type,
+      trusted: e.isTrusted,
+      target: t?.id || t?.className || t?.tagName,
+      cancelable: e.cancelable,
+      defaultPrevented: e.defaultPrevented,
+    });
+    // Retire once spent, so a session that never opens settings stops paying
+    // anything at all. Listening on the PANEL rather than the document is what
+    // makes the filter structural — the old version walked every event's
+    // ancestor chain, for both event families, for the whole session.
+    if (--traceBudget <= 0) {
+      for (const type of TRACE_EVENTS) {
+        deps.dom.panel.removeEventListener(type, traceGesture, { capture: true });
+      }
+    }
+  };
+  for (const type of TRACE_EVENTS) {
+    deps.dom.panel.addEventListener(type, traceGesture, { capture: true, passive: true });
+  }
+
+  // Own the gesture on every slider in the panel (see slider-control.ts): iOS's
+  // native range only responds to a grab ON THE THUMB, which on the volume rows
+  // — value 100, thumb pinned right — left the control dead everywhere else.
+  //
+  // Found by QUERY, not by a hand-written list. The list was a sixth place to
+  // remember when adding a slider, and the one whose omission fails worst: the
+  // CSS hides the native input unconditionally, so an un-upgraded row would be
+  // invisible AND inert — worse than the "dead but visible" controls
+  // dom-wiring.test.ts exists to catch, and invisible to it.
+  for (const el of deps.dom.panel.querySelectorAll<HTMLInputElement>('input[type="range"]')) {
+    installSlider(el);
+  }
 
   deps.dom.audioOffsetSlider.addEventListener('input', () => {
     const v = parseInt(deps.dom.audioOffsetSlider.value, 10);
@@ -306,50 +483,107 @@ export function createSettingsPanel(deps: SettingsPanelDeps): SettingsPanel {
     });
   }
 
-  // ── 0.15: note-name notation segment (auto / C-D-E / ドレミ) ──
-  const segDefs: Array<{ el: HTMLElement | null | undefined; mode: 'auto' | 'abc' | 'solfege' }> = [
-    { el: deps.dom.noteNamingAuto, mode: 'auto' },
-    { el: deps.dom.noteNamingAbc, mode: 'abc' },
-    { el: deps.dom.noteNamingSolfege, mode: 'solfege' },
-  ];
-  function refreshNoteNamingSeg(): void {
-    const current = deps.prefs.noteNaming ?? 'auto';
-    for (const { el, mode } of segDefs) {
-      el?.classList.toggle('active', mode === current);
+  // ── Segmented option rows ─────────────────────────────────────────
+  // Three of these now (note naming, note speed, judgement strictness) and they
+  // were three verbatim copies of the same 20 lines: defs array, an `active`
+  // class sweep, a click listener per button that writes the pref → repaints →
+  // notifies → persists. The judgement segment shipped DEAD precisely because
+  // that wiring is hand-repeated per row; one installer means the next segment
+  // is a single call and cannot be half-wired.
+  //
+  // Returns the repaint so `refresh()` can call it.
+  function installSegment<T extends string>(
+    buttons: ReadonlyArray<{ el: HTMLElement | null | undefined; mode: T }>,
+    getCurrent: () => T,
+    set: (mode: T) => void,
+    onChange?: () => void
+  ): () => void {
+    const paint = (): void => {
+      const current = getCurrent();
+      for (const { el, mode } of buttons) el?.classList.toggle('active', mode === current);
+    };
+    for (const { el, mode } of buttons) {
+      el?.addEventListener('click', () => {
+        set(mode);
+        paint();
+        onChange?.();
+        deps.savePrefs();
+      });
     }
-  }
-  for (const { el, mode } of segDefs) {
-    el?.addEventListener('click', () => {
-      deps.prefs.noteNaming = mode;
-      refreshNoteNamingSeg();
-      deps.onNoteNamingChange?.();
-      deps.savePrefs();
-    });
+    return paint;
   }
 
-  // ── ノーツ落下速度セグメント（🐢 / ふつう / 🚀）──────────────────
-  const speedDefs: Array<{
-    el: HTMLElement | null | undefined;
-    mode: 'slow' | 'normal' | 'fast';
-  }> = [
-    { el: deps.dom.noteSpeedSlow, mode: 'slow' },
-    { el: deps.dom.noteSpeedNormal, mode: 'normal' },
-    { el: deps.dom.noteSpeedFast, mode: 'fast' },
-  ];
-  function refreshNoteSpeedSeg(): void {
-    const current = deps.prefs.noteSpeed ?? 'normal';
-    for (const { el, mode } of speedDefs) {
-      el?.classList.toggle('active', mode === current);
-    }
-  }
-  for (const { el, mode } of speedDefs) {
-    el?.addEventListener('click', () => {
+  // 0.15: note-name notation (auto / C-D-E / ドレミ)
+  const refreshNoteNamingSeg = installSegment(
+    [
+      { el: deps.dom.noteNamingAuto, mode: 'auto' as const },
+      { el: deps.dom.noteNamingAbc, mode: 'abc' as const },
+      { el: deps.dom.noteNamingSolfege, mode: 'solfege' as const },
+    ],
+    () => deps.prefs.noteNaming ?? 'auto',
+    (mode) => {
+      deps.prefs.noteNaming = mode;
+    },
+    () => deps.onNoteNamingChange?.()
+  );
+
+  // ノーツ落下速度（🐢 / ふつう / 🚀）
+  const refreshNoteSpeedSeg = installSegment(
+    [
+      { el: deps.dom.noteSpeedSlow, mode: 'slow' as const },
+      { el: deps.dom.noteSpeedNormal, mode: 'normal' as const },
+      { el: deps.dom.noteSpeedFast, mode: 'fast' as const },
+    ],
+    () => deps.prefs.noteSpeed ?? 'normal',
+    (mode) => {
       deps.prefs.noteSpeed = mode;
-      refreshNoteSpeedSeg();
-      deps.onNoteSpeedChange?.();
-      deps.savePrefs();
-    });
-  }
+    },
+    () => deps.onNoteSpeedChange?.()
+  );
+
+  // 音を拾う入力（おまかせ / 🎹 / 🎙️）
+  // 「MIDI が繋がっているか」と「MIDI で採点するか」を分離したことで初めて
+  // 表現できるようになった選択（@piano/core state/input-source.ts）。
+  // 変更は即時反映 — マイクの suspend/resume まで shell がやる。
+  const refreshInputSrcSeg = installSegment(
+    [
+      { el: deps.dom.inputSrcAuto, mode: 'auto' as const },
+      { el: deps.dom.inputSrcMidi, mode: 'midi' as const },
+      { el: deps.dom.inputSrcMic, mode: 'mic' as const },
+    ],
+    () => deps.prefs.inputSource ?? 'auto',
+    (mode) => {
+      deps.prefs.inputSource = mode;
+    },
+    () => {
+      // installSegment has already painted the segment highlight, so the tap
+      // reads as instant without a full panel repaint here. The ONE repaint
+      // happens after the shell has actually moved the microphone — acquiring
+      // one is an async permission prompt, and painting before it settles showed
+      // the state the player just switched away from.
+      //
+      // Promise.resolve, not `?.().then()`: that repaint is what makes the
+      // switch look like it worked, so it must still happen if a shell wires a
+      // synchronous applier.
+      void Promise.resolve(deps.applyInputSourcePref?.()).then(refresh);
+    }
+  );
+
+  // 判定の厳しさ（🍃 / ふつう / 🎯）
+  // 業界標準の「見える難易度」（osu! の OD / StepMania の TimingWindowScale）。
+  // 判定窓は入力パスでも自動的に変わるので、これが無いと MIDI 接続で厳しさが
+  // 黙って動く。次セクション開始を待たず即反映される（窓は毎イベント解決）。
+  const refreshJudgeSeg = installSegment(
+    [
+      { el: deps.dom.judgeEasy, mode: 'easy' as const },
+      { el: deps.dom.judgeNormal, mode: 'normal' as const },
+      { el: deps.dom.judgeStrict, mode: 'strict' as const },
+    ],
+    () => deps.prefs.judgeStrictness ?? 'normal',
+    (mode) => {
+      deps.prefs.judgeStrictness = mode;
+    }
+  );
 
   // ── 0.15: progress backup / restore ──────────────────────────────
   deps.dom.backupExportBtn?.addEventListener('click', () => {

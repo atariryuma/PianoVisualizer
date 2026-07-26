@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createResultCard,
+  drawErrorDistribution,
   drawHistoryChart,
   type ResultCardDeps,
   type ResultCardDom,
@@ -24,13 +25,21 @@ import {
   type ResultCardSong,
   type ResultCardSongProgress,
 } from '../src/result-card';
+import {
+  createJudgeTally,
+  resetJudgeTally,
+  summarizeJudgements,
+  resolveJudgeProfile,
+  JUDGE_PROFILE_MIDI,
+  type JudgeTally,
+} from '@piano/core';
 
 function makeDom(): ResultCardDom {
   document.body.innerHTML = `
     <div id="sectionResult">
       <h2 id="resTitle"></h2>
       <h3 id="resSectionName"></h3>
-      <div id="resStars"></div>
+      <div id="resStars" class="result-scored-only"></div>
       <div class="result-stat" id="resAccRow">
         <span id="resAcc"></span>
       </div>
@@ -43,8 +52,24 @@ function makeDom(): ResultCardDom {
       <div class="result-stat" id="resComboRow">
         <span id="resCombo"></span>
       </div>
+      <div id="resBadges" class="result-scored-only"></div>
+      <button id="resDetailsToggle" aria-expanded="false"></button>
+      <div id="resJudge" class="result-scored-only" style="display: none">
+        <div id="resJudgeTitle"></div>
+        <div id="resJudgeBar"></div>
+        <div id="resJudgeRows"></div>
+        <canvas id="resJudgeErrorChart" width="280" height="46"></canvas>
+        <div id="resJudgeSpread"></div>
+        <div id="resJudgeTendency"></div>
+        <div id="resJudgeHoldTitle"></div>
+        <div id="resJudgeHoldRows"></div>
+        <div id="resJudgeHold"></div>
+        <div id="resJudgeCond"></div>
+      </div>
+      <div id="resDetails" class="result-scored-only" hidden></div>
       <div id="resMsg"></div>
-      <div id="resFocus"></div>
+      <div id="resNoScoreFacts"></div>
+      <div id="resFocus" class="result-scored-only"></div>
       <div id="resUnlock"></div>
       <div id="resSelfAssess" style="display: none">
         <button id="resFeelTricky"></button>
@@ -52,7 +77,7 @@ function makeDom(): ResultCardDom {
         <button id="resFeelGreat"></button>
         <div id="resFeelResult" style="display: none"></div>
       </div>
-      <div id="resHistoryWrap">
+      <div id="resHistoryWrap" class="result-scored-only">
         <canvas id="resHistoryChart" width="280" height="80"></canvas>
       </div>
       <button id="resNext"></button>
@@ -72,7 +97,22 @@ function makeDom(): ResultCardDom {
     resDuration: document.getElementById('resDuration') as HTMLElement,
     resDurationRow: document.getElementById('resDurationRow'),
     resCombo: document.getElementById('resCombo') as HTMLElement,
+    resJudge: document.getElementById('resJudge'),
+    resBadges: document.getElementById('resBadges'),
+    resDetails: document.getElementById('resDetails'),
+    resDetailsToggle: document.getElementById('resDetailsToggle'),
+    resJudgeTitle: document.getElementById('resJudgeTitle'),
+    resJudgeBar: document.getElementById('resJudgeBar'),
+    resJudgeRows: document.getElementById('resJudgeRows'),
+    resJudgeErrorChart: document.getElementById('resJudgeErrorChart') as HTMLCanvasElement,
+    resJudgeSpread: document.getElementById('resJudgeSpread'),
+    resJudgeTendency: document.getElementById('resJudgeTendency'),
+    resJudgeHoldTitle: document.getElementById('resJudgeHoldTitle'),
+    resJudgeHoldRows: document.getElementById('resJudgeHoldRows'),
+    resJudgeHold: document.getElementById('resJudgeHold'),
+    resJudgeCond: document.getElementById('resJudgeCond'),
     resMsg: document.getElementById('resMsg') as HTMLElement,
+    resNoScoreFacts: document.getElementById('resNoScoreFacts') as HTMLElement,
     resFocus: document.getElementById('resFocus') as HTMLElement,
     resUnlock: document.getElementById('resUnlock') as HTMLElement,
     resSelfAssess: document.getElementById('resSelfAssess') as HTMLElement,
@@ -108,6 +148,7 @@ function makeSong(): ResultCardSong {
 function makeStubCtx(): CanvasRenderingContext2D {
   const stub: Record<string, unknown> = {
     clearRect: vi.fn(),
+    fillRect: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -165,6 +206,10 @@ function makeDeps(over: Partial<ResultCardDeps> = {}): ResultCardDeps {
     recordPracticeDay: vi.fn(),
     savePracticeProgress: vi.fn(),
     computeStars: vi.fn(() => 2),
+    // Required deps (the breakdown is a shipped surface, so it is not optional).
+    summarizeJudgements,
+    getJudgeStrictness: () => 'normal' as const,
+    isExactInput: () => false,
     resolveResultTier: vi.fn(() => ({ titleKey: 'tier2Title', msgKey: 'tier2Msg' })),
     pickSectionFocus: vi.fn(() => null),
     computeUnlocks: vi.fn(() => ({
@@ -224,6 +269,284 @@ describe('createResultCard — speed-trainer step-up button', () => {
   });
 });
 
+// ─── per-note judgement breakdown ────────────────────────────────────
+// The whole point of this block is that the result reports the SAME verdicts
+// the player was shown note by note. These tests pin that contract: real
+// summarizeJudgements + real tally in, rendered counts out.
+
+describe('createResultCard — per-note judgement breakdown', () => {
+  const tally = (over: Partial<JudgeTally> = {}): JudgeTally => ({
+    ...createJudgeTally(),
+    ...over,
+  });
+
+  const judgeResult = (judge: JudgeTally | null, over: Record<string, unknown> = {}) => ({
+    mode: 'rhythm' as const,
+    secId: 'a1',
+    stars: 2,
+    unlockedTempo: null,
+    unlockedSecKey: null,
+    streakDays: null,
+    judge,
+    ...over,
+  });
+
+  function render(judge: JudgeTally | null, over: Record<string, unknown> = {}) {
+    const deps = makeDeps();
+    deps.practice._lastResult = judgeResult(judge, over);
+    createResultCard(deps).renderResultCard();
+    return deps;
+  }
+
+  it('renders one count per tier, using the same words as the live chips', () => {
+    const deps = render(tally({ perfect: 7, great: 3, good: 4, miss: 2 }));
+    const rows = deps.dom.resJudgeRows as HTMLElement;
+    expect((deps.dom.resJudge as HTMLElement).style.display).not.toBe('none');
+    expect(rows.textContent).toContain('PERFECT7');
+    expect(rows.textContent).toContain('GREAT3');
+    expect(rows.textContent).toContain('GOOD4');
+    expect(rows.textContent).toContain('MISS2');
+    // Quality tiers only — direction is reported as a distribution.
+    expect(rows.textContent).not.toContain('EARLY');
+    expect(rows.textContent).not.toContain('LATE');
+  });
+
+  it('dims zero tiers instead of dropping them (the scale stays readable)', () => {
+    const deps = render(tally({ perfect: 5, great: 1, good: 0, miss: 0 }));
+    const spans = (deps.dom.resJudgeRows as HTMLElement).querySelectorAll('span');
+    expect(spans.length).toBe(4);
+    expect(spans[2].className).toBe('is-zero'); // GOOD
+    expect(spans[0].className).toBe(''); // PERFECT
+  });
+
+  it('bar segments are proportional to the counts and skip empty tiers', () => {
+    const deps = render(tally({ perfect: 3, great: 1, miss: 0 }));
+    const segs = (deps.dom.resJudgeBar as HTMLElement).querySelectorAll('span');
+    expect(segs.length).toBe(2);
+    expect(segs[0].style.width).toBe('75.00%');
+    expect(segs[1].style.width).toBe('25.00%');
+  });
+
+  it('reports the lean direction + its mean offset as an adjustment', () => {
+    // Mean +40 ms but the errors scatter (meanAbs 80) → a real habit, not a
+    // constant offset, so the player gets the technique adjustment.
+    const deps = render(tally({ great: 4, dtSumMs: 160, dtAbsSumMs: 320 }));
+    expect((deps.dom.resJudgeTendency as HTMLElement).textContent).toContain(
+      'judgeTendencyLateFmt'
+    );
+    expect((deps.dom.resJudgeTendency as HTMLElement).textContent).toContain('40');
+    expect((deps.dom.resJudgeSpread as HTMLElement).textContent).toContain('judgeSpreadFmt');
+  });
+
+  it('states the bias ONCE — spread line carries no competing average', () => {
+    // Regression guard: the spread line used to print the mean-ABSOLUTE
+    // deviation while the tendency line printed the signed mean, so two
+    // adjacent lines each claimed to be "the average deviation" with different
+    // numbers (57 ms vs +39 ms) and read as a contradiction.
+    const deps = render(
+      tally({ great: 8, dtSumMs: 8 * 39, dtAbsSumMs: 8 * 57, dtSqSumMs: 8 * 64 * 64 })
+    );
+    const spread = (deps.dom.resJudgeSpread as HTMLElement).textContent ?? '';
+    expect(spread).toContain('judgeSpreadFmt');
+    // Only the standard deviation is interpolated — no mean of any kind.
+    expect(spread).not.toContain('57');
+    expect(spread).not.toContain('39');
+    expect((deps.dom.resJudgeTendency as HTMLElement).textContent).toContain('39');
+  });
+
+  it('blames the SETTINGS, not the player, when every note is off the same way', () => {
+    // Mean +95 ms with meanAbs 95 → consistency 1.0: that is note-fall speed or
+    // the audio offset being wrong, and coaching "press sooner" would be asking
+    // the child to compensate for our own configuration.
+    const deps = render(tally({ great: 8, dtSumMs: 760, dtAbsSumMs: 760, dtSqSumMs: 8 * 95 * 95 }));
+    const line = (deps.dom.resJudgeTendency as HTMLElement).textContent ?? '';
+    expect(line).toContain('judgeSetupSuspectFmt');
+    expect(line).not.toContain('judgeTendencyLateFmt');
+  });
+
+  it('celebrates an even run rather than inventing an adjustment', () => {
+    const deps = render(tally({ perfect: 4, dtSumMs: 8, dtAbsSumMs: 24 }));
+    expect((deps.dom.resJudgeTendency as HTMLElement).textContent).toBe('judgeTendencyEven');
+  });
+
+  it('says nothing about lean or spread below the sample floor', () => {
+    const deps = render(tally({ late: 2, dtSumMs: 600, dtAbsSumMs: 600 }));
+    expect((deps.dom.resJudgeTendency as HTMLElement).textContent).toBe('');
+    expect((deps.dom.resJudgeSpread as HTMLElement).textContent).toBe('');
+  });
+
+  it('shows the hold breakdown only when releases were scored', () => {
+    const withHolds = render(tally({ perfect: 4, holdGood: 3, holdShort: 2 }));
+    expect((withHolds.dom.resJudgeHoldRows as HTMLElement).textContent).toContain('GOOD3');
+    expect((withHolds.dom.resJudgeHold as HTMLElement).textContent).toBe('judgeHoldShort');
+
+    const noHolds = render(tally({ perfect: 4 }));
+    expect((noHolds.dom.resJudgeHoldRows as HTMLElement).textContent).toBe('');
+    expect((noHolds.dom.resJudgeHoldTitle as HTMLElement).style.display).toBe('none');
+    expect((noHolds.dom.resJudgeHold as HTMLElement).textContent).toBe('');
+  });
+
+  it('reports the conditions the run was judged under', () => {
+    // Two attempts judged at different strictness, or one on mic and one on a
+    // keyboard, are not comparable — so the card has to say which was which.
+    const deps = makeDeps({
+      getJudgeStrictness: () => 'strict' as const,
+      isExactInput: () => true,
+    });
+    deps.practice.judge = tally({ perfect: 5 });
+    createResultCard(deps).completePracticeSection();
+    const cond = (deps.dom.resJudgeCond as HTMLElement).textContent ?? '';
+    expect(cond).toContain('judgeCondFmt');
+    expect(cond).toContain('judgeStrict');
+    expect(cond).toContain('judgeInputMidi');
+  });
+
+  it('snapshots the CONDITIONS the run used, and the windows follow from them', () => {
+    // The windows are a pure function of (input path × strictness), so the
+    // snapshot stores those two and derives the profile — one fact, not two
+    // that can disagree.
+    const deps = makeDeps({
+      getJudgeStrictness: () => 'normal' as const,
+      isExactInput: () => true,
+    });
+    deps.practice.judge = tally({ perfect: 5, dtSumMs: 100, dtAbsSumMs: 100 });
+    createResultCard(deps).completePracticeSection();
+    const snap = deps.practice._lastResult;
+    expect(snap?.judgeStrictness).toBe('normal');
+    expect(snap?.judgeInputExact).toBe(true);
+    expect(resolveJudgeProfile(snap?.judgeInputExact ?? false, snap?.judgeStrictness)).toEqual(
+      JUDGE_PROFILE_MIDI
+    );
+  });
+
+  it('draws the error distribution against the tier bands, with the mean marked', () => {
+    // happy-dom has no real 2D context — inject the stub the chart tests use.
+    const ctx = makeStubCtx() as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const sum = summarizeJudgements(
+      tally({ great: 6, dtSumMs: 6 * 40, dtAbsSumMs: 6 * 60, dtSqSumMs: 6 * 3600 })
+    );
+    drawErrorDistribution(
+      {
+        setupHiDPICanvas: vi.fn(() => ctx as unknown as CanvasRenderingContext2D),
+        t: vi.fn((k: string) => k),
+      } as unknown as ResultCardDeps,
+      { clientWidth: 300 } as HTMLCanvasElement,
+      sum,
+      // MIDI × normal → 12 frames = 200 ms window.
+      resolveJudgeProfile(true, 'normal')
+    );
+    // Three tier bands + centre line + ±1σ span + mean marker.
+    expect(ctx.fillRect.mock.calls.length).toBeGreaterThanOrEqual(6);
+    // The ms scale is labelled from the run's own window, not a constant.
+    const labels = ctx.fillText.mock.calls.map((c) => c[0]);
+    expect(labels).toContain('+200ms');
+    expect(labels).toContain('−200ms');
+  });
+
+  it('does NOT paint the chart while the disclosure is collapsed', () => {
+    // A canvas inside a `hidden` container measures 0 wide, so painting there
+    // both reallocates the backing store and lays out against a wrong fallback
+    // width — then the toggle repaints it correctly anyway.
+    const ctx = makeStubCtx() as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const setupHiDPICanvas = vi.fn(() => ctx as unknown as CanvasRenderingContext2D);
+    const deps = makeDeps({ setupHiDPICanvas });
+    deps.practice._lastResult = judgeResult(tally({ great: 6, dtSumMs: 240 }));
+    createResultCard(deps).renderResultCard();
+    expect(setupHiDPICanvas).not.toHaveBeenCalled();
+    (deps.dom.resDetailsToggle as HTMLElement).click();
+    expect(setupHiDPICanvas).toHaveBeenCalled();
+  });
+
+  it('paints the headline from the snapshot so a langchange re-render keeps it', () => {
+    const deps = makeDeps();
+    deps.practice._lastResult = judgeResult(tally({ perfect: 9 }), {
+      accPct: 92,
+      bestCombo: 24,
+    });
+    const card = createResultCard(deps);
+    card.renderResultCard();
+    expect(deps.dom.resAcc.textContent).toBe('92%');
+    expect(deps.dom.resCombo.textContent).toBe('24');
+    // Re-render (what the langchange listener does) must not blank them.
+    card.renderResultCard();
+    expect(deps.dom.resAcc.textContent).toBe('92%');
+  });
+
+  it('awards FULL COMBO with no miss, ALL PERFECT when every note was perfect', () => {
+    const fc = render(tally({ perfect: 6, great: 3, good: 1, miss: 0 }));
+    expect((fc.dom.resBadges as HTMLElement).textContent).toContain('FULL COMBO');
+    expect((fc.dom.resBadges as HTMLElement).textContent).not.toContain('ALL PERFECT');
+
+    const ap = render(tally({ perfect: 10 }));
+    expect((ap.dom.resBadges as HTMLElement).textContent).toContain('ALL PERFECT');
+
+    const broken = render(tally({ perfect: 6, miss: 1 }));
+    expect((broken.dom.resBadges as HTMLElement).textContent).toBe('');
+  });
+
+  it("awards NEW RECORD only against the kid's OWN previous best", () => {
+    const up = render(tally({ perfect: 5 }), { accPct: 80, priorBestPct: 60 });
+    expect((up.dom.resBadges as HTMLElement).textContent).toContain('resNewRecord');
+
+    const same = render(tally({ perfect: 5 }), { accPct: 60, priorBestPct: 60 });
+    expect((same.dom.resBadges as HTMLElement).textContent).not.toContain('resNewRecord');
+  });
+
+  it('keeps the analysis collapsed until asked, and reports it via aria', () => {
+    const deps = render(tally({ perfect: 5, great: 2 }));
+    const toggle = deps.dom.resDetailsToggle as HTMLElement;
+    const body = deps.dom.resDetails as HTMLElement;
+    expect((body as HTMLElement & { hidden: boolean }).hidden).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toBe('resDetailsShow');
+
+    toggle.click();
+    expect((body as HTMLElement & { hidden: boolean }).hidden).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.textContent).toBe('resDetailsHide');
+  });
+
+  it('offers no disclosure at all for listen / guided (nothing to analyse)', () => {
+    for (const mode of ['listen', 'guided'] as const) {
+      const deps = render(tally({ perfect: 9 }), { mode });
+      expect((deps.dom.resDetailsToggle as HTMLElement).style.display).toBe('none');
+      expect((deps.dom.resDetails as HTMLElement & { hidden: boolean }).hidden).toBe(true);
+      expect((deps.dom.resBadges as HTMLElement).textContent).toBe('');
+    }
+  });
+
+  it('hides the block when nothing was judged', () => {
+    const deps = render(tally());
+    expect((deps.dom.resJudge as HTMLElement).style.display).toBe('none');
+  });
+
+  it('hides the block for listen and guided (their timing is never graded)', () => {
+    for (const mode of ['listen', 'guided'] as const) {
+      const deps = render(tally({ perfect: 9 }), { mode });
+      expect((deps.dom.resJudge as HTMLElement).style.display).toBe('none');
+    }
+  });
+
+  it('hides the block when there is no tally to report', () => {
+    expect((render(null).dom.resJudge as HTMLElement).style.display).toBe('none');
+    // A tally with nothing judged in it is also nothing to report.
+    expect((render(tally()).dom.resJudge as HTMLElement).style.display).toBe('none');
+  });
+
+  it('completePracticeSection snapshots a COPY, so the next section cannot blank it', () => {
+    const deps = makeDeps();
+    const live = tally({ perfect: 6, great: 2, miss: 1 });
+    deps.practice.judge = live;
+    deps.practice.hits = 8;
+    createResultCard(deps).completePracticeSection();
+    // Next section starts: the live tally is zeroed in place.
+    resetJudgeTally(live);
+    createResultCard(deps).renderResultCard(); // e.g. a langchange re-render
+    expect((deps.dom.resJudgeRows as HTMLElement).textContent).toContain('PERFECT6');
+    expect(deps.practice._lastResult?.judge).not.toBe(live);
+  });
+});
+
 // ─── renderResultCard ────────────────────────────────────────────────
 
 describe('createResultCard — renderResultCard', () => {
@@ -232,6 +555,84 @@ describe('createResultCard — renderResultCard', () => {
     const rc = createResultCard(deps);
     rc.renderResultCard();
     expect(deps.dom.resTitle.textContent).toBe('');
+  });
+
+  it('a listen run shows NO score — not even a 0 %', () => {
+    // Listening is not a performance. The card used to hide the blocks it knew
+    // about by name (stars, stat rows, history) and the headline was added
+    // later, so a listen-through ended on "Pitch accuracy 0 %" — wrong, and the
+    // exact kind of scold this app is built to avoid. Hiding is now by marker,
+    // so a block added tomorrow is covered without touching this branch.
+    const deps = makeDeps();
+    deps.practice._lastResult = {
+      mode: 'listen',
+      secId: 'b',
+      stars: 0,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+      accPct: 0,
+    } as never;
+    createResultCard(deps).renderResultCard();
+    for (const el of document.querySelectorAll('#sectionResult .result-scored-only')) {
+      expect((el as HTMLElement).style.display, (el as HTMLElement).id || 'headline').toBe('none');
+    }
+    // …and it still says what DID happen, with a way forward.
+    expect(deps.dom.resTitle.textContent).toBe('listenedTitle');
+  });
+
+  it('a listen run reports the practice time it credited, not a score', () => {
+    // Listening banks minutes like any other mode; that was stored and shown
+    // nowhere, so the card had no true fact to report. Now it has exactly one.
+    const deps = makeDeps();
+    deps.practice._lastResult = {
+      mode: 'listen',
+      secId: 'b',
+      stars: 0,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+      minutes: 1.5,
+    } as never;
+    createResultCard(deps).renderResultCard();
+    const facts = deps.dom.resNoScoreFacts!;
+    expect(facts.style.display).toBe('');
+    expect(facts.textContent).toContain('listenTimeFmt');
+    expect(facts.textContent).toContain('durMinSecFmt');
+    // 1.5 min → 1m 30s. The stub `t()` nests its vars, hence the escaping.
+    expect(facts.textContent).toContain('m\\":1');
+    expect(facts.textContent).toContain('s\\":30');
+  });
+
+  it('says nothing rather than "0s" when the run was a blink', () => {
+    const deps = makeDeps();
+    deps.practice._lastResult = {
+      mode: 'guided',
+      secId: 'b',
+      stars: 0,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+      minutes: 0.02,
+    } as never;
+    createResultCard(deps).renderResultCard();
+    expect(deps.dom.resNoScoreFacts!.style.display).toBe('none');
+  });
+
+  it('hides the no-score fact line on a scored run', () => {
+    const deps = makeDeps();
+    deps.dom.resNoScoreFacts!.style.display = '';
+    deps.practice._lastResult = {
+      mode: 'rhythm',
+      secId: 'b',
+      stars: 2,
+      unlockedTempo: null,
+      unlockedSecKey: null,
+      streakDays: null,
+      accPct: 80,
+    } as never;
+    createResultCard(deps).renderResultCard();
+    expect(deps.dom.resNoScoreFacts!.style.display).toBe('none');
   });
 
   it('listen mode renders listenedTitle + section name + hides stars', () => {

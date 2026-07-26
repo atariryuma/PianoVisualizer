@@ -41,7 +41,20 @@
 //      at the hit line waiting for the kid. Rhythm/listen always use
 //      real time (the song moves on its own).
 
-import { resolveTimingGrade, resolveLengthGrade, type TimingGrade } from '@piano/core';
+import {
+  isTimingInWindow,
+  judgeForMode,
+  TIMING_TIER_STYLE,
+  LENGTH_TIER_STYLE,
+  resolveLengthGrade,
+  recordTimingJudgement,
+  recordLengthJudgement,
+  pushJudgeError,
+  type TimingGrade,
+  type JudgeProfile,
+  type JudgeTally,
+  type JudgeErrorRing,
+} from '@piano/core';
 import { PITCH_MEDIAN_WINDOW_MS, type RecentPitchEntry } from './core-opts';
 
 /** Vertical band (fraction of screen height) where per-note hit effects spawn —
@@ -58,6 +71,20 @@ export const LENGTH_CHIP_Y_FRAC = 0.82;
 /** Keep chips fully on-screen for edge-of-keyboard notes. */
 export const CHIP_EDGE_PX = 48;
 
+/** Keep a verdict chip fully on-screen at the edges of the keyboard.
+ *  Exported because practice-tick's auto-MISS chip must land in the same band
+ *  as every other verdict — it had copied this expression with the constant
+ *  inlined, so the "all chips ride one band" contract had two edge values. */
+export function clampChipX(x: number, screenW: number): number {
+  return Math.max(CHIP_EDGE_PX, Math.min(screenW - CHIP_EDGE_PX, x));
+}
+/** Chip throttle channels. The two bands above are independent visual slots,
+ *  so they get independent throttle budgets — sharing one meant a release
+ *  nudge could swallow the NEXT note's timing verdict at speed, which made
+ *  the feedback look arbitrary. See intro-hint-ui.showHitChip. */
+export const PRESS_CHIP_CHANNEL = 'press';
+export const RELEASE_CHIP_CHANNEL = 'release';
+
 /** Per-timing-grade feedback: chip kind + i18n key + effect scale + fallback
  *  tint. The burst/ripple take the NOTE's own colour (synesthesia/theme —
  *  same palette as free play and the lane tiles) so practice hits feel like
@@ -70,7 +97,7 @@ const TIMING_FX: Record<
   perfect: {
     chip: 'perfect',
     textKey: 'perfect',
-    color: '#ffe26b',
+    color: TIMING_TIER_STYLE.perfect.color,
     burst: 20,
     energy: 1.15,
     ring: 230,
@@ -78,19 +105,27 @@ const TIMING_FX: Record<
   great: {
     chip: 'great',
     textKey: 'gradeGreat',
-    color: '#b6f5b3',
+    color: TIMING_TIER_STYLE.great.color,
     burst: 13,
     energy: 0.95,
     ring: 175,
   },
-  early: { chip: 'early', textKey: 'gradeEarly', color: '#a9d4ff', burst: 8, energy: 0.7, ring: 0 },
-  late: { chip: 'late', textKey: 'gradeLate', color: '#a9d4ff', burst: 8, energy: 0.7, ring: 0 },
+  good: {
+    chip: 'good',
+    textKey: 'gradeGood',
+    color: TIMING_TIER_STYLE.good.color,
+    burst: 8,
+    energy: 0.7,
+    ring: 0,
+  },
 };
 
 /** Length-verdict colors — distinct from the timing palette so a release cue
- *  reads as its own channel: cyan pulse = held it right, amber = adjust. */
-const LENGTH_GOOD_COLOR = '#7fe9e0';
-const LENGTH_OFF_COLOR = '#ffd08a';
+ *  reads as its own channel: cyan pulse = held it right, amber = adjust.
+ *  From the shared vocabulary (@piano/core LENGTH_TIER_STYLE) so the live
+ *  pulse and the result breakdown can't drift apart. */
+const LENGTH_GOOD_COLOR = LENGTH_TIER_STYLE.good.color;
+const LENGTH_OFF_COLOR = LENGTH_TIER_STYLE.short.color;
 
 /** Subset of the shell `state` we read/write. */
 export interface PracticeScoringStateRef {
@@ -137,6 +172,15 @@ export interface PracticeScoringRef {
    *  として出すだけ + コンボが切れる（マッシュで★が取れる穴を塞ぐ）。
    *  マイクは誤検出があるので対象外。 */
   extraPresses?: number;
+  /** 判定カウンタ（@piano/core JudgeTally）。チップと同じ grade をここへ
+   *  積む — ライブHUDとリザルトの内訳が同一ソースを読むための単一地点。
+   *  必須: createInitialPractice が常に生成する。optional にすると未配線の
+   *  呼び出し側で「静かに集計されない」状態が作れてしまう。 */
+  judge: JudgeTally;
+  /** 直近の誤差リング（@piano/core JudgeErrorRing）。レーンの誤差バーが
+   *  「早い/遅い」を分布として見せるためのソース — 段（tier）は品質のみを
+   *  持つので、方向はここだけが持つ。judge と同様に必須。 */
+  judgeErrors: JudgeErrorRing;
   startAudioTime: number;
   audioOffsetMs?: number | null;
   /** 明示ポーズ / タブ非表示で凍結中の生（オフセット前）経過ms。
@@ -149,9 +193,13 @@ export interface PracticeScoringRef {
 /** Tunables — passed in so the scoring is testable without pulling
  *  the whole CONFIG bag. Default values match the legacy CONFIG. */
 export interface PracticeScoringTuning {
-  hitWindowEarlyMs: number;
-  hitWindowMs: number;
-  perfectMs: number;
+  /** Judgement windows for MIDI presses (exact input). */
+  judgeMidi: JudgeProfile;
+  /** Judgement windows for mic onsets (±30-40 ms detection jitter). Chosen
+   *  per EVENT via `isExact`, not per session — a session can have both (a
+   *  keyboard hot-plugged mid-section) and each press must be judged against
+   *  the precision of the path it actually arrived on. */
+  judgeMic: JudgeProfile;
   chordMateToleranceMs: number;
   durationMinTolMs: number;
   durationTolFraction: number;
@@ -177,7 +225,14 @@ export interface PracticeScoringDeps {
   Tone: PracticeScoringToneRef | undefined;
 
   /** Visual feedback hooks. */
-  showHitChip: (kind: string, text: string, xPx?: number, yPx?: number) => void;
+  showHitChip: (
+    kind: string,
+    text: string,
+    xPx?: number,
+    yPx?: number,
+    /** Throttle channel — see PRESS_CHIP_CHANNEL / RELEASE_CHIP_CHANNEL. */
+    channel?: string
+  ) => void;
   spawnBurst: (x: number, y: number, count: number, energy: number, color?: string) => void;
   /** Expanding-ring pulse at a note's key (the "pop" on a clean hit + the
    *  length-OK cue on release). Optional so partial-DOM tests degrade. */
@@ -279,8 +334,7 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
    *  mapper, keeping partial-DOM tests / older shells working. */
   function chipX(midi: number): number | undefined {
     if (!deps.noteScreenX) return undefined;
-    const { W } = deps.getScreen();
-    return Math.max(CHIP_EDGE_PX, Math.min(W - CHIP_EDGE_PX, deps.noteScreenX(midi)));
+    return clampChipX(deps.noteScreenX(midi), deps.getScreen().W);
   }
 
   function matchNoteOnset(detectedMidi: number, isExact: boolean, inputLagMs = 0): boolean {
@@ -308,13 +362,14 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const cur = notes[idx];
     if (!cur || cur.timeMs == null) return false;
 
+    // Judge against the profile for the path this press ARRIVED ON: MIDI is
+    // sample-exact, the mic carries ±30-40 ms of detection jitter, so one set
+    // of windows cannot serve both honestly (see @piano/core JudgeProfile).
+    const profile = isExact ? deps.tuning.judgeMidi : deps.tuning.judgeMic;
     const dtSigned = elapsed - cur.timeMs; // +late, -early
-    // Guided has no late ceiling — the note waits — but blocks early
-    // presses so count-in taps don't pre-credit a hit.
-    const inWindow =
-      deps.practice.mode === 'guided'
-        ? dtSigned >= -deps.tuning.hitWindowEarlyMs
-        : dtSigned >= -deps.tuning.hitWindowEarlyMs && dtSigned <= deps.tuning.hitWindowMs;
+    // The mode's admissibility rule lives in @piano/core (isTimingInWindow) so
+    // this path and core's matchNoteOnset cannot drift apart.
+    const inWindow = isTimingInWindow(deps.practice.mode, dtSigned, profile);
 
     // Find the played note inside the current chord cluster (cur and
     // any simultaneous notes within ±CHORD_MATE_TOLERANCE_MS). Order
@@ -414,7 +469,8 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
             'miss',
             deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }),
             chipX(detectedMidi),
-            deps.getScreen().H * CHIP_Y_FRAC
+            deps.getScreen().H * CHIP_Y_FRAC,
+            PRESS_CHIP_CHANNEL
           );
         }
       } else if (
@@ -426,14 +482,14 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
           'miss',
           deps.t('youPlayedFmt', { v: deps.midiToName(detectedMidi) }),
           chipX(detectedMidi),
-          deps.getScreen().H * CHIP_Y_FRAC
+          deps.getScreen().H * CHIP_Y_FRAC,
+          PRESS_CHIP_CHANNEL
         );
       }
       return false;
     }
 
     const dtSignedMatched = elapsed - (matched.timeMs ?? 0);
-    const dt = Math.abs(dtSignedMatched);
     matched.hit = true;
     matched.holdStartMs = performance.now();
     // Timestamp the hit so the lane can bloom the tile at the moment of the
@@ -446,21 +502,23 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     if (deps.practice.sectionCombo > deps.practice.sectionBestCombo) {
       deps.practice.sectionBestCombo = deps.practice.sectionCombo;
     }
-    // Guided mode: every onset is "perfect" (timing not graded).
-    // Rhythm mode: score linearly, but use the asymmetric window so
-    // an early press is judged against the smaller early window
-    // (steeper penalty).
-    const window = dtSignedMatched < 0 ? deps.tuning.hitWindowEarlyMs : deps.tuning.hitWindowMs;
-    const ts = deps.practice.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
+    // ONE decision for the tier the player is shown AND the credit that feeds
+    // the timing percentage (@piano/core judgeForMode). These used to be
+    // computed separately — an absolute threshold for the chip, a
+    // window-relative ratio for the score — so a press 90 ms early was shown
+    // as PERFECT and credited 25 % while 90 ms late was shown as PERFECT and
+    // credited 74 %. Guided grades every onset perfect at full credit: its
+    // clock waits for the kid, so there is no offset to measure.
+    const isGuided = deps.practice.mode === 'guided';
+    const { grade, score: ts } = judgeForMode(deps.practice.mode, dtSignedMatched, profile);
     deps.practice.timingScoreSum += ts;
-    // Multi-tier timing verdict (perfect / great / a bit early / a bit late) so
-    // the kid SEES how clean the note was, not just "right". Guided never grades
-    // timing (the note waits), so it's always "perfect".
-    const grade: TimingGrade =
-      deps.practice.mode === 'guided'
-        ? 'perfect'
-        : resolveTimingGrade(dtSignedMatched, deps.tuning.perfectMs);
     const fx = TIMING_FX[grade];
+    // Tally the SAME grade the chip is about to show, and feed the error ring
+    // the lane's hit-error bar reads. Guided contributes offset 0 (its clock
+    // waits for the kid, so a signed offset would be meaningless) and no ring
+    // entry at all — the tier count still reads as "notes played".
+    recordTimingJudgement(deps.practice.judge, grade, isGuided ? 0 : dtSignedMatched);
+    if (!isGuided) pushJudgeError(deps.practice.judgeErrors, dtSignedMatched);
     // Guided の和音: メンバー1音ごとに Perfect を出すと、まちがいチップと
     // 100ms スロットル（intro-hint-ui）を取り合い、「止まっているのに
     // Perfect だけ見える」が起きる。押下確認は鍵盤の点灯とレーンの緑
@@ -481,7 +539,13 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const screen = deps.getScreen();
     if (showChip) {
       // Timing verdict — at the pressed key, same band as every other chip.
-      deps.showHitChip(fx.chip, deps.t(fx.textKey), chipX(detectedMidi), screen.H * CHIP_Y_FRAC);
+      deps.showHitChip(
+        fx.chip,
+        deps.t(fx.textKey),
+        chipX(detectedMidi),
+        screen.H * CHIP_Y_FRAC,
+        PRESS_CHIP_CHANNEL
+      );
     }
     deps.state.flow = Math.min(100, deps.state.flow + 6 + ts * 4);
     deps.state.combo++;
@@ -528,6 +592,7 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
     const lenX = deps.noteScreenX ? deps.noteScreenX(detectedMidi) : screen.W * 0.5;
     const lenY = screen.H * HIT_FX_Y_FRAC;
     const grade = resolveLengthGrade(heldMs, expected, tol);
+    recordLengthJudgement(deps.practice.judge, grade);
     if (grade === 'good') {
       deps.spawnRipple?.(lenX, lenY, LENGTH_GOOD_COLOR, 150);
     } else {
@@ -536,7 +601,8 @@ export function createPracticeScoring(deps: PracticeScoringDeps): PracticeScorin
         grade === 'short' ? 'short' : 'long',
         deps.t(grade === 'short' ? 'lengthShort' : 'lengthLong'),
         chipX(detectedMidi) ?? lenX,
-        screen.H * LENGTH_CHIP_Y_FRAC
+        screen.H * LENGTH_CHIP_Y_FRAC,
+        RELEASE_CHIP_CHANNEL
       );
     }
   }

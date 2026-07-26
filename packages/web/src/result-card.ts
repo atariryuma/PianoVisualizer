@@ -20,13 +20,33 @@
 //     attempts' accuracy, with star halos for ≥3-star clears, current
 //     value label, and a colored trend delta vs the previous run.
 
-import { FULL_SONG_SECTION_ID } from '@piano/core';
-import type { PracticeMode, SectionFocus } from '@piano/core';
+import {
+  FULL_SONG_SECTION_ID,
+  clamp,
+  LENGTH_TIER_STYLE,
+  TIMING_TIER_ORDER,
+  TIMING_TIER_STYLE,
+  drawJudgeScale,
+  resolveJudgeProfile,
+} from '@piano/core';
+import type {
+  PracticeMode,
+  SectionFocus,
+  JudgeTally,
+  JudgeSummary,
+  JudgeProfile,
+  JudgeStrictness,
+} from '@piano/core';
 
 /** Sentinel `getStretchSongId()` returns at endgame (every touched song maxed
  *  out) so the stretch button routes to "add more songs" instead of vanishing
  *  — the old dead-end. Not a real song id; shell-ui intercepts it. */
 export const ADD_SONG_SENTINEL = '__addsong';
+
+/** Below this, a non-scored run reports no time at all. A section abandoned
+ *  after a couple of seconds did not produce practice worth crediting, and
+ *  "0s practised" is a worse answer than silence. */
+const MIN_REPORTABLE_SECS = 5;
 
 /** Practice slice the module reads + writes. */
 export interface ResultCardPracticeRef {
@@ -47,6 +67,10 @@ export interface ResultCardPracticeRef {
   timingScoreSum: number;
   durationScoreSum: number;
   durationScoredCount: number;
+  /** Per-note judgement counts for the attempt just finished. Snapshotted
+   *  (copied) into `_lastResult` so the breakdown survives the next section
+   *  start, which resets this object in place. */
+  judge?: JudgeTally;
   _completing: boolean;
   _sectionTargetCount?: number;
   pendingHolds: { clear(): void };
@@ -82,6 +106,29 @@ export interface ResultSnapshot {
    *  step-up button (planTempoStepUp). Snapshot-retained so a langchange
    *  re-render recomputes against the played tempo, not a since-changed one. */
   tempoPct?: number;
+  /** COPY of the attempt's judgement tally (never the live object — the next
+   *  section start zeroes that in place). Drives the per-note breakdown; a
+   *  langchange re-render re-derives the whole block from it. */
+  judge?: JudgeTally | null;
+  /** Headline numbers. Rendered from the snapshot (not written straight to the
+   *  DOM at scoring time) so a langchange re-render restores them. */
+  accPct?: number;
+  bestCombo?: number;
+  /** Accuracy this section had BEFORE the attempt — drives the NEW RECORD chip. */
+  priorBestPct?: number;
+  /** Strictness setting + input path in force for the run. Reported on the
+   *  card because two attempts judged differently are not comparable, and the
+   *  error chart resolves the run's judgement WINDOWS from these two — the
+   *  windows are a pure function of (input path × strictness), so carrying them
+   *  as a third snapshot field just meant a third thing to plumb and a
+   *  hand-copied mic profile as its fallback. */
+  judgeStrictness?: JudgeStrictness;
+  judgeInputExact?: boolean;
+  /** Minutes this attempt credited to today's practice bucket. The ONE fact a
+   *  non-scored run (listen / guided) genuinely produces, and it was already
+   *  being stored and never shown. Snapshot-retained like every other figure so
+   *  a langchange re-render keeps it. */
+  minutes?: number;
 }
 
 export interface ResultCardSection {
@@ -101,7 +148,21 @@ export interface ResultCardSongProgress {
   unlockedTempos: Record<number, boolean>;
   unlockedSections: Record<string, boolean>;
   sections: Record<string, { stars: number; bestPct: number; bestCombo?: number } | undefined>;
-  history: Record<string, Array<{ d: number; a: number; t: number; s: number; tempoPct?: number }>>;
+  history: Record<
+    string,
+    Array<{
+      d: number;
+      a: number;
+      t: number;
+      s: number;
+      tempoPct?: number;
+      /** Judgement strictness the attempt was played under. Recorded because
+       *  the growth chart plots attempts against each other and a run judged
+       *  `strict` is not comparable to one judged `easy` — the same reason the
+       *  tempo is already recorded. Absent on pre-2026-07-25 entries. */
+      judge?: JudgeStrictness;
+    }>
+  >;
 }
 
 /** Tier shape returned by PianoCore.resolveResultTier. */
@@ -132,6 +193,26 @@ export interface ResultCardDom {
   resExtraRow?: HTMLElement | null;
   resExtra?: HTMLElement | null;
   resMsg: HTMLElement;
+  // Per-note judgement breakdown. All optional so partial-DOM tests and older
+  // shells degrade to "no breakdown" rather than throwing.
+  resJudge?: HTMLElement | null;
+  /** Milestone chips (FULL COMBO / ALL PERFECT / NEW RECORD). */
+  resBadges?: HTMLElement | null;
+  /** Disclosure for the deviation analysis. REQUIRED-nullable on purpose: an
+   *  optional field plus `?.` is how a control ships dead (see
+   *  dom-wiring.test.ts). */
+  resDetails: HTMLElement | null;
+  resDetailsToggle: HTMLElement | null;
+  resJudgeTitle?: HTMLElement | null;
+  resJudgeBar?: HTMLElement | null;
+  resJudgeRows?: HTMLElement | null;
+  resJudgeErrorChart?: HTMLCanvasElement | null;
+  resJudgeSpread?: HTMLElement | null;
+  resJudgeTendency?: HTMLElement | null;
+  resJudgeHoldTitle?: HTMLElement | null;
+  resJudgeHoldRows?: HTMLElement | null;
+  resJudgeHold?: HTMLElement | null;
+  resJudgeCond?: HTMLElement | null;
   /** Knowledge-of-Performance coaching line (strength + next step). Optional
    *  so partial-DOM tests and older shells degrade gracefully. */
   resFocus?: HTMLElement | null;
@@ -148,6 +229,10 @@ export interface ResultCardDom {
   resNext: HTMLElement;
   resStretch: HTMLElement | null;
   resTryPlay: HTMLElement | null;
+  /** Fact line for a non-scored run (listen / guided). Required-nullable, not
+   *  optional: a shipped control marked `?:` is one the compiler stops asking
+   *  about at the call site (see CLAUDE.md "silently dead controls"). */
+  resNoScoreFacts: HTMLElement | null;
   /** "Retry with support" one-tap button (0-star scored runs). Optional so
    *  partial-DOM tests degrade gracefully. Click is wired in practice-flow;
    *  this module only sets label + dataset.strategy/tempo + visibility. */
@@ -179,7 +264,7 @@ export interface ResultCardDeps {
    *  (shell computes elapsed + persists). Called once per completion, all
    *  modes — listening time is practice time too. Optional so older
    *  shells / partial tests degrade to no tracking. */
-  recordPracticeMinutes?(): void;
+  recordPracticeMinutes?(): number | void;
   /** Persist progress to localStorage. */
   savePracticeProgress(): void;
   /** Compute the star count from accPct / timingPct / durPct
@@ -188,6 +273,16 @@ export interface ResultCardDeps {
   /** Resolve the result tier from a star count
    *  (PianoCore.resolveResultTier). */
   resolveResultTier(stars: number): ResultTier;
+  /** Derive the per-note breakdown read-out from a tally
+   *  (PianoCore.summarizeJudgements — pure). Required: the breakdown is a
+   *  shipped surface, and making it optional bought nothing but a silent
+   *  "no analysis" for any call site that forgot to wire it. */
+  summarizeJudgements(tally: JudgeTally): JudgeSummary;
+  /** Judgement conditions the finished run was played under — snapshotted so
+   *  the card reports (and re-renders) the real conditions rather than the
+   *  currently-active ones. */
+  getJudgeStrictness(): JudgeStrictness;
+  isExactInput(): boolean;
   /** Pick the Knowledge-of-Performance coaching for a scored run
    *  (PianoCore.pickSectionFocus). Returns null on ★3. */
   pickSectionFocus(
@@ -305,6 +400,272 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     if (deps.dom.resFocus) {
       deps.dom.resFocus.textContent = '';
       deps.dom.resFocus.style.display = 'none';
+    }
+  };
+
+  // ── Per-note judgement breakdown ──
+  // Labels and colours come from the shared judgement vocabulary
+  // (@piano/core TIMING_TIER_STYLE / LENGTH_TIER_STYLE), which the live chips
+  // and the lane's running panel also read. The same verdict must look the same
+  // wherever it is reported, or the result reads as a different system from the
+  // one the player was just using — and three hand-copied tables cannot hold
+  // that. `key` maps the tier onto its JudgeTally field.
+  const JUDGE_TIERS = TIMING_TIER_ORDER.map((grade) => ({
+    key: grade,
+    ...TIMING_TIER_STYLE[grade],
+  }));
+  const HOLD_TIERS = (['good', 'short', 'long'] as const).map((grade) => ({
+    key: ('hold' + grade[0].toUpperCase() + grade.slice(1)) as
+      | 'holdGood'
+      | 'holdShort'
+      | 'holdLong',
+    ...LENGTH_TIER_STYLE[grade],
+  }));
+
+  /** `PERFECT 24  GREAT 8  …` — one span per tier, dimmed at zero so the
+   *  full scale stays visible instead of the row changing shape per run. */
+  const paintJudgeRows = (
+    host: HTMLElement,
+    tiers: ReadonlyArray<{ key: string; label: string; color: string }>,
+    counts: Record<string, number>
+  ): void => {
+    host.textContent = '';
+    for (const tier of tiers) {
+      const n = counts[tier.key] ?? 0;
+      const wrap = document.createElement('span');
+      if (n === 0) wrap.className = 'is-zero';
+      wrap.style.color = tier.color;
+      const label = document.createElement('i');
+      label.style.fontStyle = 'normal';
+      label.textContent = tier.label;
+      const val = document.createElement('b');
+      val.textContent = String(n);
+      wrap.append(label, val);
+      host.appendChild(wrap);
+    }
+  };
+
+  /** Proportional stacked bar over the same tiers. */
+  const paintJudgeBar = (host: HTMLElement, counts: Record<string, number>): void => {
+    host.textContent = '';
+    let total = 0;
+    for (const tier of JUDGE_TIERS) total += counts[tier.key] ?? 0;
+    if (total <= 0) return;
+    for (const tier of JUDGE_TIERS) {
+      const n = counts[tier.key] ?? 0;
+      if (n <= 0) continue;
+      const seg = document.createElement('span');
+      seg.style.width = ((n / total) * 100).toFixed(2) + '%';
+      seg.style.background = tier.color;
+      host.appendChild(seg);
+    }
+  };
+
+  // ── Analysis disclosure ──
+  /** The judgement windows a finished run was played under. Derived, not
+   *  stored: the windows are exactly `resolveJudgeProfile(inputPath,
+   *  strictness)`, both of which the snapshot already carries. */
+  const judgeProfileOf = (r: ResultSnapshot): JudgeProfile =>
+    resolveJudgeProfile(r.judgeInputExact ?? false, r.judgeStrictness ?? 'normal');
+
+  // Open/closed is remembered for the SESSION (a module-level flag, not
+  // persisted): someone who wants the numbers usually wants them on the next
+  // attempt too, but it should not become a permanent wall of text for a child
+  // who opened it once out of curiosity.
+  let detailsOpen = false;
+
+  const paintDetailsToggle = (): void => {
+    const btn = deps.dom.resDetailsToggle;
+    const body = deps.dom.resDetails;
+    if (!btn || !body) return;
+    body.hidden = !detailsOpen;
+    btn.setAttribute('aria-expanded', detailsOpen ? 'true' : 'false');
+    btn.textContent = deps.t(detailsOpen ? 'resDetailsHide' : 'resDetailsShow');
+  };
+
+  /** Paint the error chart. Only meaningful while the disclosure is OPEN: the
+   *  chart measures `clientWidth`, which is 0 inside a `hidden` container, so a
+   *  paint while collapsed both reallocates the backing store and lays out
+   *  against a wrong fallback width. `renderJudge` therefore skips it when
+   *  closed and this is the single place that draws it. */
+  const paintErrorChart = (r: ResultSnapshot | null | undefined, sum?: JudgeSummary): void => {
+    const canvas = deps.dom.resJudgeErrorChart;
+    const tally = r?.judge;
+    if (!detailsOpen || !canvas || !r || !tally) return;
+    // `sum` is passed in by renderJudge, which has already computed it for the
+    // prose — summarizing the same tally twice per render was free to avoid.
+    drawErrorDistribution(deps, canvas, sum ?? deps.summarizeJudgements(tally), judgeProfileOf(r));
+  };
+
+  deps.dom.resDetailsToggle?.addEventListener('click', () => {
+    detailsOpen = !detailsOpen;
+    paintDetailsToggle();
+    paintErrorChart(deps.practice._lastResult);
+  });
+
+  /** Headline: one big accuracy number + the combo. */
+  /**
+   * Show or hide every scored-run-only block at once.
+   *
+   * Marked in index.html with `.result-scored-only` rather than listed here, so
+   * a new block added to the card is covered by construction. `.result-stat`
+   * rows keep their own per-run logic (the duration row hides when there is no
+   * duration score); this only decides whether the scored half of the card
+   * exists at all.
+   */
+  const setScoredBlocksVisible = (show: boolean): void => {
+    const card = deps.dom.resTitle.closest('#sectionResult') ?? document;
+    card.querySelectorAll('.result-scored-only, .result-stat').forEach((el) => {
+      (el as HTMLElement).style.display = show ? '' : 'none';
+    });
+  };
+
+  const renderHeadline = (r: ResultSnapshot): void => {
+    if (r.accPct != null) deps.dom.resAcc.textContent = r.accPct + '%';
+    if (r.bestCombo != null) deps.dom.resCombo.textContent = String(r.bestCombo);
+  };
+
+  /**
+   * Milestone chips. Celebration only — there is deliberately no negative
+   * counterpart (banned-list: reward attempts and milestones, never shame).
+   *
+   * FULL COMBO / ALL PERFECT are the genre's own vocabulary and, like the
+   * per-note verdicts, stay untranslated; NEW RECORD is self-referenced to the
+   * child's own previous best, not to anyone else.
+   */
+  const renderBadges = (r: ResultSnapshot): void => {
+    const host = deps.dom.resBadges;
+    if (!host) return;
+    host.textContent = '';
+    if (r.mode !== 'rhythm') return;
+    const t = r.judge;
+    const hits = t ? t.perfect + t.great + t.good : 0;
+    const chip = (cls: string, label: string): void => {
+      const el = document.createElement('span');
+      el.className = cls;
+      el.textContent = label;
+      host.appendChild(el);
+    };
+    if (t && hits > 0 && t.miss === 0) {
+      if (t.great === 0 && t.good === 0) chip('badge-ap', 'ALL PERFECT');
+      else chip('badge-fc', 'FULL COMBO');
+    }
+    if (r.accPct != null && r.priorBestPct != null && r.accPct > r.priorBestPct) {
+      chip('badge-record', deps.t('resNewRecord'));
+    }
+  };
+
+  /** Hide the whole block. Called for listen / guided / un-judged runs so a
+   *  stale breakdown from the previous attempt can never linger. */
+  const clearJudge = (): void => {
+    if (deps.dom.resJudge) deps.dom.resJudge.style.display = 'none';
+    // No analysis to disclose on a listen/guided/un-judged run — hide the
+    // toggle too rather than offering an empty panel.
+    if (deps.dom.resDetailsToggle) deps.dom.resDetailsToggle.style.display = 'none';
+    if (deps.dom.resDetails) deps.dom.resDetails.hidden = true;
+  };
+
+  /**
+   * Paint the breakdown from the snapshot's tally: stacked bar, per-tier
+   * counts, mean absolute deviation ("how tight"), lean direction + the one
+   * adjustment it implies, then the same for note-length holds.
+   *
+   * Rhythm only. Guided marks every press `perfect` by design (its clock
+   * waits for the kid), so a breakdown there would claim a timing quality
+   * that was never measured.
+   */
+  const renderJudge = (r: ResultSnapshot): void => {
+    const host = deps.dom.resJudge;
+    if (!host) return;
+    const tally = r.judge;
+    if (r.mode !== 'rhythm' || !tally) {
+      clearJudge();
+      return;
+    }
+    const sum = deps.summarizeJudgements(tally);
+    if (sum.judged <= 0) {
+      clearJudge();
+      return;
+    }
+    host.style.display = '';
+    if (deps.dom.resDetailsToggle) deps.dom.resDetailsToggle.style.display = '';
+    const counts = tally as unknown as Record<string, number>;
+
+    if (deps.dom.resJudgeTitle) deps.dom.resJudgeTitle.textContent = deps.t('judgeTitle');
+    // The disclosure keeps whatever state the player left it in.
+    paintDetailsToggle();
+    if (deps.dom.resJudgeBar) paintJudgeBar(deps.dom.resJudgeBar, counts);
+    if (deps.dom.resJudgeRows) paintJudgeRows(deps.dom.resJudgeRows, JUDGE_TIERS, counts);
+
+    // The error DISTRIBUTION — where direction lives now that the tiers carry
+    // only quality. Chart first (bias + spread at a glance over the tier
+    // bands), then the two numbers the genre quotes: mean absolute error and
+    // the standard deviation (osu!'s unstable rate).
+    paintErrorChart(r, sum);
+    // Consistency only. The BIAS is stated once, in the tendency line below —
+    // printing a mean-absolute figure here as well put two adjacent lines in
+    // apparent contradiction (57 ms vs +39 ms, both reading as "the average").
+    if (deps.dom.resJudgeSpread) {
+      deps.dom.resJudgeSpread.textContent =
+        sum.stdevMs != null ? deps.t('judgeSpreadFmt', { s: Math.round(sum.stdevMs) }) : '';
+    }
+    // "Which way" — the actionable half. Three outcomes, in priority order:
+    //   1. The lean looks like a SETUP problem (big + almost every press off
+    //      the same way) → point at note speed, then the audio offset, in
+    //      beatmania's own documented order. Coaching "press sooner" here
+    //      would be asking the player to compensate for our configuration.
+    //   2. A genuine lean → name the direction + the adjustment.
+    //   3. Even → a positive line of its own (not a fallback).
+    if (deps.dom.resJudgeTendency) {
+      const lean = sum.meanDtMs != null ? Math.abs(Math.round(sum.meanDtMs)) : 0;
+      deps.dom.resJudgeTendency.textContent = sum.looksLikeSetupIssue
+        ? deps.t('judgeSetupSuspectFmt', { v: lean })
+        : sum.tendency === 'late'
+          ? deps.t('judgeTendencyLateFmt', { v: lean })
+          : sum.tendency === 'early'
+            ? deps.t('judgeTendencyEarlyFmt', { v: lean })
+            : sum.meanDtMs != null
+              ? deps.t('judgeTendencyEven')
+              : '';
+    }
+
+    // Note-length half. Only when releases were actually scored (mic-only
+    // practice has no note-off, so there is nothing to report).
+    const hasHolds = sum.holds > 0;
+    if (deps.dom.resJudgeHoldTitle) {
+      deps.dom.resJudgeHoldTitle.textContent = hasHolds ? deps.t('judgeHoldTitle') : '';
+      deps.dom.resJudgeHoldTitle.style.display = hasHolds ? '' : 'none';
+    }
+    if (deps.dom.resJudgeHoldRows) {
+      if (hasHolds) paintJudgeRows(deps.dom.resJudgeHoldRows, HOLD_TIERS, counts);
+      else deps.dom.resJudgeHoldRows.textContent = '';
+    }
+    if (deps.dom.resJudgeHold) {
+      deps.dom.resJudgeHold.textContent =
+        sum.holdTendency === 'short'
+          ? deps.t('judgeHoldShort')
+          : sum.holdTendency === 'long'
+            ? deps.t('judgeHoldLong')
+            : '';
+    }
+
+    // Conditions the run was judged under. Records are meaningless without
+    // them — two attempts at different strictness, or one on mic and one on a
+    // keyboard, are not comparable. osu! shows the beatmap's OD for the same
+    // reason; beatmania surfaces the chart's judge windows.
+    if (deps.dom.resJudgeCond) {
+      deps.dom.resJudgeCond.textContent = r.judgeStrictness
+        ? deps.t('judgeCondFmt', {
+            j: deps.t(
+              r.judgeStrictness === 'easy'
+                ? 'judgeEasy'
+                : r.judgeStrictness === 'strict'
+                  ? 'judgeStrict'
+                  : 'judgeNormal'
+            ),
+            i: deps.t(r.judgeInputExact ? 'judgeInputMidi' : 'judgeInputMic'),
+          })
+        : '';
     }
   };
 
@@ -436,6 +797,37 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     btn.textContent = deps.t(key);
   };
 
+  /**
+   * The fact line for a run that was never scored.
+   *
+   * A listen-through and a guided play-through produce no accuracy, no timing
+   * and no stars — so the card had nothing true to report and, until the
+   * `.result-scored-only` switch, leaked the HTML default "0 %" instead. What
+   * they DO produce is practice time, which the app already banks into today's
+   * minutes (`recordPracticeMinutes`, all modes) and never showed anywhere but
+   * the journal. Reporting it here closes that loop: the run gets a real
+   * outcome, framed as a credit — never a target, so there is nothing to fall
+   * short of (banned-list: no goals, no shortfall copy).
+   */
+  const renderNoScoreFacts = (r: ResultSnapshot): void => {
+    const el = deps.dom.resNoScoreFacts;
+    if (!el) return;
+    const secs = Math.round((r.minutes ?? 0) * 60);
+    // Nothing credible to say about a run that lasted a moment (a section
+    // skipped, an immediate quit) — say nothing rather than "0s".
+    if (secs < MIN_REPORTABLE_SECS) {
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    const time =
+      secs < 60
+        ? deps.t('durSecFmt', { v: secs })
+        : deps.t('durMinSecFmt', { m: Math.floor(secs / 60), s: secs % 60 });
+    el.textContent = deps.t(r.mode === 'listen' ? 'listenTimeFmt' : 'guidedTimeFmt', { t: time });
+    el.style.display = '';
+  };
+
   function renderResultCard(): void {
     const r = deps.practice._lastResult;
     if (!r) return;
@@ -470,11 +862,17 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       deps.dom.resMsg.textContent = msg;
       deps.dom.resUnlock.textContent = '';
       clearFocus();
-      deps.dom.resStars.style.display = 'none';
-      document.querySelectorAll('#sectionResult .result-stat').forEach((el) => {
-        (el as HTMLElement).style.display = 'none';
-      });
-      if (deps.dom.resHistoryWrap) deps.dom.resHistoryWrap.classList.add('hidden');
+      clearJudge();
+      // Hide EVERYTHING that only means something on a scored run — by marker,
+      // not by enumeration. Listening is not a performance, so a card that says
+      // "Pitch accuracy 0%" after a listen-through is both wrong and exactly the
+      // kind of scold this app is built to avoid. It said that because the
+      // branch listed the blocks it knew about (stars, stat rows, history) and
+      // the headline was added later: an enumeration silently stops covering
+      // the card the moment anyone adds to it. `.result-scored-only` in
+      // index.html is now the single thing to remember.
+      setScoredBlocksVisible(false);
+      renderNoScoreFacts(r);
       if (r.mode === 'listen') {
         deps.dom.resNext.style.display = 'none';
         if (deps.dom.resTryPlay) deps.dom.resTryPlay.style.display = '';
@@ -494,7 +892,8 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // 1曲チャレンジ (secId === FULL_SONG_SECTION_ID) — there is no real
     // section to look up, so the subtitle falls back to the song title.
     const sec = secLookup as ResultCardSection | undefined;
-    deps.dom.resStars.style.display = '';
+    setScoredBlocksVisible(true);
+    if (deps.dom.resNoScoreFacts) deps.dom.resNoScoreFacts.style.display = 'none';
     document.querySelectorAll('#sectionResult .result-stat').forEach((el) => {
       (el as HTMLElement).style.display = '';
     });
@@ -536,6 +935,13 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     clearFocus();
     if (r.focus) applyFocus(r.focus);
 
+    // Headline first (one number), then the milestone chips, then the per-note
+    // breakdown. The deviation analysis lives in the disclosure renderJudge
+    // paints into.
+    renderHeadline(r);
+    renderBadges(r);
+    renderJudge(r);
+
     renderRetrySupport(r);
     renderTempoUp(r);
     renderSelfAssess(r);
@@ -567,7 +973,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     }
     // Practice-minute tracking — all modes (listening time is practice time
     // too). Lifetime-accumulating only; never a goal, never a shortfall.
-    deps.recordPracticeMinutes?.();
+    const attemptMinutes = deps.recordPracticeMinutes?.() ?? 0;
     const isFullSong = deps.practice.mode === 'listen' && deps.practice.fullSongMode;
 
     // Listen mode: no scoring, no progress mutation, no unlocks. Hide
@@ -598,6 +1004,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         mode: 'listen',
         secId: sec.id,
         fullSong: isFullSong,
+        minutes: attemptMinutes,
         stars: 0,
         unlockedTempo: null,
         unlockedSecKey: null,
@@ -642,6 +1049,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         mode: 'guided',
         secId: isFullSongGuided ? FULL_SONG_SECTION_ID : sec.id,
         fullSong: isFullSongGuided,
+        minutes: attemptMinutes,
         stars: 0,
         unlockedTempo: null,
         unlockedSecKey: null,
@@ -743,6 +1151,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       t: timingPct,
       s: stars,
       tempoPct: deps.practice.tempoPct,
+      judge: deps.getJudgeStrictness?.(),
     });
     if (histArr.length > 8) histArr.shift();
     const sectionHistory = histArr;
@@ -809,6 +1218,15 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       retryStrategy,
       retryTempo,
       tempoPct: deps.practice.tempoPct,
+      // COPY, not a reference: the next section start zeroes practice.judge in
+      // place, which would otherwise blank the breakdown behind a langchange
+      // re-render of a card that's still on screen.
+      judge: deps.practice.judge ? { ...deps.practice.judge } : null,
+      accPct,
+      bestCombo: deps.practice.sectionBestCombo,
+      priorBestPct,
+      judgeStrictness: deps.getJudgeStrictness(),
+      judgeInputExact: deps.isExactInput(),
     };
     renderResultCard();
     deps.dom.resStars.innerHTML = '';
@@ -818,7 +1236,8 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       if (i >= stars) span.className = 'empty';
       deps.dom.resStars.appendChild(span);
     }
-    deps.dom.resAcc.textContent = accPct + '%';
+    // resAcc / resCombo are painted by renderHeadline from the snapshot, so a
+    // langchange re-render restores them instead of relying on leftover text.
     deps.dom.resTiming.textContent = timingPct + '%';
     if (durPct == null) {
       if (deps.dom.resDurationRow) deps.dom.resDurationRow.style.display = 'none';
@@ -826,7 +1245,6 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       if (deps.dom.resDurationRow) deps.dom.resDurationRow.style.display = '';
       deps.dom.resDuration.textContent = durPct + '%';
     }
-    deps.dom.resCombo.textContent = String(deps.practice.sectionBestCombo);
     // 誤打の事実行（A4 マッシュ耐性の可視化側）— rhythm のみカウントされ、
     // 0 なら行ごと非表示。数字そのものがフィードバックで、赤も説教もなし。
     const extraPresses = deps.practice.extraPresses ?? 0;
@@ -888,6 +1306,71 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
   return { renderResultCard, completePracticeSection };
 }
 
+/**
+ * Hit-error distribution: the tier bands of the profile the run was played
+ * under, with the mean offset marked and a ±1σ span around it.
+ *
+ * This is where DIRECTION is reported. The tiers deliberately carry only
+ * quality (see @piano/core's judgement notes), and a per-note early/late
+ * indicator is a form worth avoiding in a shipping app — Konami holds a patent
+ * on fast/slow indicators, which DJMAX removed its own implementation over.
+ * A distribution is also simply more informative: bias (where the mean sits),
+ * consistency (how wide the span is) and the standard the run was judged
+ * against are all readable at once.
+ *
+ * Exported so tests can drive it without going through completePracticeSection.
+ */
+export function drawErrorDistribution(
+  deps: Pick<ResultCardDeps, 'setupHiDPICanvas' | 't'>,
+  canvas: HTMLCanvasElement,
+  sum: JudgeSummary,
+  p: JudgeProfile
+): void {
+  const w = Math.max(200, Math.round(canvas.clientWidth) || 280);
+  const h = 46;
+  const c = deps.setupHiDPICanvas(canvas, w, h);
+  if (!c) return;
+  c.clearRect(0, 0, w, h);
+  if (!(p.goodMs > 0)) return;
+
+  const padX = 10;
+  const barH = 12;
+  const cx = w / 2;
+  const barY = 14;
+  const halfW = (w - padX * 2) / 2;
+  // Tier bands + centre reference, from the same drawer the lane's live
+  // hit-error bar uses — this chart and that bar are the same scale at two
+  // sizes, and they only teach one window if they look identical.
+  const pxPerMs = drawJudgeScale(c, p, cx, barY, halfW, barH);
+
+  if (sum.meanDtMs != null) {
+    const atMs = (ms: number): number => cx + clamp(ms * pxPerMs, -halfW, halfW);
+    // ±1σ span: how spread the presses were, around where they centred.
+    if (sum.stdevMs != null && sum.stdevMs > 0) {
+      const lo = atMs(sum.meanDtMs - sum.stdevMs);
+      const hi = atMs(sum.meanDtMs + sum.stdevMs);
+      c.fillStyle = 'rgba(255, 226, 122, 0.35)';
+      c.fillRect(lo, barY + 1, Math.max(1, hi - lo), barH - 2);
+    }
+    const mx = atMs(sum.meanDtMs);
+    c.fillStyle = '#ffe27a';
+    c.fillRect(mx - 1.5, barY - 4, 3, barH + 8);
+  }
+
+  // Scale ends + the centre label, so the numbers on the bar are readable.
+  c.font = '9px sans-serif';
+  c.textBaseline = 'top';
+  c.fillStyle = 'rgba(255,255,255,0.45)';
+  c.textAlign = 'left';
+  c.fillText('−' + Math.round(p.goodMs) + 'ms', padX, barY + barH + 4);
+  c.textAlign = 'right';
+  c.fillText('+' + Math.round(p.goodMs) + 'ms', w - padX, barY + barH + 4);
+  c.textAlign = 'center';
+  c.fillStyle = 'rgba(255,255,255,0.6)';
+  c.fillText(deps.t('judgeOnBeat'), cx, barY + barH + 4);
+  c.textBaseline = 'alphabetic';
+}
+
 /** Growth chart — two trend lines over the last 8 attempts: accuracy (gold,
  *  primary, with 3-star halos) and timing (cyan). Caption is a growth-framed,
  *  self-referenced trajectory (best-yet / up-since-first / keep-going) — never
@@ -909,7 +1392,10 @@ export function drawHistoryChart(
   c.clearRect(0, 0, w, h);
   if (!history || history.length < 2) return;
 
-  const padX = 22;
+  // 30, not 22: the axis labels are right-aligned at `padX - 4`, and "100%" at
+  // 9 px needs ~26 px, so the leading digit was being clipped off the canvas
+  // (it rendered as "00%").
+  const padX = 30;
   const padTop = 12;
   const padBottom = 18;
   const innerW = w - padX * 2;

@@ -6,8 +6,18 @@ import {
   computeHandRanges,
   matchNoteOnset,
   finalizeNoteHold,
-  resolveTimingGrade,
   resolveLengthGrade,
+  createJudgeTally,
+  resetJudgeTally,
+  createJudgeErrorRing,
+  resetJudgeErrorRing,
+  pushJudgeError,
+  forEachJudgeError,
+  recordTimingJudgement,
+  recordLengthJudgement,
+  recordMissJudgement,
+  summarizeJudgements,
+  judgeHits,
   computeStars,
   resolveResultTier,
   pickSectionFocus,
@@ -22,8 +32,13 @@ import {
   type UnlockComputeInput,
   practiceElapsedMs,
   STAR_TIERS,
-  HIT_WINDOW_MS,
-  PERFECT_MS,
+  JUDGE_PROFILE_MIDI,
+  JUDGE_PROFILE_MIC,
+  judgeTiming,
+  resolveJudgeProfile,
+  TIER_SCORE,
+  JUDGE_FRAME_MS,
+  scaleJudgeProfile,
   type PracticeState,
   type PracticeSourceNote,
   type PracticeNote,
@@ -204,7 +219,7 @@ describe('matchNoteOnset', () => {
     >;
     expect(r.type).toBe('hit');
     expect(r.note.midi).toBe(60);
-    expect(r.isPerfect).toBe(true);
+    expect(r.grade).toBe('perfect');
     expect(r.timingScore).toBe(1.0);
     expect(s.sectionNotes[0].hit).toBe(true);
     expect(s.hits).toBe(1);
@@ -218,49 +233,77 @@ describe('matchNoteOnset', () => {
     expect(s.hits).toBe(0);
   });
 
-  it('marks perfect when |dt| < PERFECT_MS', () => {
+  it('grades perfect inside the profile PERFECT window', () => {
     const r = matchNoteOnset(s, 60, { elapsed: 1000 + 50 }, 0) as Extract<
       MatchOutcome,
       { type: 'hit' }
     >;
-    expect(r.isPerfect).toBe(true);
+    expect(r.grade).toBe('perfect');
   });
 
-  it('marks "good" (not perfect) when |dt| > PERFECT_MS but in window', () => {
-    const r = matchNoteOnset(s, 60, { elapsed: 1000 + PERFECT_MS + 50 }, 0) as Extract<
+  it('grades great past PERFECT but inside the GREAT band', () => {
+    const dt = JUDGE_PROFILE_MIC.perfectMs + 20; // < greatMs
+    const r = matchNoteOnset(s, 60, { elapsed: 1000 + dt }, 0) as Extract<
       MatchOutcome,
       { type: 'hit' }
     >;
-    expect(r.isPerfect).toBe(false);
+    expect(r.grade).toBe('great');
     expect(r.timingScore).toBeGreaterThan(0);
     expect(r.timingScore).toBeLessThan(1);
   });
 
-  it('asymmetric: early press judged against smaller early window (steeper penalty)', () => {
-    // Press 100ms early — within early window (120ms), but barely.
-    const early = matchNoteOnset(s, 60, { elapsed: 1000 - 100 }, 0) as Extract<
+  it('credits the SAME score for the same |dt| on either side of the beat', () => {
+    // This is the regression guard for the defect the judgeTiming rewrite
+    // fixed: the tier came from an absolute threshold while the credit came
+    // from `1 - |dt| / window` with asymmetric windows, so 90 ms early was
+    // shown as PERFECT and credited 25 % while 90 ms late was shown as
+    // PERFECT and credited 74 %. An early-leaning learner therefore saw
+    // nothing but PERFECT chips and could not clear the timing gate.
+    const dt = 100;
+    const early = matchNoteOnset(s, 60, { elapsed: 1000 - dt }, 0) as Extract<
       MatchOutcome,
       { type: 'hit' }
     >;
-    expect(early.type).toBe('hit');
-    // Reset for fair comparison
     s.sectionNotes[0].hit = false;
     s.hits = 0;
     s.timingScoreSum = 0;
     s.sectionCombo = 0;
-    // Press 100ms late — within late window (350ms), much more lenient.
-    const late = matchNoteOnset(s, 60, { elapsed: 1000 + 100 }, 0) as Extract<
+    const late = matchNoteOnset(s, 60, { elapsed: 1000 + dt }, 0) as Extract<
       MatchOutcome,
       { type: 'hit' }
     >;
+    expect(early.type).toBe('hit');
     expect(late.type).toBe('hit');
-    // Late timing should score HIGHER than early (since late window is wider).
-    expect(late.timingScore).toBeGreaterThan(early.timingScore);
+    expect(early.timingScore).toBeCloseTo(late.timingScore, 10);
+    // Identical, not mirrored: the tiers carry quality only, never direction.
+    expect(early.grade).toBe(late.grade);
   });
 
   it('rejects out-of-window press in rhythm mode', () => {
-    const r = matchNoteOnset(s, 60, { elapsed: 1000 + HIT_WINDOW_MS + 100 }, 0);
+    const r = matchNoteOnset(s, 60, { elapsed: 1000 + JUDGE_PROFILE_MIC.goodMs + 100 }, 0);
     expect(r.type).toBe('wrong-note');
+  });
+
+  it('judges MIDI presses against the tighter MIDI profile', () => {
+    // 80 ms late: GREAT on MIDI (perfect 4F ≈ 67), PERFECT on mic (6F = 100).
+    const midi = matchNoteOnset(
+      s,
+      60,
+      { elapsed: 1080, profile: resolveJudgeProfile(true) },
+      0
+    ) as Extract<MatchOutcome, { type: 'hit' }>;
+    expect(midi.grade).toBe('great');
+    s.sectionNotes[0].hit = false;
+    s.hits = 0;
+    s.timingScoreSum = 0;
+    s.sectionCombo = 0;
+    const mic = matchNoteOnset(
+      s,
+      60,
+      { elapsed: 1080, profile: resolveJudgeProfile(false) },
+      0
+    ) as Extract<MatchOutcome, { type: 'hit' }>;
+    expect(mic.grade).toBe('perfect');
   });
 
   it('guided mode: late press counts as a hit (note waits, no late ceiling)', () => {
@@ -270,14 +313,14 @@ describe('matchNoteOnset', () => {
       { type: 'hit' }
     >;
     expect(r.type).toBe('hit');
-    expect(r.isPerfect).toBe(true);
+    expect(r.grade).toBe('perfect');
     expect(r.timingScore).toBe(1.0);
   });
 
   it('guided mode: very-early press (count-in phase) is rejected', () => {
     s.mode = 'guided';
     // cur.timeMs = 1000 (mkNote default). elapsed = 500 → dtSigned = -500ms,
-    // well past the HIT_WINDOW_EARLY_MS = 120 budget.
+    // well past the profile's early budget.
     const r = matchNoteOnset(s, 60, { elapsed: 500 }, 0);
     expect(r.type).toBe('wrong-note');
   });
@@ -390,31 +433,115 @@ describe('finalizeNoteHold', () => {
 });
 
 // =====================================================================
-// resolveTimingGrade
+// Judgement profiles + judgeTiming
 // =====================================================================
 
-describe('resolveTimingGrade', () => {
-  const P = 90; // perfectMs; great defaults to 180
+describe('judge profiles', () => {
+  const PROFILES = [
+    ['MIDI', JUDGE_PROFILE_MIDI],
+    ['mic', JUDGE_PROFILE_MIC],
+  ] as const;
 
-  it('dead-on (|dt| ≤ perfectMs) → perfect', () => {
-    expect(resolveTimingGrade(0, P)).toBe('perfect');
-    expect(resolveTimingGrade(90, P)).toBe('perfect');
-    expect(resolveTimingGrade(-90, P)).toBe('perfect');
+  it('nests the tiers: perfect < great < good', () => {
+    for (const [name, p] of PROFILES) {
+      expect(p.perfectMs, name).toBeLessThan(p.greatMs);
+      expect(p.greatMs, name).toBeLessThan(p.goodMs);
+    }
   });
 
-  it('within the great band (≤ 2× perfect) → great', () => {
-    expect(resolveTimingGrade(120, P)).toBe('great');
-    expect(resolveTimingGrade(-180, P)).toBe('great');
+  it('puts every boundary on a whole 60 fps frame', () => {
+    // A genre convention (every published window is a multiple of 16.67 ms)
+    // and here also a correctness point: the rAF loop, the lane and the mic
+    // onset detector are all frame-quantized, so a sub-frame boundary would
+    // claim resolution the pipeline does not have.
+    for (const [name, p] of PROFILES) {
+      for (const ms of [p.perfectMs, p.greatMs, p.goodMs]) {
+        expect(Math.abs((ms / JUDGE_FRAME_MS) % 1), name).toBeLessThan(1e-9);
+      }
+    }
   });
 
-  it('beyond great → direction-aware early / late', () => {
-    expect(resolveTimingGrade(-200, P)).toBe('early'); // pressed before the beat
-    expect(resolveTimingGrade(200, P)).toBe('late'); // pressed after the beat
+  it('produces all three tiers inside each window', () => {
+    for (const [name, p] of PROFILES) {
+      const grades = [0, p.greatMs - 1, p.greatMs + 1].map((dt) => judgeTiming(dt, p).grade);
+      expect(grades, name).toEqual(['perfect', 'great', 'good']);
+    }
   });
 
-  it('honors a custom great window', () => {
-    expect(resolveTimingGrade(120, P, 100)).toBe('late'); // 120 > 100 great cap
-    expect(resolveTimingGrade(-120, P, 300)).toBe('great');
+  it('gives MIDI (exact input) tighter tiers than the mic', () => {
+    // The mic path cannot be judged tighter than its own detection jitter
+    // (FFT ~43 ms + frame quantization); MIDI has none of that.
+    expect(JUDGE_PROFILE_MIDI.perfectMs).toBeLessThan(JUDGE_PROFILE_MIC.perfectMs);
+    expect(JUDGE_PROFILE_MIDI.goodMs).toBeLessThan(JUDGE_PROFILE_MIC.goodMs);
+    expect(resolveJudgeProfile(true)).toBe(JUDGE_PROFILE_MIDI);
+    expect(resolveJudgeProfile(false)).toBe(JUDGE_PROFILE_MIC);
+  });
+
+  it('scales every boundary with the strictness setting', () => {
+    const strict = resolveJudgeProfile(true, 'strict');
+    const easy = resolveJudgeProfile(true, 'easy');
+    for (const k of ['perfectMs', 'greatMs', 'goodMs'] as const) {
+      expect(strict[k]).toBeLessThan(JUDGE_PROFILE_MIDI[k]);
+      expect(easy[k]).toBeGreaterThan(JUDGE_PROFILE_MIDI[k]);
+    }
+    // 'normal' returns the frozen base itself — identity, no copy.
+    expect(resolveJudgeProfile(true, 'normal')).toBe(JUDGE_PROFILE_MIDI);
+    expect(scaleJudgeProfile(JUDGE_PROFILE_MIDI, 1)).toBe(JUDGE_PROFILE_MIDI);
+  });
+
+  it('keeps the tiers nested at every strictness (no tier can collapse)', () => {
+    for (const strictness of ['easy', 'normal', 'strict'] as const) {
+      for (const exact of [true, false]) {
+        const p = resolveJudgeProfile(exact, strictness);
+        expect(p.perfectMs).toBeLessThan(p.greatMs);
+        expect(p.greatMs).toBeLessThan(p.goodMs);
+      }
+    }
+  });
+});
+
+describe('judgeTiming', () => {
+  const P = JUDGE_PROFILE_MIDI;
+
+  it('grades on |dt| alone — identical verdict either side of the beat', () => {
+    // Symmetric windows, and the same credit for the same distance. The old
+    // code credited 90 ms EARLY at 25 % and 90 ms LATE at 74 % while showing
+    // PERFECT for both, so an early-leaning learner could not clear the
+    // timing gate and was never told why.
+    for (const dt of [20, 70, 140, 199]) {
+      expect(judgeTiming(-dt, P).grade).toBe(judgeTiming(dt, P).grade);
+      expect(judgeTiming(-dt, P).score).toBe(judgeTiming(dt, P).score);
+      expect(judgeTiming(-dt, P).inWindow).toBe(judgeTiming(dt, P).inWindow);
+    }
+  });
+
+  it('credits exactly the tier weight — the two cannot drift apart', () => {
+    for (let dt = -P.goodMs; dt <= P.goodMs; dt += 3) {
+      const { grade, score } = judgeTiming(dt, P);
+      expect(score).toBe(TIER_SCORE[grade]);
+    }
+  });
+
+  it('places the tier boundaries where the profile says', () => {
+    expect(judgeTiming(P.perfectMs, P).grade).toBe('perfect');
+    expect(judgeTiming(P.perfectMs + 0.01, P).grade).toBe('great');
+    expect(judgeTiming(P.greatMs, P).grade).toBe('great');
+    expect(judgeTiming(P.greatMs + 0.01, P).grade).toBe('good');
+  });
+
+  it('reports the hit window through inWindow', () => {
+    expect(judgeTiming(P.goodMs, P).inWindow).toBe(true);
+    expect(judgeTiming(P.goodMs + 1, P).inWindow).toBe(false);
+    expect(judgeTiming(-P.goodMs - 1, P).inWindow).toBe(false);
+  });
+
+  it('never increases credit as the press gets worse', () => {
+    let prev = Infinity;
+    for (let dt = 0; dt <= P.goodMs; dt += 3) {
+      const sc = judgeTiming(dt, P).score;
+      expect(sc).toBeLessThanOrEqual(prev + 1e-9);
+      prev = sc;
+    }
   });
 });
 
@@ -441,16 +568,245 @@ describe('resolveLengthGrade', () => {
 });
 
 // =====================================================================
+// Judgement tally
+// =====================================================================
+
+describe('judge tally', () => {
+  it('starts zeroed and resets in place (same object identity)', () => {
+    const t = createJudgeTally();
+    expect(summarizeJudgements(t).judged).toBe(0);
+    recordTimingJudgement(t, 'perfect', 0);
+    recordMissJudgement(t);
+    recordLengthJudgement(t, 'long');
+    const before = t;
+    resetJudgeTally(t);
+    expect(t).toBe(before); // in place — no hidden-class churn mid-section
+    expect(summarizeJudgements(t).judged).toBe(0);
+    expect(t.holdLong).toBe(0);
+  });
+
+  it('counts each tier and accumulates signed + absolute offsets', () => {
+    const t = createJudgeTally();
+    recordTimingJudgement(t, 'perfect', 10);
+    recordTimingJudgement(t, 'great', -120);
+    recordTimingJudgement(t, 'good', 300);
+    recordMissJudgement(t);
+    expect(t.perfect).toBe(1);
+    expect(t.great).toBe(1);
+    expect(t.good).toBe(1);
+    expect(t.miss).toBe(1);
+    expect(judgeHits(t)).toBe(3);
+    expect(t.dtSumMs).toBe(190);
+    expect(t.dtAbsSumMs).toBe(430);
+    expect(t.dtSqSumMs).toBe(100 + 14400 + 90000);
+  });
+
+  it("reports hits and judged; the accuracy RATIO is the consumer's to define", () => {
+    // The summary deliberately does not carry an `accPct`: the live lane panel
+    // wants hits/judged while the result headline wants hits/section-target, and
+    // one field named "accuracy" meaning both is how the two surfaces came to
+    // disagree. It reports the counts; each surface divides them its own way.
+    const t = createJudgeTally();
+    recordTimingJudgement(t, 'perfect', 0);
+    recordTimingJudgement(t, 'great', 0);
+    recordTimingJudgement(t, 'good', 0);
+    recordMissJudgement(t);
+    const s = summarizeJudgements(t);
+    expect(s.hits).toBe(3);
+    expect(s.judged).toBe(4);
+  });
+
+  it('reports a late lean with its mean offset', () => {
+    const t = createJudgeTally();
+    for (const dt of [60, 80, 70, 90]) recordTimingJudgement(t, 'great', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('late');
+    expect(s.meanDtMs).toBe(75);
+  });
+
+  it('reports an early lean as a negative mean', () => {
+    const t = createJudgeTally();
+    for (const dt of [-60, -80, -70, -90]) recordTimingJudgement(t, 'great', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('early');
+    expect(s.meanDtMs).toBe(-75);
+  });
+
+  it('claims no lean inside the jitter threshold', () => {
+    const t = createJudgeTally();
+    for (const dt of [10, -12, 8, -6]) recordTimingJudgement(t, 'perfect', dt);
+    expect(summarizeJudgements(t).tendency).toBe('even');
+  });
+
+  it('claims no lean below the sample floor — 2 notes prove nothing', () => {
+    const t = createJudgeTally();
+    recordTimingJudgement(t, 'good', 300);
+    recordTimingJudgement(t, 'good', 300);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('even');
+    expect(s.meanDtMs).toBeNull();
+    expect(s.stdevMs).toBeNull();
+  });
+
+  it('offsets that cancel out read as even even when spread is wide', () => {
+    const t = createJudgeTally();
+    for (const dt of [200, -200, 180, -180]) recordTimingJudgement(t, 'good', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('even'); // no lean...
+    expect(s.meanDtMs).toBeCloseTo(0, 9);
+    expect(s.stdevMs).toBeGreaterThan(180); // ...but the spread still reports loose timing
+  });
+
+  it('names the dominant hold error, and only once it is established', () => {
+    const one = createJudgeTally();
+    recordLengthJudgement(one, 'short');
+    expect(summarizeJudgements(one).holdTendency).toBe('even'); // a single one isn't a habit
+
+    const short = createJudgeTally();
+    recordLengthJudgement(short, 'short');
+    recordLengthJudgement(short, 'short');
+    recordLengthJudgement(short, 'good');
+    const s = summarizeJudgements(short);
+    expect(s.holdTendency).toBe('short');
+    expect(s.holds).toBe(3);
+
+    const long = createJudgeTally();
+    recordLengthJudgement(long, 'long');
+    recordLengthJudgement(long, 'long');
+    recordLengthJudgement(long, 'short');
+    expect(summarizeJudgements(long).holdTendency).toBe('long');
+  });
+
+  it('flags a consistent one-sided lean as a likely SETUP problem, not a habit', () => {
+    // Every press off by ~+95 ms with almost no scatter: that signature is a
+    // configuration problem (note-fall speed or the audio offset), not a
+    // habit. Coaching the player to "press sooner" here would be asking them
+    // to compensate for our own settings.
+    const t = createJudgeTally();
+    for (const dt of [95, 92, 98, 94, 96]) recordTimingJudgement(t, 'great', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('late');
+    expect(s.looksLikeSetupIssue).toBe(true);
+  });
+
+  it('does NOT flag setup when the errors scatter (genuine unsteadiness)', () => {
+    // Same +95 ms mean lean, but the presses swing to both sides (meanAbs 155
+    // → consistency 0.61) → genuine unsteadiness, so it stays the player's to
+    // work on. The bar is deliberately low: coaching someone to compensate for
+    // OUR latency error is the more damaging mistake of the two.
+    const t = createJudgeTally();
+    for (const dt of [250, -100, 230, -50, 145]) recordTimingJudgement(t, 'good', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('late');
+    expect(s.looksLikeSetupIssue).toBe(false);
+  });
+
+  it('does NOT flag setup for a small consistent lean', () => {
+    const t = createJudgeTally();
+    for (const dt of [35, 34, 36, 35]) recordTimingJudgement(t, 'great', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('late'); // named as a habit…
+    expect(s.looksLikeSetupIssue).toBe(false); // …but 35 ms is not a calibration bug
+  });
+
+  it('never flags setup when there is no lean at all', () => {
+    const t = createJudgeTally();
+    for (const dt of [5, -6, 4, -3]) recordTimingJudgement(t, 'perfect', dt);
+    expect(summarizeJudgements(t).looksLikeSetupIssue).toBe(false);
+  });
+
+  it("reports the standard deviation — osu!'s unstable rate is it × 10", () => {
+    // Offsets ±30 around a mean of 0 → stdev 30, so UR 300.
+    const t = createJudgeTally();
+    for (const dt of [30, -30, 30, -30]) recordTimingJudgement(t, 'great', dt);
+    const s = summarizeJudgements(t);
+    expect(s.meanDtMs).toBeCloseTo(0, 9);
+    expect(s.stdevMs).toBeCloseTo(30, 9);
+  });
+
+  it('reports zero spread when every press landed identically', () => {
+    // Floating-point cancellation must not produce a negative variance here.
+    const t = createJudgeTally();
+    for (let i = 0; i < 5; i++) recordTimingJudgement(t, 'great', 77);
+    const s = summarizeJudgements(t);
+    expect(s.stdevMs).toBe(0);
+    expect(s.meanDtMs).toBeCloseTo(77, 9);
+  });
+
+  it('separates spread from lean — wide scatter can still centre on the beat', () => {
+    const t = createJudgeTally();
+    for (const dt of [200, -200, 180, -180]) recordTimingJudgement(t, 'good', dt);
+    const s = summarizeJudgements(t);
+    expect(s.tendency).toBe('even'); // no lean...
+    expect(s.stdevMs).toBeGreaterThan(150); // ...but the timing was nowhere near tight
+  });
+
+  it('thresholds are overridable', () => {
+    const t = createJudgeTally();
+    for (const dt of [10, 12, 11, 13]) recordTimingJudgement(t, 'perfect', dt);
+    expect(summarizeJudgements(t).tendency).toBe('even');
+    expect(summarizeJudgements(t, { tendencyMinMs: 5 }).tendency).toBe('late');
+  });
+});
+
+// =====================================================================
+// Hit-error ring
+// =====================================================================
+
+describe('judge error ring', () => {
+  it('reads back newest-first with an age index', () => {
+    const r = createJudgeErrorRing(4);
+    for (const dt of [10, 20, 30]) pushJudgeError(r, dt);
+    const seen: Array<[number, number]> = [];
+    forEachJudgeError(r, (dt, age) => seen.push([dt, age]));
+    expect(seen).toEqual([
+      [30, 0],
+      [20, 1],
+      [10, 2],
+    ]);
+  });
+
+  it('keeps only the most recent `size` presses', () => {
+    const r = createJudgeErrorRing(3);
+    for (const dt of [1, 2, 3, 4, 5]) pushJudgeError(r, dt);
+    const out: number[] = [];
+    forEachJudgeError(r, (dt) => out.push(dt));
+    expect(out).toEqual([5, 4, 3]);
+    expect(r.len).toBe(3);
+  });
+
+  it('empties in place, keeping the same buffer (no per-section allocation)', () => {
+    const r = createJudgeErrorRing(4);
+    const buf = r.buf;
+    pushJudgeError(r, 42);
+    resetJudgeErrorRing(r);
+    expect(r.len).toBe(0);
+    expect(r.buf).toBe(buf);
+    let calls = 0;
+    forEachJudgeError(r, () => calls++);
+    expect(calls).toBe(0);
+  });
+
+  it('preserves the sign, so the bar can show which side of the beat', () => {
+    const r = createJudgeErrorRing(4);
+    pushJudgeError(r, -55);
+    const out: number[] = [];
+    forEachJudgeError(r, (dt) => out.push(dt));
+    expect(out[0]).toBeCloseTo(-55, 4);
+  });
+});
+
+// =====================================================================
 // computeStars
 // =====================================================================
 
 describe('computeStars', () => {
   it('returns 3 stars when all thresholds clear', () => {
-    expect(computeStars(95, 80, 80)).toBe(3);
+    expect(computeStars(95, 90, 80)).toBe(3);
   });
 
   it('returns 2 stars when timing/dur are mid-tier', () => {
-    expect(computeStars(80, 50, 60)).toBe(2);
+    expect(computeStars(80, 60, 60)).toBe(2);
   });
 
   it('returns 1 star when only accuracy clears', () => {
@@ -462,11 +818,23 @@ describe('computeStars', () => {
   });
 
   it('treats null durPct as "ignore" (guided mode)', () => {
-    expect(computeStars(90, 70, null)).toBe(3);
+    expect(computeStars(90, 90, null)).toBe(3);
   });
 
   it('null durPct still requires acc + timing thresholds', () => {
-    expect(computeStars(85, 55, null)).toBe(2); // misses 3-star timing 60
+    expect(computeStars(85, 80, null)).toBe(2); // misses the 3-star timing gate
+  });
+
+  it('holds ★3 back from a dragging run the old flat curve let through', () => {
+    // A learner dragging ~120 ms scores ~64-78 % under judgeTiming. Under the
+    // previous `1 - |dt| / 350` curve that same run scored 63 % and cleared a
+    // 60 % gate, so ★3 said nothing about timing at all.
+    expect(computeStars(95, 70, 80)).toBe(2);
+    expect(computeStars(95, 88, 80)).toBe(3);
+  });
+
+  it('still lets any completed run reach ★2 (no punitive gating)', () => {
+    expect(computeStars(75, 56, 50)).toBe(2);
   });
 
   it('STAR_TIERS is ordered descending by stars', () => {

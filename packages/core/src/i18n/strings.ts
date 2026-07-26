@@ -36,6 +36,25 @@ export const T_STRINGS: TranslationTable = {
     jp: '自動検出値を使用中（現在: {v} ms）',
     de: 'Automatisch erkannter Wert aktiv (aktuell {v} ms)',
   },
+  /** Raw AudioContext.outputLatency, when the platform actually reports one. */
+  audioOffsetMeasuredFmt: {
+    en: 'This device reports {v} ms of audio output delay',
+    jp: 'この端末の音声出力遅延: 実測 {v} ms',
+    de: 'Dieses Gerät meldet {v} ms Ausgabeverzögerung',
+  },
+  /** Shown INSTEAD of the reading when the platform reports nothing.
+   *
+   *  iOS WKWebView returns 0 for `AudioContext.outputLatency`, so the
+   *  auto-detect can never fire there and silently falls back to a default that
+   *  is ~170 ms short of a real Bluetooth route. Printing "0 ms" as if it were
+   *  a measurement is worse than useless — 0 means "not measured", and the only
+   *  path that works on this platform is the tap-along calibration, so say so
+   *  and point at it. */
+  audioOffsetUnmeasurable: {
+    en: "This device doesn't report its audio delay, so it can't be detected automatically — use 🎯 Tap-along auto-set below to measure it.",
+    jp: 'この端末は音声遅延を報告しないため、自動検出できません — 下の 🎯 タップで自動そくてい で測ってください。',
+    de: 'Dieses Gerät meldet seine Audioverzögerung nicht, also ist keine automatische Erkennung möglich — nutze unten 🎯 Antippen zum Einmessen.',
+  },
   resetToAuto: {
     en: 'Use auto-detected value',
     jp: '自動検出に戻す',
@@ -44,6 +63,31 @@ export const T_STRINGS: TranslationTable = {
   input: { en: 'Input', jp: '入力', de: 'Eingabe' },
   micInput: { en: 'Mic input', jp: 'マイク入力', de: 'Mikrofon' },
   micStandby: { en: 'Standby', jp: '待機中', de: 'Bereit' },
+  // Input source selector (auto / keyboard / mic). The genre standard is
+  // auto-detect by default with an explicit, sticky override — see
+  // @piano/core state/input-source.ts for why this has to be selectable.
+  inputSource: { en: 'Listen to', jp: '音を拾う入力', de: 'Eingabequelle' },
+  inputAuto: { en: 'Auto', jp: 'おまかせ', de: 'Auto' },
+  inputMidiOnly: { en: '🎹 Keyboard', jp: '🎹 キーボード', de: '🎹 Keyboard' },
+  inputMicOnly: { en: '🎙️ Mic', jp: '🎙️ マイク', de: '🎙️ Mikrofon' },
+  inputSourceHelp: {
+    en: 'Auto uses your keyboard when one is connected, otherwise the microphone. Pick one to keep it fixed — handy when a keyboard is plugged in but you want to play an acoustic piano.',
+    jp: '「おまかせ」はキーボードが繋がっていればキーボード、無ければマイクを使います。固定したいときはどちらかを選んでください — キーボードを繋いだままアコースティックピアノを弾きたいときに便利です。',
+    de: 'Auto nutzt das Keyboard, wenn eines verbunden ist, sonst das Mikrofon. Wähle eines, um es festzulegen — praktisch, wenn ein Keyboard angeschlossen ist, du aber ein akustisches Klavier spielen willst.',
+  },
+  /** A keyboard is connected but the player pinned the mic — the one state that
+   *  reads as a bug unless the app says it out loud. */
+  inputMidiIdleFmt: {
+    en: 'not using {v}',
+    jp: '{v} は使いません',
+    de: '{v} wird nicht genutzt',
+  },
+  /** Pinned to keyboard with nothing connected. */
+  inputWaitingMidi: {
+    en: 'Waiting for a keyboard…',
+    jp: 'キーボードを待っています…',
+    de: 'Warte auf ein Keyboard…',
+  },
   scanMidi: {
     en: 'Scan for MIDI keyboard',
     jp: 'MIDIキーボードを探す',
@@ -266,11 +310,65 @@ export const T_STRINGS: TranslationTable = {
     jp: '👆 クリックに合わせてここをタップ！',
     de: '👆 Tippe hier im Takt des Klicks!',
   },
+  /** Shown instead of the above when a keyboard is connected. Calibrating on the
+   *  instrument you actually play is the standard (Rocksmith calibrates from the
+   *  guitar): touch input costs 20-50 ms against BLE-MIDI's ~5 ms, so measuring
+   *  by touch and then playing on the keys bakes that difference in — and the
+   *  player's own bias only cancels if the same input measured it. */
+  calibratePlayHere: {
+    en: '🎹 Play any key with the click!',
+    jp: '🎹 クリックに合わせて鍵盤をおして！',
+    de: '🎹 Spiele im Takt des Klicks eine Taste!',
+  },
+  /** Names which input the measurement was taken on, so a later result is
+   *  interpretable — a touch-measured offset does not apply to keyboard play. */
+  calibrateDoneOnFmt: {
+    en: 'Done! Offset set to {v} ms (measured on {i})',
+    jp: 'できた！ズレを {v} ms に合わせたよ（{i} で測定）',
+    de: 'Fertig! Versatz auf {v} ms (gemessen mit {i})',
+  },
   calibrateListen: {
     en: 'Listen… clicks starting',
     jp: 'よく聞いてね…クリックが始まるよ',
     de: 'Hör gut zu… die Klicks starten',
   },
+  /** Wrong-input nudges. A tap that does nothing with no explanation reads as a
+   *  broken button, so the run says which input it locked onto. */
+  calibrateUseKeyboard: {
+    en: '🎹 Use the keyboard for this measurement',
+    jp: '🎹 いまは鍵盤をおしてね',
+    de: '🎹 Nutze für diese Messung das Keyboard',
+  },
+  calibrateUseTouch: {
+    en: '👆 Use the pad for this measurement',
+    jp: '👆 いまは画面をタップしてね',
+    de: '👆 Nutze für diese Messung das Feld',
+  },
+  /** Rejected run. Storing the median of taps that were not locked to the click
+   *  would put the player permanently off-beat with no clue why. */
+  /** The stored offset was measured with the on-screen button while the player
+   *  now plays an instrument. Screen touch costs 20-50 ms against BLE-MIDI's
+   *  ~5 ms, so that difference is baked into the value permanently. */
+  audioOffsetInputStale: {
+    en: 'measured by tapping the screen — re-measure while playing',
+    jp: '画面タップで測定した値です — 弾きながら測り直してください',
+    de: 'per Bildschirm-Tipp gemessen — beim Spielen neu messen',
+  },
+  /** What the stored offset was measured with, shown next to the value. */
+  audioOffsetByFmt: { en: 'measured by {v}', jp: '{v} で測定', de: 'gemessen mit {v}' },
+  calibrateUnstable: {
+    en: 'Taps were uneven — try again, and follow the click closely',
+    jp: 'タップがバラついたよ — クリックによく合わせて、もう一回',
+    de: 'Zu ungleichmäßig — versuch es nochmal, genau im Takt',
+  },
+  /** The stored offset was measured on a different output route. Recalibrating
+   *  after a hardware change is the standard advice; we can detect it. */
+  audioOffsetStaleFmt: {
+    en: 'Output changed since you measured ({v}) — measure again',
+    jp: '測ったとき（{v}）と音の出口が変わってるよ — 測り直してね',
+    de: 'Ausgabe hat sich seit der Messung geändert ({v}) — neu einmessen',
+  },
+  calibrateInputTouch: { en: 'touch', jp: '画面タップ', de: 'Touch' },
   calibrateTap: { en: '{n} / {total}', jp: '{n} / {total}', de: '{n} / {total}' },
   calibrateDone: {
     en: 'Done! Offset set to {v} ms',
@@ -345,6 +443,24 @@ export const T_STRINGS: TranslationTable = {
     de: 'Jetzt spiel es mal.',
   },
   tryPlayingNow: { en: '▶ Try playing', jp: '▶ 弾いてみる', de: '▶ Selbst spielen' },
+  // Non-scored run (listen / guided): the one fact such a run genuinely
+  // produces. It was already being banked into today's minutes and never shown,
+  // so the card had nothing true to say and fell back to a score of 0 %.
+  // Framed as a credit, never as a target — there is no goal to fall short of.
+  listenTimeFmt: {
+    en: '🎧 Listened {t} — listening is practice too',
+    jp: '🎧 {t}きいたよ ・ きくのも練習のうち',
+    de: '🎧 {t} zugehört — Zuhören ist auch Üben',
+  },
+  guidedTimeFmt: {
+    en: '✨ Practised {t}',
+    jp: '✨ {t}練習したよ',
+    de: '✨ {t} geübt',
+  },
+  /** Durations on the result card. Seconds under a minute — a 40-second section
+   *  rounded to "1 min" would be the app inventing practice time. */
+  durSecFmt: { en: '{v}s', jp: '{v}秒', de: '{v}s' },
+  durMinSecFmt: { en: '{m}m {s}s', jp: '{m}分{s}秒', de: '{m}m {s}s' },
   stretchBtn: {
     en: '🌳 Try a stretch piece',
     jp: '🌳 ちがう曲に挑戦',
@@ -378,7 +494,6 @@ export const T_STRINGS: TranslationTable = {
   // Practice HUD
   score: { en: 'Score', jp: '楽譜', de: 'Noten' },
   quit: { en: 'Quit', jp: 'やめる', de: 'Beenden' },
-  inputSource: { en: 'Input source', jp: '入力ソース', de: 'Eingabequelle' },
   // Result screen
   pitchAccuracy: { en: 'Pitch accuracy', jp: '音程の正確さ', de: 'Tongenauigkeit' },
   timing: { en: 'Timing', jp: 'タイミング', de: 'Timing' },
@@ -389,24 +504,40 @@ export const T_STRINGS: TranslationTable = {
   songSelect: { en: 'Song select', jp: 'きょく選択', de: 'Stück wählen' },
   tryAgainBtn: { en: 'Try again', jp: 'もう一度', de: 'Nochmal' },
   nextBtn: { en: 'Next →', jp: 'つぎへ →', de: 'Weiter →' },
-  // Hit chips / dynamic
-  perfect: { en: 'Perfect!', de: 'Perfekt!' },
-  nice: { en: 'Nice!', de: 'Toll!' },
-  missChip: { en: 'Miss', jp: 'ミス', de: 'Daneben' },
-  youPlayedFmt: { en: 'You played: {v}', jp: '弾いた音: {v}', de: 'Gespielt: {v}' },
-  tooShort: { en: '⏱ Too short', jp: '⏱ 短い', de: '⏱ Zu kurz' },
-  tooLong: { en: '⏱ Too long', jp: '⏱ 長い', de: '⏱ Zu lang' },
-  // Per-note timing grades (real-time, direction-aware). `perfect` is reused for
-  // the top tier; these cover the rest. Celebratory tiers stay English-styled
-  // (like perfect/nice); the corrective ones carry JP so the nudge is clear.
-  gradeGreat: { en: 'Great!', de: 'Super!' },
-  gradeEarly: { en: '⏱ A little early', jp: '⏱ ちょっと早いよ', de: '⏱ Etwas früh' },
-  gradeLate: { en: '⏱ A little late', jp: '⏱ ちょっと遅いよ', de: '⏱ Etwas spät' },
-  // Per-note length grades (on release). Two-sided — a good hold is celebrated,
-  // not only off-length ones flagged. Gentle, no shame (banned-list).
-  lengthGood: { en: '✓ Nice hold!', jp: '✓ いい長さ！', de: '✓ Schön gehalten!' },
-  lengthShort: { en: '⏱ Hold a bit longer', jp: '⏱ もう少し長く', de: '⏱ Etwas länger halten' },
-  lengthLong: { en: '⏱ A bit long', jp: '⏱ 少し長いよ', de: '⏱ Etwas zu lang' },
+  // ── Per-note judgement vocabulary (ONE language, every locale) ──
+  // The words that flash on a note the moment it is played. Deliberately NOT
+  // translated, for two reasons:
+  //   1. Consistency. The set used to be half-translated — a JP player saw
+  //      "Perfect!" / "Great!" (loanwords, no `jp` entry) mixed with
+  //      「⏱ ちょっと早いよ」「弾いた音: C4」 inside the same passage, which
+  //      reads as a bug rather than as a system.
+  //   2. It is the genre convention. Japanese rhythm games (beatmania, DDR,
+  //      SDVX, CHUNITHM, maimai) all label judgements in short English caps
+  //      over a Japanese UI, because a verdict has to be readable in
+  //      peripheral vision in well under 200 ms.
+  // Anything that ISN'T a momentary verdict — settings, result prose, the lane
+  // hand labels — stays fully localized (see the rest of this table).
+  //
+  // These are the TIERS ONLY: quality, never direction. There is deliberately
+  // no per-note "early / late" wording. Direction is shown as a distribution
+  // (the lane's hit-error bar and the result chart), which teaches more than a
+  // label and stays clear of the fast/slow-indicator patent Konami holds —
+  // the one DJMAX removed its own implementation over.
+  perfect: { en: 'PERFECT' },
+  gradeGreat: { en: 'GREAT' },
+  gradeGood: { en: 'GOOD' },
+  missChip: { en: 'MISS' },
+  /** Wrong key. The note name IS the feedback — it reads at a glance and
+   *  needs no translation, unlike the sentence this replaced. */
+  youPlayedFmt: { en: '✗ {v}' },
+  /** Release verdicts. "HOLD" names the dimension, so a release chip can't be
+   *  misread as a timing verdict; the word is the instruction. These are the
+   *  one place a direction is named per note, and they are safe: a note's
+   *  LENGTH is a different quantity from its timing, and the genre's hold
+   *  judgements (IIDX's hold NG, CHUNITHM's hold ticks) are likewise
+   *  direction-bearing. */
+  lengthShort: { en: 'HOLD LONGER' },
+  lengthLong: { en: 'HOLD SHORTER' },
   // Lane labels
   laneLeft: { en: 'LEFT', jp: '左手', de: 'LINKS' },
   laneRight: { en: 'RIGHT', jp: '右手', de: 'RECHTS' },
@@ -603,6 +734,94 @@ export const T_STRINGS: TranslationTable = {
   // Two-line chart legend (accuracy = gold, timing = cyan).
   legendAccuracy: { en: 'Acc', jp: '正確さ', de: 'Treffer' },
   legendTiming: { en: 'Time', jp: 'テンポ', de: 'Tempo' },
+  // ── Result: per-note judgement breakdown (the genre-standard result table) ──
+  // The COUNT LABELS are the untranslated judgement vocabulary (see the
+  // per-note block above — the result has to use the same words the player just
+  // saw on each note, or the two surfaces read as unrelated systems). The prose
+  // around them IS localized: it is coaching, not a verdict.
+  /** Analysis disclosure + the self-referenced record chip. */
+  resDetailsShow: { en: '▾ Show details', jp: '▾ くわしく見る', de: '▾ Details' },
+  resDetailsHide: { en: '▴ Hide details', jp: '▴ とじる', de: '▴ Zuklappen' },
+  resNewRecord: { en: 'NEW RECORD', jp: '自己ベスト', de: 'NEUER REKORD' },
+  judgeTitle: { en: 'Every note', jp: '1音ずつの判定', de: 'Note für Note' },
+  judgeHoldTitle: { en: 'Note length', jp: '音の長さ', de: 'Tonlänge' },
+  /** SPREAD only — the consistency half. Deliberately not the mean: the signed
+   *  mean is already in the tendency line below, and showing a mean-absolute
+   *  figure next to it produced two adjacent lines both claiming to be "the
+   *  average deviation" with different numbers (57 vs +39), which reads as a
+   *  contradiction. The genre quotes exactly this pair — mean error for bias
+   *  (the tendency line) and the standard deviation for consistency (osu!'s
+   *  unstable rate is this × 10) — and never a mean-absolute alongside them.
+   *  "ばらつき" rather than "安定度" because a BIGGER number is worse here. */
+  judgeSpreadFmt: {
+    en: 'Spread ±{s} ms',
+    jp: 'ばらつき ±{s} ms',
+    de: 'Streuung ±{s} ms',
+  },
+  /** Direction + the one adjustment it implies. Derived from the aggregate
+   *  mean, never shown per note. */
+  judgeTendencyLateFmt: {
+    en: 'Your notes land a little after the beat (+{v} ms) — try pressing a touch sooner.',
+    jp: '拍より少しあとに鳴ってるよ（+{v} ms）— ほんの少し早く押してみよう。',
+    de: 'Deine Töne kommen etwas nach dem Schlag (+{v} ms) — drücke einen Hauch früher.',
+  },
+  judgeTendencyEarlyFmt: {
+    en: 'Your notes land a little before the beat (−{v} ms) — try waiting a touch longer.',
+    jp: '拍より少し先に鳴ってるよ（−{v} ms）— ほんの少し待ってみよう。',
+    de: 'Deine Töne kommen etwas vor dem Schlag (−{v} ms) — warte einen Hauch länger.',
+  },
+  judgeTendencyEven: {
+    en: 'Centred on the beat — no lean either way. ✨',
+    jp: '拍のまん中！ どちらにもズレていないよ ✨',
+    de: 'Genau auf dem Schlag — keine Tendenz. ✨',
+  },
+  /** Shown INSTEAD of the lean line when the offset looks like a SETUP problem
+   *  (JudgeSummary.looksLikeSetupIssue): big, and almost every press off the
+   *  same way. Note the order — note speed first, then audio offset. That is
+   *  beatmania's own documented procedure (adjust scroll speed before offset
+   *  when the early/late balance is skewed), and both are our settings, not the
+   *  player's playing. */
+  judgeSetupSuspectFmt: {
+    en: 'Every note is off by about the same {v} ms. That usually means a setting, not your playing — try ⚙ Note speed first, then ⚙ Timing Calibration.',
+    jp: 'どの音もほぼ同じだけ（約{v} ms）ズレてるよ。演奏ではなく設定かも — ⚙ の「ノーツ速度」、次に「タイミング調整」を見てみて。',
+    de: 'Alle Töne sind um fast dieselben {v} ms verschoben — das ist meist eine Einstellung, nicht dein Spiel. Probiere ⚙ Notengeschwindigkeit, dann ⚙ Timing einstellen.',
+  },
+  judgeHoldShort: {
+    en: 'Most notes let go a little early — hold until the next one.',
+    jp: '手をはやく離しぎみ — つぎの音までのばしてみよう。',
+    de: 'Du lässt meist etwas früh los — halte bis zur nächsten Note.',
+  },
+  judgeHoldLong: {
+    en: 'Most notes held a little long — lift just before the next one.',
+    jp: 'のばしすぎぎみ — つぎの音の直前で離そう。',
+    de: 'Du hältst meist etwas zu lang — hebe kurz vorher ab.',
+  },
+  /** Conditions the run was judged under. Records have to carry these or two
+   *  attempts aren't comparable — osu! shows the beatmap's OD, beatmania shows
+   *  the chart's judge windows. `i` is the input path, `j` the strictness. */
+  judgeCondFmt: {
+    en: 'Judgement: {j} · Input: {i}',
+    jp: '判定: {j} ・ 入力: {i}',
+    de: 'Bewertung: {j} · Eingabe: {i}',
+  },
+  /** Centre label on the error-distribution scale. */
+  judgeOnBeat: { en: 'on the beat', jp: '拍のまん中', de: 'auf dem Schlag' },
+  judgeInputMidi: { en: 'MIDI' },
+  judgeInputMic: { en: 'Mic', jp: 'マイク', de: 'Mikrofon' },
+  // ── Judgement strictness setting ──
+  // The standard way strictness is expressed: visible, player-chosen, and
+  // reported with the result (osu!'s Overall Difficulty, StepMania's
+  // TimingWindowScale, beatmania's per-chart windows). Without it the windows
+  // would still change silently when a MIDI keyboard is plugged in.
+  judgeStrictness: { en: 'Judgement', jp: '判定の厳しさ', de: 'Bewertung' },
+  judgeEasy: { en: '🍃 Easy', jp: '🍃 やさしい', de: '🍃 Leicht' },
+  judgeNormal: { en: 'Normal', jp: 'ふつう', de: 'Normal' },
+  judgeStrict: { en: '🎯 Strict', jp: '🎯 きびしい', de: '🎯 Streng' },
+  judgeStrictnessHelp: {
+    en: 'How close to the beat a note has to be. Mic input is always given a little more room than MIDI — it cannot be measured as precisely.',
+    jp: 'どれだけ拍に近ければ良い判定になるか。マイク入力は MIDI より少し広め — 検出の精度が原理的に落ちるため。',
+    de: 'Wie genau eine Note am Schlag liegen muss. Mikrofon-Eingabe bekommt stets etwas mehr Spielraum als MIDI — sie ist nicht so genau messbar.',
+  },
   sustainLabel: { en: 'SUSTAIN', de: 'SUSTAIN' },
   // Free-play HUD (session status while playing without a song)
   listeningFmt: { en: '{p}Listening{p}', jp: '{p}きいてるよ{p}', de: '{p}Ich höre zu{p}' },

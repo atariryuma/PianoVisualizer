@@ -258,7 +258,12 @@ describe('pickAudioOffsetMs', () => {
     ).toBe(60);
   });
 
-  it('clamps to maxClampMs (default 200) so AirPods 250 ms tail is bounded', () => {
+  it('accepts a real Bluetooth reading instead of clamping it away', () => {
+    // Regression guard: the cap used to be 200 ms, which is BELOW what the
+    // platform needing it most actually reports (iOS WKWebView 180-400 ms;
+    // Bluetooth output alone 150-250 ms). A genuine 260 ms reading was clamped
+    // to 200, leaving the player permanently judged ~60 ms late with no way to
+    // correct it — the slider and the tap calibration capped at 200 as well.
     expect(
       pickAudioOffsetMs({
         userOverrideMs: null,
@@ -266,7 +271,18 @@ describe('pickAudioOffsetMs', () => {
         reportedBaseMs: 20,
         defaultMs: 40,
       })
-    ).toBe(200);
+    ).toBe(260);
+  });
+
+  it('still bounds an implausible reading (default cap 400)', () => {
+    expect(
+      pickAudioOffsetMs({
+        userOverrideMs: null,
+        reportedOutMs: 900,
+        reportedBaseMs: 50,
+        defaultMs: 40,
+      })
+    ).toBe(400);
   });
 
   it('honors custom maxClampMs', () => {

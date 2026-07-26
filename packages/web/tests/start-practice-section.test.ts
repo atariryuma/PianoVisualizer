@@ -764,3 +764,65 @@ describe('startPracticeSection — 再入ライフサイクル', () => {
     expect(clearPracticePause).toHaveBeenCalledOnce();
   });
 });
+
+// ── native audio-latency probe (iOS) ─────────────────────────────────
+// WebKit reports 0 for AudioContext.outputLatency on every Apple platform, so
+// the auto-detect could only ever fall back to the default there — ~170 ms
+// short of a real Bluetooth route, leaving every iPad user judged permanently
+// late until they found the tap-along calibration by hand. AVAudioSession has
+// the true figure; these pin that it is what gets fed to pickAudioOffsetMs.
+
+describe('createStartPracticeSection — audio latency source', () => {
+  it('feeds the OS reading to pickAudioOffsetMs instead of the AudioContext 0', async () => {
+    const fx = makeFixture();
+    // WebKit-style context: reports nothing.
+    const ctx = (fx.tone as unknown as { context: Record<string, unknown> }).context;
+    ctx.rawContext = { outputLatency: 0, baseLatency: 0 };
+    fx.deps.getNativeAudioLatencyMs = () => 210;
+    await fx.start(0);
+    expect(fx.spies.pickAudioOffsetMs).toHaveBeenCalledWith(
+      expect.objectContaining({ reportedOutMs: 210, reportedBaseMs: 0 })
+    );
+  });
+
+  it('falls back to the AudioContext reading when the OS reports nothing', async () => {
+    const fx = makeFixture();
+    fx.deps.getNativeAudioLatencyMs = () => null;
+    await fx.start(0);
+    // Fixture context: outputLatency 0.04 s, baseLatency 0.005 s.
+    expect(fx.spies.pickAudioOffsetMs).toHaveBeenCalledWith(
+      expect.objectContaining({ reportedOutMs: 40, reportedBaseMs: 5 })
+    );
+  });
+
+  it('works with no native bridge wired at all (web build)', async () => {
+    const fx = makeFixture();
+    expect(fx.deps.getNativeAudioLatencyMs).toBeUndefined();
+    await fx.start(0);
+    expect(fx.spies.pickAudioOffsetMs).toHaveBeenCalledWith(
+      expect.objectContaining({ reportedOutMs: 40 })
+    );
+  });
+
+  it('passes the user override through untouched', async () => {
+    const fx = makeFixture({ prefs: { audioOffsetMs: 120 } });
+    await fx.start(0);
+    expect(fx.spies.pickAudioOffsetMs).toHaveBeenCalledWith(
+      expect.objectContaining({ userOverrideMs: 120 })
+    );
+  });
+
+  it('does not even probe the OS when the player has an override', async () => {
+    // `pickAudioOffsetMs` returns `userOverrideMs` and never reads the
+    // measurement, so for anyone who has moved the slider or calibrated, the
+    // probe is a Capacitor round-trip per section start — every retry, every
+    // loop lap — whose result is discarded. (Its other consumer, the
+    // `[Practice]` remoteLog line, is hard-disabled on the native build, which
+    // is the only platform where the bridge call exists at all.)
+    const fx = makeFixture({ prefs: { audioOffsetMs: 120 } });
+    const probe = vi.fn(async () => 210);
+    fx.deps.getNativeAudioLatencyMs = probe;
+    await fx.start(0);
+    expect(probe).not.toHaveBeenCalled();
+  });
+});

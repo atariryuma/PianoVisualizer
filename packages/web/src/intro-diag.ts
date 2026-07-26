@@ -22,6 +22,8 @@
 //     have plain-English fallbacks so the hint still renders if i18n
 //     translates to undefined.
 
+import { isPinnedTo, type InputSourcePref } from '@piano/core';
+
 export interface IntroDiagStateRef {
   /** Last-applied diagnostic thunk, re-run on language change. `null`
    *  when no diag is showing. */
@@ -47,6 +49,27 @@ export interface IntroDiagDeps {
    *  「⚙ → 🔵 でつなぐ」の実手順を出す（WMB 文言はネイティブでは意味不明）。
    *  省略時 false（旧挙動）。 */
   hasNativePairing?: () => boolean;
+  /**
+   * Is `navigator.requestMIDIAccess` OUR OWN native polyfill (the Capacitor
+   * build) rather than a third-party iOS wrapper's?
+   *
+   * The waiting hint exists for Web MIDI Browser, where the microphone is not
+   * available at all — there, a keyboard really is the only way to play, so
+   * "waiting for MIDI, go pair one" is the correct and helpful thing to say. Our
+   * own app has a working mic, so the same message is simply wrong: it tells a
+   * player whose microphone is live that nothing is listening.
+   *
+   * It was shown anyway because the gate is `isAppleMobile && requestMIDIAccess
+   * exists`, and on the native build that function exists because WE installed
+   * it. Same misclassification as the mic skip in mic-lifecycle.
+   *
+   * Optional; absent → treated as foreign, i.e. the previous behaviour.
+   */
+  isOwnWebMidiPolyfill?: () => boolean;
+  /** The player's input-source setting. Pinned to `midi` means the hint IS right
+   *  even on our own build — they asked for keyboard-only and none is attached,
+   *  so nothing else is going to listen. */
+  getInputSourcePref?: () => InputSourcePref;
   /** i18n. */
   t: (key: string) => string;
 }
@@ -91,6 +114,15 @@ export function createIntroDiag(deps: IntroDiagDeps): IntroDiag {
 
   const showMidiWaitingHint = (): void => {
     if (!deps.isAppleMobile() || !deps.hasRequestMIDIAccess()) return;
+    // Our own native app has a microphone, so there is nothing to wait FOR —
+    // unless the player pinned the keyboard, in which case nothing else is
+    // listening and the nudge is exactly right. (See isOwnWebMidiPolyfill.)
+    if (
+      deps.isOwnWebMidiPolyfill?.() &&
+      !isPinnedTo(deps.getInputSourcePref?.() ?? 'auto', 'midi')
+    ) {
+      return;
+    }
     // Once per session — re-shows would noise up the lifecycle.
     // (attach は state._midiWaitingShown を false に戻すので、切断→ゼロ
     // ポートに戻ったときは再表示できる。)

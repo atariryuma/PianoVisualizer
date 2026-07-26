@@ -26,6 +26,7 @@ import * as ShellHelpers from './shell-helpers';
 import * as DomBag from './dom-bag';
 import * as CoreOpts from './core-opts';
 import * as PracticeStateInit from './practice-state-init';
+import * as NativeMidiPolyfill from './native-midi-polyfill';
 
 export interface ShellPracticeDeps {
   state: InitialGameState;
@@ -49,11 +50,15 @@ export interface ShellPracticeDeps {
   Tone: any;
   loadCurrentScore: () => Promise<void>;
   osmdAdapter: any;
-  /** Render-tick deps — practiceTick uses getOsmd + the live midiInput.
+  /** Render-tick deps — practiceTick uses getOsmd.
    *  Getter so the practice cluster can be built before ShellMidi (which
    *  has back-references the other way). */
   getOsmd: () => any;
-  getMidiInput: () => any;
+  /** Is MIDI the input that drives scoring + visuals? (prefs.inputSource ×
+   *  a port being attached — ShellMidi.isMidiActive.) Never captured: the
+   *  setting and the hardware both change mid-section, and both move the
+   *  judgement windows. */
+  isMidiActive: () => boolean;
   /** Live midiState — cleared at section start so a prior session's
    *  keyboard residue (held keys, sustain, recent chord) doesn't bleed
    *  into the new section. Getter thunk so the practice cluster can
@@ -125,6 +130,10 @@ export interface ShellPractice {
   /** レイテンシ較正 (P2-22) 用の楽器アクセサ。 */
   ensureToneInstruments: () => void;
   getToneInstruments: () => { piano: any; metronome: any; melody: any };
+  /** Judgement windows currently in force (active input path × strictness).
+   *  The lane reads this every frame so the drawn bands always match what the
+   *  scoring will actually apply. */
+  getJudgeProfile: () => PianoCore.JudgeProfile;
   /** Setter so SelectSong can register a new "lane" reference. */
   setPracticeLane: (lane: any) => void;
   /** Late-bound deps the practice-tick needs (resolves at fire time). */
@@ -146,6 +155,31 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const practice = PracticeStateInit.createInitialPractice(
     prefs.audioOffsetMs != null ? prefs.audioOffsetMs : deps.defaultAudioOffsetMs
   );
+
+  /** Judgement windows currently in force: the active input path's profile
+   *  scaled by the player's strictness setting. Never captured — a keyboard can
+   *  be hot-plugged and the setting changed mid-section, and the auto-miss
+   *  deadline plus the lane's drawn bands must both follow, or the game shows
+   *  one contract and applies another.
+   *
+   *  Memoized on the strictness, because `resolveJudgeProfile` allocates a fresh
+   *  object at any scale other than 1× and there are THREE per-frame readers
+   *  (the tick's deadline, the lane's bands, the scoring's per-event profile) —
+   *  that was ~180 short-lived objects a second on easy/strict for a value that
+   *  only changes when the player touches the setting. */
+  let _jpStrictness: PianoCore.JudgeStrictness | null = null;
+  let _jpMidi: PianoCore.JudgeProfile | null = null;
+  let _jpMic: PianoCore.JudgeProfile | null = null;
+  function judgeProfileFor(isExactInput: boolean): PianoCore.JudgeProfile {
+    const strictness = prefs.judgeStrictness;
+    if (_jpStrictness !== strictness || !_jpMidi || !_jpMic) {
+      _jpStrictness = strictness;
+      _jpMidi = PianoCore.resolveJudgeProfile(true, strictness);
+      _jpMic = PianoCore.resolveJudgeProfile(false, strictness);
+    }
+    return isExactInput ? _jpMidi : _jpMic;
+  }
+  const activeJudgeProfile = (): PianoCore.JudgeProfile => judgeProfileFor(deps.isMidiActive());
 
   const _practiceTimings = PracticeTimings.createPracticeTimings({
     getPractice: () => practice,
@@ -188,9 +222,16 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     state,
     practice,
     tuning: {
-      hitWindowEarlyMs: PianoCore.HIT_WINDOW_EARLY_MS,
-      hitWindowMs: PianoCore.HIT_WINDOW_MS,
-      perfectMs: PianoCore.PERFECT_MS,
+      // 判定窓は入力パスごと（MIDI は sample 正確、マイクは ±30-40ms の
+      // 検出ジッタ）× ユーザーが選ぶ厳しさ。matchNoteOnset が isExact で
+      // 毎イベント選ぶので、getter で都度解決する（設定を即時反映 +
+      // セクション途中のホットプラグにも追従）。
+      get judgeMidi() {
+        return judgeProfileFor(true);
+      },
+      get judgeMic() {
+        return judgeProfileFor(false);
+      },
       chordMateToleranceMs: PianoCore.CHORD_MATE_TOLERANCE_MS,
       durationMinTolMs: PianoCore.DURATION_MIN_TOL_MS,
       durationTolFraction: PianoCore.DURATION_TOL_FRACTION,
@@ -270,9 +311,10 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       song: deps.getCurrentSong(),
       practice,
       countInMs: COUNT_IN_MS,
-      // Mic mode = no MIDI keyboard attached. Chords relax to their top
-      // note so the single-pitch detector can't rack up structural misses.
-      micMode: !deps.getMidiInput().enabled,
+      // Mic mode = the mic is the ACTIVE input (no keyboard, or the player
+      // pinned the mic). Chords relax to their top note so the single-pitch
+      // detector can't rack up structural misses.
+      micMode: !deps.isMidiActive(),
     }) as any;
   const buildSectionNotes = (sectionIdx: number) =>
     SectionNotes.buildSectionNotes(sectionIdx, _sectionNotesArgs());
@@ -356,7 +398,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
         'osmdContainer'
       ),
       // 進捗バー（B1）— 旧 DOM には無いので optional 直参照。
-      ptbProgressFill: (dom as any).ptbProgressFill ?? null,
+      ptbProgressFill: dom.ptbProgressFill,
     } as any,
     loadCurrentScore: deps.loadCurrentScore,
     // sectionIdx を貫通させる — start 時は practice.sectionIdx がまだ
@@ -371,6 +413,21 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
     buildLaneBeatGrid,
     setLaneBeatGrid: (events: Array<{ timeMs: number; accent: boolean }> | null) =>
       practiceLaneRef.current?.setBeatGrid?.(events),
+    // 判定カウンタ + 誤差リングを in-place で 0 に（同一オブジェクトを使い回す）。
+    // OS 実測の出力遅延（AVAudioSession）。ブリッジは非同期なので、直近の
+    // 解決値をここから同期で返しつつ、同時に次回用の再読込を仕掛ける
+    // （セッション中に AirPods が繋がると経路が変わるため）。
+    // 経路（A2DP / 内蔵スピーカー / ヘッドフォン）が変わると値も変わるので
+    // キャッシュせず毎回読む。以前はキャッシュ + 読み取り時に非同期更新という
+    // 形で、返る値が常に「前回のセクションの経路」だった。
+    getNativeAudioLatencyMs: async () => {
+      const r = await NativeMidiPolyfill.readNativeAudioLatency();
+      return r ? r.outMs : null;
+    },
+    resetJudgeTally: () => {
+      PianoCore.resetJudgeTally(practice.judge);
+      PianoCore.resetJudgeErrorRing(practice.judgeErrors);
+    },
     computeHandRanges: computeHandRanges as any,
     osmdAdapter: deps.osmdAdapter,
     Tone: deps.Tone,
@@ -443,17 +500,15 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
   const stopPracticeAudio = () => _practiceToneAudio.stopPracticeAudio();
 
   const updatePractice = PracticeTick.createPracticeTick({
-    dom: { ptbProgress: dom.ptbProgress, ptbProgressFill: (dom as any).ptbProgressFill ?? null },
+    dom: { ptbProgress: dom.ptbProgress, ptbProgressFill: dom.ptbProgressFill },
     practice,
-    // Live wrapper — practice-tick reads `midiInput.enabled` at tick time.
-    midiInput: {
-      get enabled() {
-        return deps.getMidiInput().enabled;
-      },
-    } as any,
+    // 採点入力が MIDI かどうかは毎 tick 解決する（設定変更・ホットプラグに追従）。
+    isMidiActive: deps.isMidiActive,
     getOsmd: deps.getOsmd,
     practiceElapsedMs: () => _practiceScoring.practiceElapsedMs(),
-    hitWindowMs: PianoCore.HIT_WINDOW_MS,
+    // auto-miss の締切も現在の入力パス × 厳しさの窓に合わせる（サンクで毎
+    // tick 評価 — セクション中のホットプラグや設定変更で窓が変わるため）。
+    getJudgeProfile: activeJudgeProfile,
     medianRecentPitch: () => _practiceScoring.medianRecentPitch(),
     matchNoteOnset: (m: number, exact: boolean) => _practiceScoring.matchNoteOnset(m, exact),
     showHitChip: deps.showHitChip,
@@ -521,6 +576,7 @@ export function createShellPractice(deps: ShellPracticeDeps): ShellPractice {
       _practiceToneAudio.previewVolume(layer),
     playStampCelebration: () => _practiceToneAudio.playStampCelebration(),
     playSongClear: () => _practiceToneAudio.playSongClear(),
+    getJudgeProfile: activeJudgeProfile,
     setPracticeLane: (lane: any) => {
       practiceLaneRef.current = lane;
     },

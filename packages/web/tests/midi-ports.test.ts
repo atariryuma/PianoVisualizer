@@ -150,6 +150,10 @@ function makePorts(over: Partial<MidiPortsDeps> = {}, mocks?: Partial<Mocks>) {
     hasAudioCtx: m.hasAudioCtx,
     suspendMic: m.suspendMic,
     resumeMic: m.resumeMic,
+    // 'auto' semantics — the resolved input source follows the hardware, which
+    // is what every expectation in this file was written against. Overriding
+    // this dep is how the pinned-mic / pinned-keyboard paths are tested.
+    isMidiActive: () => midiInput.enabled,
     onMidiMessageHandler: m.onMidiMessageHandler,
     setInputIndicator: m.setInputIndicator,
     isVirtualMidiPort: m.isVirtualMidiPort,
@@ -288,6 +292,31 @@ describe('attach', () => {
     const { ports, mocks } = makePorts({ hasAudioCtx: () => false });
     ports.attach({ name: 'r', state: 'connected' });
     expect(mocks.suspendMic).not.toHaveBeenCalled();
+  });
+
+  it('does NOT suspend the mic when the player pinned the mic (attach ≠ takeover)', () => {
+    // The defect this fixes: attach() suspended the mic unconditionally, so
+    // connecting a keyboard silently ended acoustic play and the ONLY way back
+    // was to physically unplug. With the source resolved from the setting, a
+    // mic-pinned player keeps their mic and the keyboard just sits idle.
+    const { ports, mocks, midiInput } = makePorts({ isMidiActive: () => false });
+    ports.attach({ name: 'r', state: 'connected' });
+    expect(mocks.suspendMic).not.toHaveBeenCalled();
+    // The port is still bound — switching back to the keyboard must be instant,
+    // and hot-plug / indicator / rescan logic keeps working meanwhile.
+    expect(midiInput.enabled).toBe(true);
+    expect(midiInput.port).toMatchObject({ name: 'r' });
+  });
+
+  it('does NOT resume the mic on detach when the player pinned the keyboard', () => {
+    // "Keyboard only" has to survive the keyboard dropping out: falling back to
+    // the room mic would start scoring ambient noise against different windows.
+    const { ports, mocks, state } = makePorts({ isMidiActive: () => true });
+    const port = { name: 'r', state: 'connected', onmidimessage: null };
+    ports.attach(port);
+    state.micSuspended = true;
+    ports.detach(port);
+    expect(mocks.resumeMic).not.toHaveBeenCalled();
   });
 
   it('does NOT suspend mic when already suspended', () => {

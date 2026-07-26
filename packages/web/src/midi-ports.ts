@@ -124,6 +124,9 @@ export interface MidiPortsDeps {
   hasAudioCtx: () => boolean;
   suspendMic: () => void;
   resumeMic: () => void;
+  /** Is MIDI the source we score (prefs.inputSource × attached)? Attach/detach
+   *  only move the mic when the answer agrees — see ShellMidi.isMidiActive. */
+  isMidiActive: () => boolean;
 
   /** The byte-router entry point — wired straight onto
    *  `port.onmidimessage`. Same signature as `onMidiMessageHandler`
@@ -270,9 +273,15 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     deps.midiInput.enabled = true;
     deps.midiInput.lastEventTime = 0;
 
-    // v13: MIDI is the new authoritative source — drop the mic so the
-    // privacy LED goes off and YIN/AGC/onset stop chewing CPU.
-    if (!wasMidiOn && deps.hasAudioCtx() && !deps.state.micSuspended) {
+    // v13: MIDI becomes the authoritative source — drop the mic so the privacy
+    // LED goes off and YIN/AGC/onset stop chewing CPU.
+    //
+    // …unless the player pinned the mic. This used to be unconditional, which
+    // is what made "a keyboard is connected" and "the mic is off" the same
+    // thing: connecting a keyboard silently ended acoustic play and only a
+    // physical unplug undid it. `isMidiActive()` folds in prefs.inputSource, so
+    // a mic-pinned player keeps their mic and the keyboard just sits idle.
+    if (!wasMidiOn && deps.hasAudioCtx() && !deps.state.micSuspended && deps.isMidiActive()) {
       deps.suspendMic();
     }
 
@@ -334,8 +343,10 @@ export function createMidiPorts(deps: MidiPortsDeps): MidiPorts {
     console.log('[MIDI] disconnected');
 
     // v13: Bring the mic back on a deliberate detach so the user can
-    // keep playing acoustically without restarting the app.
-    if (deps.hasAudioCtx() && deps.state.micSuspended) {
+    // keep playing acoustically without restarting the app. Skipped when the
+    // player pinned 'midi' — they asked for keyboard-only, so a dropped
+    // keyboard means "waiting for the keyboard", not "fall back to the room".
+    if (deps.hasAudioCtx() && deps.state.micSuspended && !deps.isMidiActive()) {
       deps.resumeMic();
       // M4: re-show the mic meter — the mic is live again but nothing
       // used to restore the meter until the next showRunningUI.

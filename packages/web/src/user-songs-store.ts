@@ -240,19 +240,30 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
     }
   }
 
+  /** CONTENT FIRST, hints second. The bytes are ground truth; the MIME type
+   *  and the filename are guesses, and a guess must never beat them.
+   *
+   *  [Bug fix 2026-07-26] The filename check used to run first, so ANY guessed
+   *  name ending in `.mxl` forced the zip path. `addFromUrl`'s fallback name is
+   *  literally `untitled.mxl`, and it fired for every relative URL (see the
+   *  filename derivation below) — so all 36 plain `.musicxml` library scores
+   *  were fed to JSZip and died with "Can't find end of central directory".
+   *  Only the 22 genuinely-zipped `.mxl` entries worked. Sniffing first makes
+   *  that whole class of bug impossible: a wrong name is now harmless. */
   async function detectIsMxl(blob: Blob, opts: { filename?: string }): Promise<boolean> {
-    if (blob.type === ZIP_MIME) return true;
-    if ((opts.filename || '').toLowerCase().endsWith('.mxl')) return true;
     if (blob.size > 0) {
-      // Magic-number check: PK\x03\x04 is the zip signature; we only
-      // need the first two bytes to disambiguate against XML's `<?`.
       try {
-        const head = await blob.slice(0, 2).text();
-        if (head === 'PK') return true;
+        // "PK" = the zip local-file-header signature; "<" (after an optional
+        // BOM) = XML. Either one is conclusive on its own.
+        const head = (await blob.slice(0, 8).text()).replace(/^\uFEFF/, '');
+        if (head.startsWith('PK')) return true;
+        if (head.trimStart().startsWith('<')) return false;
       } catch {
-        /* slice can fail in odd polyfills — fall through to false */
+        /* slice can fail in odd polyfills — fall through to the hints */
       }
     }
+    if (blob.type === ZIP_MIME) return true;
+    if ((opts.filename || '').toLowerCase().endsWith('.mxl')) return true;
     return false;
   }
 
@@ -330,10 +341,18 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
     // hostnames, query strings, and fragments uniformly; the
     // previous split() chain returned an empty string for
     // `https://host` and broke meta lookup).
+    //
+    // [Bug fix 2026-07-26] The base matters. The bundled catalog hands us
+    // RELATIVE urls (`assets/library/x.musicxml` — LIBRARY_BASE has no leading
+    // slash on purpose, so it resolves the same under capacitor:// and https://),
+    // and single-argument `new URL()` throws on those. Every library add
+    // therefore fell into the catch and got the name `untitled.mxl`, which then
+    // pushed plain XML down the zip path in detectIsMxl. A dummy base is enough
+    // — we only want the last path segment, and an absolute url ignores it.
     let filename = opts.filename;
     if (!filename) {
       try {
-        const path = new URL(url).pathname;
+        const path = new URL(url, 'file:///').pathname;
         filename = path.substring(path.lastIndexOf('/') + 1) || 'untitled.mxl';
       } catch {
         filename = 'untitled.mxl';

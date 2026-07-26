@@ -19,6 +19,7 @@ import * as PianoCore from '@piano/core';
 import * as ShellBootstrap from './shell-bootstrap';
 import { installNativeMidiPolyfill } from './native-midi-polyfill';
 import { installNoZoomGuards } from './no-zoom-guard';
+import { installTouchFeedback } from './touch-feedback';
 
 // 「勝手に拡大しない」JS ガード（iOS Safari のピンチ抑止）は web ビルド限定。
 // ネイティブ（Capacitor WKWebView）は viewport の user-scalable=no / maximum-scale=1
@@ -28,6 +29,12 @@ import { installNoZoomGuards } from './no-zoom-guard';
 // だけは user-scalable=no を無視するので、非ネイティブでは保険として設置する）。
 const _cap = (window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
 if (!_cap?.isNativePlatform?.()) installNoZoomGuards();
+
+// 押した瞬間の :active 反応を iOS で有効にする（web / ネイティブ共通）。
+// WebKit はタッチハンドラの無い要素に :active を当てないため、
+// -webkit-tap-highlight-color: transparent と併せて「押しても何も起きない」
+// 見え方になっていた。パッシブなので fast-tap 最適化は無効化しない。
+installTouchFeedback();
 
 // ネイティブ（Capacitor）実行時のみ: シェル起動より前に Web MIDI polyfill を
 // 設置する。initWebMIDI が navigator.requestMIDIAccess を見にいくため、

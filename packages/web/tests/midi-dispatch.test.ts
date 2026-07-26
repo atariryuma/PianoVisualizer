@@ -38,6 +38,7 @@ function makeDispatch(
   };
   const deps: MidiDispatchDeps = {
     midiInput: { lastEventTime: 0 },
+    isMidiActive: () => true,
     practice: { enabled: false },
     // Default true — most existing tests assert "session is running"
     // by implication. The gated tests below override it to false.
@@ -113,6 +114,31 @@ describe('dispatch — command routing', () => {
     d.dispatch(0x90, 64, 100);
     // P1-11: dispatch() 直呼び（BLE 経路相当）は timeStamp が無いので lag=0。
     expect(mocks.matchNoteOnset).toHaveBeenCalledWith(64, true, 0);
+  });
+
+  it('mic pinned + noteOn → dropped entirely: no scoring AND no visuals', () => {
+    // The selected source is THE input. An earlier version kept the visual
+    // reflection, reasoning that lighting the on-screen keyboard was "honest
+    // feedback that the device is alive" — device testing disproved it: keys
+    // lighting up and the badge pulsing is indistinguishable from "the app is
+    // still using the keyboard", so picking 🎙️ looked like it had done nothing.
+    const { d, mocks } = makeDispatch({
+      practice: { enabled: true },
+      isMidiActive: () => false,
+    });
+    d.dispatch(0x90, 64, 100);
+    expect(mocks.matchNoteOnset).not.toHaveBeenCalled();
+    expect(mocks.onMidiNoteOn).not.toHaveBeenCalled();
+    expect(mocks.pulseMidiBadge).not.toHaveBeenCalled();
+  });
+
+  it('mic pinned + noteOFF still passes through (no stranded lit key)', () => {
+    // A source switch mid-press must not leave the key lit forever: the note-on
+    // that lit it was let through under the old source, and nothing else clears
+    // it.
+    const { d, mocks } = makeDispatch({ isMidiActive: () => false });
+    d.dispatch(0x80, 64, 0);
+    expect(mocks.onMidiNoteOff).toHaveBeenCalledWith(64);
   });
 
   it('!practice + noteOn → no matchNoteOnset', () => {
@@ -315,5 +341,41 @@ describe('onMessage — P1-11 per-event 遅延補正', () => {
     expect(mocks.matchNoteOnset).not.toHaveBeenCalled();
     expect(mocks.onMidiNoteOff).toHaveBeenCalledWith(64);
     expect(mocks.onMidiCC).toHaveBeenCalledWith(64, 127);
+  });
+});
+
+// ── latency-calibration hook ─────────────────────────────────────────
+// While calibration runs, a key press IS the tap: calibrating on the instrument
+// the player actually plays is the standard (Rocksmith calibrates from the
+// guitar), and touch vs BLE-MIDI input latency differ by tens of ms. The press
+// must not ALSO be scored — there is no section running during calibration.
+
+describe('createMidiDispatch — calibration tap', () => {
+  it('routes a note-on to calibration and skips scoring when consumed', () => {
+    const { d, mocks } = makeDispatch({
+      practice: { enabled: true },
+      onCalibrationTap: () => true,
+    });
+    d.dispatch(0x90, 60, 100);
+    expect(mocks.matchNoteOnset).not.toHaveBeenCalled();
+    // The player still gets the badge pulse + keyboard light, so the press
+    // visibly registered.
+    expect(mocks.pulseMidiBadge).toHaveBeenCalled();
+    expect(mocks.onMidiNoteOn).toHaveBeenCalledWith(60, 100);
+  });
+
+  it('scores normally when calibration is not running', () => {
+    const { d, mocks } = makeDispatch({
+      practice: { enabled: true },
+      onCalibrationTap: () => false,
+    });
+    d.dispatch(0x90, 60, 100);
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(60, true, 0);
+  });
+
+  it('scores normally when no calibration hook is wired at all', () => {
+    const { d, mocks } = makeDispatch({ practice: { enabled: true } });
+    d.dispatch(0x90, 60, 100);
+    expect(mocks.matchNoteOnset).toHaveBeenCalledWith(60, true, 0);
   });
 });

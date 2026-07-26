@@ -63,6 +63,14 @@ export interface MidiDispatchDeps {
    *  （performance.now() 起点）からハンドラ実行までの遅延。判定側
    *  （practice-scoring.matchNoteOnset）が elapsed クロックから減算する。 */
   matchNoteOnset: (midiNum: number, isExact: boolean, inputLagMs?: number) => void;
+  /** Feed a note-on to the latency calibration when it is running. Returns true
+   *  when the press was consumed as a calibration tap (so it must not also be
+   *  scored). Optional — omitted by older shells / partial tests. */
+  onCalibrationTap?: () => boolean;
+  /** Is MIDI the input we score? (prefs.inputSource × a port being attached —
+   *  ShellMidi.isMidiActive.) Presses still light the on-screen keyboard when
+   *  this is false; they just don't reach the scorer. */
+  isMidiActive: () => boolean;
 
   /** Optional override for the BLE-redelivery dedupe window.
    *  Defaults to 30 ms. */
@@ -115,8 +123,35 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
     deps.midiInput.lastEventTime = now;
 
     if (cmd === 0x90 && b > 0) {
+      // Latency calibration in progress → a key press IS the tap. Calibrating
+      // with the instrument you actually play is the standard (Rocksmith
+      // calibrates from the guitar): screen-touch input costs 20-50 ms while
+      // BLE-MIDI costs ~5 ms, so calibrating by touch and then playing on the
+      // keyboard leaves that difference as permanent error. It also makes the
+      // player's own consistent bias cancel out, since the same person on the
+      // same input produced the measurement.
+      // Returns before scoring: during calibration there is no section running,
+      // and the press must not be judged.
+      if (deps.onCalibrationTap?.()) {
+        deps.pulseMidiBadge();
+        deps.onMidiNoteOn(a, b);
+        return;
+      }
+      // The SELECTED SOURCE IS THE INPUT — no half-state. When the player has
+      // pinned the mic, a key press is dropped entirely: not scored, and not
+      // reflected either.
+      //
+      // The visual reflection used to be kept, on the reasoning that lighting
+      // the on-screen keyboard was "honest feedback that the device is alive".
+      // That reasoning was wrong, and the device report is the evidence: from
+      // the player's side, keys lighting up and the badge pulsing is
+      // indistinguishable from "the app is still using the keyboard", so
+      // choosing 🎙️ looked like it had done nothing. One gate here turns off
+      // the keyboard, the beams and the badge pulse together.
+      if (!deps.isMidiActive()) return;
       deps.pulseMidiBadge();
       deps.onMidiNoteOn(a, b);
+      // Scoring additionally requires a running session.
       if (deps.practice.enabled && deps.isSessionRunning()) {
         // P1-11: per-event 遅延を判定へ渡す（実際に鍵が押された時刻で採点）。
         deps.matchNoteOnset(a, true, inputLagMs);
@@ -128,8 +163,12 @@ export function createMidiDispatch(deps: MidiDispatchDeps): MidiDispatch {
       // 再送だけを潰すのが目的で、note-off を挟んだ「正当な同音連打」は
       // 通すべき（さもないと速いスタッカート2打目が落ちる）。
       if (lastNoteOnKey >> 8 === a) lastNoteOnKey = -1;
+      // Note-off is NOT gated on the active source: a source switch mid-press
+      // would otherwise strand the key lit forever (the note-on that lit it was
+      // let through under the old source, and nothing else clears it).
       deps.onMidiNoteOff(a);
     } else if (cmd === 0xb0) {
+      if (!deps.isMidiActive()) return;
       deps.onMidiCC(a, b);
     }
   }

@@ -163,7 +163,9 @@ export interface GameStateUpdateConfig {
 export interface GameStateWireupShellRefs {
   state: GameStateRef;
   getPractice: () => GameStatePracticeRef;
-  getMidiInput: () => GameStateMidiRef;
+  /** Is MIDI the input that drives scoring + visuals? (prefs.inputSource ×
+   *  a port being attached — ShellMidi.isMidiActive.) */
+  isMidiActive: () => boolean;
   getPitchMedianFrames: () => number;
   config: GameStateUpdateConfig;
   qhOptsMic: unknown;
@@ -190,7 +192,7 @@ export function buildGameStateUpdateDeps(refs: GameStateWireupShellRefs): GameSt
   return {
     state: refs.state,
     getPractice: refs.getPractice,
-    getMidiInput: refs.getMidiInput,
+    isMidiActive: refs.isMidiActive,
     getPitchMedianFrames: refs.getPitchMedianFrames,
     tuning: {
       pitchMinHz: refs.config.PITCH_MIN_HZ,
@@ -234,10 +236,13 @@ export function buildGameStateUpdateDeps(refs: GameStateWireupShellRefs): GameSt
 
 export interface GameStateUpdateDeps {
   state: GameStateRef;
-  /** Read at call time — the legacy shell's `practice` / `midiInput`
-   *  consts live further down the file so a thunk avoids the TDZ. */
+  /** Read at call time — the legacy shell's `practice` const lives further
+   *  down the file so a thunk avoids the TDZ. */
   getPractice: () => GameStatePracticeRef;
-  getMidiInput: () => GameStateMidiRef;
+  /** Is MIDI the input that drives scoring (prefs.inputSource × a port being
+   *  attached — ShellMidi.isMidiActive)? Gates the mic push into the quality
+   *  histories. */
+  isMidiActive: () => boolean;
   /** Likewise for tuning's pitchMedianFrames which lives in shell
    *  scope past this wire-up. */
   getPitchMedianFrames: () => number;
@@ -327,15 +332,18 @@ export function updateGameState(
   // 4. Session confidence.
   deps.updateSessionConfidence(timeMs, isActivePlay);
 
-  // v13: When MIDI is attached, MIDI events drive the quality
+  // v13: When MIDI is the ACTIVE input, MIDI events drive the quality
   // histories (rhythm/dynamics/stability). Skip the mic push to avoid
-  // double-counting and keep silent (headphone) practice fully
-  // evaluable. Plain `enabled` check — the old "active within 2 s"
-  // window let mic data sneak back in during silent gaps, which is
-  // the opposite of what we want: silent gaps in MIDI play should NOT
-  // be backfilled by ambient mic noise.
-  const midi = deps.getMidiInput();
-  const midiDrivingHistories = midi.enabled;
+  // double-counting and keep silent (headphone) practice fully evaluable.
+  //
+  // `isMidiActive()` and not "a port is attached": a player who pinned the mic
+  // is scored on the mic, so the mic has to feed the histories too or their
+  // quality read-out stays frozen while they play.
+  //
+  // Not the old "MIDI active within 2 s" window either — that let mic data sneak
+  // back in during silent gaps, which is the opposite of what we want: silent
+  // gaps in MIDI play must NOT be backfilled by ambient mic noise.
+  const midiDrivingHistories = deps.isMidiActive();
 
   if (isOnsetNote && !midiDrivingHistories) {
     deps.core.applyOnsetToHistory(s, timeMs, rms, deps.qhOptsMic);

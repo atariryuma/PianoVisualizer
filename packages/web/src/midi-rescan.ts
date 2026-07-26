@@ -34,6 +34,7 @@
 // global reads inside the module. State (cached access, timer, tick
 // counter) lives in the factory closure.
 
+import { isPinnedTo, type InputSourcePref } from '@piano/core';
 import type { MidiAccessRef, MidiPortRef, MidiPortsInputRef } from './midi-ports';
 import { gatherMidiInputs } from './midi-ports';
 
@@ -102,6 +103,14 @@ export interface MidiRescanDeps {
    *  acceptable since the kid is unlikely to be re-pairing in WMB
    *  mid-song. */
   isPaused?: () => boolean;
+  /** The player's input-source setting. `mic` suppresses the force-fresh
+   *  MIDIAccess re-request (see the call site); plain enumeration is unaffected.
+   *  The whole pref rather than a bespoke boolean, so the three modules that ask
+   *  about it stop inventing three names for `pref === 'mic' | 'midi'`. */
+  getInputSourcePref?: () => InputSourcePref;
+  /** Is `navigator.requestMIDIAccess` OUR native polyfill? It re-enumerates on
+   *  every plain poll, so the stale-cache force-refresh is dead weight there. */
+  isOwnWebMidiPolyfill?: () => boolean;
 }
 
 export interface MidiRescan {
@@ -344,7 +353,19 @@ export function createMidiRescan(deps: MidiRescanDeps): MidiRescan {
       const elapsedNow = now() - startedAt;
       const forceEvery = deps.isAppleMobile() && elapsedNow < 30_000 ? 2 : 5;
       // /@WMB-WORKAROUND
-      const force = !deps.isPaused?.() && tickCount % forceEvery === 0;
+      //
+      // The force exists ONLY to beat Web MIDI Browser's stale enumeration
+      // cache. Skip it when it cannot help or is not wanted:
+      //   • our own native polyfill re-enumerates CoreMIDI on every plain poll,
+      //     so forcing there buys nothing and costs a bridge round-trip;
+      //   • a player who pinned 🎙️ is not waiting for a keyboard at all.
+      // It is the exact call CLAUDE.md records as the dt=50 ms frame-spike
+      // source, and the poller never self-stops without a port — so on the
+      // shipped default (auto, no keyboard, live mic) it was firing forever.
+      // Plain enumeration still runs, so a keyboard is still found and bound.
+      const forceHelps =
+        !deps.isOwnWebMidiPolyfill?.() && !isPinnedTo(deps.getInputSourcePref?.() ?? 'auto', 'mic');
+      const force = !deps.isPaused?.() && forceHelps && tickCount % forceEvery === 0;
       if (force) {
         console.log('[MIDI] auto-rescan: forcing fresh MIDIAccess (tick=' + tickCount + ')');
         ensureAccess(true).catch(() => {});

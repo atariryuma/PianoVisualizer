@@ -115,6 +115,7 @@ function makeDeps(
     state,
     practice: { enabled: false },
     midiInput: { enabled: false, lastEventTime: 0 },
+    isMidiActive: () => false,
     micMeter: null,
     micMeterFill: null,
     introHint: null,
@@ -278,6 +279,7 @@ describe('tickMicPipeline — mic → midiState bridge', () => {
     const { deps } = makeDeps({
       midiState,
       midiInput: { enabled: true, lastEventTime: 0 },
+      isMidiActive: () => true,
     });
     deps.state.yinSkipCounter = 2;
     tickMicPipeline(1000, 16, deps);
@@ -439,6 +441,7 @@ describe('tickMicPipeline — R2-2 持続音の activeNotes リフレッシュ',
     const { deps, hooks } = makeDeps({
       midiState,
       midiInput: { enabled: true, lastEventTime: 0 },
+      isMidiActive: () => true,
     });
     hooks.updateGameState.mockReturnValue(false);
     deps.state.debugIsActivePlay = true;
@@ -556,6 +559,7 @@ describe('tickMicPipeline — MIDI-active gate', () => {
     const now = performance.now();
     const { deps, hooks } = makeDeps({
       midiInput: { enabled: true, lastEventTime: now - 500 },
+      isMidiActive: () => true,
     });
     deps.state.yinSkipCounter = 2;
     hooks.detectPitchYIN.mockReturnValue({ pitch: 440, conf: 0.9, rms: 0.1 });
@@ -573,6 +577,7 @@ describe('tickMicPipeline — MIDI-active gate', () => {
     const now = performance.now();
     const { deps, hooks } = makeDeps({
       midiInput: { enabled: true, lastEventTime: now - 3000 },
+      isMidiActive: () => true,
     });
     deps.state.yinSkipCounter = 2;
     hooks.detectPitchYIN.mockReturnValue({ pitch: 440, conf: 0.9, rms: 0.1 });
@@ -583,6 +588,7 @@ describe('tickMicPipeline — MIDI-active gate', () => {
   it('runs the spawn path when MIDI is disabled', () => {
     const { deps, hooks } = makeDeps({
       midiInput: { enabled: false, lastEventTime: 0 },
+      isMidiActive: () => false,
     });
     deps.state.yinSkipCounter = 2;
     hooks.detectPitchYIN.mockReturnValue({ pitch: 440, conf: 0.9, rms: 0.1 });

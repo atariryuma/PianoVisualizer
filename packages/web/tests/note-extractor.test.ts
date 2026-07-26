@@ -171,7 +171,15 @@ describe('extractNotesFromOsmd — basic note walk', () => {
     expect(ret.notes[0]?.midi).toBe(60);
   });
 
-  it('skips cue notes (optional prompt notes)', () => {
+  // ── "printed = playable" ──────────────────────────────────────────
+  // Visibility decides, engraving size does not. These three lock the
+  // rule in both directions; the middle one is the La Campanella /
+  // Liebestraum regression (whole printed passages silently dropped).
+
+  it('KEEPS cue-flagged notes that are printed (size="cue" is engraving, not optionality)', () => {
+    // OSMD folds `<cue/>` and `<type size="cue">` into one IsCueNote flag,
+    // so this flag alone can never justify dropping a note — La Campanella
+    // bars 75-87 set the entire right-hand run at cue size.
     const osmd = makeOsmd({
       steps: [
         {
@@ -188,8 +196,46 @@ describe('extractNotesFromOsmd — basic note walk', () => {
       sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
     });
     const ret = extractNotesFromOsmd(osmd);
+    expect(ret.notes.map((n) => n.midi).sort((a, b) => a - b)).toEqual([60, 67]);
+  });
+
+  it('skips notes the score does not print (print-object="no")', () => {
+    // The engraver's playback-only realization — K.545 bar 15 hides a
+    // six-note trill behind a printed `tr`. `drawHiddenNotes:false` means
+    // the learner never sees it, so it must never be required.
+    const osmd = makeOsmd({
+      steps: [
+        {
+          measureIdx: 0,
+          tsWhole: 0,
+          voices: [
+            voiceEntry(0, [
+              { PrintObject: false, halfTone: 55, length: { realValue: 0.25 } },
+              { halfTone: 48, length: { realValue: 0.25 } },
+            ]),
+          ],
+        },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
+    });
+    const ret = extractNotesFromOsmd(osmd);
     expect(ret.notes).toHaveLength(1);
     expect(ret.notes[0]?.midi).toBe(60);
+  });
+
+  it('keeps a note whose PrintObject is absent (older OSMD / partial stub)', () => {
+    // OSMD defaults PrintObject to true; `=== false` is the only safe test.
+    const osmd = makeOsmd({
+      steps: [
+        {
+          measureIdx: 0,
+          tsWhole: 0,
+          voices: [voiceEntry(0, [{ halfTone: 48, length: { realValue: 0.25 } }])],
+        },
+      ],
+      sourceMeasures: [{ Duration: { realValue: 0.25 }, TempoInBPM: 120 }],
+    });
+    expect(extractNotesFromOsmd(osmd).notes).toHaveLength(1);
   });
 
   it('skips notes that are rests', () => {

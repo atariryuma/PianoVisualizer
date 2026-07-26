@@ -20,15 +20,248 @@
 import { meterBeatInfo } from '../library/measure-grid';
 
 // =====================================================================
-// Hit-window tuning constants (asymmetric: early presses punished harder).
+// Timing judgement
 // =====================================================================
+// Modelled on how the genre actually does it (beatmania IIDX, CHUNITHM,
+// maimai, ONGEKI, DDR, osu!). Four properties are deliberate:
+//
+//   1. TIERS CARRY QUALITY ONLY — PERFECT / GREAT / GOOD, then MISS.
+//      Direction (was the press early or late?) is NOT a tier. Encoding it as
+//      the outermost tier, as this app used to, is both non-standard and
+//      structurally fragile: the directional tier lives in the gap between
+//      the GREAT edge and the window edge, so a band change can squeeze it to
+//      zero width. That had actually happened — the GREAT band was
+//      `perfectMs * 2` = 180 ms against a 120 ms early window, so the app
+//      could report LATE but never EARLY, and the grade tally showed a
+//      structural zero for early no matter how the player leaned.
+//      Direction is now carried by the error DISTRIBUTION instead (the live
+//      hit-error bar in render/lane.ts and the result chart), which is osu!'s
+//      approach and cannot be squeezed out by a tier boundary.
+//
+//   2. WINDOWS ARE SYMMETRIC. Every published tap-note window in the genre
+//      is mirrored around the note time (IIDX ±16.67/±33.33/±116.67/±250;
+//      CHUNITHM ±16.66/±33.33/±66.67/±83.33; maimai ±16.67/±50/±100/±150;
+//      osu!mania 16 / 64−3·OD / 97−3·OD / …). Asymmetry appears only on HOLD
+//      ticks, a different mechanic. The old −120/+350 tap window (1 : 2.9)
+//      let a learner run most of a beat behind at full credit.
+//
+//   3. BOUNDARIES ARE WHOLE 60 fps FRAMES. Also a genre convention — the
+//      published windows above are all multiples of 16.67 ms — and here it is
+//      more than convention: the rAF loop, the lane, and the mic onset
+//      detector are all frame-quantized, so sub-frame boundaries claim a
+//      resolution the pipeline does not have.
+//
+//   4. CREDIT IS A FUNCTION OF THE TIER, NOT OF THE RAW OFFSET.
+//      `TIER_SCORE` below. The genre computes accuracy as a weighted sum of
+//      tier counts (osu!: 300 = 100 %, 100 = 1/3, 50 = 1/6; IIDX EX score:
+//      PGREAT 2, GREAT 1). Deriving credit separately from the tier is what
+//      let the two disagree: the tier came from an absolute threshold while
+//      credit came from `1 − |dt| / window` over asymmetric windows, so a
+//      press 90 ms EARLY was shown as PERFECT and credited 25 % while 90 ms
+//      LATE was shown as PERFECT and credited 74 %. With credit defined by
+//      the tier, that class of bug cannot exist.
 
-/** Press tolerated before cur.timeMs (anticipation side). */
-export const HIT_WINDOW_EARLY_MS = 120;
-/** Press tolerated after cur.timeMs (reaction side). Wider than early on purpose. */
-export const HIT_WINDOW_MS = 350;
-/** |dt| ≤ this counts as PERFECT on both sides. */
-export const PERFECT_MS = 90;
+/** One 60 fps frame. Every judgement boundary is a whole multiple of this. */
+export const JUDGE_FRAME_MS = 1000 / 60;
+
+/** The three tier boundaries for one input path, in ms, each symmetric around
+ *  the note time. `goodMs` is also the hit window: beyond it, the press is not
+ *  a hit at all. */
+export interface JudgeProfile {
+  /** |dt| ≤ this → PERFECT. */
+  perfectMs: number;
+  /** |dt| ≤ this → GREAT. */
+  greatMs: number;
+  /** |dt| ≤ this → GOOD. Past it → MISS. Doubles as the hit window. */
+  goodMs: number;
+}
+
+/** Build a profile from whole-frame boundaries, so the frame alignment is
+ *  visible at the definition site instead of hidden in a magic number. */
+function framesProfile(perfect: number, great: number, good: number): JudgeProfile {
+  return Object.freeze({
+    perfectMs: perfect * JUDGE_FRAME_MS,
+    greatMs: great * JUDGE_FRAME_MS,
+    goodMs: good * JUDGE_FRAME_MS,
+  });
+}
+
+/**
+ * Exact input (Web MIDI / native MIDI / BLE-MIDI): 4 / 8 / 12 frames
+ * ≈ 67 / 133 / 200 ms.
+ *
+ * No published game varies its windows by input device — the genre treats
+ * windows as a property of the chart or difficulty and handles device variance
+ * with calibration. We split anyway, because the two paths here differ by an
+ * order of magnitude in measurable precision and judging a ±40 ms-jittery
+ * input on a ±50 ms window would be measuring our own noise. The split is the
+ * automatic FLOOR; the player-facing difficulty knob is `JudgeStrictness`.
+ */
+export const JUDGE_PROFILE_MIDI: JudgeProfile = framesProfile(4, 8, 12);
+
+/**
+ * Mic input: 6 / 10 / 15 frames = 100 / 167 / 250 ms.
+ *
+ * The mic path cannot be judged tighter than its own detection jitter: the
+ * onset AnalyserNode's FFT is 2048/48 kHz ≈ 43 ms, frame quantization adds
+ * ~17 ms, and MIC_INPUT_LATENCY_MS compensates a VARIABLE lag with a constant
+ * — roughly ±30-40 ms of irreducible error. A tier needs to be a couple of
+ * times wider than that to mean anything, which is why the top tier here is
+ * looser than any arcade top tier. `strict` brings it to ~70 ms (≈ osu! OD1)
+ * for players who want the genre-standard challenge.
+ */
+export const JUDGE_PROFILE_MIC: JudgeProfile = framesProfile(6, 10, 15);
+
+/**
+ * Credit per tier, feeding the timing percentage. Ratios follow the genre
+ * (osu! 300 / 100 / 50 = 1 : 1/3 : 1/6, IIDX EX 2 : 1 : 0), landing a little
+ * more generous because this is a practice app: a GOOD is still a note the
+ * learner played in time to count.
+ */
+export const TIER_SCORE: Readonly<Record<TimingGrade, number>> = Object.freeze({
+  perfect: 1,
+  great: 0.7,
+  good: 0.3,
+});
+
+/** Player-facing judgement difficulty — the standard way strictness is
+ *  expressed (osu!'s Overall Difficulty, StepMania's TimingWindowScale, IIDX's
+ *  per-chart windows). Multiplies every boundary of the active profile.
+ *  `normal` is tuned for a beginner on the default input; `strict` reaches
+ *  roughly osu! OD1-5 depending on the path. */
+export type JudgeStrictness = 'easy' | 'normal' | 'strict';
+
+export const JUDGE_STRICTNESS_SCALE: Readonly<Record<JudgeStrictness, number>> = Object.freeze({
+  easy: 1.3,
+  normal: 1,
+  strict: 0.7,
+});
+
+/** Scale every boundary of a profile. Returns the input unchanged at 1× so the
+ *  frozen module-level profiles stay identity-comparable in the common case. */
+export function scaleJudgeProfile(p: JudgeProfile, scale: number): JudgeProfile {
+  if (scale === 1) return p;
+  return {
+    perfectMs: p.perfectMs * scale,
+    greatMs: p.greatMs * scale,
+    goodMs: p.goodMs * scale,
+  };
+}
+
+/** Resolve the profile for one input event. `isExactInput` is the flag
+ *  `matchNoteOnset` already receives (true = MIDI, false = mic onset). */
+export function resolveJudgeProfile(
+  isExactInput: boolean,
+  strictness: JudgeStrictness = 'normal'
+): JudgeProfile {
+  const base = isExactInput ? JUDGE_PROFILE_MIDI : JUDGE_PROFILE_MIC;
+  return scaleJudgeProfile(base, JUDGE_STRICTNESS_SCALE[strictness] ?? 1);
+}
+
+/** A press's timing tier. Quality only — see note 1 at the top of this
+ *  section for why direction is deliberately not in here. */
+export type TimingGrade = 'perfect' | 'great' | 'good';
+
+/** Tier + credit + admissibility for one press, decided together. */
+export interface TimingJudgement {
+  /** The tier the player is shown. */
+  grade: TimingGrade;
+  /** Credit toward the timing percentage, 0..1 — `TIER_SCORE[grade]`. */
+  score: number;
+  /** False when |dt| exceeds the window; the press is a MISS, and `grade` /
+   *  `score` describe the nearest tier rather than an awarded result. */
+  inWindow: boolean;
+}
+
+/**
+ * THE timing decision. One call produces the tier and the credit, so they
+ * cannot drift apart (see note 4 above).
+ */
+export function judgeTiming(dtSignedMs: number, p: JudgeProfile): TimingJudgement {
+  const dt = Math.abs(dtSignedMs);
+  const grade: TimingGrade = dt <= p.perfectMs ? 'perfect' : dt <= p.greatMs ? 'great' : 'good';
+  return { grade, score: TIER_SCORE[grade], inWindow: dt <= p.goodMs };
+}
+
+/**
+ * Is a press close enough to count as a hit at all, under this mode's rule?
+ *
+ * Guided has NO late ceiling — the note waits for the learner — but it keeps
+ * rhythm's EARLY window so a tap during the count-in, before the note has
+ * descended to the hit zone, cannot pre-credit the note.
+ *
+ * Separate from `judgeForMode` because the gate is asked about the note the
+ * cursor is ON, while the tier is decided for the note actually MATCHED (a
+ * chord-mate may be a few ms away) — two different offsets, one rule.
+ */
+export function isTimingInWindow(mode: PracticeMode, dtSignedMs: number, p: JudgeProfile): boolean {
+  if (mode === 'guided') return dtSignedMs >= -p.goodMs;
+  return Math.abs(dtSignedMs) <= p.goodMs;
+}
+
+/**
+ * The tier + credit for a matched press, with the mode's rule applied.
+ *
+ * Guided grades every hit `perfect` at full credit: its clock stops and waits,
+ * so a signed offset there measures the learner's reading speed, not their
+ * timing, and reporting it as a tier would be meaningless.
+ *
+ * This lives in core rather than at the two call sites (core's `matchNoteOnset`
+ * and the web shell's `practice-scoring`) because a mode-dependent judgement
+ * rule maintained in two places is a rule that will eventually differ.
+ */
+export function judgeForMode(
+  mode: PracticeMode,
+  dtSignedMs: number,
+  p: JudgeProfile
+): TimingJudgement {
+  if (mode === 'guided') return { grade: 'perfect', score: 1, inWindow: dtSignedMs >= -p.goodMs };
+  return judgeTiming(dtSignedMs, p);
+}
+
+/** Label + colour for one verdict the player can see. */
+export interface JudgeTierStyle {
+  /** Untranslated caps — see i18n/strings.ts "Per-note judgement vocabulary"
+   *  for why the judgement vocabulary is not localized. */
+  label: string;
+  /** Hex, so every canvas surface and the CSS custom properties agree. */
+  color: string;
+}
+
+/**
+ * THE judgement vocabulary. The live chip, the lane's running panel, and the
+ * result breakdown must show the same verdict in the same word and the same
+ * colour — the whole point of the per-note feedback is that the player learns
+ * one language. That invariant was previously asserted in three comments over
+ * three hand-copied literals (one of them in `rgba()` notation, so a change
+ * meant translating between colour syntaxes). It is now a single table.
+ *
+ * `app.css` mirrors these hexes once via `--judge-*` custom properties.
+ */
+export const TIMING_TIER_STYLE: Readonly<Record<TimingGrade | 'miss', JudgeTierStyle>> =
+  Object.freeze({
+    perfect: { label: 'PERFECT', color: '#ffe26b' },
+    great: { label: 'GREAT', color: '#b6f5b3' },
+    good: { label: 'GOOD', color: '#a9d4ff' },
+    miss: { label: 'MISS', color: '#ff8a9a' },
+  });
+
+/** Display order, best → worst. Every surface lists the tiers in this order. */
+export const TIMING_TIER_ORDER = Object.freeze([
+  'perfect',
+  'great',
+  'good',
+  'miss',
+] as const satisfies readonly (TimingGrade | 'miss')[]);
+
+/** Length verdicts get their own colour channel so a release cue never reads
+ *  as a timing verdict: cyan = held it right, amber = adjust. */
+export const LENGTH_TIER_STYLE: Readonly<Record<LengthGrade, JudgeTierStyle>> = Object.freeze({
+  good: { label: 'GOOD', color: '#7fe9e0' },
+  short: { label: 'SHORT', color: '#ffd08a' },
+  long: { label: 'LONG', color: '#ffd08a' },
+});
+
 /** Chord-mate window: another note is considered the same chord if within ±this. */
 export const CHORD_MATE_TOLERANCE_MS = 30;
 /** Note-length floor: shortest acceptable absolute hold tolerance. */
@@ -240,6 +473,11 @@ export function computeHandRanges(sectionNotes: readonly PracticeNote[]): HandRa
 export interface MatchOptions {
   /** Section-relative current time (ms), already accounting for audioOffsetMs. */
   elapsed: number;
+  /** Judgement windows for the input path this press came from — pass
+   *  `resolveJudgeProfile(isExactInput)`. Defaults to the mic profile (the
+   *  more generous of the two) so an older caller can't accidentally judge a
+   *  microphone against MIDI-grade tolerances. */
+  profile?: JudgeProfile;
 }
 
 export type MatchOutcome =
@@ -250,7 +488,10 @@ export type MatchOutcome =
       note: PracticeNote;
       matchedIdx: number;
       isChordMate: boolean;
-      isPerfect: boolean;
+      /** The tier shown to the player. Replaces the old `isPerfect` boolean:
+       *  a single source for "how good was this press", so the tier and
+       *  `timingScore` below can no longer disagree (see judgeTiming). */
+      grade: TimingGrade;
       timingScore: number;
       dt: number;
       dtSigned: number;
@@ -285,15 +526,10 @@ export function matchNoteOnset(
   s.currentNoteIdx = idx;
   if (idx >= notes.length) return { type: 'no-op', reason: 'all-resolved' };
 
+  const profile = opts.profile ?? JUDGE_PROFILE_MIC;
   const cur = notes[idx];
   const dtSigned = opts.elapsed - cur.timeMs;
-  // Guided allows unbounded late (note waits) but enforces the same
-  // early window as rhythm — so presses during count-in (before the
-  // note has descended to the hit zone) don't credit a hit.
-  const inWindow =
-    s.mode === 'guided'
-      ? dtSigned >= -HIT_WINDOW_EARLY_MS
-      : dtSigned >= -HIT_WINDOW_EARLY_MS && dtSigned <= HIT_WINDOW_MS;
+  const inWindow = isTimingInWindow(s.mode, dtSigned, profile);
 
   // Find the matched note: first try cur, then any chord-mate within ±tolerance.
   let matched: PracticeNote | null = null;
@@ -338,19 +574,16 @@ export function matchNoteOnset(
   s.sectionCombo++;
   if (s.sectionCombo > s.sectionBestCombo) s.sectionBestCombo = s.sectionCombo;
 
-  // Asymmetric window: early press judged against the smaller early window
-  // (steeper penalty). Guided mode: every hit is "perfect" (timing not graded).
-  const window = dtSignedMatched < 0 ? HIT_WINDOW_EARLY_MS : HIT_WINDOW_MS;
-  const timingScore = s.mode === 'guided' ? 1 : Math.max(0, 1 - dt / window);
+  // One decision for tier + credit, with the mode's rule applied (judgeForMode).
+  const { grade, score: timingScore } = judgeForMode(s.mode, dtSignedMatched, profile);
   s.timingScoreSum += timingScore;
 
-  const isPerfect = s.mode === 'guided' || dt < PERFECT_MS;
   return {
     type: 'hit',
     note: matched,
     matchedIdx,
     isChordMate,
-    isPerfect,
+    grade,
     timingScore,
     dt,
     dtSigned: dtSignedMatched,
@@ -393,38 +626,12 @@ export function finalizeNoteHold(
 }
 
 // =====================================================================
-// Per-note feedback grades (real-time, multi-dimensional)
+// Per-note release (note-length) verdict
 // =====================================================================
-// The section result card already reports accuracy / timing / note-length as
-// end-of-section percentages. These pure helpers turn the SAME two graded
-// dimensions into a live, per-note verdict so the kid SEES how they did on each
-// note — not just "right / wrong" — which is what makes a rhythm game feel
-// responsive and worth practising. Kept in core (pure) so the shell only maps
-// a grade → chip text + effect. Both are direction-aware (early/late,
-// short/long) so the feedback teaches, not just scores.
-
-/** A press's timing verdict. `perfect` = dead on; `great` = very close;
- *  `early` / `late` = in the window but off, with the direction named so the
- *  kid learns which way to adjust. */
-export type TimingGrade = 'perfect' | 'great' | 'early' | 'late';
-
-/**
- * Grade a hit's timing from its signed offset (`dtSignedMs` = elapsed −
- * note.timeMs, so negative = early, positive = late). The caller only reaches
- * this on a note that already landed inside the hit window, so every grade is a
- * "success" — the tiers just say how clean it was. `greatMs` defaults to twice
- * the perfect window (a musically sensible "still very tight" band).
- */
-export function resolveTimingGrade(
-  dtSignedMs: number,
-  perfectMs: number,
-  greatMs: number = perfectMs * 2
-): TimingGrade {
-  const dt = Math.abs(dtSignedMs);
-  if (dt <= perfectMs) return 'perfect';
-  if (dt <= greatMs) return 'great';
-  return dtSignedMs < 0 ? 'early' : 'late';
-}
+// The timing half of the per-note feedback lives in the judgement section at
+// the top of this file. This is its release-time sibling: the second graded
+// dimension the result reports, turned into a live per-note verdict so the
+// learner sees HOW they did on each note, not just "right / wrong".
 
 /** A release's note-length verdict. `good` = held about the written length;
  *  `short` / `long` name the direction to adjust. Positive-inclusive — a good
@@ -449,6 +656,293 @@ export function resolveLengthGrade(
 }
 
 // =====================================================================
+// Judgement tally — one source of truth for the live HUD and the result
+// =====================================================================
+// The grades above were previously used ONLY to pick a chip colour, then
+// thrown away. The section result reported a different set of numbers
+// (continuous score sums → accuracy / timing / note-length percentages), so
+// what the player SAW note by note and what the result told them afterwards
+// had no relationship: 30 chips of feedback collapsed into "Timing 78%" with
+// no breakdown and no direction.
+//
+// The rhythm-game convention is the opposite: the live HUD shows a running
+// judgement counter, and the result screen is that same counter plus a
+// timing-deviation read-out (beatmania's FAST/SLOW counts, osu!'s mean
+// error / unstable rate, DDR's per-tier tally). This tally is that counter.
+// It is fed by the same resolve*Grade calls that drive the chips, so live and
+// result can never disagree, and it is the only place either surface reads.
+
+/** Running per-note judgement counts + timing-deviation accumulators for one
+ *  section attempt. Counts mirror the grades the player was shown. */
+export interface JudgeTally {
+  perfect: number;
+  great: number;
+  good: number;
+  /** Notes whose window expired unplayed (rhythm mode auto-miss). */
+  miss: number;
+  /** Σ signed offset (ms, + = pressed late) over graded presses. With the
+   *  count below this gives the MEAN error — the direction signal that the
+   *  tiers deliberately no longer carry. */
+  dtSumMs: number;
+  /** Σ |offset| (ms). Mean absolute error — how tight, direction-free. */
+  dtAbsSumMs: number;
+  /** Σ offset² (ms²). With the sum and count this gives the standard
+   *  deviation, i.e. osu!'s unstable rate (UR = stdev × 10) — the genre's
+   *  headline consistency number. Accumulating the square keeps the whole
+   *  distribution summary O(1) in memory. */
+  dtSqSumMs: number;
+  /** Release (note-length) verdicts. */
+  holdGood: number;
+  holdShort: number;
+  holdLong: number;
+}
+
+/** Fresh zeroed tally. */
+export function createJudgeTally(): JudgeTally {
+  return {
+    perfect: 0,
+    great: 0,
+    good: 0,
+    miss: 0,
+    dtSumMs: 0,
+    dtAbsSumMs: 0,
+    dtSqSumMs: 0,
+    holdGood: 0,
+    holdShort: 0,
+    holdLong: 0,
+  };
+}
+
+/** Zero a tally IN PLACE. Section restarts reuse the same object so the
+ *  hot-path writes never trigger a V8 hidden-class transition mid-section. */
+export function resetJudgeTally(t: JudgeTally): void {
+  t.perfect = 0;
+  t.great = 0;
+  t.good = 0;
+  t.miss = 0;
+  t.dtSumMs = 0;
+  t.dtAbsSumMs = 0;
+  t.dtSqSumMs = 0;
+  t.holdGood = 0;
+  t.holdShort = 0;
+  t.holdLong = 0;
+}
+
+/** Record one graded press. `dtSignedMs` is the same offset that produced
+ *  `grade` (+ = late), so the deviation stats stay consistent with the tiers.
+ *  Guided mode grades every press `perfect` with dt 0 — harmless, and it keeps
+ *  the counter meaningful there too ("you played N notes"). */
+export function recordTimingJudgement(t: JudgeTally, grade: TimingGrade, dtSignedMs: number): void {
+  t[grade]++;
+  t.dtSumMs += dtSignedMs;
+  t.dtAbsSumMs += Math.abs(dtSignedMs);
+  t.dtSqSumMs += dtSignedMs * dtSignedMs;
+}
+
+/** Graded presses in a tally — the divisor for every deviation statistic, and
+ *  the numerator of the live accuracy read-out. Exported because the lane needs
+ *  it every frame and `summarizeJudgements` allocates. */
+export function judgeHits(t: JudgeTally): number {
+  return t.perfect + t.great + t.good;
+}
+
+/** Record one release verdict. */
+export function recordLengthJudgement(t: JudgeTally, grade: LengthGrade): void {
+  if (grade === 'good') t.holdGood++;
+  else if (grade === 'short') t.holdShort++;
+  else t.holdLong++;
+}
+
+/** Record an auto-miss (window expired with the note unplayed). */
+export function recordMissJudgement(t: JudgeTally): void {
+  t.miss++;
+}
+
+/** Below this many graded presses no tendency is claimed — two notes can't
+ *  establish that someone "leans late". */
+export const JUDGE_TENDENCY_MIN_SAMPLES = 4;
+/** Mean offsets smaller than this are human jitter, not a lean. Roughly the
+ *  perceptual floor for rhythmic asynchrony, and comfortably inside the
+ *  PERFECT window so a clean run never gets told to adjust. */
+export const JUDGE_TENDENCY_MIN_MS = 25;
+/** A lean this large is worth naming as a SETUP problem rather than a technique
+ *  habit — it is most of the MIDI GREAT band. */
+export const JUDGE_SETUP_SUSPECT_MS = 60;
+/** …but only when the presses cluster tightly on one side. |mean| / meanAbs
+ *  approaches 1 when every error points the same way (a constant offset) and
+ *  falls toward 0 when they scatter (genuine unsteadiness). */
+export const JUDGE_SETUP_CONSISTENCY = 0.8;
+
+/** Derived read-out for both the live HUD and the result card.
+ *
+ *  Deliberately narrow: it reports only figures that a surface actually shows.
+ *  It used to also carry `accPct` (= hits/judged), which collided with the
+ *  result headline's accuracy (= hits/section target) — two different numbers
+ *  under one name, in a change whose entire purpose was that the live panel and
+ *  the result card cannot disagree. Accuracy is now defined once, by its
+ *  consumer, from `hits` / `judged`. */
+export interface JudgeSummary {
+  /** Graded presses (perfect + great + good). */
+  hits: number;
+  /** Notes that got any verdict at all (hits + miss). */
+  judged: number;
+  /** Mean signed offset (ms, + = late), or null below the sample floor. This
+   *  and `stdevMs` are where DIRECTION lives now that the tiers carry only
+   *  quality — the aggregate distribution, not a per-note indicator. */
+  meanDtMs: number | null;
+  /** Standard deviation of the offsets (ms), or null below the sample floor.
+   *  The genre's consistency measure — osu!'s unstable rate is this × 10. */
+  stdevMs: number | null;
+  /** Which way the presses leaned. 'even' when inside the jitter threshold
+   *  or below the sample floor — never guessed. */
+  tendency: 'early' | 'late' | 'even';
+  /** Release verdicts recorded. */
+  holds: number;
+  /** Dominant hold error, or 'even' when neither side is established. */
+  holdTendency: 'short' | 'long' | 'even';
+  /**
+   * The lean looks like a SETUP problem, not a technique habit: it is large
+   * AND almost every press missed the same way.
+   *
+   * Two settings can produce exactly this signature. Output latency is
+   * compensated by a single auto-detected `audioOffsetMs`, which is wrong by
+   * tens of milliseconds on Bluetooth output; and note-fall speed shifts when
+   * the player *reads* the note, which beatmania's own guide treats as the
+   * FIRST thing to adjust when the early/late balance is skewed (scroll speed
+   * before offset). Either way the whole error lands on the player as a
+   * uniform lean, and coaching them to "press a little sooner" would be
+   * teaching them to compensate for our configuration rather than to play in
+   * time. When this is set, the result points at those two settings instead —
+   * in that order.
+   */
+  looksLikeSetupIssue: boolean;
+}
+
+/**
+ * Summarize a tally. Pure. `opts` exposes the thresholds so tests (and any
+ * future tuning) can move them without touching call sites.
+ */
+export function summarizeJudgements(
+  t: JudgeTally,
+  opts: {
+    tendencyMinMs?: number;
+    minSamples?: number;
+    setupSuspectMs?: number;
+    setupConsistency?: number;
+  } = {}
+): JudgeSummary {
+  const tendencyMinMs = opts.tendencyMinMs ?? JUDGE_TENDENCY_MIN_MS;
+  const minSamples = opts.minSamples ?? JUDGE_TENDENCY_MIN_SAMPLES;
+
+  const hits = judgeHits(t);
+  const judged = hits + t.miss;
+
+  // Every graded press writes all three accumulators, so `hits` IS the sample
+  // count — a separate counter would just be a second thing to keep in step.
+  const enoughSamples = hits >= minSamples;
+  const meanDtMs = enoughSamples ? t.dtSumMs / hits : null;
+  const meanAbsDtMs = enoughSamples ? t.dtAbsSumMs / hits : null;
+  // Population stdev from the running sums: E[x²] − E[x]². Clamped at 0
+  // because floating-point cancellation can push a near-zero variance
+  // slightly negative when every press landed on the same offset.
+  const stdevMs =
+    enoughSamples && meanDtMs != null
+      ? Math.sqrt(Math.max(0, t.dtSqSumMs / hits - meanDtMs * meanDtMs))
+      : null;
+
+  let tendency: JudgeSummary['tendency'] = 'even';
+  if (meanDtMs != null && Math.abs(meanDtMs) >= tendencyMinMs) {
+    tendency = meanDtMs > 0 ? 'late' : 'early';
+  }
+
+  // Setup signature: a big lean whose errors nearly all point the same way.
+  // |mean| / meanAbs is the consistency ratio (1 = every press off by the same
+  // amount in the same direction).
+  const consistency =
+    meanDtMs != null && meanAbsDtMs != null && meanAbsDtMs > 0
+      ? Math.abs(meanDtMs) / meanAbsDtMs
+      : 0;
+  const looksLikeSetupIssue =
+    tendency !== 'even' &&
+    meanDtMs != null &&
+    Math.abs(meanDtMs) >= (opts.setupSuspectMs ?? JUDGE_SETUP_SUSPECT_MS) &&
+    consistency >= (opts.setupConsistency ?? JUDGE_SETUP_CONSISTENCY);
+
+  const holds = t.holdGood + t.holdShort + t.holdLong;
+  let holdTendency: JudgeSummary['holdTendency'] = 'even';
+  if (t.holdShort >= 2 && t.holdShort > t.holdLong) holdTendency = 'short';
+  else if (t.holdLong >= 2 && t.holdLong > t.holdShort) holdTendency = 'long';
+
+  return {
+    hits,
+    judged,
+    meanDtMs,
+    stdevMs,
+    tendency,
+    holds,
+    holdTendency,
+    looksLikeSetupIssue,
+  };
+}
+
+// =====================================================================
+// Hit-error ring — the live direction feedback
+// =====================================================================
+// Recent signed offsets, for the hit-error bar the lane draws under the hit
+// line: a centred scale with the tier bands marked and a fading tick per
+// recent press.
+//
+// This is osu!'s hit-error bar, and it is DELIBERATELY not a discrete
+// early/late indicator. Two reasons. First, a distribution teaches more than a
+// label: a player sees at a glance whether their presses are centred, biased,
+// or merely scattered, which a per-note "EARLY" cannot express. Second,
+// Konami holds a patent on fast/slow indicators — DJMAX removed its own
+// implementation over it — so a discrete early/late readout is a form worth
+// staying away from in a shipping app.
+//
+// Fixed-size ring, written on the hot path, so no allocation per press.
+
+/** Number of recent presses the error bar shows. ~2 bars of sixteenths. */
+export const JUDGE_ERROR_RING_LEN = 32;
+
+/** Recent signed offsets (ms, + = late). `len` counts how much of `buf` is
+ *  populated; `idx` is the next write slot. Read newest-first by walking
+ *  backwards from `idx`. */
+export interface JudgeErrorRing {
+  buf: Float32Array;
+  idx: number;
+  len: number;
+}
+
+export function createJudgeErrorRing(size: number = JUDGE_ERROR_RING_LEN): JudgeErrorRing {
+  return { buf: new Float32Array(Math.max(1, size)), idx: 0, len: 0 };
+}
+
+/** Empty the ring IN PLACE (section restart). Keeps the same buffer. */
+export function resetJudgeErrorRing(r: JudgeErrorRing): void {
+  r.idx = 0;
+  r.len = 0;
+}
+
+export function pushJudgeError(r: JudgeErrorRing, dtSignedMs: number): void {
+  r.buf[r.idx] = dtSignedMs;
+  r.idx = (r.idx + 1) % r.buf.length;
+  if (r.len < r.buf.length) r.len++;
+}
+
+/** Walk the ring newest-first. `age` is 0 for the newest entry up to len-1 for
+ *  the oldest, so callers can fade by recency without storing timestamps. */
+export function forEachJudgeError(
+  r: JudgeErrorRing,
+  fn: (dtSignedMs: number, age: number) => void
+): void {
+  for (let age = 0; age < r.len; age++) {
+    const i = (r.idx - 1 - age + r.buf.length * 2) % r.buf.length;
+    fn(r.buf[i], age);
+  }
+}
+
+// =====================================================================
 // Star tier evaluation
 // =====================================================================
 
@@ -466,9 +960,23 @@ export interface StarTier {
 // timing requirement so rhythm is taught before ★3 demands it, instead
 // of springing 70% timing on the kid out of nowhere. ★1 stays at 50%
 // accuracy so the section-unlock gate still implies real playing.
+// Timing thresholds are anchored to the judgeTiming tier weights (2026-07-25).
+// The old 60 / 30 were calibrated against `1 - |dt| / 350`, a curve so flat
+// that a learner dragging ~120 ms scored 63 % and cleared the ★3 timing gate —
+// so ★3 said nothing about timing at all, and accuracy was the only real
+// constraint. Timing credit is now the tier weight (TIER_SCORE), which is how
+// the genre computes accuracy.
+// Simulated over normal-distributed players (mean lean × jitter), on BOTH
+// input profiles at default strictness:
+//   steady ±30 ms  → 99-100 %  |  dragging +120 ms → 66-73 %
+//   average +40 ms → 87-94 %   |  unsteady σ140    → 73-78 %
+// ★3 timing 85 admits the first two on either path and holds back the last
+// two; ★2 timing 55 still admits everyone who actually played the section, so
+// "cleared" stays reachable (banned-list: no punitive gating). Stored stars are
+// non-decreasing, so no existing progress is lost by this change.
 export const STAR_TIERS: readonly StarTier[] = Object.freeze([
-  Object.freeze({ stars: 3, acc: 85, timing: 60, dur: 55 }),
-  Object.freeze({ stars: 2, acc: 70, timing: 30, dur: 45 }),
+  Object.freeze({ stars: 3, acc: 85, timing: 85, dur: 55 }),
+  Object.freeze({ stars: 2, acc: 70, timing: 55, dur: 45 }),
   Object.freeze({ stars: 1, acc: 50, timing: 0, dur: 0 }),
 ]);
 

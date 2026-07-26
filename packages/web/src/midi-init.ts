@@ -15,9 +15,10 @@
 //   • Zero ports → start auto-rescan + show waiting hint.
 //   • requestMIDIAccess() throws → start auto-rescan + show hint.
 //
-// Idempotent: a second call while `_accessRequested` is already true
-// is a no-op (multiple boot paths re-enter — initAudio() success +
-// initAudio()'s re-entry on resumeMic both call it).
+// Idempotent by SHARING THE PROMISE: a second call returns the first call's
+// promise, so `await initWebMIDI()` waits for the real answer even when boot
+// already fired it (multiple paths re-enter — boot, initAudio() success, and
+// initAudio()'s re-entry on resumeMic all call it).
 //
 // State (`midiInput._accessRequested`, `midiInput.platformBlocked`)
 // lives on the existing midiInput ref the shell shares with the
@@ -83,7 +84,8 @@ export interface MidiInitDeps {
 
 export interface MidiInit {
   /** Run the boot-time Web MIDI initialization once. Idempotent —
-   *  re-entry while `_accessRequested` is already true is a no-op. */
+   *  re-entry returns the first call's promise, so awaiting it waits for the
+   *  actual MIDI answer instead of resolving instantly. */
   initWebMIDI: () => Promise<void>;
 }
 
@@ -91,9 +93,27 @@ export function createMidiInit(deps: MidiInitDeps): MidiInit {
   const log = deps.log ?? ((m: string) => console.log(m));
   const warn = deps.warn ?? ((m: string) => console.warn(m));
 
-  async function initWebMIDI(): Promise<void> {
+  /** The in-flight (or settled) boot probe. Re-entrant callers get THIS promise
+   *  rather than an instant `undefined` — see initWebMIDI. */
+  let pending: Promise<void> | null = null;
+
+  function initWebMIDI(): Promise<void> {
+    // Idempotent means SHARE THE RESULT, not "return nothing".
+    //
+    // Boot fires `void initWebMIDI()` and the ▶ path does `await initWebMIDI()`.
+    // With a bare `if (_accessRequested) return`, that await resolved instantly
+    // while the boot probe was still in flight — so the mic decision could be
+    // taken against an unknown MIDI state: no port seen yet → acquire the mic
+    // (permission prompt + privacy LED) → the probe lands, finds a keyboard, and
+    // `attach()` immediately suspends the mic again. Returning the same promise
+    // makes "wait for the MIDI answer" actually wait.
+    if (pending) return pending;
+    pending = runInitWebMIDI();
+    return pending;
+  }
+
+  async function runInitWebMIDI(): Promise<void> {
     const { midiInput, navigator: nav } = deps;
-    if (midiInput._accessRequested) return;
     midiInput._accessRequested = true;
 
     if (!nav.requestMIDIAccess) {

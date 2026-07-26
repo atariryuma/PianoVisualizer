@@ -23,6 +23,7 @@ import Foundation
 import Capacitor
 import CoreMIDI
 import CoreAudioKit
+import AVFoundation
 
 @objc(PianoMidiPlugin)
 public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -47,6 +48,7 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "scanBle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "connectBle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "showBleMidiPairing", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAudioLatency", returnType: CAPPluginReturnPromise),
     ]
 
     // MARK: - State
@@ -232,6 +234,44 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
             host.present(nav, animated: true)
             call.resolve()
         }
+    }
+
+    // MARK: - Audio output latency
+    //
+    // WHY THIS EXISTS: WebKit returns 0 for `AudioContext.outputLatency`, on
+    // every iOS browser and in WKWebView. The shell's auto-detect
+    // (PianoCore.pickAudioOffsetMs) therefore never fires on iOS and falls back
+    // to a ~40 ms default — while a real Bluetooth output route costs 150-250 ms.
+    // Every iPad user started ~170 ms out of sync and was judged permanently
+    // "late" until they found the tap-along calibration by hand.
+    //
+    // The platform knows the number perfectly well; only the web layer refuses
+    // to expose it. `AVAudioSession.outputLatency` reports the true hardware
+    // output latency for the CURRENT route, Bluetooth included, and WKWebView's
+    // audio runs through this same shared session — so the value applies to the
+    // sound the player actually hears. `ioBufferDuration` is the additional
+    // buffering the session is using; the caller adds them.
+    //
+    // Read on demand rather than cached: the value changes the moment the route
+    // does (headphones in, AirPods connect), so a cached figure would lie.
+    @objc func getAudioLatency(_ call: CAPPluginCall) {
+        let session = AVAudioSession.sharedInstance()
+        // `outputLatency` is only meaningful once the session is active. It is by
+        // the time JS asks (audio is running), but a zero here is reported
+        // honestly as "unavailable" rather than as a 0 ms device.
+        let outMs = session.outputLatency * 1000.0
+        let bufferMs = session.ioBufferDuration * 1000.0
+        let inMs = session.inputLatency * 1000.0
+        let route = session.currentRoute.outputs.first
+        call.resolve([
+            "outputLatencyMs": outMs,
+            "ioBufferMs": bufferMs,
+            "inputLatencyMs": inMs,
+            "sampleRate": session.sampleRate,
+            "portType": route?.portType.rawValue ?? "",
+            "portName": route?.portName ?? "",
+            "available": outMs > 0
+        ])
     }
 
     @objc private func dismissBleMidiPairing() {

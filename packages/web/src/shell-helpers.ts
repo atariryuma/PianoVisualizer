@@ -26,6 +26,13 @@
 //   6. midiToFullName(midi, noteNames) — pure: pitch name +
 //      Helmholtz octave digit (e.g. 'C4', 'ド4').
 //
+//   7. readContextLatencyMs(ctx) — what an AudioContext reports about its
+//      own output latency, in ms. Two callers need exactly this (the
+//      per-section audio-offset probe and the settings panel's read-out) and
+//      each had its own copy of the same three subtleties: unwrap Tone's
+//      wrapper to the raw context, seconds → ms, and treat a missing field as
+//      0 rather than as undefined arithmetic.
+//
 // These are all pure functions; no state, no side effects, no DOM
 // reads (setupHiDPICanvas takes the canvas explicitly). Tests are
 // pure-pure too — no fixture beyond the inputs.
@@ -87,4 +94,42 @@ export function midiToPitchName(midi: number, noteNames: readonly string[]): str
  *  (Math.floor(60/12)-1 = 4). */
 export function midiToFullName(midi: number, noteNames: readonly string[]): string {
   return midiToPitchName(midi, noteNames) + (Math.floor(midi / 12) - 1);
+}
+
+/** The two latency figures a Web Audio context reports about itself, in ms. */
+export interface ReportedContextLatency {
+  /** `outputLatency` — the speaker-side figure. 0 on every Apple platform
+   *  (WebKit doesn't implement it), which callers must read as "unknown"
+   *  rather than as "this device has no latency". */
+  outMs: number;
+  /** `baseLatency` — the render-quantum figure (~5-10 ms). Real, but far
+   *  smaller than true output latency, so it cannot stand in for it. */
+  baseMs: number;
+}
+
+/** Shape of either a Tone context (which wraps the real one) or a plain
+ *  AudioContext. Structural on purpose — no Tone import in the helpers. */
+export interface LatencyReportingContext {
+  outputLatency?: number;
+  baseLatency?: number;
+  rawContext?: { outputLatency?: number; baseLatency?: number };
+}
+
+/**
+ * Read an AudioContext's self-reported latency in ms, unwrapping Tone's
+ * wrapper first (Tone's own `context` object does not forward these fields
+ * reliably; `rawContext` is the actual AudioContext).
+ *
+ * Returns null when there is no context at all — distinct from a context that
+ * reports zeros, which is a real answer meaning "not implemented here".
+ */
+export function readContextLatencyMs(
+  ctx: LatencyReportingContext | null | undefined
+): ReportedContextLatency | null {
+  const real = ctx?.rawContext ?? ctx;
+  if (!real) return null;
+  return {
+    outMs: (real.outputLatency || 0) * 1000,
+    baseMs: (real.baseLatency || 0) * 1000,
+  };
 }

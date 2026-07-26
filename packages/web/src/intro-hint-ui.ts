@@ -3,11 +3,13 @@
 // Tiny user-feedback bits that all live in the same overlay region
 // of the canvas:
 //
-//   1. showHitChip(kind, text) — flying chip ('great' / 'good' /
-//      'miss' / etc.) that floats up from the hit-zone for ~1.1 s.
-//      Throttled to one chip per 100 ms because rapid passages
-//      (12+ notes/sec) would otherwise stack chips on top of each
-//      other before any can fade.
+//   1. showHitChip(kind, text, x, y, channel) — flying chip ('great' /
+//      'good' / 'miss' / etc.) that floats up from the hit-zone for
+//      ~1.1 s. Throttled to one chip per 100 ms PER CHANNEL because rapid
+//      passages (12+ notes/sec) would otherwise stack chips on top of
+//      each other before any can fade. The channel split keeps the press
+//      (timing) and release (note-length) verdicts from eating each
+//      other — see the comment on `lastChipMs`.
 //
 //   2. noInputAvailable() — pure check: mic permission failed AND
 //      no MIDI keyboard. iOS-WMB intentionally skips the mic but is
@@ -75,6 +77,13 @@ export interface IntroHintUiDeps {
   dom: IntroHintUiDom;
   state: IntroHintUiStateRef;
   midiInput: IntroHintUiMidiRef;
+  /** Is MIDI the input we score? Drives which hint is shown — a keyboard the
+   *  player pinned OFF must not make the app claim it is listening to one. */
+  isMidiActive: () => boolean;
+  /** The resolved input situation (ShellMidi.getInputStatus). `waiting` is the
+   *  one "is any input live" answer, shared with the mic meter in
+   *  shell-midi.paintInputState and the pill in midi-indicator. */
+  getInputStatus?: () => { active: 'midi' | 'mic'; waiting: boolean };
   /** Optional — only required by `showRunningUI`. Existing test
    *  suites that don't exercise the running-UI path can omit this. */
   practice?: IntroHintUiPracticeRef;
@@ -124,9 +133,9 @@ export interface IntroHintUiDeps {
 
 export interface IntroHintUi {
   /** Float a chip up from the hit zone (free-play / practice
-   *  hit/miss feedback). Debounced. Optional xPx/yPx place it at a note's
-   *  key + a chosen height (default centered mid-screen). */
-  showHitChip(kind: string, text: string, xPx?: number, yPx?: number): void;
+   *  hit/miss feedback). Debounced per channel. Optional xPx/yPx place it at
+   *  a note's key + a chosen height (default centered mid-screen). */
+  showHitChip(kind: string, text: string, xPx?: number, yPx?: number, channel?: string): void;
   /** Mic-permission-failed + no-MIDI predicate. */
   noInputAvailable(): boolean;
   /** Show intro hint when no input + hide when one becomes available. */
@@ -150,12 +159,27 @@ export function createIntroHintUi(deps: IntroHintUiDeps): IntroHintUi {
   const chipDuration = deps.chipDurationMs ?? DEFAULT_CHIP_DURATION_MS;
   const chipThrottle = deps.chipThrottleMs ?? DEFAULT_CHIP_THROTTLE_MS;
 
-  let lastChipMs = 0;
+  /** Throttle clock PER CHANNEL. A single shared clock meant the two
+   *  per-note feedback channels competed: a release nudge (note-length,
+   *  lower band) landing within 100 ms of the next press would swallow that
+   *  press's timing verdict, so at eighth-note speed the player saw an
+   *  apparently arbitrary mix of the two dimensions instead of both. They
+   *  occupy different vertical bands, so they never overprint and have no
+   *  reason to share a budget. Callers that pass no channel share the
+   *  default one (free-play hits, MIDI-connected toasts — the old
+   *  behaviour). */
+  const lastChipMs = new Map<string, number>();
 
-  function showHitChip(kind: string, text: string, xPx?: number, yPx?: number): void {
+  function showHitChip(
+    kind: string,
+    text: string,
+    xPx?: number,
+    yPx?: number,
+    channel = 'default'
+  ): void {
     const t = now();
-    if (t - lastChipMs < chipThrottle) return;
-    lastChipMs = t;
+    if (t - (lastChipMs.get(channel) ?? -Infinity) < chipThrottle) return;
+    lastChipMs.set(channel, t);
     const chip = document.createElement('div');
     chip.className = 'hit-chip ' + kind;
     chip.textContent = text;
@@ -169,15 +193,31 @@ export function createIntroHintUi(deps: IntroHintUiDeps): IntroHintUi {
   }
 
   function noInputAvailable(): boolean {
-    return !!deps.state.micPermissionFailed && !deps.midiInput.enabled;
+    return !!deps.state.micPermissionFailed && !deps.isMidiActive();
+  }
+
+  /** Pinned to the keyboard with nothing attached yet. Distinct from "no input
+   *  available": nothing is broken, the app is simply waiting for the device the
+   *  player told it to use — and it has to say so, because a silent screen with
+   *  no mic meter and no keyboard reads as a failure. */
+  function waitingForKeyboard(): boolean {
+    return deps.isMidiActive() && !deps.midiInput.enabled;
   }
 
   function refreshIntroHint(): void {
     const el = deps.dom.introHint;
     if (!el) return;
-    const show = noInputAvailable();
-    el.classList.toggle('visible', show);
-    if (show) el.innerHTML = deps.t('introNeedMidi');
+    if (noInputAvailable()) {
+      el.classList.add('visible');
+      el.innerHTML = deps.t('introNeedMidi');
+      return;
+    }
+    if (waitingForKeyboard()) {
+      el.classList.add('visible');
+      el.textContent = deps.t('inputWaitingMidi');
+      return;
+    }
+    el.classList.remove('visible');
   }
 
   function hideIntroHint(): void {
@@ -202,7 +242,14 @@ export function createIntroHintUi(deps: IntroHintUiDeps): IntroHintUi {
     deps.requestWakeLock?.();
     if (!deps.practice?.enabled) refreshIntroHint();
     if (deps.dom.micMeter) {
-      const wantsMicMeter = !deps.midiInput.enabled && !deps.state.micSuspended;
+      // The SAME classifier shell-midi's paintInputState uses — not a
+      // hand-maintained copy of its conjunction. Two places toggle this one
+      // element; a fourth mic-failure flag must not be able to update one and
+      // silently desync the other.
+      const st = deps.getInputStatus?.();
+      const wantsMicMeter = st
+        ? st.active === 'mic' && !st.waiting
+        : !deps.isMidiActive() && !deps.state.micSuspended;
       deps.dom.micMeter.classList.toggle('visible', wantsMicMeter);
     }
     // Background-rescan only for actual mic failures — iOS-WMB
@@ -211,7 +258,7 @@ export function createIntroHintUi(deps: IntroHintUiDeps): IntroHintUi {
     // rescan here: it surfaces a "🎹 No MIDI port found" diagnostic
     // the kid did not ask for.
     const wantBgRescan =
-      !deps.midiInput.enabled &&
+      !deps.isMidiActive() &&
       (!!deps.state.micPermissionFailed || !!deps.state.micIntentionallySkipped);
     if (wantBgRescan) {
       deps.startMidiAutoRescan?.();

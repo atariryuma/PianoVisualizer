@@ -26,6 +26,27 @@ export interface MidiMessageEvent {
 
 export interface PortChangeEvent extends MidiPort {}
 
+/** Native audio-output latency, read from the OS rather than from the web
+ *  audio stack. See `getAudioLatency`. */
+export interface NativeAudioLatency {
+  /** AVAudioSession.outputLatency in ms — true hardware output latency for the
+   *  CURRENT route, Bluetooth included. 0 when the session can't report it. */
+  outputLatencyMs: number;
+  /** AVAudioSession.ioBufferDuration in ms. Add to outputLatencyMs for the
+   *  total the listener actually experiences. */
+  ioBufferMs: number;
+  /** AVAudioSession.inputLatency in ms — the capture side, for the mic path. */
+  inputLatencyMs: number;
+  sampleRate: number;
+  /** e.g. "BluetoothA2DPOutput", "Speaker", "Headphones" — worth showing,
+   *  because it explains WHY the number is what it is. */
+  portType: string;
+  portName: string;
+  /** False when the platform gave us nothing usable; treat as "unknown", never
+   *  as "0 ms". */
+  available: boolean;
+}
+
 export interface PianoMidiPlugin {
   /** Begin enumerating MIDI ports + listening for connect/disconnect events.
    *  Resolves once initial enumeration has completed. */
@@ -47,6 +68,18 @@ export interface PianoMidiPlugin {
 
   /** Close a port; you'll stop receiving its messages. */
   closePort(options: { id: string }): Promise<void>;
+
+  /**
+   * True audio output latency from the OS. **iOS only** (rejects elsewhere).
+   *
+   * Exists because WebKit reports 0 for `AudioContext.outputLatency` on every
+   * iOS browser and in WKWebView, so the shell's auto-detect can never fire
+   * there and falls back to a default that is ~170 ms short of a real Bluetooth
+   * route. `AVAudioSession` knows the real figure; only the web layer hides it.
+   *
+   * Read on demand — the value changes with the output route.
+   */
+  getAudioLatency(): Promise<NativeAudioLatency>;
 
   /** Present the OS Bluetooth-MIDI pairing UI. **iOS only** — shows
    *  `CABTMIDICentralViewController`; once the user pairs a keyboard there,

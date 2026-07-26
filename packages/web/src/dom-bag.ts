@@ -105,6 +105,21 @@ export interface DomBag {
   resCombo: HTMLElement;
   resExtraRow: HTMLElement;
   resExtra: HTMLElement;
+  /** Per-note judgement breakdown block + its parts (result-card.renderJudge). */
+  resBadges: HTMLElement;
+  resDetails: HTMLElement;
+  resDetailsToggle: HTMLElement;
+  resJudge: HTMLElement;
+  resJudgeTitle: HTMLElement;
+  resJudgeBar: HTMLElement;
+  resJudgeRows: HTMLElement;
+  resJudgeErrorChart: HTMLCanvasElement;
+  resJudgeSpread: HTMLElement;
+  resJudgeTendency: HTMLElement;
+  resJudgeHoldTitle: HTMLElement;
+  resJudgeHoldRows: HTMLElement;
+  resJudgeHold: HTMLElement;
+  resJudgeCond: HTMLElement;
   resMsg: HTMLElement;
   resFocus: HTMLElement;
   resUnlock: HTMLElement;
@@ -120,6 +135,7 @@ export interface DomBag {
   resStretch: HTMLElement;
   resNext: HTMLElement;
   resTryPlay: HTMLElement;
+  resNoScoreFacts: HTMLElement;
   resHome: HTMLElement;
   resHistoryWrap: HTMLElement;
   resHistoryChart: HTMLElement;
@@ -164,6 +180,7 @@ export interface DomBag {
   audioOffsetSlider: HTMLElement;
   audioOffsetVal: HTMLElement;
   audioOffsetAuto: HTMLElement;
+  audioLatencyInfo: HTMLElement;
   calibrateBtn: HTMLElement;
   calibrateStatus: HTMLElement;
   audioOffsetReset: HTMLElement;
@@ -177,6 +194,13 @@ export interface DomBag {
   noteNamingAbc: HTMLElement;
   noteNamingSolfege: HTMLElement;
   // ノーツ落下速度セグメント（A3）。
+  /** 入力ソース選択（おまかせ / 🎹 / 🎙️）。 */
+  inputSrcAuto: HTMLElement;
+  inputSrcMidi: HTMLElement;
+  inputSrcMic: HTMLElement;
+  judgeEasy: HTMLElement;
+  judgeNormal: HTMLElement;
+  judgeStrict: HTMLElement;
   noteSpeedSlow: HTMLElement;
   noteSpeedNormal: HTMLElement;
   noteSpeedFast: HTMLElement;
@@ -272,6 +296,20 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'resCombo',
   'resExtraRow',
   'resExtra',
+  'resBadges',
+  'resDetails',
+  'resDetailsToggle',
+  'resJudge',
+  'resJudgeTitle',
+  'resJudgeBar',
+  'resJudgeRows',
+  'resJudgeErrorChart',
+  'resJudgeSpread',
+  'resJudgeTendency',
+  'resJudgeHoldTitle',
+  'resJudgeHoldRows',
+  'resJudgeHold',
+  'resJudgeCond',
   'resMsg',
   'resFocus',
   'resUnlock',
@@ -287,6 +325,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'resStretch',
   'resNext',
   'resTryPlay',
+  'resNoScoreFacts',
   'resHome',
   'resHistoryWrap',
   'resHistoryChart',
@@ -325,6 +364,7 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'audioOffsetSlider',
   'audioOffsetVal',
   'audioOffsetAuto',
+  'audioLatencyInfo',
   'calibrateBtn',
   'calibrateStatus',
   'audioOffsetReset',
@@ -336,6 +376,12 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'noteNamingAuto',
   'noteNamingAbc',
   'noteNamingSolfege',
+  'inputSrcAuto',
+  'inputSrcMidi',
+  'inputSrcMic',
+  'judgeEasy',
+  'judgeNormal',
+  'judgeStrict',
   'noteSpeedSlow',
   'noteSpeedNormal',
   'noteSpeedFast',

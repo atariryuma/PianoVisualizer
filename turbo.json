@@ -7,6 +7,9 @@
       "inputs": [
         "src/**",
         "public/**",
+        // index.html is at the package root, so neither src/** nor public/**
+        // covered it — an HTML-only change did not rebuild.
+        "index.html",
         "package.json",
         "tsconfig.json",
         "vite.config.*",
@@ -15,9 +18,33 @@
       "outputs": [
         "dist/**",
         "build/**",
-        "ios/App/public/**",
+        // Capacitor copies into ios/App/App/public (two "App" levels).
+        "ios/App/App/public/**",
         "android/app/src/main/assets/public/**"
       ]
+    },
+    // @piano/mobile#build compiles the WEB package — `vite build --config
+    // ../web/vite.config.ts` with root packages/web — into mobile/dist, then
+    // cap-syncs it onto the device. Package-relative inputs therefore describe
+    // the wrong package entirely: `src/**` resolves to packages/mobile/src,
+    // which is nearly empty. Every change under packages/web/src left this
+    // task CACHED, so `cap run ios` shipped a stale bundle and device testing
+    // silently tested old code. These $TURBO_ROOT$ globs make the cache key
+    // follow the sources actually compiled. Keep them in sync with the generic
+    // build inputs above.
+    "@piano/mobile#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_ROOT$/packages/web/src/**",
+        "$TURBO_ROOT$/packages/web/public/**",
+        "$TURBO_ROOT$/packages/web/index.html",
+        "$TURBO_ROOT$/packages/web/vite.config.ts",
+        "$TURBO_ROOT$/packages/web/package.json",
+        "package.json",
+        "tsconfig.json",
+        "capacitor.config.*"
+      ],
+      "outputs": ["dist/**", "ios/App/App/public/**", "android/app/src/main/assets/public/**"]
     },
     "dev": {
       "cache": false,

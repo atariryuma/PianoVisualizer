@@ -111,9 +111,11 @@ describe('createLatencyCalibration — タップ採点', () => {
       fx.setNow(clicks[i] + 0.052);
       fx.calib.onTap();
     }
-    expect(fx.onResult).toHaveBeenCalledWith(50); // 52 → 5ms 丸めで 50
+    expect(fx.onResult).toHaveBeenCalledWith(50, expect.objectContaining({ source: 'touch' })); // 52 → 5ms 丸めで 50
     expect(fx.calib.isRunning()).toBe(false);
-    expect(fx.status.textContent).toBe('calibrateDone:{"v":50}');
+    // The result now names the input it was measured on: a touch-measured
+    // offset does not apply to keyboard play, so a stored value must say which.
+    expect(fx.status.textContent).toBe('calibrateDoneOnFmt:{"v":50,"i":"calibrateInputTouch"}');
     expect(fx.btn.textContent).toBe('calibrateBtn'); // ラベル復帰
   });
 
@@ -155,7 +157,7 @@ describe('createLatencyCalibration — タイムアウト確定', () => {
       fx.calib.onTap();
     }
     vi.runAllTimers(); // クリック列終端 + 800ms の endTimer
-    expect(fx.onResult).toHaveBeenCalledWith(80);
+    expect(fx.onResult).toHaveBeenCalledWith(80, expect.objectContaining({ source: 'touch' }));
     expect(fx.calib.isRunning()).toBe(false);
   });
 
@@ -230,5 +232,152 @@ describe('createLatencyCalibration — 停止と UI 配線', () => {
     fx.btn.dispatchEvent(new Event('click'));
     await Promise.resolve();
     expect(fx.calib.isRunning()).toBe(false);
+  });
+});
+
+// ── calibrating on the instrument (Rocksmith pattern) ────────────────
+// Screen-touch input costs 20-50 ms while BLE-MIDI costs ~5 ms, so measuring by
+// touch and then playing on the keyboard bakes that difference in as permanent
+// error. Measuring on the instrument also lets the player's own consistent bias
+// cancel, since the same person on the same input produced the number.
+
+describe('createLatencyCalibration — instrument taps', () => {
+  it('consumes a key press as a tap only while running', async () => {
+    const fx = makeFixture({ isMidiActive: () => true });
+    // Before start: must NOT consume, or ordinary play would lose presses —
+    // the dispatcher skips scoring precisely when this returns true.
+    expect(fx.calib.tapFromInstrument()).toBe(false);
+    await fx.calib.start();
+    expect(fx.calib.isRunning()).toBe(true);
+    expect(fx.calib.tapFromInstrument()).toBe(true);
+  });
+
+  it('scores instrument taps exactly like screen taps', async () => {
+    const fx = makeFixture({ isMidiActive: () => true });
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    for (let i = WARMUP; i < WARMUP + TARGET; i++) {
+      fx.setNow(clicks[i] + 0.052);
+      expect(fx.calib.tapFromInstrument()).toBe(true);
+    }
+    expect(fx.onResult).toHaveBeenCalledWith(50, expect.objectContaining({ source: 'midi' }));
+  });
+
+  it('prompts for the keyboard when one is attached, touch otherwise', async () => {
+    // Without this the whole path is invisible — the button still said "tap
+    // here", so nobody would think to press a key.
+    const midi = makeFixture({ isMidiActive: () => true });
+    await midi.calib.start();
+    expect(midi.btn.textContent).toBe('calibratePlayHere');
+
+    const touch = makeFixture({ isMidiActive: () => false });
+    await touch.calib.start();
+    expect(touch.btn.textContent).toBe('calibrateTapHere');
+  });
+
+  it('reports which input produced the measurement', async () => {
+    const fx = makeFixture({ isMidiActive: () => true });
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    for (let i = WARMUP; i < WARMUP + TARGET; i++) {
+      fx.setNow(clicks[i] + 0.052);
+      fx.calib.tapFromInstrument();
+    }
+    // A stored offset is only interpretable if it says what measured it.
+    expect(fx.status.textContent ?? '').toContain('judgeInputMidi');
+  });
+});
+
+// ── one input per run + rejection of a bad run ───────────────────────
+// A run must sample exactly ONE transport path. Accepting both would blend
+// touch (20-50 ms) and BLE-MIDI (~5 ms) into a single median that describes
+// neither, which is why the genre calibrates per input. And a median over taps
+// that were never locked to the click is not a measurement — storing it would
+// put the player permanently off-beat with no clue why.
+
+describe('createLatencyCalibration — input locking', () => {
+  it('ignores screen taps during a keyboard run', async () => {
+    const fx = makeFixture({ isMidiActive: () => true });
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    fx.setNow(clicks[WARMUP] + 0.05);
+    fx.calib.onTap(); // wrong input for this run
+    expect(fx.status.textContent).toBe('calibrateUseKeyboard');
+    // …and it did not enter the sample: a full set of MIDI taps still resolves
+    // to the MIDI timing alone.
+    for (let i = WARMUP; i < WARMUP + TARGET; i++) {
+      fx.setNow(clicks[i] + 0.052);
+      fx.calib.tapFromInstrument();
+    }
+    expect(fx.onResult).toHaveBeenCalledWith(50, expect.objectContaining({ source: 'midi' }));
+  });
+
+  it('ignores keyboard presses during a touch run, but still consumes them', async () => {
+    const fx = makeFixture({ isMidiActive: () => false });
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    fx.setNow(clicks[WARMUP] + 0.2);
+    // Consumed (true) so the press is not scored as gameplay, but NOT sampled.
+    expect(fx.calib.tapFromInstrument()).toBe(true);
+    expect(fx.status.textContent).toBe('calibrateUseTouch');
+    for (let i = WARMUP; i < WARMUP + TARGET; i++) {
+      fx.setNow(clicks[i] + 0.052);
+      fx.calib.onTap();
+    }
+    expect(fx.onResult).toHaveBeenCalledWith(50, expect.objectContaining({ source: 'touch' }));
+  });
+
+  it('locks the source at start, not per tap (hot-plug mid-run cannot switch it)', async () => {
+    let attached = false;
+    const fx = makeFixture({ isMidiActive: () => attached });
+    await fx.calib.start(); // touch run
+    attached = true; // keyboard connects mid-measurement
+    expect(fx.calib.tapFromInstrument()).toBe(true);
+    expect(fx.status.textContent).toBe('calibrateUseTouch');
+  });
+});
+
+describe('createLatencyCalibration — rejecting an unusable run', () => {
+  it('rejects taps that were never locked to the click', async () => {
+    const fx = makeFixture();
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    // Wildly scattered within the accept window → MAD far past the bound.
+    const scatter = [0.01, 0.2, 0.03, 0.24, 0.02, 0.22, 0.05, 0.26, 0.01, 0.2];
+    for (let i = 0; i < TARGET; i++) {
+      fx.setNow(clicks[WARMUP + i] + scatter[i]);
+      fx.calib.onTap();
+    }
+    expect(fx.onResult).not.toHaveBeenCalled();
+    expect(fx.status.textContent).toBe('calibrateUnstable');
+    expect(fx.calib.isRunning()).toBe(false);
+  });
+
+  it('accepts a run with ordinary human jitter', async () => {
+    const fx = makeFixture();
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    // ±15 ms around 50 ms — within the 10-40 ms human range.
+    const jitter = [0.05, 0.062, 0.041, 0.055, 0.048, 0.065, 0.038, 0.052, 0.058, 0.045];
+    for (let i = 0; i < TARGET; i++) {
+      fx.setNow(clicks[WARMUP + i] + jitter[i]);
+      fx.calib.onTap();
+    }
+    expect(fx.onResult).toHaveBeenCalled();
+    expect(fx.status.textContent ?? '').toContain('calibrateDoneOnFmt');
+  });
+
+  it('stamps the output route onto the measurement (staleness detection)', async () => {
+    const fx = makeFixture({ getAudioRoute: () => 'GO:PIANO88 AUDIO' });
+    await fx.calib.start();
+    const clicks = scheduledClickSecs(fx.metronome);
+    for (let i = WARMUP; i < WARMUP + TARGET; i++) {
+      fx.setNow(clicks[i] + 0.052);
+      fx.calib.onTap();
+    }
+    expect(fx.onResult).toHaveBeenCalledWith(
+      50,
+      expect.objectContaining({ route: 'GO:PIANO88 AUDIO' })
+    );
   });
 });

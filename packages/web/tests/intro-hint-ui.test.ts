@@ -4,8 +4,8 @@
 //
 // Covers:
 //   • showHitChip: creates DOM node with class + text, throttled
-//     (100 ms default), removes after chipDurationMs, getHeight read
-//     fresh each call.
+//     (100 ms default) PER CHANNEL, removes after chipDurationMs,
+//     getHeight read fresh each call.
 //   • noInputAvailable: true only when micPermissionFailed AND
 //     !midiInput.enabled.
 //   • refreshIntroHint: toggles .visible based on noInputAvailable,
@@ -36,6 +36,9 @@ function makeFixture(over: Partial<IntroHintUiDeps> = {}) {
     dom: { introHint },
     state,
     midiInput,
+    // 'auto' semantics: the resolved source follows the hardware, which is what
+    // every expectation in this file was written against.
+    isMidiActive: () => midiInput.enabled,
     t: vi.fn((key, vars) => (vars ? `T(${key},${vars.v})` : `T(${key})`)),
     getHeight: () => 600,
     alert: alertSpy,
@@ -104,6 +107,22 @@ describe('showHitChip', () => {
     expect(document.querySelectorAll('.hit-chip').length).toBe(1);
     fx.advanceClock(60); // now 110ms total
     fx.ui.showHitChip('great', 'c');
+    expect(document.querySelectorAll('.hit-chip').length).toBe(2);
+  });
+
+  it('throttles PER CHANNEL — the two per-note feedback channels are independent', () => {
+    // Regression guard: with one shared clock, a note-length nudge (release
+    // channel, lower band) landing within the throttle window swallowed the
+    // next note's timing verdict, so at speed the player saw an arbitrary
+    // mix of the two dimensions instead of both.
+    const fx = makeFixture();
+    fx.ui.showHitChip('short', 'HOLD LONGER', 0, 0, 'release');
+    fx.advanceClock(10);
+    fx.ui.showHitChip('perfect', 'PERFECT', 0, 0, 'press');
+    expect(document.querySelectorAll('.hit-chip').length).toBe(2);
+    // Within a channel the throttle still applies.
+    fx.advanceClock(10);
+    fx.ui.showHitChip('great', 'GREAT', 0, 0, 'press');
     expect(document.querySelectorAll('.hit-chip').length).toBe(2);
   });
 
@@ -270,6 +289,8 @@ function makeRunningUiFixture(
     dom: { introHint, startScreen, hud, micMeter },
     state,
     midiInput,
+    // 'auto' semantics — the resolved source follows the hardware.
+    isMidiActive: () => midiInput.enabled,
     practice,
     t: vi.fn((key) => `T(${key})`),
     getHeight: () => 600,

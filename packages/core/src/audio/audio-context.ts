@@ -184,7 +184,15 @@ export interface PickAudioOffsetInput {
   reportedBaseMs: number;
   /** Default to fall back to when the browser doesn't report a useful value. */
   defaultMs: number;
-  /** Cap on auto-detected total. Default 200 ms. */
+  /** Cap on auto-detected total. Default 400 ms.
+   *
+   *  Was 200, which silently defeated the whole mechanism on the platform that
+   *  needs it most: iOS WKWebView reports 180-400 ms (see
+   *  core-opts.DEFAULT_AUDIO_OFFSET_MS) and Bluetooth output alone is
+   *  150-250 ms, so a real iPad-plus-AirPods reading was clamped to 200 and the
+   *  player was left permanently judged late with no way to correct it — the
+   *  slider and the tap-along calibration capped at 200 too. 400 covers the
+   *  documented ceiling; beyond that a reading is more likely bogus than real. */
   maxClampMs?: number;
   /** Minimum required `reportedOutMs` to trust the reading. Below this we
    *  consider the speaker-side latency "not reported" and fall back to
@@ -192,12 +200,33 @@ export interface PickAudioOffsetInput {
   minReportedOutMs?: number;
 }
 
+/**
+ * Ceiling for any audio-output offset, auto-detected OR hand-calibrated: the
+ * whole compensation chain (this clamp, the settings slider's `max`, the
+ * calibration result) has to agree on one number or a value that is accepted in
+ * one place gets silently clipped in another.
+ *
+ * 400 ms because A2DP Bluetooth is the worst real path a learner will hit —
+ * measured ~240 ms on a GO:PIANO88 as the audio sink — and the 200 ms it used
+ * to be cut off before that. Beyond 400 ms a reading is more likely bogus.
+ */
+export const AUDIO_OFFSET_MAX_MS = 400;
+
+/**
+ * Below this, `outputLatency` counts as NOT REPORTED rather than as "no
+ * latency". WebKit returns exactly 0 on every Apple platform, and `baseLatency`
+ * alone (block size, ~5-10 ms) under-represents the true output latency, so a
+ * small reading must not be believed — the UI says "unmeasurable" and offers
+ * calibration instead of printing a confident 0.
+ */
+export const MIN_REPORTED_OUT_LATENCY_MS = 5;
+
 export function pickAudioOffsetMs(input: PickAudioOffsetInput): number {
   if (input.userOverrideMs != null && Number.isFinite(input.userOverrideMs)) {
     return input.userOverrideMs;
   }
-  const minOut = input.minReportedOutMs ?? 5;
-  const max = input.maxClampMs ?? 200;
+  const minOut = input.minReportedOutMs ?? MIN_REPORTED_OUT_LATENCY_MS;
+  const max = input.maxClampMs ?? AUDIO_OFFSET_MAX_MS;
   // Only trust the auto-detect when the SPEAKER-side latency is reported.
   // baseLatency alone (block size, ~5-10 ms) under-represents true output
   // latency on Windows / Chrome (where outputLatency often = 0).

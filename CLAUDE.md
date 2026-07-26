@@ -62,8 +62,8 @@ boots from [`packages/web/src/main.ts`](packages/web/src/main.ts) into
 
 **Engine + shell extraction status (2026-05-13)**: `@piano/core` holds the
 DOM-free engine, and `packages/web/src/shell-*.ts` holds the typed browser
-composition layer. `pnpm verify` currently covers lint, typecheck, ~1009 core
-tests, ~1933 web tests, and the Vite web build (counts as of 2026-07-25).
+composition layer. `pnpm verify` currently covers lint, typecheck, ~1062 core
+tests, ~2054 web tests, and the Vite web build (counts as of 2026-07-26).
 
 **Type-narrowing status (2026-05-12)**: `osmd-cursor.ts` and
 `shell-bootstrap.ts` are zero `any` references. Across
@@ -104,6 +104,53 @@ piano-visualizer/
 ├── .github/workflows/      # CI/CD (web + iOS + Android)
 └── package.json            # pnpm workspaces root
 ```
+
+## DOM wiring: silently dead controls (2026-07-25)
+
+Adding one control touches **five** places: `index.html`, the `DomBag`
+interface, `DOM_BAG_IDS`, the consuming module's own `*Dom` interface, and the
+wiring at the `createXxx({ dom: ... })` call site. Miss the fifth and **nothing
+complains** — the module's field is optional, the read is
+`deps.dom.x?.addEventListener(...)`, and ~28 call sites still end in
+`} as any)`, which disables deps type-checking outright. The control compiles,
+ships, passes every unit test, and is inert on the device.
+
+Three real instances existed:
+
+- the judgement-strictness segment — added everywhere except the call site,
+- `resExtra` / `resExtraRow` — so the "よけいな音 n" row below had **never**
+  rendered,
+- `connectBleMidi` declared `() => void` while settings-panel calls `.finally()`
+  on its result (harmless only because the implementation is `async`).
+
+Guards now in place, in order of preference:
+
+1. **[`dom-wiring.test.ts`](packages/web/tests/dom-wiring.test.ts)** — a
+   source-level audit: for every `createXxx` call site that builds a DOM bag,
+   every field the target module declares AND reads must be provided. It found
+   all three above, and it is itself guarded (it asserts it matched ≥5 call
+   sites, so a refactor can't make it pass by matching nothing).
+2. **Spread the bag** — `dom: { ...DOM, ...renamedOnly }`. Identity-named
+   controls then wire themselves forever; only genuinely renamed entries are
+   listed. `shell-settings.ts` does this now.
+3. **Don't mark a shipped control optional.** `judgeEasy: HTMLElement | null`
+   (required, nullable) makes the compiler point at the call site that forgot
+   it; `judgeEasy?:` does not. Reserve `?:` for genuinely conditional DOM.
+4. **Prefer removing `} as any)`** over adding to it. Removing it from
+   `createSettingsPanel` immediately surfaced two real type errors it had been
+   hiding, and again later: after `getNativeAudioLatencyMs` became async, the
+   only reason the sync consumer still compiled was the `as any` at
+   `createStartPracticeSection`. The remaining ~28 are known debt.
+
+**Known gap, deliberately deferred.** The reason `} as any)` is tempting at all
+is that `DomBag` types every entry as `HTMLElement`, so any module needing an
+`HTMLInputElement` must cast — and `shell-settings` still hand-remaps 8
+non-identity-named fields, so "just spread the bag" cannot yet be the mechanical
+rule everywhere. The deep fix is to declare real element types in `DomBag` (one
+cast inside `createDomBag`) and rename those 8 module fields to the bag's ids;
+then every call site is literally `dom: DOM`, with the compiler — not a
+regex-based test — giving the guarantee. That is a 29-call-site change and wants
+its own pass.
 
 ## Single source of truth: packages/web
 
@@ -214,6 +261,17 @@ For local development, any HTTPS-capable static server works once
 
 ## Building
 
+> **Deploying to a device: `pnpm deploy:ios`.** `pnpm verify` ends at
+> `build:web`, which writes `packages/web/dist` — but `cap run ios` ships
+> `packages/mobile/dist`, refreshed only by `build:mobile`. Running them
+> separately puts a STALE bundle on the device and every observation from that
+> session is worthless. (Compounding it, until 2026-07-25 `@piano/mobile#build`
+> declared package-relative turbo `inputs` while actually compiling
+> `packages/web` — so even `build:mobile` returned a cache hit after a
+> web-source change.) Both are fixed, and rather than documenting "never use
+> `cap:ios` alone", **`cap:ios` / `cap:android` now build first themselves** —
+> the footgun is gone instead of being annotated.
+
 ```bash
 pnpm install
 pnpm build:web                 # → packages/web/dist/
@@ -222,7 +280,9 @@ pnpm serve                     # build:web + node https_server.mjs (any OS)
 pnpm serve:ps                  # build:web + PowerShell server (Windows legacy)
 
 pnpm build:mobile              # → packages/mobile/dist/ + cap sync
-pnpm cap:ios                   # opens iOS project (generated, hardware-verified)
+pnpm deploy:ios                # build:mobile + cap run ios (device / simulator)
+pnpm cap:ios                   # alias for deploy:ios — builds, then runs
+pnpm cap:open:ios              # just open the Xcode project (no build)
 pnpm cap:android               # ⚠ fails until `cap add android` is run — the
                                #   Android host app is not generated yet
 ```
@@ -252,6 +312,191 @@ mic detection. Support is **not uniform across platforms**:
   App / GarageBand works for native iOS apps but does **not** make the keyboard
   available to Safari. Don't pair via iOS Settings → Bluetooth either; Roland's
   docs say to pair through the music app.
+
+### Input source: MIDI ↔ mic switching (2026-07-26)
+
+**One flag was answering two different questions, and that is why there was no
+switch.** `midiInput.enabled` means "a MIDI port is bound to the dispatcher" — a
+hardware fact — but ~10 downstream sites read it as "MIDI is the input that
+drives scoring and visuals", which is a routing decision. Because they were the
+same boolean, the player's intent had nowhere to live: `attach()` set
+`enabled = true` and called `suspendMic()` unconditionally, so plugging a
+keyboard in silently ended acoustic play and **the only way back was to
+physically unplug** (`detach()` → `resumeMic()`). Not an oversight — the model
+had no room for a choice.
+
+The two facts are now separate:
+
+|                            | question                 | who answers                     |
+| -------------------------- | ------------------------ | ------------------------------- |
+| `midiInput.enabled`        | is a keyboard connected? | hardware (attach/detach, BLE)   |
+| `ShellMidi.isMidiActive()` | are we listening to it?  | `prefs.inputSource` × `enabled` |
+
+`resolveInputSource(pref, midiAttached)` in
+[`input-source.ts`](packages/core/src/state/input-source.ts) is the pure
+resolver; `describeInputSource` classifies the situation for UI. Rules:
+
+- **`auto` is the default and follows the hardware** — a bound port wins
+  (someone who connected a keyboard means to play it, and MIDI is strictly the
+  better signal). This is the pre-existing behaviour, unchanged.
+- **An explicit choice overrides the hardware in BOTH directions.** `mic` with a
+  keyboard attached keeps the mic (the case that was previously
+  unrepresentable); `midi` with nothing attached stays `midi`.
+- **Pinned `midi` never silently falls back to the mic.** A fallback would flip
+  the input mid-session while a keyboard boots / re-pairs / briefly drops — and
+  since the judgement windows differ per input path (`JudgeProfile`), that means
+  the _difficulty_ changing silently and the app scoring room noise. The UI says
+  "waiting for a keyboard" instead (`InputSourceStatus.waiting`).
+- **The choice persists** (`prefs.inputSource`, on the accept-list). An input
+  selection that resets on reload is not a selection. Genre precedent: Synthesia
+  lists every MIDI input with a per-device on/off; flowkey / Skoove / Simply
+  Piano ask "keyboard or microphone?" at setup and let it be changed afterwards;
+  Yousician exposes an Input setting; Rocksmith selects the device explicitly.
+  All of them default to auto-detect and make the override explicit + sticky.
+
+**Read the right one.** Hardware concerns (rescan policy, BLE takeover,
+`verifyAlive`) keep reading `midiInput.enabled`. Everything that asks "which
+device is the player playing" reads `isMidiActive()`: `mic-pipeline` (visual +
+`activeNotes` gates), `practice-tick` (mic-onset scoring), `game-state-update`
+(quality histories), `intro-hint-ui` (which hint + the mic meter),
+`midi-dispatch` (whether a press reaches the scorer), `shell-practice` (the
+judge profile, `micMode` chord relaxation, the result's `isExactInput`),
+`mic-lifecycle` (whether boot acquires the mic at all), and
+`latency-calibration` (which input the offset is measured on).
+
+Consequences worth knowing:
+
+- **The SELECTED SOURCE IS THE INPUT — no half-state.** With the mic pinned, a
+  MIDI press is dropped at `midi-dispatch`: not scored, not reflected, no badge
+  pulse, and `midi-indicator` stops naming the device. An earlier version kept
+  the visual reflection on the reasoning that lighting the on-screen keyboard
+  was "honest feedback that the device is alive"; device testing disproved it —
+  reported as _"I switched to the mic but Bluetooth is still connected"_,
+  because keys lighting up plus a "🎹 GO:PIANO88" badge is indistinguishable
+  from the app still using the keyboard. Note-OFF is deliberately NOT gated, or
+  a source switch mid-press would strand a lit key forever.
+- **The port stays bound.** Switching back to 🎹 is instant and hot-plug /
+  indicator / rescan logic keeps working; the app simply stops claiming it. The
+  OS-level BLE link is not torn down.
+- **`attach()` / `detach()` only move the mic when the resolved source agrees**,
+  so connecting a keyboard no longer takes the mic from a mic-pinned player, and
+  a dropped keyboard no longer hands a keyboard-pinned player the room mic.
+- **A connected-but-ignored keyboard is stated out loud** (`inputMidiIdleFmt` →
+  "🎙️ マイク入力 ・ GO:PIANO88 は使いません"). That is the one state a player is
+  guaranteed to read as a bug unless the app says it.
+- UI: the ⚙ → Input section's segment (`#inputSrcAuto` / `#inputSrcMidi` /
+  `#inputSrcMic`) writes the pref; `ShellMidi.applyInputSourcePref()` resolves
+  and moves the mic. The panel never touches the mic itself.
+- **One predicate, one name.** "Did the player pin this source?" is
+  `PianoCore.isPinnedTo(pref, source)`, and the modules that need it take the
+  whole `getInputSourcePref` rather than a bespoke boolean — it briefly had
+  three names (`isMicPinned`, `isMicExplicitlyChosen`, `isMidiPinned`), two of
+  which were the same predicate.
+- **`InputSourceStatus.waiting` is THE "is any input live" answer**, and
+  `micUsable` folds in `micSuspended` as well as the two failure flags. The mic
+  meter, the pill's ⏳ state and the intro hint all read it; they used to build
+  three different conjunctions of the same raw flags and disagree.
+
+### Startup: which input comes up, and when (2026-07-26)
+
+`mic-lifecycle.decideInitialInputMode()` runs once, from `initAudio()` on ▶. Two
+phases, and the ORDER is the whole design:
+
+**Phase 1 — settle the MIDI question, but only when its answer matters.**
+Probing before touching the mic is what keeps a keyboard user free of a
+permission prompt, a privacy LED, and idle YIN/FFT. But it sits on the critical
+path to the microphone, so:
+
+- **`inputSource === 'mic'` → the probe is skipped entirely.** No MIDI answer
+  can change the decision, so waiting for one is pure startup latency on exactly
+  the path that player is waiting on.
+- **Otherwise it runs, BOUNDED** by `MIDI_PROBE_TIMEOUT_MS` (1.2 s). Normally it
+  resolves instantly — boot already fired `initWebMIDI()` and `midi-init` now
+  shares that promise — so this only bounds a stalled CoreMIDI bridge, which
+  previously meant no keyboard AND no mic with nothing on screen saying why.
+
+**`initWebMIDI()` is idempotent by SHARING ITS PROMISE, not by returning
+early.** Boot does `void initWebMIDI()`; the ▶ path does `await initWebMIDI()`.
+With the old `if (_accessRequested) return`, that await resolved instantly while
+the boot probe was still in flight, so the mic decision could be taken against
+an unknown MIDI state: no port seen yet → acquire the mic (prompt + LED) → the
+probe lands, finds a keyboard, and `attach()` suspends the mic again.
+
+**The play screen does not wait for the microphone.** `initAudio()` resolves as
+soon as the audio GRAPH is built and kicks `decideInitialInputMode()` WITHOUT
+awaiting it. It used to await it, and because `installStartButton` does
+`await initAudio(); showRunningUI();`, every free-play start sat on the title
+screen for the length of a `getUserMedia` device open — **measured at ~430 ms on
+the iPad**, and reported as "it takes a while to switch to the mic". Nothing on
+screen needs the stream: the graph is complete, the render loop reads the
+analyser (silence until the source lands), and the mic meter is switched on by
+`acquire()` itself. With a keyboard attached the decision costs ~0 ms anyway,
+since it never calls `getUserMedia`. Two consequences to keep in mind:
+
+- **The in-flight window is part of the model.** `decideInitialInputMode` sets
+  `micSuspended = true` for its whole duration, so `describeInputSource` reports
+  `waiting` until a stream actually exists. Without that the app spent those
+  ~430 ms claiming `active: 'mic', waiting: false` with nothing open — the meter
+  and the pill believing it.
+- **Nothing else may await the MIDI probe in front of ▶.** `initAudio`'s
+  re-entry branch used to `await initWebMIDI()`; now that `midi-init` shares its
+  boot promise that re-enumerates nothing, so it was pure unbounded delay. A
+  keyboard attached since the last init arrives via the statechange listener and
+  the rescan poller, which are the paths that actually re-enumerate.
+
+[`boot-session.test.ts`](packages/web/tests/boot-session.test.ts) pins the
+transition gating at runtime (a held-open `initAudio` must not show the play
+screen);
+[`startup-contract.test.ts`](packages/web/tests/startup-contract.test.ts) pins
+the two source-level halves that have no runtime seam.
+
+**Phase 2 — the decision table.** `foreign` = an iOS WKWebView wrapper that
+polyfills Web MIDI but is NOT ours (Web MIDI Browser); see below.
+
+| `inputSource` | keyboard attached | environment         | outcome                                  |
+| ------------- | ----------------- | ------------------- | ---------------------------------------- |
+| `midi`        | any               | any                 | mic never acquired (`midi-detected`)     |
+| `auto`        | yes               | any                 | mic never acquired (`midi-detected`)     |
+| `auto`        | no                | foreign iOS wrapper | mic skipped (`ios-wmb-skipped`)          |
+| `auto`        | no                | anything else       | mic acquired                             |
+| `mic`         | any               | any                 | mic acquired — even in a foreign wrapper |
+
+**"Foreign wrapper" must not match our own app.** The test used to be
+`isAppleMobile() && navigator.requestMIDIAccess exists`, and on the Capacitor
+build that function exists _because we install it_ — so our own native app,
+which ships `NSMicrophoneUsageDescription` and a working mic, was classified as
+a browser whose `getUserMedia` is broken. Consequence on device: MIDI declared
+as the input, zero ports attached, mic never asked for — **an iPad with no input
+at all, from which `auto` could never recover**.
+`isNativeMidiPolyfillInstalled()` separates the two. The same misclassification
+had produced three separate symptoms, all fixed together:
+
+1. `mic-lifecycle` — the mic was never acquired (no input at all).
+2. `midi-indicator` — the practice pill showed 🎹⏳ "waiting for MIDI" while the
+   settings panel said 🎙️. It also read the RESCAN POLLER as a proxy for "no
+   input yet"; that poller runs from boot whenever no port is attached,
+   including a perfectly working mic session. It now reads
+   `InputSourceStatus.waiting`.
+3. `intro-diag` — free play opened with "🎹 MIDI待機中… tap ⚙ then 🔵" over a
+   live microphone. Suppressed on our own build unless the player pinned `midi`,
+   in which case nothing else IS listening and the nudge is correct.
+
+**`resume({explicit})` — an explicit choice outranks a platform heuristic.**
+`micIntentionallySkipped` means "we chose not to even ask here". A player
+picking 🎙️ in settings is better evidence than that guess, so the explicit path
+attempts the acquire anyway; failure surfaces honestly via
+`micPermissionFailed` + the intro hint. A successful acquire clears the flag (it
+means "never attempted", and we just succeeded) — leaving it set would silently
+re-block the next resume and keep the background MIDI poller running.
+
+**Diagnostics.**
+`[INPUT] pref=… active=… attached=… waiting=… midiIdle=… micSuspended=… micSkipped=… micFailed=…`
+is emitted on every input-state change (deduped) and once at boot, and
+`[AUDIO] mic ready in Nms (midi-probe Nms, getUserMedia Nms)` times the startup
+phases. Both are `console.log`, which Capacitor forwards to the device log — the
+native build hard-disables `remoteLog`. They exist because "the pill says MIDI
+but settings says mic" and "the mic takes a while" are questions about the
+SCREEN and the CLOCK that three rounds of device logs could not answer.
 
 ### MIDI pipeline invariants (2026-05-12, connection pass 2026-07-23)
 
@@ -298,10 +543,13 @@ cluster now relies on:
   `midiState.activeNotes` + the chord-window reducer so the on-screen keyboard
   lights up even before ▶ Start. Flow / combo / particle bursts / quality
   histories stay gated on `state.running`.
-- **Mic muting is `enabled`-only.** Both `mic-pipeline.ts` and
-  `game-state-update.ts` mute mic-driven visuals + history pushes for the entire
-  duration a MIDI port is attached. The previous "MIDI active within 2 s" window
-  let mic data leak back in during silent gaps between presses.
+- **Mic muting follows the RESOLVED source, for the whole time it is MIDI.**
+  Both `mic-pipeline.ts` and `game-state-update.ts` mute mic-driven visuals +
+  history pushes whenever `isMidiActive()` (see the input-source section above —
+  this used to be `midiInput.enabled`, which made a mic-pinned player's own
+  playing invisible). The previous "MIDI active within 2 s" window let mic data
+  leak back in during silent gaps between presses; a plain resolved check does
+  not.
 - **Reconnect is always one-shot polling.** `detach` (Web MIDI) and
   `onGattDisconnect` (BLE-MIDI) both `startMidiAutoRescan()` so a hot-replug
   recovers without user action. The poller self-stops the moment anything
@@ -420,6 +668,44 @@ temporarily limits max gain to prevent amplifying speech.
   - Kept deliberately soft (modest particle counts, gentle colours) so richer ≠
     noisier — the app's relaxing feel is preserved. `spawnRipple` is pool-capped
     (≤24) so fast passages can't saturate.
+- **Judgement system coherence pass（2026-07-25）**: an audit of "what the
+  player sees per note" vs "what the result reports" found the two were
+  unrelated systems. Four root fixes:
+  - **One judgement vocabulary, untranslated.** The verdict words were
+    half-localized — a JP player saw `Perfect!` / `Great!` (loanwords with no
+    `jp` entry) mixed with 「⏱ ちょっと早いよ」「弾いた音: C4」 in the same
+    passage. All momentary verdicts are now short English caps in every locale:
+    **PERFECT / GREAT / GOOD / MISS**, `✗ C4` for a wrong key, and `HOLD LONGER`
+    / `HOLD SHORTER` on release. This is the genre convention (beatmania / DDR /
+    SDVX / CHUNITHM label judgements in English caps over a Japanese UI — a
+    verdict must be readable in peripheral vision in <200 ms). These are TIERS
+    ONLY: no per-note direction wording (see the judgement section for why).
+    Everything that isn't a momentary verdict (settings, result prose, lane hand
+    labels) stays fully localized.
+  - **Timing judgement rebuilt on `JudgeProfile` / `judgeTiming`** — see the
+    dedicated section under Architecture. Four defects fixed at the root: the
+    tier and the credit were computed separately and contradicted each other,
+    the `EARLY` tier was mathematically unreachable, the tap window was
+    asymmetric (1 : 2.9), and the boundaries were not frame-aligned.
+  - **`JudgeTally` — one source of truth** (`@piano/core` `createJudgeTally` /
+    `resetJudgeTally` / `record{Timing,Length,Miss}Judgement` /
+    `summarizeJudgements`). Lives on `practice.judge`, reset **in place** at
+    section start (no hidden-class churn on the hot path). Written by the same
+    `judgeTiming` call that picks the chip (practice-scoring) and by the
+    auto-miss (practice-tick); read by the lane HUD and the result card. The
+    continuous score sums still feed the STAR maths — this tally feeds
+    everything the player is SHOWN, so live and result cannot disagree.
+    `summarizeJudgements` derives accPct / cleanPct / mean signed + absolute
+    deviation / standard deviation + unstable rate / lean direction, and refuses
+    to claim a lean below `JUDGE_TENDENCY_MIN_SAMPLES` (4) or inside
+    `JUDGE_TENDENCY_MIN_MS` (25).
+  - **Per-channel chip throttle.** `showHitChip` was throttled to one chip per
+    100 ms **globally**, so a release nudge (lower band) swallowed the next
+    note's timing verdict (upper band) at eighth-note speed — the feedback
+    looked arbitrary. The throttle is now per `channel` (`PRESS_CHIP_CHANNEL` /
+    `RELEASE_CHIP_CHANNEL`); the two bands never overprint, so they have no
+    reason to share a budget. Callers that pass no channel share the default
+    bucket (free-play hits, MIDI-connected toasts).
 - **Rhythm-game standard pass（音ゲー業界標準化, 2026-07-23）**: an audit vs
   genre conventions (Synthesia / Melodics / Rocksmith) closed eight gaps:
   - **Lane beat grid**: `buildLaneBeatGrid` (section-notes.ts) emits
@@ -448,14 +734,62 @@ temporarily limits max gain to prevent amplifying speech.
   - **Practice-option memory**: per-song `lastSettings` (P2-20) now also carries
     `ghostOn` / `metronomeOn`.
   - **Live HUD**: thin section-progress gauge on the top-bar pill
-    (`#ptbProgressFill`, 10 Hz) + a soft `×N` live combo in the lane from 5
-    (rhythm only; fades silently on break — no shame).
+    (`#ptbProgressFill`, 10 Hz) + a live combo in the lane from 5 (rhythm only;
+    fades silently on break — no shame).
   - **Loop lead-in**: loop laps start at count-in minus 2 clicks
     (`startPracticeSection(idx, {lapLead:true})` → Transport offset start) —
     timeline/judgement identical, just less waiting per lap.
+- **Three visible judgement bands + the hit-error bar**: the lane paints PERFECT
+  (bright core), GREAT (soft green) and GOOD (pink) from the active
+  `JudgeProfile` — symmetric, so all three tiers are readable before the note
+  lands — and an osu!-style hit-error bar under the hit line showing where the
+  recent presses actually landed. Previously only PERFECT + one asymmetric
+  window were drawn, and there was no direction feedback at all beyond a tier
+  label that could not fire.
+- **Live judgement HUD（2026-07-25, rhythm only）**: the lane used to show a
+  lone small `×N` at the right edge, which says nothing about accuracy, nothing
+  about how clean the hits were, and vanishes the moment it breaks — mid-run the
+  player had no way to read their own state. `render/lane.ts` now draws the
+  genre-standard pair:
+  - **Combo centred above the hit line** (number + `COMBO` caption, grows 30→40
+    px with the streak, capped). Centre because that is where the eyes already
+    are; the right-edge chip was outside the reading path.
+  - **Judgement panel, top-right of the lane**: running accuracy % (`--` until
+    the first verdict, so a run never opens at a discouraging 0%) over the
+    per-tier counts, dimmed at 0 so the full scale stays legible. Fed
+    `practice.judge` directly — the same object every frame, accuracy derived
+    with integer math, so the panel costs **zero per-frame allocation**. Labels
+    and colours come from `TIMING_TIER_STYLE` in `@piano/core` — the ONE
+    judgement vocabulary, read by the live chips, the lane panel and the result
+    breakdown alike, and not plumbed through `t()` (there is nothing to
+    localize). Guided/listen pass `null` (guided grades every press `perfect` by
+    design, so a breakdown there would claim a timing quality that was never
+    measured).
 - **Encouragement system**: replaces numeric combo display with escalating
   bilingual messages (`Nice! → Great! → ... → Awesome!`), each triggering a
   unique visual effect.
+- **Result: per-note judgement breakdown（2026-07-25）**: the result card
+  reported only rolled-up percentages, so a run that produced 40 individual
+  verdicts ended as "Timing 78%" — no breakdown, no direction, and no link back
+  to what the player had just been shown note by note. `result-card.renderJudge`
+  (`#resJudge`) now paints the analysis from the snapshot's `JudgeTally`:
+  - a **proportional stacked bar** (shape of the run before any number is read),
+  - **per-tier counts** in the same words the chips used
+    (`PERFECT n GREAT n EARLY n LATE n MISS n`, zeros dimmed not dropped),
+  - **`judgeSpreadFmt`** — mean ABSOLUTE deviation ("how tight",
+    direction-free),
+  - **`judgeTendency{Late,Early}Fmt` / `judgeTendencyEven`** — which way the
+    playing leaned + the one adjustment it implies. This is the genre-standard
+    deviation read-out (beatmania FAST/SLOW counts, osu! mean error). `even` is
+    a genuine compliment with its own positive line, not a fallback, and below
+    the sample floor the card says **nothing** rather than guessing.
+  - the same treatment for holds (`GOOD / SHORT / LONG` +
+    `judgeHold{Short,Long}`), shown only when releases were actually scored
+    (mic-only practice has no note-off).
+  - The count labels stay untranslated (they must match the chips); the prose is
+    localized (it is coaching, not a verdict). Rhythm only. The snapshot holds a
+    **copy** of the tally — the next section start zeroes the live one in place,
+    which would otherwise blank the block behind a langchange re-render.
 - **Section-result coaching (Knowledge of Performance)**: after a scored
   (rhythm-mode) section, the result card pairs one genuine _strength_ with one
   specific _next step_, derived from the already-computed accuracy / timing /
@@ -624,6 +958,297 @@ temporarily limits max gain to prevent amplifying speech.
     title screen — the standard "continue where you left off" the title screen
     lacked.
 
+### Timing judgement (2026-07-25) — `JudgeProfile` + `judgeTiming`
+
+All of it lives in
+[`practice-state.ts`](packages/core/src/state/practice-state.ts), modelled on
+what the genre actually does (beatmania IIDX, CHUNITHM, maimai, ONGEKI, DDR,
+osu!). Five rules — the first four were each a bug before:
+
+**1. Tiers carry QUALITY only: PERFECT / GREAT / GOOD, then MISS.** Direction is
+NOT a tier. It used to be (`perfect | great | early | late`), which is both
+non-standard and structurally fragile: a directional tier lives in the gap
+between the GREAT edge and the window edge, so a band change can squeeze it to
+zero width. That had shipped — the GREAT band was `perfectMs * 2` = 180 ms
+against a 120 ms early window, so **`EARLY` was mathematically unreachable**:
+the app could report LATE but never EARLY, and the grade tally showed a
+structural zero no matter how the player leaned.
+
+**2. One call produces the tier AND the credit.**
+`judgeTiming(dtSignedMs, profile)` → `{ grade, score, inWindow }`. Never compute
+one without the other. They used to be separate — an absolute threshold for the
+chip, `1 - |dt| / window` over _asymmetric_ windows for the score — so the same
+offset gave the same chip and wildly different credit:
+
+|         dt | old chip    | old credit | new chip | new credit |
+| ---------: | ----------- | ---------: | -------- | ---------: |
+| **−90 ms** | **PERFECT** |   **25 %** | PERFECT  |      100 % |
+|     +90 ms | PERFECT     |       74 % | PERFECT  |      100 % |
+|    +220 ms | GREAT       |       37 % | MISS     |          — |
+
+An early-leaning learner therefore saw nothing but PERFECT chips while the
+timing percentage stayed too low to clear ★3, with no explanation anywhere.
+Credit is now `TIER_SCORE[grade]` (PERFECT 1 / GREAT 0.7 / GOOD 0.3) — a
+weighted sum of tier counts, which is how the genre computes accuracy (osu! 300
+/ 100 / 50 = 1 : 1/3 : 1/6; IIDX EX score 2 : 1 : 0). With credit defined _by_
+the tier, that class of bug cannot exist.
+
+**3. Windows are SYMMETRIC.** Every published tap-note window in the genre is
+mirrored (IIDX ±16.67/±33.33/±116.67/±250; CHUNITHM ±16.66/±33.33/±66.67/±83.33;
+maimai ±16.67/±50/±100/±150; osu!mania 16 / 64−3·OD / 97−3·OD / …). Asymmetry
+appears only on HOLD ticks, a different mechanic. The old −120/+350 tap window
+(1 : 2.9) let a learner run most of a beat behind at full credit, which made the
+auto-miss nearly unreachable and the drag coaching dishonest.
+
+**4. Boundaries are whole 60 fps frames** (`JUDGE_FRAME_MS`, asserted in tests).
+A genre convention — the published windows above are all multiples of 16.67 ms —
+and here more than convention: the rAF loop, the lane, and the mic onset
+detector are all frame-quantized, so sub-frame boundaries claim resolution the
+pipeline does not have.
+
+**5. Windows are per INPUT PATH × player-chosen strictness.**
+
+| profile |     PERFECT |        GREAT | GOOD (= hit window) |
+| ------- | ----------: | -----------: | ------------------: |
+| MIDI    |  4F ≈ 67 ms |  8F ≈ 133 ms |        12F = 200 ms |
+| mic     | 6F = 100 ms | 10F ≈ 167 ms |        15F = 250 ms |
+
+`resolveJudgeProfile(isExactInput, strictness)`; `JUDGE_STRICTNESS_SCALE`
+multiplies every boundary (easy 1.3 / normal 1 / **strict 0.7**, which brings
+MIDI to ≈ osu! OD5).
+
+No published game varies windows by input DEVICE — the genre treats them as a
+chart/difficulty property and handles device variance with calibration. We split
+anyway because the mic path carries ~±30-40 ms of irreducible jitter (onset FFT
+2048/48 kHz ≈ 43 ms + frame quantization, and `MIC_INPUT_LATENCY_MS` compensates
+a _variable_ lag with a constant), so judging it on a ±50 ms window would be
+measuring our own noise. **The split is the automatic FLOOR; the player-facing
+knob is the strictness setting** (`prefs.judgeStrictness`, a settings segment) —
+that is how the genre expresses strictness (osu!'s Overall Difficulty,
+StepMania's TimingWindowScale) and it is what stops the windows from changing
+silently when a keyboard is plugged in. The card reports both (`judgeCondFmt` →
+"判定: ふつう ・ 入力: MIDI"), because two attempts judged differently are not
+comparable.
+
+Everything downstream must follow the **active** profile, never a captured
+constant — the input path and the setting can both change mid-section:
+
+- `practice-scoring` picks the profile per press from `isExact`.
+- `practice-tick.getJudgeProfile()` reads the active `goodMs` per tick, so the
+  auto-miss deadline matches what the scoring would still accept. Scoring, tick
+  and lane all take the SAME dep shape — one answer to "which windows are in
+  force". The shell memoizes the resolution on the strictness (three per-frame
+  readers × a fresh object per non-1× scale was ~180 short-lived objects/s).
+- `practice-lane.getJudgeProfile()` feeds the DRAWN bands. The visible hit zone
+  is the game's promise about when a press counts; if it doesn't track the
+  profile, the lane shows one contract and the scoring applies another.
+
+**Direction is reported as a DISTRIBUTION, never as a per-note indicator.** Two
+reasons. It teaches more — bias (where the cloud sits), consistency (how wide it
+is) and the standard it's judged against are all readable at once, which no
+label carries. And Konami holds a patent on fast/slow indicators, which DJMAX
+removed its own implementation over, so a discrete early/late readout is a form
+worth staying away from in a shipping app. Concretely:
+
+- **Live**: `JudgeErrorRing` (fixed-size, hot-path-safe, ticks fade by recency
+  index so no timestamps are needed) → the lane's hit-error bar under the hit
+  line, osu!'s hit-error bar.
+- **Result**: `drawErrorDistribution` — the run's own tier bands with the mean
+  offset and a ±1σ span marked — plus the standard deviation (osu!'s unstable
+  rate is this × 10; accumulated from `dtSqSumMs` so the whole summary stays
+  O(1) in memory). The chart shares `drawJudgeScale` with the live hit-error
+  bar: same scale, two sizes, one drawer. It is painted ONLY while the
+  disclosure is open — the canvas measures 0 wide inside a `hidden` container.
+- **Prose coaching** derived from the aggregate mean is fine and stays.
+
+**Star thresholds moved with the credit model** (`STAR_TIERS` timing 60→85 for
+★3, 30→55 for ★2). Under the old flat curve a learner dragging ~120 ms scored 63
+% and cleared a 60 % gate, so ★3 said nothing about timing. Simulated over
+normal-distributed players on both profiles: steady 99-100 %, average 87-94 %,
+dragging 66-73 %, unsteady 73-78 % — so 85 admits the first two and holds back
+the last two on either path, while 55 still admits anyone who played the section
+through. Stored stars are non-decreasing, so no existing progress is lost.
+
+**Tightening PERFECT made calibration matter, so the result separates the two
+causes.** `JudgeSummary.looksLikeSetupIssue` is set when the lean is large
+(`JUDGE_SETUP_SUSPECT_MS` 60) **and** nearly every press missed the same way
+(`|mean| / meanAbs ≥ JUDGE_SETUP_CONSISTENCY` 0.8). That signature is a setting,
+not a habit, and the card then points at **note speed first, then the audio
+offset** — beatmania's own documented procedure (adjust scroll speed before
+offset when the early/late balance is skewed). Coaching "press a little sooner"
+there would be teaching the child to compensate for our configuration.
+
+### Latency calibration (2026-07-25) — one offset, measured on the input you play
+
+The app compensates audio latency with a SINGLE `audioOffsetMs`. That is the
+right count here, and the reasoning matters because the genre's usual answer is
+two:
+
+- The recommended standard is **two** offsets — input, and audio/video — because
+  three delays (input / audio / video) are not independently distinguishable: a
+  player cannot tell "big input + small A/V" from "small input + big A/V". Some
+  games ship **one** (PolyrhythmMania folds input latency into the audio
+  offset); arcade titles ship two (CHUNITHM's Offset A / Offset B).
+- **We need one.** There is no separate video path — the lane is drawn from the
+  same clock as the audio — and input latency is negligible on both paths:
+  BLE-MIDI measures **3-6 ms** (iOS's minimum connection interval is 11.25 ms),
+  and the mic path already carries its own `MIC_INPUT_LATENCY_MS` for detection
+  lag. A second offset would be a mechanism for a 5 ms term.
+
+**Calibrate on the input the player actually plays.** Rocksmith calibrates from
+the guitar; Rock Band calibrates per instrument. Screen touch costs 20-50 ms
+against BLE-MIDI's ~5 ms, so measuring by touch and then playing on the keyboard
+bakes that difference in permanently. It also makes the player's own consistent
+bias cancel, since the same person on the same input produced the number — and
+an offset is explicitly a subjective "feels on time to me" value, not a physical
+constant.
+
+`latency-calibration.ts` therefore:
+
+- **Locks the source at `start()`** (`isMidiAttached()` → `'midi' | 'touch'`)
+  and enforces it per tap. A mixed run would blend two transport paths into one
+  median that describes neither. A wrong-input press is answered with a nudge
+  (`calibrateUseKeyboard` / `calibrateUseTouch`) rather than ignored, because a
+  tap that silently does nothing reads as a broken button. MIDI presses during
+  calibration are consumed by the dispatcher so they are never also scored.
+- **Rejects an inconsistent run** instead of storing its median
+  (`MAX_TAP_MAD_MS` 45, on the median absolute deviation — robust to one
+  mistimed tap the way the median is). Rock Band's sensor auto-calibration lands
+  within ~5-10 ms and human tap jitter is 10-40 ms, so a wider spread means the
+  taps were not locked to the click. Storing that median would put the player
+  permanently off-beat with no clue why.
+- **Stamps the measurement with its input AND output route**
+  (`prefs.audioOffsetSource` / `audioOffsetRoute`). "Recalibrate whenever you
+  change speakers or headphones" is the standard advice; because
+  `AVAudioSession` gives us the route name, the settings panel DETECTS the
+  change and says so (`audioOffsetStaleFmt`) rather than leaving it in
+  documentation.
+- **Logs the result** via `console.log` (`[Calibrate] offset=… MAD=… input=…`).
+  Not `remoteLog`: the native build hard-disables that for App Store compliance,
+  but Capacitor forwards console to the device log — which is where the answer
+  is needed. Before this, the only way to find out what a calibration produced
+  was to pull localStorage off the device.
+
+**Auto-detect is dead on Apple platforms without the native bridge.** WebKit
+returns 0 for `AudioContext.outputLatency` in every iOS browser and in
+WKWebView, so `pickAudioOffsetMs` fell through to its default and every iPad
+user started ~170 ms out of sync. `capacitor-piano-midi`'s `getAudioLatency()`
+reads `AVAudioSession.outputLatency` + `ioBufferDuration` instead, and
+`start-practice-section` prefers it. Caveats worth knowing:
+
+- A reported **0 means "not measured", never "0 ms device"** — the settings
+  panel says so explicitly (`audioOffsetUnmeasurable`) instead of printing "0
+  ms", which is what made a tester ask whether a 210 ms offset was normal.
+- For **Bluetooth A2DP the OS under-reports**: a real GO:PIANO88 route measured
+  126.8 ms from the OS while the player needed ~240 ms. The remaining gap is the
+  codec + remote-device buffer, which is why calibration (which measures what
+  the player actually hears) has the last word and the OS value is only a seed.
+- The ceiling is **400 ms** in all three paths (`pickAudioOffsetMs`'s clamp, the
+  slider `max`, `OFFSET_MAX_MS`). It was 200, which is _inside_ the range
+  Bluetooth output occupies — so a Bluetooth user was clamped and could not
+  correct their own latency in any of the three.
+
+### Touch model (2026-07-25) — read this before touching gesture CSS
+
+The app is finger-first on iPad, so three rules hold everywhere:
+
+- **The `touch-action` policy has FOUR tiers, and the last is defined by WHO
+  OWNS THE GESTURE — not by what kind of element it is.** `pan-x pan-y` on
+  `html, body` → `pan-y` on each scroll container → **`manipulation` on every
+  tap-only control** → **`none` on every element whose gesture WE implement in
+  JS** (`#canvas`, `.settings-slider`, `#calibrateBtn.is-tapping`).
+
+  Tier 3 was missing at first, and that is what made controls inside a scrolling
+  panel feel sluggish: with only the inherited `pan-y`, every press on a button
+  is also a candidate pan gesture, so WebKit waits to see whether the finger is
+  starting a scroll before dispatching the tap.
+
+  Tier 4 is the one that keeps being got wrong, because the obvious taxonomy
+  ("what kind of control is this?") is the wrong one. The settings sliders broke
+  three separate times on it:
+  1. **`none` while the BROWSER still owned the drag** → undraggable. A range
+     input's drag is a browser behaviour; `none` disables it.
+  2. **native appearance, so the browser owned it again** → inherited iOS's rule
+     that you must grab the THUMB (tapping the track does nothing, and with a
+     `step` a drag beginning off the thumb does nothing —
+     angular/components#27316, twbs/bootstrap#31241). On the volume rows, value
+     100 with the thumb pinned right, the only live pixels were at the far
+     right.
+  3. **`manipulation` once JS owned it** → `manipulation` still permits PANNING,
+     so the instant the finger moved WebKit claimed the touch for a scroll,
+     fired `pointercancel`, and stopped delivering `pointermove`. A tap worked;
+     a drag never did.
+
+  The rule: if a JS handler implements the drag, the element is tier 4. If the
+  browser implements it, it must not be.
+
+- **Sliders: `slider-control.ts` owns the gesture, the `<input type=range>` owns
+  the value.** Material's slider spec and the W3C slider pattern both say a
+  press anywhere on the track moves the thumb — iOS is the deviation, which is
+  why `range-touch` and friends exist. The input stays the value model and the
+  accessibility surface (keyboard, VoiceOver, form semantics); JS decides the
+  value from pointer events and dispatches real `input`/`change`, so the
+  persistence path is untouched. It `preventDefault()`s the browser's own drag —
+  two models disagree by the half-thumb inset and a drag oscillates between them
+  — and restores focus explicitly, since preventDefault also cancels it.
+  Geometry still matters independently: the element BOX must be `--tap-min` (a
+  range input is hit-tested on its box, never on its painted thumb — the box was
+  6 px against a 28 px thumb) and the thumb must not overflow it (it overflowed
+  by 11 px into the value read-out above).
+- **`touch-action` is `pan-x pan-y` on `html, body`, `none` only on `#canvas`.**
+  It used to be `none` on `html, body`. `touch-action` is intersected down the
+  **whole ancestor chain**, so that single declaration disabled touch panning in
+  every nested scroll container (`.settings-card`, `.song-card`, `.result-card`,
+  `.journal-card`, `#osmdContainer`, `#addSongLibraryList` — all
+  `overflow-y: auto`). A swipe in a long panel did nothing, and because a moved
+  touch never synthesizes a `click`, the lift didn't register as a tap either —
+  the app's "taps sometimes do nothing" bug. `pan-x pan-y` still excludes BOTH
+  pinch-zoom and double-tap-zoom (neither is a pan), so "never zoom the whole
+  app" is unchanged; the play surface opts out again on `#canvas`. Each scroller
+  also re-declares `touch-action: pan-y; overscroll-behavior: contain`. **Never
+  re-introduce `touch-action: none` on an ancestor of a scroller.**
+- **The top-right corner stack is DERIVED, not hand-computed.** Four fixed
+  elements share that band (`#themeBar`, `#playTime`, `#questDisplay`, and the
+  centered `#qualityScore`) and nothing in CSS relates them, so each one used to
+  carry its own `max(Npx, calc(var(--safe-top) + Mpx))` with the ⚙/🏠 bar's 32
+  px height baked into the number. Raising those buttons to the 44 px floor
+  therefore pushed the bar's bottom edge down THROUGH the two rows below it —
+  the free-play timer rendered inside the 🏠 button. The rows are now
+  `--stack-row1..4` in `:root`, each derived from the row above plus that row's
+  own height (row 2 = row 1 + `--tap-min` + gap), so a control changing size
+  moves the stack instead of overlapping it.
+  [`corner-stack.test.ts`](packages/web/tests/corner-stack.test.ts) fails on any
+  literal `top` in those four rules.
+- **44 CSS px is the tap-target floor** (iOS HIG). Controls used to be sized
+  from their text — `#practiceTopBar .ptb-icon-btn` was ~24 px, and ~15 px under
+  the ≤520 px media query; `#settingsBtn` / `#homeBtn` were 32 px. One block at
+  the END of `app.css` ("Minimum touch targets") holds every hand-operated
+  control to the floor, so it wins over the text-derived paddings above at equal
+  specificity. Small controls that must stay visually small (`.opt-toggle`) keep
+  their size and grow an invisible 44 px hit area via `::before` (`::after` is
+  the knob).
+- **The practice top bar wraps, never clips.** It was `flex-wrap: nowrap` +
+  `overflow: hidden` under 520 px, so the pill silently amputated whatever
+  didn't fit (on a portrait phone: the ↻ and ✕) — invisible AND untappable. Now
+  the text read-outs shrink (`min-width: 0` + ellipsis), the buttons are
+  `flex-shrink: 0`, and the row wraps. Safe because the topBar bottom is
+  measured at runtime into `--top-cluster-bottom`, which OSMD reads.
+
+Press feedback lives in
+[`touch-feedback.ts`](packages/web/src/touch-feedback.ts):
+
+- `installTouchFeedback()` — one empty **passive** `touchstart` listener on the
+  document. WebKit only applies `:active` to elements with a touch handler in
+  their ancestry, and every control sets
+  `-webkit-tap-highlight-color: transparent`, so without this a tap produced
+  literally no visual response. Passive matters: a non-passive document-level
+  touch listener opts the page out of WebKit's fast-tap path (same reason
+  `installNoZoomGuards` is web-only — see main.ts).
+- `setButtonBusy(btn, busy)` → `.is-busy` (dim + `pointer-events: none`) for
+  controls that `await` something slow. Wired on the song-panel ▶ Start, whose
+  chain is audio init + score load + OSMD render — seconds on a cold start, and
+  previously indistinguishable from a dropped tap.
+
 ### Rendering
 
 Canvas-based with `requestAnimationFrame`. Layers drawn back-to-front:
@@ -637,6 +1262,52 @@ Canvas-based with `requestAnimationFrame`. Layers drawn back-to-front:
 7. Frequency spectrum bars (64 bars, piano range)
 8. Ripples (expanding circles at note positions)
 9. Particles (circle, ring, star, note, flower types; cap from `PERF_PROFILE`)
+
+### "Printed = playable" — note extraction (2026-07-25)
+
+**One property decides whether a note is required: `print-object`. Never the
+engraving size.** `osmd-init.ts` renders with `drawHiddenNotes:false`, so what
+the learner sees is exactly the set of notes with `PrintObject !== false` — and
+[`note-extractor.ts`](packages/web/src/note-extractor.ts) must ask for that same
+set. Grace notes are the single deliberate exception (below).
+
+It used to skip on OSMD's `IsCueNote` instead, and had no `PrintObject` check at
+all, which broke the invariant in **both** directions:
+
+- **Printed notes were dropped.** OSMD's `getCueNoteAndNoteTypeXml` folds
+  `<cue/>` (a genuine reference cue) and `<type size="cue">` (pure engraving —
+  "set this small") into one boolean. Cadenzas are engraved small, so whole
+  printed passages never reached the lane, the ghost, or scoring: **La
+  Campanella bars 75-87 / 103-105 — the entire right-hand run** (31 notes in bar
+  75 alone, the left hand playing on alone underneath), **Liebestraum's two
+  cadenzas** (bars 25-26, 60-62), Moonlight iii, BWV 847. In a piano-solo score
+  `<cue/>` is essentially always the engraver meaning "small note" anyway, so
+  cue-ness carries no signal here at all.
+- **Unprinted notes were required.** MuseScore hides playback-only realizations
+  behind the printed symbol — **K.545 bar 15 hides `A5 G5 A5 G5 A5 G5` behind a
+  printed `tr`**, Clair de lune hides tie-continuation duplicates. The learner
+  was being asked for notes that appear nowhere on the score.
+
+Measured over the shipped library: **+747 printed notes restored, −404 unprinted
+notes removed, across 13 of 59 scores** (Liebestraum +354/−32, La Campanella
++341/−10, K.545 −184, Clair de lune −64, alla_turca −30).
+
+**Grace notes stay excluded** — displayed, never required. That is the
+assessment-app convention (SmartMusic does not assess grace notes, trills or
+other ornaments), and today it is also the only correct choice: OSMD gives every
+grace voice entry the **same timestamp as its main note**. Measured across the
+library (alla_turca 282 grace entries, gnossienne 100, nocturne 19, fur_elise
+3): 100 % collide, 0 % get a distinct timestamp. Extracting them as-is would
+stack acciaccatura + main note into one chord to be struck simultaneously. Doing
+it properly needs performance-practice time-stealing (shorten the main note,
+offset each grace) — a separate change, not a flag flip. `score-timing.ts`
+excludes grace from the measure clock for the same reason, so the two stay
+symmetric.
+
+`GNotesUnderCursor()` honours OSMD's `SkipInvisibleNotes`, so
+`osmd-cursor.highlightCurrentNotes` cannot reveal a hidden note by painting it
+(verified: 0 hidden notes returned over full cursor walks of alla_turca and
+K.545). No change was needed there.
 
 ### Falling-notes lane + sheet-panel default (2026-07-22)
 

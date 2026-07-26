@@ -36,6 +36,8 @@
 // entry-point.
 
 /** Generic OSMD-derived note shape — same as section-notes.ts. */
+import { readContextLatencyMs } from './shell-helpers';
+
 export interface OsmdLikeNote {
   hand?: string;
   midi: number;
@@ -252,6 +254,16 @@ export interface StartPracticeSectionDeps {
    *  どちらも省略可（旧シェル互換 → 線なし）。 */
   buildLaneBeatGrid?: (idx: number | null) => Array<{ timeMs: number; accent: boolean }> | null;
   setLaneBeatGrid?: (events: Array<{ timeMs: number; accent: boolean }> | null) => void;
+  /** OS が報告する音声出力遅延（ms、ioBuffer 込み）。iOS の AVAudioSession
+   *  由来。null = 取得不能（web / 非 iOS / セッション未報告）。
+   *
+   *  非同期 — 出力経路はセクション間で変わる（A2DP のピアノが繋がる、AirPods
+   *  が来る）ので、キャッシュ済みの値ではなく毎回 OS に聞く。 */
+  getNativeAudioLatencyMs?: () => Promise<number | null>;
+  /** 判定カウンタ（practice.judge）の 0 クリア。実体は
+   *  PianoCore.resetJudgeTally への束縛（shell-practice 配線）。省略可
+   *  ——旧シェル / 部分テストでは判定カウンタ自体が無いため。 */
+  resetJudgeTally?: () => void;
   computeHandRanges: (notes: OsmdLikeNote[]) => HandRanges;
 
   // OSMD — `osmdAdapter.cursorTo()` advances the cursor; OSMD's own
@@ -326,6 +338,23 @@ export function createStartPracticeSection(
           })
       );
     }
+
+    // Kick the OS audio-latency probe NOW and await it much later (the offset
+    // block below). It is a Capacitor bridge round-trip that depends on nothing
+    // here, so running it concurrently with the score load / OSMD render takes
+    // it off the critical path entirely — it used to be awaited AFTER
+    // Transport.start(), i.e. with the count-in already sounding, leaving
+    // `audioOffsetMs` on the previous section's value until it landed.
+    // …and only when the answer can matter: `pickAudioOffsetMs` returns
+    // `userOverrideMs` and never looks at the measurement, so for anyone who has
+    // touched the slider or completed a calibration this whole probe is a
+    // Capacitor round-trip per section start (retry, loop lap, Next) whose result
+    // is discarded. `.catch` because the four early returns between here and the
+    // await would otherwise leave an abandoned promise free to reject.
+    const nativeLatencyProbe =
+      deps.prefs.audioOffsetMs == null
+        ? Promise.resolve(deps.getNativeAudioLatencyMs?.()).catch(() => null)
+        : null;
 
     if (!song._loaded) {
       try {
@@ -424,6 +453,11 @@ export function createStartPracticeSection(
     deps.practice.timingScoreSum = 0;
     deps.practice.durationScoreSum = 0;
     deps.practice.durationScoredCount = 0;
+    // 判定カウンタ（ライブHUD + リザルトの内訳が読む単一ソース）を 0 に戻す。
+    // 実体は PianoCore.resetJudgeTally で、同じオブジェクトを in-place で
+    // クリアする — hot path の書き込みが V8 の hidden-class 遷移を起こさない
+    // ため（practice-state-init 参照）。
+    deps.resetJudgeTally?.();
     deps.practice.pendingHolds = new Map();
     deps.practice.sectionCombo = 0;
     // Clear midiState residue from the prior session. The ptbQuit
@@ -591,11 +625,20 @@ export function createStartPracticeSection(
       }
       deps.practice._completing = false;
 
-      // Audio-latency probe.
+      // Audio-latency probe. The NATIVE reading wins when present: WebKit
+      // reports 0 for AudioContext.outputLatency on every Apple platform, so on
+      // iOS this probe could only ever fall back to the default — ~170 ms short
+      // of a real Bluetooth route — and every iPad user was judged permanently
+      // late until they found the tap-along calibration by hand. AVAudioSession
+      // knows the true figure; `getNativeAudioLatencyMs` is the bridge to it and
+      // returns null on web / when the OS declines to report.
       try {
-        const ctx = deps.Tone.context.rawContext || deps.Tone.context;
-        const out = (ctx.outputLatency || 0) * 1000;
-        const base = (ctx.baseLatency || 0) * 1000;
+        const nativeOut = nativeLatencyProbe ? await nativeLatencyProbe : null;
+        // The native figure already includes the ioBuffer, so it is reported as
+        // the whole output latency with no base to add.
+        const web = readContextLatencyMs(deps.Tone.context);
+        const out = nativeOut != null ? nativeOut : (web?.outMs ?? 0);
+        const base = nativeOut != null ? 0 : (web?.baseMs ?? 0);
         deps.practice.audioOffsetMs = deps.pickAudioOffsetMs({
           userOverrideMs: deps.prefs.audioOffsetMs ?? null,
           reportedOutMs: out,

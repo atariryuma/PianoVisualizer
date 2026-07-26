@@ -15,6 +15,7 @@
 //     duration tol math, too-short / too-long chip, score < 0.4 chip.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createJudgeTally, createJudgeErrorRing, judgeHits } from '@piano/core';
 import {
   createPracticeScoring,
   type PracticeScoringDeps,
@@ -37,10 +38,13 @@ function note(over: Partial<PracticeNote> = {}): PracticeNote {
   };
 }
 
+/** Both paths share one profile by default so every existing expectation
+ *  holds regardless of `isExact`; the MIDI/mic split has its own tests. */
+const TEST_JUDGE = { perfectMs: 50, greatMs: 125, goodMs: 200 };
+
 const TUNING: PracticeScoringTuning = {
-  hitWindowEarlyMs: 100,
-  hitWindowMs: 200,
-  perfectMs: 50,
+  judgeMidi: TEST_JUDGE,
+  judgeMic: TEST_JUDGE,
   chordMateToleranceMs: 30,
   durationMinTolMs: 100,
   durationTolFraction: 0.3,
@@ -88,6 +92,11 @@ function makeFixture(
     pendingHolds: new Map(),
     startAudioTime: 0,
     audioOffsetMs: 0,
+    // Always present, exactly as `createInitialPractice` builds them — the
+    // scoring writes verdicts here unconditionally, so a fixture without them
+    // would be testing a state the app can't be in.
+    judge: createJudgeTally(),
+    judgeErrors: createJudgeErrorRing(),
     ...over.practice,
   };
   const mocks: Mocks = {
@@ -394,7 +403,8 @@ describe('matchNoteOnset — guided mode', () => {
       'perfect',
       'T(perfect)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
     expect(fx.mocks.spawnBurst).toHaveBeenCalled();
   });
@@ -417,7 +427,8 @@ describe('matchNoteOnset — guided mode', () => {
       'miss',
       'T(youPlayedFmt,M64)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
@@ -476,7 +487,8 @@ describe('matchNoteOnset — guided mode', () => {
       'miss',
       'T(youPlayedFmt,M48)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
@@ -496,7 +508,8 @@ describe('matchNoteOnset — guided mode', () => {
       'perfect',
       'T(perfect)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
     // flow/combo/バーストは従来どおり毎メンバー発火（押下確認）
     expect(fx.mocks.spawnBurst).toHaveBeenCalledTimes(3);
@@ -510,7 +523,8 @@ describe('matchNoteOnset — guided mode', () => {
       'perfect',
       'T(perfect)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
@@ -595,21 +609,38 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
       'perfect',
       'T(perfect)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
-  it('inside hit window, past the great band → direction-aware late chip', () => {
-    // dt=120 > perfect(50) and > great(2×50=100) → late (pressed after the beat)
-    const fx = setup(5.12);
+  it('past the GREAT band but inside the window → GOOD (quality tier, no direction)', () => {
+    // greatMs 125, goodMs 200 → dt=160 is GOOD. The tier deliberately does not
+    // name a direction; that is reported as a distribution (lane error bar +
+    // result chart), which cannot be squeezed out by a band boundary the way
+    // the old outermost directional tier could.
+    const fx = setup(5.16);
     const ok = fx.scoring.matchNoteOnset(60, true);
     expect(ok).toBe(true);
     expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
-      'late',
-      'T(gradeLate)',
+      'good',
+      'T(gradeGood)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
+  });
+
+  it('grades an early press identically to the same distance late', () => {
+    const early = setup(4.84); // dt = -160
+    early.scoring.matchNoteOnset(60, true);
+    const late = setup(5.16); // dt = +160
+    late.scoring.matchNoteOnset(60, true);
+    const kindOf = (fx: ReturnType<typeof setup>): unknown =>
+      fx.mocks.showHitChip.mock.calls[0]?.[0];
+    expect(kindOf(early)).toBe('good');
+    expect(kindOf(late)).toBe('good');
+    expect(early.practice.timingScoreSum).toBe(late.practice.timingScoreSum);
   });
 
   it('a perfect hit sparkles AT the key + ring (grade-tint fallback when no noteColor)', () => {
@@ -638,7 +669,7 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
   });
 
   it('an off-timing hit (early/late) gets a smaller burst, NO ring, NO stream', () => {
-    const fx = setup(5.12); // dt=120 → late
+    const fx = setup(5.16); // dt=160 → past the 125 ms late GREAT edge → late
     fx.scoring.matchNoteOnset(60, true);
     expect(fx.mocks.spawnBurst).toHaveBeenCalledWith(600, 600 * 0.72, 8, 0.7, '#a9d4ff');
     expect(fx.mocks.spawnRipple).not.toHaveBeenCalled();
@@ -652,9 +683,9 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     expect(ok).toBe(false);
   });
 
-  it('before early window → no match (rhythm only — guided is unbounded)', () => {
-    // dt = -150 ms (early > hitWindowEarlyMs=100)
-    const fx = setup(4.85);
+  it('before the window → no match (rhythm only — guided is unbounded)', () => {
+    // dt = -220 ms, past the profile's symmetric goodMs = 200
+    const fx = setup(4.78);
     const ok = fx.scoring.matchNoteOnset(60, true);
     expect(ok).toBe(false);
   });
@@ -675,7 +706,8 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
       'perfect',
       'T(perfect)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
@@ -696,7 +728,8 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
       'great',
       'T(gradeGreat)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
@@ -716,7 +749,8 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
       'perfect',
       'T(perfect)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
   });
 
@@ -729,7 +763,8 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
       'miss',
       'T(youPlayedFmt,M62)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'press'
     );
     // A second wrong note within the throttle window is suppressed.
     fx.mocks.showHitChip.mockClear();
@@ -737,18 +772,70 @@ describe('matchNoteOnset — rhythm mode windowing', () => {
     expect(fx.mocks.showHitChip).not.toHaveBeenCalled();
   });
 
-  it('asymmetric: an early miss uses early window for ts', () => {
-    // dt = -80 ms (within early window). ts = max(0, 1 - 80/100) = 0.2
-    const fx = setup(4.92);
-    fx.scoring.matchNoteOnset(60, true);
-    expect(fx.practice.timingScoreSum).toBeCloseTo(0.2, 2);
+  it('credits the same |dt| identically early or late (no asymmetric penalty)', () => {
+    // Regression guard for the split-decision defect: the chip came from an
+    // absolute threshold while the credit came from `1 - |dt| / window` over
+    // asymmetric windows, so an early press was shown as PERFECT and credited
+    // a fraction of what the same offset earned on the late side.
+    const early = setup(4.86); // dt = -140
+    early.scoring.matchNoteOnset(60, true);
+    const late = setup(5.14); // dt = +140
+    late.scoring.matchNoteOnset(60, true);
+    expect(early.practice.timingScoreSum).toBeCloseTo(late.practice.timingScoreSum, 6);
   });
 
-  it('asymmetric: a late press uses late window for ts', () => {
-    // dt = +180. ts = max(0, 1 - 180/200) = 0.1
-    const fx = setup(5.18);
-    fx.scoring.matchNoteOnset(60, true);
-    expect(fx.practice.timingScoreSum).toBeCloseTo(0.1, 2);
+  it('credits exactly the tier weight the chip showed', () => {
+    // Credit is a function of the TIER, as the genre computes accuracy — so
+    // the chip and the score cannot disagree by construction.
+    const perfect = setup(5.04); // dt = +40 → PERFECT
+    perfect.scoring.matchNoteOnset(60, true);
+    expect(perfect.practice.timingScoreSum).toBe(1);
+
+    const great = setup(5.1); // dt = +100 → GREAT
+    great.scoring.matchNoteOnset(60, true);
+    expect(great.practice.timingScoreSum).toBeCloseTo(0.7, 9);
+
+    const good = setup(5.16); // dt = +160 → GOOD
+    good.scoring.matchNoteOnset(60, true);
+    expect(good.practice.timingScoreSum).toBeCloseTo(0.3, 9);
+  });
+
+  it('judges each press against the profile for ITS OWN input path', () => {
+    // A MIDI press is exact; a mic onset carries detection jitter. Same
+    // offset, different verdict, because the paths differ in precision.
+    const tuning = {
+      judgeMidi: { perfectMs: 67, greatMs: 133, goodMs: 200 },
+      judgeMic: { perfectMs: 100, greatMs: 167, goodMs: 250 },
+    };
+    const midi = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0 },
+      tuning,
+      Tone: { context: { currentTime: 5.08 } }, // dt = +80
+    });
+    midi.scoring.matchNoteOnset(60, true);
+    expect(midi.mocks.showHitChip).toHaveBeenCalledWith(
+      'great',
+      'T(gradeGreat)',
+      expect.any(Number),
+      expect.any(Number),
+      'press'
+    );
+
+    const mic = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm', startAudioTime: 0 },
+      tuning: { ...tuning, micInputLatencyMs: 0 },
+      Tone: { context: { currentTime: 5.08 } }, // same dt = +80
+    });
+    mic.scoring.matchNoteOnset(60, false);
+    expect(mic.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number),
+      'press'
+    );
   });
 });
 
@@ -809,6 +896,127 @@ describe('matchNoteOnset — mash resistance (A4)', () => {
   });
 });
 
+// ─── 判定カウンタ（JudgeTally）への記録 ─────────────────────────────
+// チップに出した grade と、リザルトが読むカウンタが常に一致すること。
+// ここが崩れると「見た判定」と「集計」がズレる（この機構を入れた理由そのもの）。
+
+describe('judge tally recording', () => {
+  /** rhythm 用フィクスチャ — Tone の currentTime で dt を作る。 */
+  function rhythmFx(currentTimeSec: number) {
+    const judge = createJudgeTally();
+    return makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000, durMs: 500 })],
+      practice: { mode: 'rhythm', judge },
+      Tone: { context: { currentTime: currentTimeSec } },
+    });
+  }
+
+  it('records the SAME tier the chip shows (perfect)', () => {
+    const fx = rhythmFx(5.04); // dt=40 ≤ perfectMs 50
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.mocks.showHitChip).toHaveBeenCalledWith(
+      'perfect',
+      'T(perfect)',
+      expect.any(Number),
+      expect.any(Number),
+      'press'
+    );
+    expect(fx.practice.judge?.perfect).toBe(1);
+    expect(fx.practice.judge?.great).toBe(0);
+  });
+
+  it('records the SAME tier the chip shows (good) with its signed offset', () => {
+    const fx = rhythmFx(5.16); // dt=+160 → past the 125 ms GREAT edge
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.practice.judge?.good).toBe(1);
+    expect(judgeHits(fx.practice.judge)).toBe(1);
+    expect(fx.practice.judge?.dtSumMs).toBeCloseTo(160, 0);
+    expect(fx.practice.judge?.dtAbsSumMs).toBeCloseTo(160, 0);
+  });
+
+  it('keeps the SIGNED offset so the distribution can show direction', () => {
+    // Direction is no longer a tier — it lives in the aggregate statistics and
+    // the error ring. Both must therefore see the sign.
+    const fx = rhythmFx(4.86); // dt = -140 → GOOD, early side
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.practice.judge?.good).toBe(1);
+    expect(fx.practice.judge?.dtSumMs).toBeCloseTo(-140, 0);
+    expect(fx.practice.judge?.dtAbsSumMs).toBeCloseTo(140, 0);
+    expect(fx.practice.judge?.dtSqSumMs).toBeCloseTo(140 * 140, 0);
+  });
+
+  it('feeds the error ring the signed offset (rhythm only)', () => {
+    const ring = createJudgeErrorRing(8);
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000, durMs: 500 })],
+      practice: { mode: 'rhythm', judge: createJudgeTally(), judgeErrors: ring },
+      Tone: { context: { currentTime: 5.09 } }, // dt = +90
+    });
+    fx.scoring.matchNoteOnset(60, true);
+    expect(ring.len).toBe(1);
+    expect(ring.buf[0]).toBeCloseTo(90, 0);
+  });
+
+  it('does NOT feed the error ring in guided mode (its clock waits)', () => {
+    const ring = createJudgeErrorRing(8);
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'guided', judge: createJudgeTally(), judgeErrors: ring },
+      Tone: { context: { currentTime: 9 } },
+    });
+    fx.scoring.matchNoteOnset(60, true);
+    expect(ring.len).toBe(0);
+  });
+
+  it('guided counts the note but contributes no offset (its clock waits)', () => {
+    const judge = createJudgeTally();
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'guided', judge },
+      Tone: { context: { currentTime: 9 } }, // way "late" — guided has no ceiling
+    });
+    fx.scoring.matchNoteOnset(60, true);
+    expect(fx.practice.judge?.perfect).toBe(1);
+    expect(fx.practice.judge?.dtSumMs).toBe(0);
+  });
+
+  it('a wrong key is not a judgement (no tier moves)', () => {
+    const fx = rhythmFx(5.04);
+    fx.scoring.matchNoteOnset(64, true); // wrong note
+    const j = fx.practice.judge!;
+    expect(j.perfect + j.great + j.good + j.miss).toBe(0);
+  });
+
+  it('records hold verdicts on release', () => {
+    const judge = createJudgeTally();
+    const fx = makeFixture({ practice: { mode: 'rhythm', judge } });
+    // held 450 vs expected 500, tol 150 → good
+    fx.practice.pendingHolds.set(
+      60,
+      note({ midi: 60, durMs: 500, holdStartMs: performance.now() - 450 })
+    );
+    fx.scoring.finalizeNoteHold(60);
+    // held 300 vs 500 → short
+    fx.practice.pendingHolds.set(
+      62,
+      note({ midi: 62, durMs: 500, holdStartMs: performance.now() - 300 })
+    );
+    fx.scoring.finalizeNoteHold(62);
+    expect(judge.holdGood).toBe(1);
+    expect(judge.holdShort).toBe(1);
+    expect(judge.holdLong).toBe(0);
+  });
+
+  it('works with no tally wired (older shell / partial test)', () => {
+    const fx = makeFixture({
+      notes: [note({ midi: 60, timeMs: 5000 })],
+      practice: { mode: 'rhythm' },
+      Tone: { context: { currentTime: 5.04 } },
+    });
+    expect(() => fx.scoring.matchNoteOnset(60, true)).not.toThrow();
+  });
+});
+
 // ─── finalizeNoteHold ──────────────────────────────────────────────
 
 describe('finalizeNoteHold', () => {
@@ -849,7 +1057,8 @@ describe('finalizeNoteHold', () => {
       'short',
       'T(lengthShort)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'release'
     );
   });
 
@@ -863,7 +1072,8 @@ describe('finalizeNoteHold', () => {
       'long',
       'T(lengthLong)',
       expect.any(Number),
-      expect.any(Number)
+      expect.any(Number),
+      'release'
     );
   });
 

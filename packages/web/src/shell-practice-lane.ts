@@ -10,11 +10,11 @@
 // legacy-app.js. PracticeLane has a setLabels() mutator so the
 // per-frame draw doesn't pay for translator calls.
 
+import type { JudgeProfile } from '@piano/core';
 import type { MidiInputRef } from './shell-midi';
 import type { InitialPracticeState } from './practice-state-init';
 import type { InitialGameState } from './game-state-init';
 import type { PianoConfig } from './piano-config';
-import * as PianoCore from '@piano/core';
 import * as PracticeLane from './practice-lane';
 
 export interface ShellPracticeLaneDeps {
@@ -39,6 +39,8 @@ export interface ShellPracticeLaneDeps {
   practiceRealElapsedMs: () => number;
   laneLookaheadMs: number;
   countInMs: number;
+  /** 現在有効な判定窓（入力パス × 厳しさ）。毎フレーム読む。 */
+  getJudgeProfile: () => JudgeProfile;
   /** MIDI render helpers. */
   noteThemeColor: (m: any) => any;
   midiToPitchName: (m: any) => any;
@@ -88,9 +90,9 @@ export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPract
     noteNames: deps.config.NOTE_NAMES,
     laneLookaheadMs: deps.laneLookaheadMs,
     countInMs: deps.countInMs,
-    hitWindowEarlyMs: PianoCore.HIT_WINDOW_EARLY_MS,
-    hitWindowMs: PianoCore.HIT_WINDOW_MS,
-    perfectMs: PianoCore.PERFECT_MS,
+    // 判定帯は現在の入力パス（MIDI/マイク）× 厳しさの窓を毎フレーム読む。
+    // セクション途中でキーボードを挿しても、設定を変えても帯が追従する。
+    getJudgeProfile: deps.getJudgeProfile,
     // Low-tier iPads (PERF_PROFILE.shadowBlur=false) skip the tile glow —
     // up to 25 shadowed roundRects/frame forced software rasterization.
     useShadow: deps.config.SHADOW_BLUR_ENABLED,

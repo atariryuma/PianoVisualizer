@@ -31,6 +31,11 @@
 // from `t()` once at boot + on every `langchange` event via
 // `setLabels()` — the per-frame draw doesn't pay for translator calls.
 
+// The judgement shapes are IMPORTED, not re-declared structurally: this module
+// forwards them verbatim into `drawPracticeLane`, so a renamed boundary field
+// has to fail here rather than silently mis-draw the window the scoring uses.
+import type { JudgeErrorRing, JudgeProfile, JudgeTally } from '@piano/core';
+
 /** Practice slice the lane reads + writes. */
 export interface PracticeLanePracticeRef {
   enabled: boolean;
@@ -50,8 +55,13 @@ export interface PracticeLanePracticeRef {
   laneDrawFromIdx?: number;
   _cursorScanIdx?: number;
   _lastCursorNoteIdx?: number;
-  /** Live section combo — rhythm mode shows a soft ×N counter in the lane. */
+  /** Live section combo — rhythm mode shows the combo counter in the lane. */
   sectionCombo?: number;
+  /** Live judgement counts. Passed straight to the lane each frame — same
+   *  object, so no per-frame allocation. */
+  judge: JudgeTally;
+  /** Recent signed offsets for the hit-error bar. Same object every frame. */
+  judgeErrors: JudgeErrorRing;
 }
 
 /** Game-state slice — only `useSynesthesiaMode` is read. */
@@ -129,9 +139,11 @@ export interface PracticeLaneDeps {
   /** PERF_PROFILE.shadowBlur — low-tier iPads skip the tile glow. */
   useShadow: boolean;
   countInMs: number;
-  hitWindowEarlyMs: number;
-  hitWindowMs: number;
-  perfectMs: number;
+  /** Judgement windows in force, read fresh each frame — the drawn bands are
+   *  the game's promise about when a press counts, and they move with both the
+   *  input path and the strictness setting (@piano/core JudgeProfile). A
+   *  keyboard can be hot-plugged mid-section, so this must not be captured. */
+  getJudgeProfile: () => JudgeProfile;
   /** PianoCore.drawPracticeLane. */
   drawPracticeLane: DrawPracticeLaneFn;
   /** Initial i18n labels. Refresh via setLabels(). */
@@ -206,9 +218,11 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     countInBeats: 4,
     countInClickMs: deps.countInMs / 4,
     countInGoMs: deps.countInMs,
-    hitWindowEarlyMs: deps.hitWindowEarlyMs,
-    hitWindowMs: deps.hitWindowMs,
-    perfectMs: deps.perfectMs,
+    // 判定帯 / 誤差バーは毎フレーム上書きする（入力パス・設定で変わる）。
+    // 初期値も実物を入れる — ダミーの 0 幅プロファイルは「1フレーム目だけ
+    // 判定帯が消える」を許してしまう。
+    judgeProfile: deps.getJudgeProfile(),
+    errorRing: null as JudgeErrorRing | null,
     laneLabelL: deps.laneLabelL,
     laneLabelR: deps.laneLabelR,
     countInGoLabel: deps.countInGoLabel,
@@ -217,6 +231,7 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     useShadow: deps.useShadow,
     beatGrid: null as ReadonlyArray<{ timeMs: number; accent: boolean }> | null,
     sectionCombo: 0,
+    judge: null as JudgeTally | null,
   };
 
   function setLabels(labels: {
@@ -335,8 +350,15 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     laneOpts.osmdVisible = osmdVisible;
     laneOpts.laneTopOverride = laneTopOverride;
     laneOpts.kbReserve = kbReserve;
-    // ライブコンボは rhythm のみ（guided は切れないカウント、listen は視聴）。
-    laneOpts.sectionCombo = deps.practice.mode === 'rhythm' ? (deps.practice.sectionCombo ?? 0) : 0;
+    // ライブコンボ + 判定パネルは rhythm のみ（guided はタイミングを採点
+    // しないので判定内訳が意味を持たず、listen は視聴）。
+    const isRhythm = deps.practice.mode === 'rhythm';
+    laneOpts.sectionCombo = isRhythm ? (deps.practice.sectionCombo ?? 0) : 0;
+    laneOpts.judge = isRhythm ? deps.practice.judge : null;
+    // 判定帯 = 現在有効な窓。マイク→MIDI のホットプラグでも設定変更でも追従。
+    laneOpts.judgeProfile = deps.getJudgeProfile();
+    // 誤差バーは rhythm のみ（guided はタイミングを採点しないので分布が無い）。
+    laneOpts.errorRing = isRhythm ? deps.practice.judgeErrors : null;
 
     // === Draw + cursor amortization writeback ===
     const translated = laneLeft !== 0;

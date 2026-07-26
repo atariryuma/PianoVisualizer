@@ -284,6 +284,98 @@ describe('createMidiIndicator — setInputIndicator', () => {
     expect(deps.dom.ptbInput!.classList.contains('midi-waiting')).toBe(true);
   });
 
+  // ── the pill must agree with the settings panel ────────────────────
+  // Reported on device: free play showed 🎹⏳ "waiting for MIDI" while the
+  // settings panel said 🎙️ mic. The pill was using the RESCAN POLLER as a proxy
+  // for "no input yet", and that poller runs from boot whenever no port is
+  // attached — including a perfectly working mic session. `waiting` from
+  // @piano/core answers the real question: is ANY input live?
+
+  it('mic live with no keyboard → 🎙️, NOT the 🎹⏳ waiting state', () => {
+    const deps = makeDeps({
+      midiInput: { enabled: false, port: null },
+      isRescanRunning: () => true, // poller IS running — must not decide the pill
+      hasRequestMIDIAccess: () => true,
+      isPracticeActive: () => false,
+      getInputStatus: () => ({
+        active: 'mic',
+        midiAttached: false,
+        waiting: false, // the mic is live: nothing is being waited for
+        midiIdle: false,
+      }),
+    });
+    createMidiIndicator(deps).setInputIndicator();
+    expect(deps.dom.ptbInput!.textContent).toBe('🎙️');
+    expect(deps.dom.ptbInput!.classList.contains('midi-waiting')).toBe(false);
+  });
+
+  it('mic pinned → the BADGE stops naming the keyboard too', () => {
+    // "I switched to the mic but Bluetooth is still connected" was this: the
+    // bottom-right badge reads `midiInput.enabled`, so it kept showing
+    // "🎹 GO:PIANO88 Bluetooth" while the settings panel said the mic. The port
+    // stays bound (switching back is instant); the app just stops claiming it.
+    const deps = makeDeps({
+      midiInput: { enabled: true, port: { name: 'GO:PIANO88' } },
+      getInputStatus: () => ({
+        active: 'mic',
+        midiAttached: true,
+        waiting: false,
+        midiIdle: true,
+      }),
+    });
+    createMidiIndicator(deps).setInputIndicator();
+    expect(deps.dom.midiBadge!.classList.contains('visible')).toBe(false);
+  });
+
+  it('mic pinned WITH a keyboard attached → 🎙️, not 🎹', () => {
+    // The player chose the mic; a connected keyboard is deliberately idle, so
+    // claiming 🎹 would be the app announcing an input it is not listening to.
+    const deps = makeDeps({
+      midiInput: { enabled: true, port: { name: 'GO:PIANO88' } },
+      getInputStatus: () => ({
+        active: 'mic',
+        midiAttached: true,
+        waiting: false,
+        midiIdle: true,
+      }),
+    });
+    createMidiIndicator(deps).setInputIndicator();
+    expect(deps.dom.ptbInput!.textContent).toBe('🎙️');
+  });
+
+  it('pinned to a keyboard that has not arrived → 🎹⏳ (genuinely waiting)', () => {
+    const deps = makeDeps({
+      midiInput: { enabled: false, port: null },
+      isRescanRunning: () => true,
+      hasRequestMIDIAccess: () => true,
+      isPracticeActive: () => false,
+      getInputStatus: () => ({
+        active: 'midi',
+        midiAttached: false,
+        waiting: true,
+        midiIdle: false,
+      }),
+    });
+    createMidiIndicator(deps).setInputIndicator();
+    expect(deps.dom.ptbInput!.textContent).toBe('🎹⏳');
+    expect(deps.dom.ptbInput!.classList.contains('midi-waiting')).toBe(true);
+  });
+
+  it('keyboard live → 🎹 with the device name', () => {
+    const deps = makeDeps({
+      midiInput: { enabled: true, port: { name: 'GO:PIANO88' } },
+      getInputStatus: () => ({
+        active: 'midi',
+        midiAttached: true,
+        waiting: false,
+        midiIdle: false,
+      }),
+    });
+    createMidiIndicator(deps).setInputIndicator();
+    expect(deps.dom.ptbInput!.textContent).toBe('🎹');
+    expect(deps.dom.midiBadge!.textContent).toContain('GO:PIANO88');
+  });
+
   it('mic-only (default) → 🎙️ + tipMicMode tooltip', () => {
     const deps = makeDeps();
     const ind = createMidiIndicator(deps);

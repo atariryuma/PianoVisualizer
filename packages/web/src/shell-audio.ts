@@ -12,6 +12,7 @@
 // WebKit Bugs 237878 / 261554 because suspend/resume alone is
 // unreliable on iOS WKWebView post-background.
 
+import { isNativeMidiPolyfillInstalled } from './native-midi-polyfill';
 import type { InitialGameState } from './game-state-init';
 import * as AudioInit from './audio-init';
 import * as MicLifecycle from './mic-lifecycle';
@@ -33,6 +34,12 @@ export interface ShellAudioDeps {
    *  ShellMidi is not yet built when this factory runs, so the MIDI
    *  ref flows in by getter. */
   getMidiInputEnabled: () => boolean;
+  /** Is MIDI the ACTIVE input (prefs.inputSource × attached)? Decides whether
+   *  boot acquires the mic — see ShellMidi.isMidiActive. */
+  isMidiActive: () => boolean;
+  /** The player's input-source setting — pinned `mic` pre-empts the
+   *  iOS-WKWebView "don't even ask for the mic" default at boot. */
+  getInputSourcePref: () => import('@piano/core').InputSourcePref;
   /** Re-entry path probes MIDI before returning. */
   initWebMIDI: () => Promise<any>;
   isAppleMobile: () => boolean;
@@ -128,6 +135,9 @@ export function createShellAudio(deps: ShellAudioDeps): ShellAudio {
         return deps.getMidiInputEnabled();
       },
     } as any,
+    isMidiActive: deps.isMidiActive,
+    getInputSourcePref: deps.getInputSourcePref,
+    isOwnWebMidiPolyfill: isNativeMidiPolyfillInstalled,
     initWebMIDI: deps.initWebMIDI,
     isAppleMobile: deps.isAppleMobile,
     hasRequestMIDIAccess: () => typeof navigator.requestMIDIAccess === 'function',
@@ -148,13 +158,12 @@ export function createShellAudio(deps: ShellAudioDeps): ShellAudio {
       console.log(
         '[AUDIO] re-entry — reusing existing AudioContext (state=' + audioCtx.state + ')'
       );
-      // Probe MIDI again so an externally-attached keyboard since the
-      // last init shows up. Mic state was already set last time; don't disturb.
-      try {
-        await deps.initWebMIDI();
-      } catch (_e) {
-        /* fall back to mic */
-      }
+      // No MIDI re-probe here. `initWebMIDI()` now shares its boot promise
+      // (midi-init), so awaiting it re-enumerates nothing — it just put an
+      // unbounded await in front of the ▶ transition on every re-entry, which is
+      // the delay this file was changed to remove. A keyboard attached since the
+      // last init is picked up by the statechange listener and the rescan
+      // poller, which are the paths that actually re-enumerate.
       return;
     }
 
@@ -170,7 +179,22 @@ export function createShellAudio(deps: ShellAudioDeps): ShellAudio {
     // Audio graph (sourceless): gain → analyser, gain → onsetAnalyser.
     rebuildAudioGraph(null);
 
-    await _micLifecycle.decideInitialInputMode();
+    // NOT awaited. Opening the microphone is a device open behind an OS
+    // permission layer — measured at ~430 ms on iPad — and `initAudio()` is
+    // awaited by the ▶ button BEFORE it shows the play screen. Awaiting it here
+    // meant the whole cost was spent staring at the title screen, which is what
+    // "it takes a while to switch to the mic" actually was.
+    //
+    // Nothing on screen needs the stream to exist: the graph above is complete,
+    // the render loop reads the analyser (silence until the source lands), and
+    // the mic meter is turned on by `acquire()` itself. When a keyboard IS
+    // attached the decision resolves in ~0 ms anyway, since it never calls
+    // getUserMedia.
+    //
+    // Deliberately not stored either: single-flight is already held where the
+    // work is (MicLifecycle's `acquiring` lock, MidiInit's shared probe
+    // promise), so a handle here would only be a second way to express it.
+    void _micLifecycle.decideInitialInputMode();
   }
 
   // WebKit Bugs 237878 / 261554 (open as of 2025): suspend/resume alone is

@@ -88,6 +88,9 @@ function makeFixture(over: { state?: Partial<GameStateRef>; onset?: GameStateOns
     state,
     getPractice: () => ({ enabled: false }),
     getMidiInput: () => ({ enabled: false, lastEventTime: 0 }),
+    // 'auto' semantics — the resolved source follows the hardware, which is what
+    // every expectation in this file was written against.
+    isMidiActive: () => false,
     getPitchMedianFrames: () => 5,
     tuning: { ...TUNING },
     stages: [{ minFlow: 0 }, { minFlow: 30 }, { minFlow: 60 }, { minFlow: 90 }],
@@ -203,11 +206,22 @@ describe('updateGameState — onset routing', () => {
     expect(r).toBe(false);
   });
 
-  it('skips onset history feed when MIDI active', () => {
+  it('skips onset history feed when MIDI is the ACTIVE input', () => {
     const fx = makeFixture({ onset: { isOnset: true, gateOpen: true } });
-    fx.deps.getMidiInput = () => ({ enabled: true, lastEventTime: 0 });
+    fx.deps.isMidiActive = () => true;
     updateGameState(500, 16, { pitch: 440, conf: 0.9, rms: 0.05 }, fx.deps);
     expect(fx.deps.core.applyOnsetToHistory).not.toHaveBeenCalled();
+  });
+
+  it('KEEPS feeding the histories when a keyboard is attached but the mic is pinned', () => {
+    // The gate is the resolved source, not the hardware flag. Reading
+    // `midiInput.enabled` here froze a mic-pinned player's quality read-out
+    // (rhythm / dynamics / stability) for the whole session while they played.
+    const fx = makeFixture({ onset: { isOnset: true, gateOpen: true } });
+    fx.deps.getMidiInput = () => ({ enabled: true, lastEventTime: 0 });
+    fx.deps.isMidiActive = () => false;
+    updateGameState(500, 16, { pitch: 440, conf: 0.9, rms: 0.05 }, fx.deps);
+    expect(fx.deps.core.applyOnsetToHistory).toHaveBeenCalled();
   });
 });
 

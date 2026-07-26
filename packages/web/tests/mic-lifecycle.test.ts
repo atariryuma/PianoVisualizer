@@ -34,7 +34,7 @@ function makeStream(id: string): FakeStream {
   };
 }
 
-function makeFixture(over: { hasAudioCtx?: boolean; gumReject?: Error } = {}) {
+function makeFixture(over: { hasAudioCtx?: boolean; gumReject?: Error; micPinned?: boolean } = {}) {
   const state: MicLifecycleStateRef = {
     micSuspended: true,
     micPermissionFailed: false,
@@ -84,6 +84,7 @@ function makeFixture(over: { hasAudioCtx?: boolean; gumReject?: Error } = {}) {
   const refreshIntroHint = vi.fn();
 
   const lc = createMicLifecycle({
+    getInputSourcePref: () => (over.micPinned ? 'mic' : 'auto'),
     state,
     micConstraints: { audio: true },
     getUserMedia,
@@ -296,6 +297,41 @@ describe('createMicLifecycle — resume', () => {
     expect(fx.getUserMedia).toHaveBeenCalled();
   });
 
+  it('respects micIntentionallySkipped on an INCIDENTAL resume (MIDI detach)', async () => {
+    // The platform heuristic stands when nobody asked for the mic: a keyboard
+    // unplugging on an iOS wrapper must not call into a broken getUserMedia.
+    const fx = makeFixture();
+    fx.state.micSuspended = true;
+    fx.state.micIntentionallySkipped = true;
+    await fx.lc.resume();
+    expect(fx.getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('OVERRIDES micIntentionallySkipped when the player pinned the mic', async () => {
+    // …and yields to an explicit choice. Without this the 🎙️ setting is inert on
+    // the native iOS build, which sets the flag at every boot.
+    const fx = makeFixture({ micPinned: true });
+    fx.state.micSuspended = true;
+    fx.state.micIntentionallySkipped = true;
+    await fx.lc.resume();
+    expect(fx.getUserMedia).toHaveBeenCalled();
+    // A successful acquire invalidates "we never tried" — leaving it set would
+    // re-block the next resume and keep the background MIDI poller alive.
+    expect(fx.state.micIntentionallySkipped).toBe(false);
+    expect(fx.state.micSuspended).toBe(false);
+  });
+
+  it('a pinned-mic resume that FAILS reports it instead of failing silently', async () => {
+    // Trying is only safe because failure is surfaced: the player who picked 🎙️
+    // on a device whose mic really is broken must be told, not left guessing.
+    const fx = makeFixture({ gumReject: new Error('NotAllowedError'), micPinned: true });
+    fx.state.micSuspended = true;
+    fx.state.micIntentionallySkipped = true;
+    await fx.lc.resume();
+    expect(fx.getUserMedia).toHaveBeenCalled();
+    expect(fx.state.micPermissionFailed).toBe(true);
+  });
+
   it("logs and swallows acquire() errors (doesn't throw)", async () => {
     const fx = makeFixture({ gumReject: new Error('NotAllowed') });
     fx.state.micSuspended = true;
@@ -325,6 +361,16 @@ interface DecideFixtureOver {
   midiEnabledAfterProbe?: boolean;
   isAppleMobile?: boolean;
   hasRequestMIDIAccess?: boolean;
+  /** prefs.inputSource === 'mic' — the player pinned the microphone. */
+  micExplicitlyChosen?: boolean;
+  /** `navigator.requestMIDIAccess` is OUR polyfill (Capacitor native build). */
+  ownWebMidiPolyfill?: boolean;
+  /** initWebMIDI never settles (hung bridge). */
+  initWebMIDIHangs?: boolean;
+  /** initWebMIDI settles only after this many fake-timer ms. */
+  probeDelayMs?: number;
+  /** prefs.inputSource resolves to MIDI (attached, or pinned to keyboard). */
+  midiActive?: boolean;
   initWebMIDIRejects?: Error;
   gumReject?: Error;
   gumHang?: boolean;
@@ -356,6 +402,12 @@ function makeDecideFixture(over: DecideFixtureOver = {}) {
   const midiInput = { enabled: false };
   const initWebMIDISpy = vi.fn(async () => {
     if (over.initWebMIDIRejects) throw over.initWebMIDIRejects;
+    if (over.initWebMIDIHangs) return await new Promise<void>(() => {});
+    if (over.probeDelayMs) {
+      await new Promise<void>((res) => {
+        queue.push({ id: nextId++, cb: res, fireAt: nowMs + (over.probeDelayMs as number) });
+      });
+    }
     if (over.midiEnabledAfterProbe) midiInput.enabled = true;
   });
   const isAppleMobile = vi.fn(() => over.isAppleMobile ?? false);
@@ -398,12 +450,16 @@ function makeDecideFixture(over: DecideFixtureOver = {}) {
     },
     micMeterEl: null,
     midiInput,
+    isMidiActive: () => over.midiActive ?? midiInput.enabled,
+    getInputSourcePref: () => (over.micExplicitlyChosen ? 'mic' : 'auto'),
+    isOwnWebMidiPolyfill: () => over.ownWebMidiPolyfill ?? false,
     initWebMIDI: initWebMIDISpy,
     isAppleMobile,
     hasRequestMIDIAccess,
     micAcquireTimeoutMs: 200, // small for tests
     setTimeout: setT as unknown as (cb: () => void, ms: number) => unknown,
     clearTimeout: clearT,
+    now: () => nowMs,
     log,
     warn,
   });
@@ -436,6 +492,120 @@ describe('createMicLifecycle — decideInitialInputMode', () => {
     expect(fx.state.micPermissionFailed).toBe(false);
     expect(fx.getUserMedia).not.toHaveBeenCalled();
     expect(fx.initWebMIDISpy).toHaveBeenCalledOnce();
+  });
+
+  it('pinned mic → does NOT wait for the MIDI probe at all', async () => {
+    // The probe is on the critical path to the microphone. When the player has
+    // pinned 🎙️ no MIDI answer can change the decision, so waiting for one is
+    // pure startup latency on exactly the path that user is waiting on.
+    const fx = makeDecideFixture({ micExplicitlyChosen: true });
+    await fx.lc.decideInitialInputMode();
+    expect(fx.initWebMIDISpy).not.toHaveBeenCalled();
+    expect(fx.getUserMedia).toHaveBeenCalled();
+  });
+
+  it('a stalled MIDI probe cannot strand the session without input', async () => {
+    // Boot normally settles the probe long before ▶, so this only bounds a hung
+    // CoreMIDI bridge. Unbounded, it meant no keyboard AND no mic, with nothing
+    // on screen explaining why.
+    const fx = makeDecideFixture({ initWebMIDIHangs: true });
+    const p = fx.lc.decideInitialInputMode();
+    fx.flushTimers(1200);
+    const r = await p;
+    expect(r).toEqual({ mode: 'mic-acquired' });
+    expect(fx.getUserMedia).toHaveBeenCalled();
+  });
+
+  it('waits for an IN-FLIGHT probe rather than deciding on an unknown state', async () => {
+    // Boot fires the probe and ▶ awaits it. If that await resolved instantly the
+    // mic decision would be taken before the MIDI answer arrived: prompt for the
+    // mic, then find a keyboard and suspend it again — a permission dialog and a
+    // privacy LED for a player who has a keyboard plugged in.
+    const fx = makeDecideFixture({ midiEnabledAfterProbe: true, probeDelayMs: 300 });
+    const p = fx.lc.decideInitialInputMode();
+    fx.flushTimers(300);
+    const r = await p;
+    expect(r).toEqual({ mode: 'midi-detected' });
+    expect(fx.getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('OUR native iOS app acquires the mic — it is not a foreign broken wrapper', async () => {
+    // The root defect behind "the iPad never becomes mic": the skip below tests
+    // `isApple && navigator.requestMIDIAccess exists`, which was meant to detect
+    // a THIRD-PARTY iOS WKWebView browser (Web MIDI Browser) whose getUserMedia
+    // is broken. On our own Capacitor build that function exists because WE
+    // installed the polyfill — so our app, which ships
+    // NSMicrophoneUsageDescription and a working mic, was misclassified.
+    //
+    // Consequence on device: MIDI declared as the input, zero ports attached,
+    // mic never asked for → the iPad had NO INPUT AT ALL and 'auto' could never
+    // recover.
+    const fx = makeDecideFixture({
+      isAppleMobile: true,
+      hasRequestMIDIAccess: true,
+      ownWebMidiPolyfill: true,
+    });
+    const r = await fx.lc.decideInitialInputMode();
+    expect(r).toEqual({ mode: 'mic-acquired' });
+    expect(fx.getUserMedia).toHaveBeenCalled();
+    expect(fx.state.micIntentionallySkipped).toBe(false);
+    expect(fx.state.micSuspended).toBe(false);
+  });
+
+  it('but a keyboard still wins over the mic on our native build', async () => {
+    // The fix must not cost the reason the skip existed: with a keyboard
+    // attached there is no permission prompt, no privacy LED, no idle YIN/FFT.
+    const fx = makeDecideFixture({
+      isAppleMobile: true,
+      hasRequestMIDIAccess: true,
+      ownWebMidiPolyfill: true,
+      midiEnabledAfterProbe: true,
+    });
+    const r = await fx.lc.decideInitialInputMode();
+    expect(r).toEqual({ mode: 'midi-detected' });
+    expect(fx.getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('a FOREIGN iOS wrapper still skips the mic (the skip keeps its purpose)', async () => {
+    // Web MIDI Browser: same UA, same requestMIDIAccess, but not our polyfill —
+    // its getUserMedia is consistently broken, so asking is worse than skipping.
+    const fx = makeDecideFixture({
+      isAppleMobile: true,
+      hasRequestMIDIAccess: true,
+      ownWebMidiPolyfill: false,
+    });
+    const r = await fx.lc.decideInitialInputMode();
+    expect(r).toEqual({ mode: 'ios-wmb-skipped' });
+    expect(fx.getUserMedia).not.toHaveBeenCalled();
+    expect(fx.state.micIntentionallySkipped).toBe(true);
+  });
+
+  it('native iOS + player pinned the mic → ATTEMPTS the acquire anyway', async () => {
+    // The bug this pins: the iOS-WKWebView skip is a heuristic ("mic permission
+    // is consistently broken in these wrappers, so don't even ask"), and the
+    // native build sets it at EVERY boot because the MIDI polyfill makes
+    // `hasRequestMIDIAccess` true. Letting that veto an explicit 🎙️ choice made
+    // the option a dead button on the one platform this app ships on.
+    const fx = makeDecideFixture({
+      isAppleMobile: true,
+      hasRequestMIDIAccess: true,
+      micExplicitlyChosen: true,
+    });
+    const r = await fx.lc.decideInitialInputMode();
+    expect(fx.getUserMedia).toHaveBeenCalled();
+    expect(r).toEqual({ mode: 'mic-acquired' });
+    expect(fx.state.micIntentionallySkipped).toBe(false);
+    expect(fx.state.micSuspended).toBe(false);
+  });
+
+  it('pinned to the keyboard with none attached → still skips the mic', async () => {
+    // "Listen to my keyboard" must not prompt for a microphone the player said
+    // not to use, even while the keyboard is absent.
+    const fx = makeDecideFixture({ midiActive: true });
+    const r = await fx.lc.decideInitialInputMode();
+    expect(r).toEqual({ mode: 'midi-detected' });
+    expect(fx.getUserMedia).not.toHaveBeenCalled();
+    expect(fx.state.micSuspended).toBe(true);
   });
 
   it('iOS WKWebView with Web MIDI polyfill → mode=ios-wmb-skipped + micIntentionallySkipped', async () => {

@@ -94,10 +94,9 @@ interface OsmdIteratorLike {
   currentTimeStamp: { realValue: number };
   CurrentVoiceEntries: ReadonlyArray<{
     parentSourceStaffEntry?: { parentStaff?: { idInMusicSheet?: number } };
-    /** OSMD marks grace-note voice entries here. We skip them so the
-     *  kid isn't required to play ornaments — and to stay symmetric with
-     *  the XML timing reducer, which already excludes grace notes from
-     *  the measure clock. */
+    /** OSMD marks grace-note voice entries here. We skip them — see the
+     *  skip site for why that is the genre-standard call AND why OSMD's
+     *  timestamps make any other choice wrong today. */
     IsGrace?: boolean;
     Notes?: ReadonlyArray<unknown>;
     notes?: ReadonlyArray<unknown>;
@@ -141,7 +140,15 @@ interface OsmdNoteLike {
   isRest?(): boolean;
   halfTone?: number;
   length?: { realValue: number };
-  /** Cue notes are small ossia/optional prompts — skipped like grace. */
+  /** MusicXML `print-object="no"`. The ONE property that decides whether a
+   *  note is required — see the "printed = playable" note at the skip site.
+   *  OSMD defaults it to `true`, so `=== false` is the only safe test (an
+   *  older build / a test stub that omits it must keep the note). */
+  PrintObject?: boolean;
+  /** OSMD's cue flag. Read for DIAGNOSTICS ONLY — never to skip a note.
+   *  OSMD collapses `<cue/>` and `<type size="cue">` into this single
+   *  boolean (`getCueNoteAndNoteTypeXml`), and the second one means nothing
+   *  but "engrave this small". */
   IsCueNote?: boolean;
   isCueNote?: boolean;
   NoteTie?: OsmdTieLike;
@@ -335,9 +342,22 @@ export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}):
         const voiceEntries = it.CurrentVoiceEntries;
         if (voiceEntries) {
           for (const ve of voiceEntries) {
-            // Skip grace-note voice entries — ornaments aren't required
-            // notes, and the XML timing reducer already excludes them, so
-            // extracting them would desync the note list from the clock.
+            // Grace notes are DISPLAYED but never required — which is the
+            // assessment-app convention (SmartMusic does not assess grace
+            // notes, trills or other ornaments), and is the one exception to
+            // "printed = playable" below.
+            //
+            // It is also the only correct choice while OSMD reports what it
+            // does: every grace voice entry carries the SAME timestamp as its
+            // main note. Measured across the shipped library (alla_turca 282
+            // grace entries, gnossienne 100, nocturne 19, fur_elise 3): 100 %
+            // collide, 0 % get a distinct timestamp. Extracting them as-is
+            // would stack acciaccatura + main note into one chord the learner
+            // must strike simultaneously. Placing them properly needs
+            // performance-practice time-stealing (shorten the main note, offset
+            // each grace) — a separate change, not a flag flip. The XML timing
+            // reducer (score-timing.ts) likewise excludes them from the
+            // measure clock, so the two stay symmetric.
             if (ve.IsGrace) continue;
             let hand: 'L' | 'R' | undefined;
             let isBacking = false;
@@ -358,7 +378,22 @@ export function extractNotesFromOsmd(osmd: OsmdLike, opts: ExtractOptions = {}):
                 const note = rawNote as OsmdNoteLike;
                 if (!note) continue;
                 if (note.isRest && note.isRest()) continue;
-                if (note.IsCueNote || note.isCueNote) continue; // optional prompt notes
+                // ── "printed = playable" (2026-07-25) ──────────────────
+                // Visibility, not engraving SIZE, decides whether a note is
+                // required. `drawHiddenNotes:false` (osmd-init.ts) means the
+                // learner never sees a `print-object="no"` note, so we must
+                // never ask for one — those are the engraver's playback-only
+                // realizations (K.545 bar 15 hides `A5 G5 A5 G5 A5 G5` behind
+                // a printed `tr`; Clair de lune hides tie-continuation dupes).
+                //
+                // This REPLACED a skip on `IsCueNote`, which was the same bug
+                // mirrored: OSMD's `getCueNoteAndNoteTypeXml` folds `<cue/>`
+                // AND `<type size="cue">` into one flag, and the second is
+                // pure engraving size — how a cadenza is set. Skipping on it
+                // silently dropped whole passages that ARE printed: La
+                // Campanella bars 75-87 / 103-105 (the entire right-hand run),
+                // Liebestraum's two cadenzas, Moonlight iii, BWV 847.
+                if (note.PrintObject === false) continue;
                 if (note.halfTone == null) continue;
                 const midi = note.halfTone + 12;
                 if (!hand) hand = midi >= 60 ? 'R' : 'L';

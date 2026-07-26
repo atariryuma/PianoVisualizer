@@ -16,6 +16,12 @@
 
 import type { DevModeDeps, SelfTest } from './dev-mode';
 import { createDevMode } from './dev-mode';
+import { readDiag } from './diag-sink';
+
+/** How much of the diagnostic ring the on-device panel shows. The ring holds
+ *  120 lines for a desk-side pull; a panel that long is unreadable on a tablet
+ *  and the recent tail is what a live question is about. */
+const DIAG_PANEL_LINES = 20;
 
 /** Wide deps bag — every shell-private the dev-mode tests + benches
  *  read. Optional fields are read only by some tests; missing values
@@ -543,6 +549,18 @@ function buildBenchmarks(deps: DevModeWireupDeps): SelfTest[] {
   ];
 }
 
+/** The stored diagnostic ring as `diag[n]` rows, most recent last, trimmed to
+ *  what a phone-sized panel can show. */
+function diagRows(): Record<string, string> {
+  const lines = readDiag();
+  const tail = lines.slice(-DIAG_PANEL_LINES);
+  const rows: Record<string, string> = {};
+  for (let i = 0; i < tail.length; i++) {
+    rows['diag[' + (tail.length - i) + ']'] = tail[i];
+  }
+  return rows;
+}
+
 /** Build the live read-only diag snapshot. Returns a thunk so the
  *  dev-mode UI can call it on demand. */
 function buildDiagSnapshot(deps: DevModeWireupDeps): () => Record<string, string> {
@@ -575,6 +593,12 @@ function buildDiagSnapshot(deps: DevModeWireupDeps): () => Record<string, string
       'prefs.audioOffsetMs': String(deps.prefs.audioOffsetMs),
       'particles.length': String(deps.particles?.length ?? 0),
       'ripples.length': String(deps.ripples?.length ?? 0),
+      // The diagnostic ring, newest last. It exists because the device log
+      // stream dies silently mid-session; pulling it back off the device meant
+      // decoding WebKit's SQLite store over a cable — the same cable-and-hope
+      // workflow the ring was built to escape. Here it is readable by the
+      // person actually holding the iPad.
+      ...diagRows(),
     };
   };
 }

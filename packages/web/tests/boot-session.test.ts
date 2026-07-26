@@ -161,6 +161,32 @@ describe('installStartButton — happy path (cold boot)', () => {
   });
 });
 
+describe('installStartButton — startup sequencing', () => {
+  it('does NOT show the play screen until initAudio resolves', async () => {
+    // The contract behind `initAudio()` no longer awaiting the microphone: the
+    // ▶ button gates the screen transition on audio init, so anything slow left
+    // inside it is dead time the player stares at the title screen for. Opening
+    // the mic was ~430 ms of exactly that on iPad. Here initAudio is held open
+    // to prove the transition really is gated on it — and, once released, that
+    // nothing else sits between the two.
+    const btn = makeBtn();
+    const fx = makeDeps();
+    let release: () => void = () => {};
+    fx.deps.initAudio = () => new Promise<void>((res) => (release = res));
+    installStartButton(btn, fx.deps);
+    btn.click();
+    await Promise.resolve();
+    expect(fx.spies.showRunningUI).not.toHaveBeenCalled();
+    expect(fx.state.running).toBe(false);
+
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fx.spies.showRunningUI).toHaveBeenCalled();
+    expect(fx.state.running).toBe(true);
+  });
+});
+
 describe('installStartButton — re-entry while running', () => {
   it('skips initAudio + initBgStars, just refreshes UI + rebases session timer', async () => {
     const btn = makeBtn();

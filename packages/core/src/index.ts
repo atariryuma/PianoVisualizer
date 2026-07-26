@@ -84,7 +84,7 @@ export {
 export type { KeyboardMidiView, KeyboardDrawOptions, KeyboardHintNote } from './render/keyboard';
 
 // === Render: practice lane (falling notes + hit window + count-in) ===
-export { drawPracticeLane } from './render/lane';
+export { drawPracticeLane, drawJudgeScale, JUDGE_BAND_FILL } from './render/lane';
 export type { LaneNoteView, LaneViewState, LaneTimings, LaneDrawOptions } from './render/lane';
 
 // === Render: background composites (stars + aurora + ground flowers) ===
@@ -300,6 +300,8 @@ export {
   buildAudioGraph,
   recoverAudioContext,
   pickAudioOffsetMs,
+  AUDIO_OFFSET_MAX_MS,
+  MIN_REPORTED_OUT_LATENCY_MS,
 } from './audio/audio-context';
 export type {
   AudioContextLike,
@@ -448,11 +450,31 @@ export {
 } from './state/midi-state';
 export type { MidiState, MidiStateOptions, ActiveNote, MidiEvent } from './state/midi-state';
 
+// === State: input source (which device drives detection) ===
+export {
+  INPUT_SOURCE_PREFS,
+  isInputSourcePref,
+  resolveInputSource,
+  describeInputSource,
+  isPinnedTo,
+} from './state/input-source';
+export type { InputSourcePref, ActiveInputSource, InputSourceStatus } from './state/input-source';
+
 // === State: practice mode (section schedule, hit-window judging, stars) ===
 export {
-  HIT_WINDOW_EARLY_MS,
-  HIT_WINDOW_MS,
-  PERFECT_MS,
+  JUDGE_FRAME_MS,
+  JUDGE_PROFILE_MIDI,
+  JUDGE_PROFILE_MIC,
+  TIER_SCORE,
+  JUDGE_STRICTNESS_SCALE,
+  scaleJudgeProfile,
+  resolveJudgeProfile,
+  judgeTiming,
+  isTimingInWindow,
+  judgeForMode,
+  TIMING_TIER_STYLE,
+  TIMING_TIER_ORDER,
+  LENGTH_TIER_STYLE,
   CHORD_MATE_TOLERANCE_MS,
   DURATION_MIN_TOL_MS,
   DURATION_TOL_FRACTION,
@@ -466,8 +488,23 @@ export {
   computeHandRanges,
   matchNoteOnset,
   finalizeNoteHold,
-  resolveTimingGrade,
   resolveLengthGrade,
+  createJudgeTally,
+  resetJudgeTally,
+  recordTimingJudgement,
+  recordLengthJudgement,
+  recordMissJudgement,
+  judgeHits,
+  summarizeJudgements,
+  JUDGE_TENDENCY_MIN_MS,
+  JUDGE_TENDENCY_MIN_SAMPLES,
+  JUDGE_SETUP_SUSPECT_MS,
+  JUDGE_SETUP_CONSISTENCY,
+  JUDGE_ERROR_RING_LEN,
+  createJudgeErrorRing,
+  resetJudgeErrorRing,
+  pushJudgeError,
+  forEachJudgeError,
   computeStars,
   resolveResultTier,
   pickSectionFocus,
@@ -498,6 +535,13 @@ export type {
   FinalizeHoldResult,
   TimingGrade,
   LengthGrade,
+  JudgeProfile,
+  JudgeStrictness,
+  TimingJudgement,
+  JudgeTally,
+  JudgeErrorRing,
+  JudgeSummary,
+  JudgeTierStyle,
   StarTier,
   SectionFocus,
   SectionFocusDim,
