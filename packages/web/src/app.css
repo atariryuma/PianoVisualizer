@@ -2018,6 +2018,42 @@ button.is-busy {
   background: linear-gradient(135deg, rgba(255, 100, 150, 0.08), rgba(255, 200, 80, 0.08));
 }
 
+/* The standing "start here" recommendation. A calm cyan lift, deliberately
+   quieter than the pink selection outline: the app is suggesting, the player is
+   choosing, and those two must not compete for the same visual weight. */
+.section-row.recommended {
+  border-color: rgba(108, 224, 255, 0.45);
+  background: linear-gradient(135deg, rgba(108, 224, 255, 0.1), rgba(255, 255, 255, 0.04));
+}
+
+.section-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  vertical-align: 2px;
+  color: rgba(10, 20, 30, 0.9);
+  background: rgba(108, 224, 255, 0.85);
+}
+
+/* The one-line reason under the list. Same family as the pre-flight nudge but
+   cool rather than amber — that one is "you struggled here", this one is just
+   "here is where I'd start", and they can be on screen together. */
+.song-target-hint {
+  margin: 12px 0 2px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: rgba(215, 240, 255, 0.95);
+  background: rgba(108, 224, 255, 0.09);
+  border: 1px solid rgba(108, 224, 255, 0.3);
+  border-radius: 8px;
+  text-align: center;
+}
+
 /* 👑 1曲チャレンジ — the full-song finale row at the end of the section
    list. Gold framing so it reads as the summit of the practice path;
    .locked keeps the shared dim treatment (goal stays visible + chaseable). */

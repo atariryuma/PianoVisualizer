@@ -26,6 +26,11 @@ import {
   planSectionScaffold,
   computeUnlocks,
   planTempoStepUp,
+  planTempoStepDown,
+  pickPracticeTarget,
+  highestTempoAllSections,
+  highestSectionTempo,
+  isSectionTempoUnlocked,
   TEMPO_TIERS,
   practiceBeatMs,
   computePracticeTimings,
@@ -1022,10 +1027,8 @@ describe('computeUnlocks', () => {
     stars: 3,
     tempoPct: 60,
     sectionId: 'A1',
-    sectionIds: ['A1', 'B', 'A2'],
-    sectionNameKeys: { A1: 'feA1', B: 'feB', A2: 'feA2' },
+    // The ladder of THAT section — the caller passes the section's own map.
     unlockedTempos: { 60: true },
-    unlockedSections: { A1: true },
     streakCount: 0,
   };
 
@@ -1052,27 +1055,12 @@ describe('computeUnlocks', () => {
     expect(r.unlockedTempo).toBeNull();
   });
 
-  it('unlocks the next section when stars >= 1', () => {
+  it('unlocks NOTHING but the tempo — there is no section gate left', () => {
+    // Sections used to unlock in order at ★1. That spent the player's freshest
+    // attention on the easiest passage and kept them out of the one that needed
+    // work; `pickPracticeTarget` recommends instead.
     const r = computeUnlocks({ ...baseInput, stars: 1 });
-    expect(r.unlockedSecKey).toBe('feB');
-  });
-
-  it('does not unlock the next section when stars < 1', () => {
-    const r = computeUnlocks({ ...baseInput, stars: 0 });
-    expect(r.unlockedSecKey).toBeNull();
-  });
-
-  it('does not re-unlock an already-unlocked section', () => {
-    const r = computeUnlocks({
-      ...baseInput,
-      unlockedSections: { A1: true, B: true },
-    });
-    expect(r.unlockedSecKey).toBeNull();
-  });
-
-  it('does not advance past the last section', () => {
-    const r = computeUnlocks({ ...baseInput, sectionId: 'A2' });
-    expect(r.unlockedSecKey).toBeNull();
+    expect(Object.keys(r).sort()).toEqual(['streakDays', 'unlockedTempo']);
   });
 
   it('reports the streak when streakCount hits the default 3-day milestone', () => {
@@ -1098,14 +1086,128 @@ describe('computeUnlocks', () => {
     });
     expect(r.streakDays).toBe(30);
   });
+});
 
-  it('returns null section when sectionNameKeys lacks the next entry', () => {
-    const r = computeUnlocks({
-      ...baseInput,
-      stars: 1,
-      sectionNameKeys: { A1: 'feA1' }, // missing B + A2
-    });
-    expect(r.unlockedSecKey).toBeNull();
+// =====================================================================
+// planTempoStepDown / pickPracticeTarget — the two-way ladder + the
+// recommendation that replaced the section lock
+// =====================================================================
+
+describe('planTempoStepDown', () => {
+  it('offers the tier below on a ★1 clear — messy, so own it slower first', () => {
+    expect(planTempoStepDown(90, 1)).toBe(75);
+    expect(planTempoStepDown(60, 1)).toBe(50);
+  });
+
+  it('is silent at ★2+, where the climb is offered instead', () => {
+    // Mutually exclusive with planTempoStepUp by star count, which is what lets
+    // one button carry both directions without ever contradicting itself.
+    for (const stars of [2, 3]) {
+      expect(planTempoStepDown(75, stars)).toBeNull();
+      expect(planTempoStepUp(75, stars)).not.toBeNull();
+    }
+    expect(planTempoStepUp(75, 1)).toBeNull();
+  });
+
+  it('is silent at ★0 — that run belongs to the scaffold, not the ladder', () => {
+    expect(planTempoStepDown(75, 0)).toBeNull();
+  });
+
+  it('is silent at the bottom of the ladder', () => {
+    expect(planTempoStepDown(50, 1)).toBeNull();
+  });
+
+  it('is silent for a tempo that is not a tier at all', () => {
+    expect(planTempoStepDown(83, 1)).toBeNull();
+  });
+});
+
+describe('pickPracticeTarget', () => {
+  const ids = ['A1', 'B', 'A2'];
+  const at = (
+    sections: Record<string, { stars: number; bestPct: number }>,
+    attempts: Record<string, number>
+  ) => pickPracticeTarget({ sectionIds: ids, sections, attempts });
+
+  it('sends the player to a section they have never opened', () => {
+    // Survey before deepening: you cannot practise what you have not met, and
+    // hearing the whole thing early is what makes the hard part legible.
+    const r = at(
+      { A1: { stars: 2, bestPct: 80 }, B: { stars: 0, bestPct: 0 }, A2: { stars: 0, bestPct: 0 } },
+      { A1: 4, B: 0, A2: 0 }
+    );
+    expect(r).toEqual({ sectionId: 'B', reason: 'unplayed' });
+  });
+
+  it('then points at the WEAKEST attempted section — the hard part, on purpose', () => {
+    const r = at(
+      {
+        A1: { stars: 3, bestPct: 99 },
+        B: { stars: 1, bestPct: 60 },
+        A2: { stars: 2, bestPct: 75 },
+      },
+      { A1: 5, B: 3, A2: 2 }
+    );
+    expect(r).toEqual({ sectionId: 'B', reason: 'weakest' });
+  });
+
+  it('breaks a star tie on the lower best percentage', () => {
+    const r = at(
+      {
+        A1: { stars: 1, bestPct: 66 },
+        B: { stars: 1, bestPct: 51 },
+        A2: { stars: 3, bestPct: 99 },
+      },
+      { A1: 2, B: 2, A2: 2 }
+    );
+    expect(r?.sectionId).toBe('B');
+  });
+
+  it('breaks a full tie toward the earlier section, so the chip does not jitter', () => {
+    const r = at(
+      {
+        A1: { stars: 1, bestPct: 60 },
+        B: { stars: 1, bestPct: 60 },
+        A2: { stars: 1, bestPct: 60 },
+      },
+      { A1: 1, B: 1, A2: 1 }
+    );
+    expect(r?.sectionId).toBe('A1');
+  });
+
+  it('points at the whole song once every part is ★3', () => {
+    const r = at(
+      {
+        A1: { stars: 3, bestPct: 99 },
+        B: { stars: 3, bestPct: 98 },
+        A2: { stars: 3, bestPct: 97 },
+      },
+      { A1: 9, B: 9, A2: 9 }
+    );
+    expect(r).toEqual({ sectionId: '__full', reason: 'fullSong' });
+  });
+
+  it('returns null for a song with no sections', () => {
+    expect(pickPracticeTarget({ sectionIds: [], sections: {}, attempts: {} })).toBeNull();
+  });
+});
+
+describe('highestTempoAllSections', () => {
+  it('reports the SLOWEST section ceiling — one easy part cannot mint full speed', () => {
+    // This is the whole reason the ladder moved: Für Elise had every tier open
+    // off the back of A1 while B sat at ★1.
+    const sections = {
+      A1: { unlockedTempos: { 50: true, 60: true, 75: true, 90: true, 100: true } },
+      B: { unlockedTempos: { 50: true, 60: true, 75: false, 90: false, 100: false } },
+    };
+    expect(highestTempoAllSections(sections, ['A1', 'B'])).toBe(60);
+    expect(highestSectionTempo(sections.A1)).toBe(100);
+  });
+
+  it('treats a section with no ladder recorded as the support tiers', () => {
+    expect(highestTempoAllSections({}, ['A1'])).toBe(60);
+    expect(isSectionTempoUnlocked(undefined, 60)).toBe(true);
+    expect(isSectionTempoUnlocked(undefined, 75)).toBe(false);
   });
 });
 

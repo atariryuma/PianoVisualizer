@@ -83,7 +83,7 @@ function makeDom(): ResultCardDom {
       <button id="resNext"></button>
       <button id="resTryPlay"></button>
       <button id="resRetrySlow" style="display: none"></button>
-      <button id="resTempoUp" style="display: none"></button>
+      <button id="resTempoShift" style="display: none"></button>
       <button id="resStretch" data-i18n="stretchBtn" style="display: none"></button>
     </div>
   `;
@@ -125,7 +125,7 @@ function makeDom(): ResultCardDom {
     resNext: document.getElementById('resNext') as HTMLElement,
     resTryPlay: document.getElementById('resTryPlay'),
     resRetrySlow: document.getElementById('resRetrySlow'),
-    resTempoUp: document.getElementById('resTempoUp'),
+    resTempoShift: document.getElementById('resTempoShift'),
     resStretch: document.getElementById('resStretch'),
   };
 }
@@ -168,9 +168,8 @@ function makeStubCtx(): CanvasRenderingContext2D {
 
 function makeProg(): ResultCardSongProgress {
   return {
-    unlockedTempos: { 60: true, 75: true },
-    unlockedSections: { a1: true, b: true },
-    sections: { a1: { stars: 1, bestPct: 50 } },
+    // The ladder lives on the SECTION now.
+    sections: { a1: { stars: 1, bestPct: 50, unlockedTempos: { 60: true, 75: true } } },
     history: {},
   };
 }
@@ -212,11 +211,9 @@ function makeDeps(over: Partial<ResultCardDeps> = {}): ResultCardDeps {
     isExactInput: () => false,
     resolveResultTier: vi.fn(() => ({ titleKey: 'tier2Title', msgKey: 'tier2Msg' })),
     pickSectionFocus: vi.fn(() => null),
-    computeUnlocks: vi.fn(() => ({
-      unlockedTempo: 90,
-      unlockedSecKey: 'feA2',
-      streakDays: 3,
-    })),
+    computeUnlocks: vi.fn(() => ({ unlockedTempo: 90, streakDays: 3 })),
+    sectionTempoUnlocks: (sec) => sec?.unlockedTempos ?? { 50: true, 60: true },
+    planTempoStepDown: () => null,
     effectGoldenBurst: vi.fn(),
     effectStarShower: vi.fn(),
     effectFlowerBurst: vi.fn(),
@@ -249,7 +246,7 @@ describe('createResultCard — speed-trainer step-up button', () => {
     const deps = makeDeps({ planTempoStepUp: (t: number) => (t === 75 ? 90 : null) });
     deps.practice._lastResult = rhythmResult();
     createResultCard(deps).renderResultCard();
-    const btn = deps.dom.resTempoUp as HTMLElement & { dataset: DOMStringMap };
+    const btn = deps.dom.resTempoShift as HTMLElement & { dataset: DOMStringMap };
     expect(btn.style.display).not.toBe('none');
     expect(btn.dataset.tempo).toBe('90');
   });
@@ -258,14 +255,35 @@ describe('createResultCard — speed-trainer step-up button', () => {
     const deps = makeDeps({ planTempoStepUp: () => null });
     deps.practice._lastResult = rhythmResult({ tempoPct: 100 });
     createResultCard(deps).renderResultCard();
-    expect((deps.dom.resTempoUp as HTMLElement).style.display).toBe('none');
+    expect((deps.dom.resTempoShift as HTMLElement).style.display).toBe('none');
   });
 
   it('never shows for listen mode', () => {
     const deps = makeDeps({ planTempoStepUp: () => 90 });
     deps.practice._lastResult = rhythmResult({ mode: 'listen', stars: 0 });
     createResultCard(deps).renderResultCard();
-    expect((deps.dom.resTempoUp as HTMLElement).style.display).toBe('none');
+    expect((deps.dom.resTempoShift as HTMLElement).style.display).toBe('none');
+  });
+
+  it('turns into the step DOWN when the run cleared but was messy', () => {
+    // One button, both directions. The two plans are mutually exclusive by star
+    // count, so it can never contradict itself — which two buttons could.
+    const deps = makeDeps({ planTempoStepUp: () => null, planTempoStepDown: () => 60 });
+    deps.practice._lastResult = rhythmResult({ stars: 1 });
+    createResultCard(deps).renderResultCard();
+    const btn = deps.dom.resTempoShift as HTMLElement & { dataset: DOMStringMap };
+    expect(btn.style.display).not.toBe('none');
+    expect(btn.dataset.tempo).toBe('60');
+    expect(btn.textContent).toContain('tempoDownBtnFmt');
+  });
+
+  it('yields to the scaffold when THAT is already offering a slower tempo', () => {
+    // Otherwise a ★0 run could show two 🐢 buttons side by side proposing
+    // different things.
+    const deps = makeDeps({ planTempoStepUp: () => null, planTempoStepDown: () => 60 });
+    deps.practice._lastResult = rhythmResult({ stars: 1, retryStrategy: 'slowTempo' });
+    createResultCard(deps).renderResultCard();
+    expect((deps.dom.resTempoShift as HTMLElement).style.display).toBe('none');
   });
 });
 
@@ -701,20 +719,21 @@ describe('createResultCard — renderResultCard', () => {
     expect(deps.dom.resMsg.textContent).toBe('tier2Msg');
   });
 
-  it('builds the unlocked-msg from tempo + section + streak entries', () => {
+  it('builds the unlocked-msg from tempo + streak entries', () => {
+    // No section half any more — sections are all open from the start, so there
+    // is no such thing as unlocking one.
     const deps = makeDeps();
     deps.practice._lastResult = {
       mode: 'rhythm',
       secId: 'a1',
       stars: 3,
       unlockedTempo: 90,
-      unlockedSecKey: 'feA2',
       streakDays: 7,
     };
     createResultCard(deps).renderResultCard();
     expect(deps.dom.resUnlock.textContent).toContain('tempoUnlockedFmt');
-    expect(deps.dom.resUnlock.textContent).toContain('sectionUnlockedFmt');
     expect(deps.dom.resUnlock.textContent).toContain('streakDaysFmt');
+    expect(deps.dom.resUnlock.textContent).not.toContain('sectionUnlockedFmt');
   });
 
   it('hides resTryPlay in rhythm results', () => {
@@ -939,10 +958,20 @@ describe('createResultCard — completePracticeSection', () => {
     expect(deps.dom.resNext.style.display).toBe('');
   });
 
-  it('hides resNext when next section is locked', () => {
+  it('shows resNext for a mid-song section, whatever its stars', () => {
+    // There is no locked next section to hide behind any more; the only reason
+    // to hide Next is that there IS no next section.
     const deps = makeDeps();
     deps.practice.mode = 'rhythm';
-    deps.practice.sectionIdx = 1; // b, next is a2 which is NOT unlocked in fixture
+    deps.practice.sectionIdx = 1; // b → a2 exists
+    createResultCard(deps).completePracticeSection();
+    expect(deps.dom.resNext.style.display).toBe('');
+  });
+
+  it('hides resNext on the LAST section', () => {
+    const deps = makeDeps();
+    deps.practice.mode = 'rhythm';
+    deps.practice.sectionIdx = 2; // a2 is last
     createResultCard(deps).completePracticeSection();
     expect(deps.dom.resNext.style.display).toBe('none');
   });
@@ -999,21 +1028,21 @@ describe('createResultCard — completePracticeSection', () => {
     expect(deps.dom.resAcc.closest('.result-stat')!.classList.contains('focus-row')).toBe(true);
   });
 
-  it('persists unlock outcomes back into songProg', () => {
+  it('writes the unlocked tempo onto the SECTION that earned it', () => {
+    // Song-level was the bug: the ladder could be climbed on the easy opening
+    // and then full speed was open for the passage that needed the scaffold.
     const sp = makeProg();
     const deps = makeDeps({
       songProg: () => sp,
-      computeUnlocks: vi.fn(() => ({
-        unlockedTempo: 90,
-        unlockedSecKey: 'feB',
-        streakDays: null,
-      })),
+      computeUnlocks: vi.fn(() => ({ unlockedTempo: 90, streakDays: null })),
     });
     deps.practice.mode = 'rhythm';
-    deps.practice.sectionIdx = 0; // a1; next is b
+    deps.practice.sectionIdx = 0; // a1
     createResultCard(deps).completePracticeSection();
-    expect(sp.unlockedTempos[90]).toBe(true);
-    expect(sp.unlockedSections.b).toBe(true);
+    expect(sp.sections.a1?.unlockedTempos?.[90]).toBe(true);
+    // …and nowhere else. `b` has never been played; it keeps its own ladder.
+    expect(sp.sections.b?.unlockedTempos?.[90]).toBeUndefined();
+    expect('unlockedTempos' in sp).toBe(false);
   });
 });
 
@@ -1038,12 +1067,13 @@ describe('createResultCard — full-song challenge completion', () => {
     expect(Array.isArray(prog.history.__full)).toBe(true);
     expect(prog.history.__full.length).toBe(1);
     // The real section (a1 = sections[sectionIdx]) is untouched.
-    expect(prog.sections.a1).toEqual({ stars: 1, bestPct: 50 });
+    expect(prog.sections.a1?.stars).toBe(1);
+    expect(prog.sections.a1?.bestPct).toBe(50);
   });
 
   it('passes __full to computeUnlocks (tempo ladder works, no section unlock)', () => {
     const deps = challengeDeps({
-      computeUnlocks: vi.fn(() => ({ unlockedTempo: 90, unlockedSecKey: null, streakDays: null })),
+      computeUnlocks: vi.fn(() => ({ unlockedTempo: 90, streakDays: null })),
     });
     createResultCard(deps).completePracticeSection();
     expect(deps.computeUnlocks).toHaveBeenCalledWith(

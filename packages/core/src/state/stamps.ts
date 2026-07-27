@@ -5,6 +5,7 @@
 
 import type { PracticeProgress } from './practice-progress';
 import { FULL_SONG_SECTION_ID } from './mastery';
+import { highestTempoAllSections, isSectionTempoUnlocked } from './practice-state';
 import { formatDateKey } from './streak';
 
 /** Categorization for the Collection-screen filter. */
@@ -143,7 +144,9 @@ function isSongPlatinum(
   sectionIds: readonly string[]
 ): boolean {
   if (!isSongFullyThreeStar(progress, songId, sectionIds)) return false;
-  return progress.songs?.[songId]?.unlockedTempos?.['100'] === true;
+  // EVERY section at full speed, not just the easiest one — the ladder is
+  // per-section now, and a platinum seal claims the whole song.
+  return highestTempoAllSections(progress.songs?.[songId]?.sections ?? {}, sectionIds) >= 100;
 }
 
 /** How many distinct songs have had their full-song challenge cleared
@@ -207,6 +210,61 @@ function distinctSectionsToday(progress: PracticeProgress, todayMs: number): num
     }
   }
   return seen.size;
+}
+
+/**
+ * Did this section have an attempt on an EARLIER calendar day than today?
+ *
+ * The one thing the stamp set never celebrated was the return. Days-in-a-row and
+ * volume-per-day were both rewarded; coming back to the same passage after a
+ * night was not — and that is the single most productive thing a learner can do
+ * with a hard passage. Finger-sequence skill improves measurably during sleep
+ * with no practice at all (Walker et al. 2002/2003 — roughly a fifth faster the
+ * next morning), so "stop and come back tomorrow" is not a consolation prize,
+ * it is the technique. A stamp is the only way this app can teach that.
+ */
+function sectionHasEarlierDay(ctx: StampContext, todayMs: number): boolean {
+  const hist = ctx.progress.songs?.[ctx.attempt.songId]?.history?.[ctx.attempt.sectionId];
+  if (!Array.isArray(hist)) return false;
+  const todayKey = formatDateKey(new Date(todayMs));
+  for (const h of hist) {
+    const d = (h as { d?: number }).d;
+    if (typeof d === 'number' && formatDateKey(new Date(d)) < todayKey) return true;
+  }
+  return false;
+}
+
+/** Distinct calendar days this SONG has been practised on — spacing, as opposed
+ *  to the streak (which is about the habit) or today's minutes (the volume). */
+function distinctDaysForSong(progress: PracticeProgress, songId: string): number {
+  const days = new Set<string>();
+  for (const hist of Object.values(progress.songs?.[songId]?.history ?? {})) {
+    if (!Array.isArray(hist)) continue;
+    for (const h of hist) {
+      const d = (h as { d?: number }).d;
+      if (typeof d === 'number') days.add(formatDateKey(new Date(d)));
+    }
+  }
+  return days.size;
+}
+
+/** The most distinct tempo tiers any ONE section has been cleared at.
+ *  Rewards USING the ladder, where `tempo_100_unlocked` only ever rewarded
+ *  arriving at the top of it. */
+function maxTemposClearedOnOneSection(progress: PracticeProgress): number {
+  let best = 0;
+  for (const sp of Object.values(progress.songs ?? {})) {
+    for (const hist of Object.values(sp.history ?? {})) {
+      if (!Array.isArray(hist)) continue;
+      const tempos = new Set<number>();
+      for (const h of hist) {
+        const e = h as { tempoPct?: number; s?: number };
+        if (typeof e.tempoPct === 'number' && (e.s ?? 0) >= 1) tempos.add(e.tempoPct);
+      }
+      if (tempos.size > best) best = tempos.size;
+    }
+  }
+  return best;
 }
 
 /** Stable IDs persisted under `progress.earnedStamps` — never rename. */
@@ -324,7 +382,13 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
     rarity: 'epic',
     evaluate: (c) => {
       const sp = c.progress.songs?.[c.attempt.songId];
-      return !!sp && sp.unlockedTempos?.['100'] === true;
+      // Any ONE section reaching full speed is a real achievement and this
+      // stamp has always meant that; the whole-song claim is the platinum seal.
+      if (!sp) return false;
+      for (const sec of Object.values(sp.sections ?? {})) {
+        if (isSectionTempoUnlocked(sec, 100)) return true;
+      }
+      return false;
     },
   },
 
@@ -463,6 +527,49 @@ export const DEFAULT_STAMPS: readonly StampDef[] = [
     rarity: 'common',
     evaluate: (c) =>
       !c.attempt.isListenMode && c.attempt.stars > c.attempt.priorStars && c.attempt.stars >= 2,
+  },
+
+  {
+    id: 'overnight_gain',
+    nameKey: 'stampOvernightName',
+    descKey: 'stampOvernightDesc',
+    earnedKey: 'stampOvernightEarned',
+    tipKey: 'stampOvernightTip',
+    icon: '🌙',
+    category: 'practice',
+    rarity: 'rare',
+    // A new best on a passage first met on an earlier day. Not "practised two
+    // days running" (that is the streak) — specifically the SAME passage, better
+    // than before, after a break.
+    evaluate: (c) =>
+      !c.attempt.isListenMode &&
+      c.attempt.accPct > c.attempt.priorBestPct &&
+      sectionHasEarlierDay(c, Date.now()),
+  },
+  {
+    id: 'spaced_3_days',
+    nameKey: 'stampSpacedName',
+    descKey: 'stampSpacedDesc',
+    earnedKey: 'stampSpacedEarned',
+    tipKey: 'stampSpacedTip',
+    icon: '📆',
+    category: 'practice',
+    rarity: 'rare',
+    // Spacing, plainly: one song revisited across three different days. Days,
+    // not consecutive days — a gap is part of the method, so missing a day must
+    // not reset it (banned-list: nothing that decrements).
+    evaluate: (c) => distinctDaysForSong(c.progress, c.attempt.songId) >= 3,
+  },
+  {
+    id: 'tempo_climb_3',
+    nameKey: 'stampTempoClimbName',
+    descKey: 'stampTempoClimbDesc',
+    earnedKey: 'stampTempoClimbEarned',
+    tipKey: 'stampTempoClimbTip',
+    icon: '🪜',
+    category: 'practice',
+    rarity: 'rare',
+    evaluate: (c) => maxTemposClearedOnOneSection(c.progress) >= 3,
   },
 
   // === Milestone ===

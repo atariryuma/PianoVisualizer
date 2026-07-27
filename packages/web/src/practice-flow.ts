@@ -70,12 +70,6 @@ export interface PracticeFlowSong {
   sections: Array<{ id: string }>;
 }
 
-/** Per-song progress slice — `unlockedSections[id]` truthy means the
- *  next-section button can advance. */
-export interface PracticeFlowSongProgress {
-  unlockedSections: Record<string, unknown>;
-}
-
 /** DOM elements wired by the controls. */
 export interface PracticeFlowDom {
   ptbQuit: HTMLElement;
@@ -91,7 +85,7 @@ export interface PracticeFlowDom {
   resRetrySlow?: HTMLElement | null;
   /** Speed trainer — result-card publishes dataset.tempo; this restarts the
    *  same section at that higher tempo. */
-  resTempoUp?: HTMLElement | null;
+  resTempoShift?: HTMLElement | null;
   resTryPlay: HTMLElement | null;
   resNext: HTMLElement;
   sumClose: HTMLElement;
@@ -116,8 +110,6 @@ export interface PracticeFlowDeps {
   midiState: PracticeFlowMidiRef;
   /** Live current-song reference for the Next button's section lookup. */
   getCurrentSong(): PracticeFlowSong | null;
-  /** Per-song progress accessor (used to gate the Next button). */
-  songProg(): PracticeFlowSongProgress;
   /** Restart / advance a section. Wraps Tone.Transport reset + OSMD
    *  cursor + section-notes rebuild. The shell's `startPracticeSection`. */
   startPracticeSection(sectionIdx: number): Promise<void>;
@@ -335,8 +327,8 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
   // higher tempo published by result-card and retries the same section. Same
   // side-effect-free write as the manual tempo row; the kid can still change
   // it by hand afterwards. Achievement-gated, no time pressure.
-  deps.dom.resTempoUp?.addEventListener('click', () => {
-    const btn = deps.dom.resTempoUp as HTMLElement & { dataset: DOMStringMap };
+  deps.dom.resTempoShift?.addEventListener('click', () => {
+    const btn = deps.dom.resTempoShift as HTMLElement & { dataset: DOMStringMap };
     const tempo = parseInt(btn.dataset.tempo || '', 10);
     if (Number.isFinite(tempo) && tempo > 0) deps.practice.tempoPct = tempo;
     deps.dom.sectionResult.classList.remove('visible');
@@ -351,9 +343,9 @@ export function createPracticeFlow(deps: PracticeFlowDeps): PracticeFlow {
   deps.dom.resNext.addEventListener('click', () => {
     const song = deps.getCurrentSong();
     if (!song) return;
+    // Sections are all open — no unlock check. `resNext` is only rendered when
+    // a next section exists (result-card), so this is just the advance.
     const nextIdx = Math.min(deps.practice.sectionIdx + 1, song.sections.length - 1);
-    const nextId = song.sections[nextIdx].id;
-    if (!deps.songProg().unlockedSections[nextId]) return;
     deps.practice.sectionIdx = nextIdx;
     deps.dom.sectionResult.classList.remove('visible');
     void transitionToSection(nextIdx);

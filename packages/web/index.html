@@ -535,6 +535,11 @@
           <div data-i18n="playFullSong">🎵 Play full song</div>
         </div>
 
+        <!-- Standing "what to practise next" line. Replaced the sequential
+             section lock: every section is playable and the app says where it
+             would start, rather than deciding for the player. -->
+        <div class="song-target-hint" id="songTargetHint" style="display: none"></div>
+
         <!-- Feed-forward nudge: shown above Start when the selected section was
              a recent struggle. Text + a one-tap "set it up for me" button —
              both owned by renderSongPanel (struggle-depth + mode aware). -->
@@ -726,7 +731,7 @@
           <button id="resRetrySlow" class="primary" style="display: none">🐢</button>
           <!-- Speed trainer: on a cleared run below 100%, climb to the next
                tempo tier in one tap. Achievement-gated, no time pressure. -->
-          <button id="resTempoUp" class="primary" style="display: none">🚀</button>
+          <button id="resTempoShift" class="primary" style="display: none">🚀</button>
           <button id="resStretch" data-i18n="stretchBtn" style="display: none">
             🌳 Try a stretch piece
           </button>

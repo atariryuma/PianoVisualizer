@@ -89,7 +89,6 @@ function makeDeps(overrides: Partial<PracticeFlowDeps> = {}): PracticeFlowDeps {
     getCurrentSong: () => ({
       sections: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
     }),
-    songProg: () => ({ unlockedSections: { a: true, b: true } }), // c is locked
     startPracticeSection: vi.fn(() => Promise.resolve()),
     renderSongPanel: vi.fn(),
     stopPracticeAudio: vi.fn(),
@@ -310,19 +309,20 @@ describe('createPracticeFlow — resNext', () => {
     expect(deps.startPracticeSection).toHaveBeenCalledWith(1);
   });
 
-  it('blocks advancing to a locked next section', () => {
+  it('advances to ANY next section — there is no lock to block on', () => {
+    // Sections used to unlock in order at ★1. Removing that removed the only
+    // reason this handler consulted progress at all; result-card decides whether
+    // Next is even shown (it is not, on the last section).
     const deps = makeDeps();
-    deps.practice.sectionIdx = 1; // next is "c", locked
+    deps.practice.sectionIdx = 1;
     createPracticeFlow(deps);
     deps.dom.resNext.click();
-    expect(deps.practice.sectionIdx).toBe(1); // unchanged
-    expect(deps.startPracticeSection).not.toHaveBeenCalled();
+    expect(deps.practice.sectionIdx).toBe(2);
+    expect(deps.startPracticeSection).toHaveBeenCalledWith(2);
   });
 
   it('clamps at the last section index', () => {
-    const deps = makeDeps({
-      songProg: () => ({ unlockedSections: { a: true, b: true, c: true } }),
-    });
+    const deps = makeDeps();
     deps.practice.sectionIdx = 2; // already last
     createPracticeFlow(deps);
     deps.dom.resNext.click();

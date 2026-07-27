@@ -27,17 +27,26 @@ describe('defaultPracticeProgress', () => {
 describe('defaultSongProgress', () => {
   it('seeds A1/B/A2 sections at 0 stars', () => {
     const s = defaultSongProgress();
-    expect(s.sections.A1).toEqual({ stars: 0, bestPct: 0 });
-    expect(s.sections.B).toEqual({ stars: 0, bestPct: 0 });
-    expect(s.sections.A2).toEqual({ stars: 0, bestPct: 0 });
+    for (const id of ['A1', 'B', 'A2']) {
+      expect(s.sections[id].stars).toBe(0);
+      expect(s.sections[id].bestPct).toBe(0);
+    }
   });
 
-  it('unlocks the 60-bpm tier and the A1 section by default', () => {
+  it('gives EVERY section its own tempo ladder, opened at the support tiers', () => {
+    // Per section, not per song. The song-level ladder could be climbed entirely
+    // on the easiest passage, which then handed full speed to the hardest one —
+    // the gate existed but never stood where it was needed.
     const s = defaultSongProgress();
-    expect(s.unlockedTempos[60]).toBe(true);
-    expect(s.unlockedTempos[75]).toBe(false);
-    expect(s.unlockedSections.A1).toBe(true);
-    expect(s.unlockedSections.B).toBe(false);
+    for (const id of ['A1', 'B', 'A2']) {
+      const t = s.sections[id].unlockedTempos;
+      expect(t?.[60], id).toBe(true);
+      expect(t?.[75], id).toBe(false);
+    }
+  });
+
+  it('locks no sections — the app recommends instead of gating', () => {
+    expect('unlockedSections' in defaultSongProgress()).toBe(false);
   });
 
   it('starts with empty history', () => {
@@ -170,8 +179,6 @@ describe('getSongProgress', () => {
       songs: {
         old_song: {
           sections: { A1: { stars: 1, bestPct: 50 } } as Record<string, never>,
-          unlockedTempos: {} as Record<string, never>,
-          unlockedSections: {} as Record<string, never>,
           history: undefined as unknown as Record<string, never>,
         },
       },
@@ -180,13 +187,41 @@ describe('getSongProgress', () => {
     // A1's user data preserved
     expect(sp.sections.A1.stars).toBe(1);
     // B + A2 defaults filled in
-    expect(sp.sections.B).toEqual({ stars: 0, bestPct: 0 });
-    expect(sp.sections.A2).toEqual({ stars: 0, bestPct: 0 });
-    // unlock defaults filled in
-    expect(sp.unlockedTempos[60]).toBe(true);
-    expect(sp.unlockedSections.A1).toBe(true);
+    expect(sp.sections.B.stars).toBe(0);
+    expect(sp.sections.A2.stars).toBe(0);
+    // ladder defaults filled in, per section
+    expect(sp.sections.A1.unlockedTempos?.[60]).toBe(true);
+    expect(sp.sections.B.unlockedTempos?.[60]).toBe(true);
     // history initialized
     expect(sp.history).toEqual({});
+  });
+
+  it('seeds every section from an OLD song-level ladder — nobody loses a speed', () => {
+    // The one thing moving the gate must not do is take away a tier the player
+    // already earned. A save written before the ladder became per-section
+    // carries one map for the whole song; every section inherits it, and the
+    // legacy field is then dropped so there is one source of truth.
+    const p = {
+      streakDays: [],
+      streakCount: 0,
+      songs: {
+        fur_elise: {
+          sections: { A1: { stars: 3, bestPct: 100 }, B: { stars: 1, bestPct: 66 } },
+          unlockedTempos: { 50: true, 60: true, 75: true, 90: true, 100: true },
+          unlockedSections: { A1: true, B: true },
+          history: {},
+        },
+      },
+    } as unknown as PracticeProgress;
+    const sp = getSongProgress(p, 'fur_elise');
+    expect(sp.sections.A1.unlockedTempos?.[100]).toBe(true);
+    expect(sp.sections.B.unlockedTempos?.[100]).toBe(true);
+    // …including a section the old save never mentioned.
+    expect(sp.sections.A2.unlockedTempos?.[100]).toBe(true);
+    expect('unlockedTempos' in sp).toBe(false);
+    expect('unlockedSections' in sp).toBe(false);
+    // Idempotent: a second read must not re-default what the first one seeded.
+    expect(getSongProgress(p, 'fur_elise').sections.B.unlockedTempos?.[100]).toBe(true);
   });
 
   it('initializes the songs map if missing', () => {

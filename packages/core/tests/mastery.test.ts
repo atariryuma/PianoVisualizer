@@ -16,27 +16,40 @@ import {
   defaultSongProgress,
   type PracticeProgress,
   type SongProgress,
+  defaultUnlockedTempos,
 } from '../src/state/practice-progress';
 
 const FUR_ELISE: MasterySongDef = { id: 'fur_elise', sectionIds: ['A1', 'B', 'A2'] };
 const ALLA_TURCA: MasterySongDef = { id: 'alla_turca', sectionIds: ['A', 'B', 'C'] };
 
+/** `tempos` applies to EVERY section — the ladder is per-section now, and a
+ *  song's reported speed is the slowest section's ceiling, so a fixture that
+ *  wanted "this song has 100 % unlocked" has to say it about all of them. */
 function spWith(opts: {
   stars?: Partial<Record<string, number>>;
   tempos?: Partial<Record<string, boolean>>;
-  unlockedSections?: Partial<Record<string, boolean>>;
+  /** Per-section override, for the cases that are ABOUT sections disagreeing. */
+  sectionTempos?: Record<string, Partial<Record<string, boolean>>>;
 }): SongProgress {
   const sp = defaultSongProgress();
   if (opts.stars) {
     for (const [id, n] of Object.entries(opts.stars)) {
-      sp.sections[id] = { stars: n ?? 0, bestPct: (n ?? 0) * 30 };
+      sp.sections[id] = {
+        stars: n ?? 0,
+        bestPct: (n ?? 0) * 30,
+        unlockedTempos: defaultUnlockedTempos(),
+      };
     }
   }
   if (opts.tempos) {
-    sp.unlockedTempos = { ...sp.unlockedTempos, ...opts.tempos };
+    for (const sec of Object.values(sp.sections)) {
+      sec.unlockedTempos = { ...defaultUnlockedTempos(), ...sec.unlockedTempos, ...opts.tempos };
+    }
   }
-  if (opts.unlockedSections) {
-    sp.unlockedSections = { ...sp.unlockedSections, ...opts.unlockedSections };
+  for (const [id, tempos] of Object.entries(opts.sectionTempos ?? {})) {
+    const sec = sp.sections[id] ?? { stars: 0, bestPct: 0 };
+    sec.unlockedTempos = { ...defaultUnlockedTempos(), ...sec.unlockedTempos, ...tempos };
+    sp.sections[id] = sec;
   }
   return sp;
 }
@@ -89,22 +102,25 @@ describe('computeSongMastery', () => {
     expect(sm.fullSongStars).toBe(0);
     expect(sm.seal).toBe('none');
     expect(sm.touched).toBe(false);
-    // First section unlocked by default even with no progress record.
-    expect(sm.sections[0].unlocked).toBe(true);
-    expect(sm.sections[1].unlocked).toBe(false);
+    // No lock state to report: every section is playable from the first visit.
+    // The sequential gate put the player's freshest attention on the easiest
+    // passage and kept them out of the one that needed work.
+    expect(sm.sections.map((x) => x.id)).toEqual(['A1', 'B', 'A2']);
+    expect(sm.sections.every((x) => !('unlocked' in x))).toBe(true);
   });
 
   it('F3: does NOT throw on a corrupt per-song bucket missing unlockedTempos', () => {
     // 破損/移行後の per-song バケットが unlockedTempos を欠くと、以前は
     // highestUnlockedTempo → undefined['60'] で TypeError → renderLibraryStrip
     // 経由で boot 恒久クラッシュしていた。leaf ガードで安全に既定へ落ちる。
-    const corrupt = { sections: {}, unlockedSections: {} } as unknown as Parameters<
-      typeof computeSongMastery
-    >[1];
+    const corrupt = { sections: {} } as unknown as Parameters<typeof computeSongMastery>[1];
     expect(() => computeSongMastery(FUR_ELISE, corrupt)).not.toThrow();
     const sm = computeSongMastery(FUR_ELISE, corrupt);
     expect(sm.starsPossible).toBe(12);
-    expect(sm.highestTempoUnlocked).toBe(50); // 既定（TEMPO_TIERS[0]=最遅）
+    // A section with no ladder recorded still has the support tiers open, so the
+    // ceiling is 60 — the same answer a fresh save gives, which is the point of
+    // defaulting in one place rather than at each reader.
+    expect(sm.highestTempoUnlocked).toBe(60);
     // computeLibraryMastery 経由でも throw しない（boot 経路の再現）。
     expect(() =>
       computeLibraryMastery([FUR_ELISE], { songs: { fur_elise: corrupt } } as never)

@@ -504,7 +504,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'resStretch',
       'resTryPlay',
       'resRetrySlow',
-      'resTempoUp'
+      'resTempoShift'
     ) as any,
     practice: deps.practice,
     getCurrentSong: deps.getCurrentSong,
@@ -525,6 +525,8 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
     planSectionScaffold: PianoCore.planSectionScaffold,
     tempoTiers: PianoCore.TEMPO_TIERS,
     planTempoStepUp: PianoCore.planTempoStepUp,
+    planTempoStepDown: PianoCore.planTempoStepDown,
+    sectionTempoUnlocks: PianoCore.sectionTempoUnlocks,
     computeUnlocks: PianoCore.computeUnlocks,
     effectGoldenBurst: deps.effectGoldenBurst,
     effectStarShower: deps.effectStarShower,
@@ -629,6 +631,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       'loopToggle',
       'modeHint',
       'songPreflightHint',
+      'songTargetHint',
       'songPreflightText',
       'songPreflightApply',
       'songStart'
@@ -770,7 +773,7 @@ export function createShellUi(deps: ShellUiDeps): ShellUi {
       ),
       resTryPlay: deps.byId('resTryPlay'),
       resRetrySlow: deps.byId('resRetrySlow'),
-      resTempoUp: deps.byId('resTempoUp'),
+      resTempoShift: deps.byId('resTempoShift'),
     } as any,
     practice: deps.practice,
     state: deps.state,

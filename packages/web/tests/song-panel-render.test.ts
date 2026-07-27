@@ -37,6 +37,7 @@ function makeDom(): SongPanelRenderDom {
     <div id="fullSongRow"></div>
     <button id="fullSongToggle"></button>
     <div id="modeHint"></div>
+    <div id="songTargetHint" style="display: none"></div>
     <div id="songPreflightHint" style="display: none">
       <span id="songPreflightText"></span>
       <button id="songPreflightApply" style="display: none"></button>
@@ -71,6 +72,7 @@ function makeDom(): SongPanelRenderDom {
     fullSongToggle: document.getElementById('fullSongToggle'),
     modeHint: document.getElementById('modeHint'),
     songPreflightHint: document.getElementById('songPreflightHint'),
+    songTargetHint: document.getElementById('songTargetHint'),
     songPreflightText: document.getElementById('songPreflightText'),
     songPreflightApply: document.getElementById('songPreflightApply'),
     songStart: document.getElementById('songStart') as HTMLElement,
@@ -92,14 +94,24 @@ function makeSong(overrides: Partial<SongPanelSong> = {}): SongPanelSong {
   };
 }
 
-function makeProgress(overrides: Partial<SongPanelProgress> = {}): SongPanelProgress {
-  return {
-    unlockedTempos: { 50: true, 60: true, 75: true, 90: true, 100: true },
-    unlockedSections: { a1: true, b: true, a2: true },
-    sections: { a1: { stars: 2 }, b: { stars: 1 } },
+const ALL_TEMPOS = { 50: true, 60: true, 75: true, 90: true, 100: true };
+
+/** `tempos` is applied to EVERY section — the ladder is per-section now, so a
+ *  fixture that means "this song has 90 % open" has to say it about the sections. */
+function makeProgress(
+  overrides: Partial<SongPanelProgress> & { tempos?: Record<string, boolean> } = {}
+): SongPanelProgress {
+  const { tempos, ...rest } = overrides;
+  const ladder = tempos ?? ALL_TEMPOS;
+  const base: SongPanelProgress = {
+    sections: {
+      a1: { stars: 2, bestPct: 60, unlockedTempos: { ...ladder } },
+      b: { stars: 1, bestPct: 40, unlockedTempos: { ...ladder } },
+      a2: { stars: 0, bestPct: 0, unlockedTempos: { ...ladder } },
+    },
     history: {},
-    ...overrides,
   };
+  return { ...base, ...rest };
 }
 
 function makeDeps(overrides: Partial<SongPanelRenderDeps> = {}): SongPanelRenderDeps {
@@ -231,7 +243,7 @@ describe('createSongPanelRender — tempo row', () => {
 
   it('locks tempos that are not in unlockedTempos', () => {
     const deps = makeDeps({
-      songProg: () => makeProgress({ unlockedTempos: { 50: true, 60: true, 75: true } }),
+      songProg: () => makeProgress({ tempos: { 50: true, 60: true, 75: true } }),
     });
     createSongPanelRender(deps).render();
     const buttons = deps.dom.tempoRow.querySelectorAll('button');
@@ -253,7 +265,7 @@ describe('createSongPanelRender — tempo row', () => {
 
   it('slowing to 50% is always available (support, not a reward)', () => {
     const deps = makeDeps({
-      songProg: () => makeProgress({ unlockedTempos: { 50: true, 60: true } }),
+      songProg: () => makeProgress({ tempos: { 50: true, 60: true } }),
     });
     createSongPanelRender(deps).render();
     const btn50 = deps.dom.tempoRow.querySelectorAll('button')[0] as HTMLButtonElement;
@@ -264,7 +276,7 @@ describe('createSongPanelRender — tempo row', () => {
 
   it('clicking a locked tempo does NOT update', () => {
     const deps = makeDeps({
-      songProg: () => makeProgress({ unlockedTempos: { 50: true, 60: true } }),
+      songProg: () => makeProgress({ tempos: { 50: true, 60: true } }),
     });
     createSongPanelRender(deps).render();
     const btn90 = deps.dom.tempoRow.querySelectorAll('button')[3] as HTMLButtonElement;
@@ -331,16 +343,58 @@ describe('createSongPanelRender — section list', () => {
     expect(deps.dom.sectionList.innerHTML).not.toContain('<script>alert(1)</script>');
   });
 
-  it('marks locked sections with .locked + 🔒 icon', () => {
-    const deps = makeDeps({
-      songProg: () => makeProgress({ unlockedSections: { a1: true } }),
-    });
+  it('locks NO section — every part is playable from the first visit', () => {
+    // The sequential lock spent the player's freshest attention on the easiest
+    // passage and kept them out of the one that needed the work.
+    const deps = makeDeps();
     createSongPanelRender(deps).render();
-    const rows = deps.dom.sectionList.querySelectorAll('.section-row');
-    expect(rows[0].classList.contains('locked')).toBe(false);
-    expect(rows[1].classList.contains('locked')).toBe(true);
-    expect(rows[2].classList.contains('locked')).toBe(true);
-    expect(rows[1].innerHTML).toContain('🔒');
+    const rows = deps.dom.sectionList.querySelectorAll('.section-row:not(.challenge)');
+    expect(rows.length).toBe(3);
+    for (const r of rows) {
+      expect(r.classList.contains('locked')).toBe(false);
+      expect(r.innerHTML).not.toContain('🔒');
+    }
+  });
+
+  it('recommends exactly ONE section instead — an unplayed one first', () => {
+    // Survey before deepening: a2 has been attempted, a1/b have not.
+    const prog = makeProgress({ history: { a2: [{ d: 1, a: 70, t: 70, s: 2 }] } as never });
+    const deps = makeDeps({ songProg: () => prog });
+    createSongPanelRender(deps).render();
+    const rows = [...deps.dom.sectionList.querySelectorAll('.section-row:not(.challenge)')];
+    expect(rows.filter((r) => r.classList.contains('recommended')).length).toBe(1);
+    expect(rows[0].classList.contains('recommended')).toBe(true);
+    expect(rows[0].innerHTML).toContain('targetChipUnplayed');
+    expect(deps.dom.songTargetHint!.style.display).toBe('');
+    expect(deps.dom.songTargetHint!.textContent).toBe('targetHintUnplayed');
+  });
+
+  it('once every part has been played, points at the WEAKEST — the hard one', () => {
+    const prog = makeProgress({
+      sections: {
+        a1: { stars: 3, bestPct: 99, unlockedTempos: { ...ALL_TEMPOS } },
+        b: { stars: 1, bestPct: 55, unlockedTempos: { ...ALL_TEMPOS } },
+        a2: { stars: 2, bestPct: 80, unlockedTempos: { ...ALL_TEMPOS } },
+      },
+      history: {
+        a1: [{ d: 1, a: 99, t: 90, s: 3 }],
+        b: [{ d: 2, a: 55, t: 40, s: 1 }],
+        a2: [{ d: 3, a: 80, t: 70, s: 2 }],
+      } as never,
+    });
+    const deps = makeDeps({ songProg: () => prog });
+    createSongPanelRender(deps).render();
+    const rows = [...deps.dom.sectionList.querySelectorAll('.section-row:not(.challenge)')];
+    expect(rows[1].classList.contains('recommended')).toBe(true);
+    expect(rows[1].innerHTML).toContain('targetChipWeakest');
+    expect(deps.dom.songTargetHint!.textContent).toBe('targetHintWeakest');
+  });
+
+  it('says nothing in Listen mode — there is nothing to work on', () => {
+    const deps = makeDeps();
+    deps.practice.mode = 'listen';
+    createSongPanelRender(deps).render();
+    expect(deps.dom.songTargetHint!.style.display).toBe('none');
   });
 
   it('marks boss sections with 👑 icon', () => {
@@ -695,8 +749,9 @@ describe('createSongPanelRender — pre-flight scaffold', () => {
 // ─── one-tap "set it up for me" apply button ─────────────────────────
 
 describe('createSongPanelRender — scaffold apply button', () => {
-  const deep = (a: number) =>
+  const deep = (a: number, tempos?: Record<string, boolean>) =>
     makeProgress({
+      tempos,
       history: {
         a1: [
           { a, s: 0 },
@@ -730,7 +785,7 @@ describe('createSongPanelRender — scaffold apply button', () => {
 
   it('timing bottleneck: apply drops to the lowest unlocked tempo', () => {
     const deps = makeDeps({
-      songProg: () => ({ ...deep(80), unlockedTempos: { 60: true, 75: true } }),
+      songProg: () => deep(80, { 50: false, 60: true, 75: true }),
     });
     deps.practice.mode = 'rhythm';
     deps.practice.tempoPct = 90;

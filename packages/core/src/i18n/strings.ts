@@ -443,6 +443,14 @@ export const T_STRINGS: TranslationTable = {
     de: 'Jetzt spiel es mal.',
   },
   tryPlayingNow: { en: '▶ Try playing', jp: '▶ 弾いてみる', de: '▶ Selbst spielen' },
+  // The other half of the tempo ladder: a run that got through but was messy is
+  // better answered by "play it clean one step slower" than by pushing on.
+  // Framed as a choice, never as a demotion (banned-list: no loss copy).
+  tempoDownBtnFmt: {
+    en: '🐢 Clean it up at {v}%',
+    jp: '🐢 {v}% でキレイに',
+    de: '🐢 Sauber bei {v} %',
+  },
   // Non-scored run (listen / guided): the one fact such a run genuinely
   // produces. It was already being banked into today's minutes and never shown,
   // so the card had nothing true to say and fell back to a score of 0 %.
@@ -932,6 +940,31 @@ export const T_STRINGS: TranslationTable = {
     en: "hold each note until the next one — don't lift early",
     jp: '次の音まで指をはなさず、最後までのばそう',
     de: 'halte jeden Ton bis zum nächsten — heb nicht zu früh ab',
+  },
+  // "What to practise next" — the standing recommendation that replaced the
+  // sequential section lock. A chip on one row of the section list, never a
+  // gate: every section is playable from the start and the app just says where
+  // it would start (Rocksmith's model). Three situations, three framings — an
+  // unmet section is an invitation, a weak one is a target, and a fully-starred
+  // song points at the whole-song challenge. None of them names a weakness out
+  // loud (banned-list: no shame copy).
+  targetChipUnplayed: { en: 'START HERE', jp: 'ここから', de: 'HIER STARTEN' },
+  targetChipWeakest: { en: 'WORK ON THIS', jp: 'ここを練習', de: 'HIER ÜBEN' },
+  targetChipFullSong: { en: 'READY', jp: 'いけるよ', de: 'BEREIT' },
+  targetHintUnplayed: {
+    en: '👉 Not played yet — good place to start.',
+    jp: '👉 まだ弾いてないところ。ここから始めよう。',
+    de: '👉 Noch nicht gespielt — ein guter Anfang.',
+  },
+  targetHintWeakest: {
+    en: '👉 This part has the most room to grow. Best done while you are fresh.',
+    jp: '👉 いちばん伸びしろがある場所。元気なうちにここから。',
+    de: '👉 Hier ist am meisten zu holen. Am besten, solange du frisch bist.',
+  },
+  targetHintFullSong: {
+    en: '👉 Every part is starred — try the whole song.',
+    jp: '👉 全部に星がついた。1曲まるごといってみよう。',
+    de: '👉 Alle Teile haben Sterne — probier das ganze Stück.',
   },
   // Pre-flight scaffold (feed-forward) — shown on the song panel BEFORE the kid
   // re-attempts a section they recently got stuck on. Kid-initiated, gentle, no
@@ -1575,6 +1608,31 @@ export const T_STRINGS: TranslationTable = {
     de: 'Einen neuen Stern bekommen (2+)',
   },
   stampStarUpEarned: { en: 'New star!', jp: '星アップ!', de: 'Neuer Stern!' },
+  stampOvernightName: { en: 'Slept On It', jp: 'ひとばんおいて', de: 'Drübergeschlafen' },
+  stampOvernightDesc: {
+    en: 'Beat your best on a part you played on an earlier day',
+    jp: '前の日にひいた場所で自己ベスト更新',
+    de: 'An einem früheren Tag gespielten Teil verbessert',
+  },
+  stampOvernightEarned: {
+    en: 'Better after a break!',
+    jp: '休んだら上手くなった!',
+    de: 'Nach der Pause besser!',
+  },
+  stampSpacedName: { en: 'Three Days Apart', jp: '3日にわたって', de: 'Drei Tage verteilt' },
+  stampSpacedDesc: {
+    en: 'Practised one song on 3 different days',
+    jp: '同じ曲を3つの日に練習した',
+    de: 'Ein Stück an 3 verschiedenen Tagen geübt',
+  },
+  stampSpacedEarned: { en: 'Spread out!', jp: '間をあけて練習!', de: 'Gut verteilt!' },
+  stampTempoClimbName: { en: 'Ladder Climber', jp: 'はしごのぼり', de: 'Leiterkletterer' },
+  stampTempoClimbDesc: {
+    en: 'Cleared one part at 3 different speeds',
+    jp: '同じ場所を3つの速さでクリア',
+    de: 'Einen Teil in 3 Tempi geschafft',
+  },
+  stampTempoClimbEarned: { en: 'Three speeds!', jp: '3段のぼった!', de: 'Drei Tempi!' },
   // -- Milestone --
   stampTwoSongsName: { en: 'Two-Song Explorer', jp: '2曲チャレンジ', de: 'Zwei-Stücke-Entdecker' },
   stampTwoSongsDesc: {
@@ -1731,6 +1789,21 @@ export const T_STRINGS: TranslationTable = {
     en: 'New star = your brain found a better pattern.',
     jp: '星アップ = 脳が新しいパターンを見つけた。',
     de: 'Neuer Stern = dein Gehirn hat ein besseres Muster gefunden.',
+  },
+  stampOvernightTip: {
+    en: 'Fingers keep learning while you sleep — that gain is real.',
+    jp: '指は寝ている間も覚える。その伸びは本物。',
+    de: 'Finger lernen im Schlaf weiter — der Zuwachs ist echt.',
+  },
+  stampSpacedTip: {
+    en: 'Gaps between days beat one long session.',
+    jp: '日をあけて何回かの方が、1日まとめてより効く。',
+    de: 'Pausen zwischen Tagen bringen mehr als eine lange Sitzung.',
+  },
+  stampTempoClimbTip: {
+    en: 'Slow and fast are different skills. Own both.',
+    jp: 'ゆっくりと速いは別の技。どっちも自分のものにしよう。',
+    de: 'Langsam und schnell sind zwei Fertigkeiten. Hol dir beide.',
   },
   stampTwoSongsTip: {
     en: 'Two songs in rotation lets skills transfer between them.',

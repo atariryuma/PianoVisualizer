@@ -844,6 +844,69 @@ temporarily limits max gain to prevent amplifying speech.
   **applies** the suggestion (sets mode / hand filter / tempo, then re-renders)
   — all three mutations are side-effect-free, matching the manual rows; autonomy
   is kept (the kid can still change it by hand).
+
+### Practice progression: the ladder, the order, the stamps (2026-07-27)
+
+An audit of "does the app actually make practice efficient" found the gating was
+in the wrong place in three different ways. All three are now fixed at the
+mechanism level, and the direction of travel is **fewer locks, better
+signposts** — locks buy compliance while the app is novel, and this app's whole
+design bets on intrinsic motivation instead.
+
+**1. The tempo ladder is PER SECTION.** It used to be per song
+(`SongProgress.unlockedTempos`), so it could be climbed entirely on the easiest
+passage and then full speed opened for the hardest one. Real save data from the
+device: Für Elise with A1 at ★3, B and A2 at ★1, and every tier from 50 to 100
+unlocked — the gate existed but never stood between the player and the passage
+that needed it. It now lives on `SectionProgress.unlockedTempos`, because a
+section is the unit that is actually being learned.
+
+- **Migration is seeding, not resetting.** `getSongProgress` copies an old
+  song-level map into EVERY section (including ones the save never mentioned)
+  and then deletes the legacy field. Nobody loses a speed they earned; verified
+  on the device's real save in a headless run of the built bundle.
+- **A song's speed is the SLOWEST section's ceiling** (`highestTempoAllSections`
+  — the MIN, not the max). The mastery ring, the journal's tempo pips and the
+  platinum seal read it, so "you play this at full speed" cannot be minted on
+  the easy opening.
+- One reader for the map: `sectionTempoUnlocks(section)` defaults it, so a save
+  predating the change cannot produce an `undefined[tier]` at a call site.
+
+**2. The ladder goes both ways.** `planTempoStepDown` offers the tier below on a
+★1 clear, and the result card has ONE button that points whichever way the run
+earned (`#resTempoShift`) — the two plans are mutually exclusive by star count,
+so one element with one handler cannot contradict itself the way two buttons
+could. ★0 stays with the scaffold (`planSectionScaffold`, which can also change
+hand/mode and escalates with struggle depth); the shift button yields when that
+is already proposing a tempo change. Why a one-way ladder is wrong: above some
+tempo the hands stop correcting mid-gesture and run pre-planned ones, so a
+passage owned slowly is only partly owned fast — and repeating one thing under
+one condition is maximally blocked practice, best in-session and worst for
+retention (Shea & Morgan 1979 and the music replications since).
+
+**3. Sections are not locked at all.** They used to unlock in order at ★1, which
+spent the player's freshest attention on the easiest passage and kept them out
+of the one that needed work — the opposite of how a piece is taught.
+`unlockedSections` is gone (stripped from the blob on load), and so is
+`computeUnlocks`'s `unlockedSecKey`. In its place `pickPracticeTarget` (pure)
+returns one recommendation — **unplayed → weakest → whole song**, ties toward
+the earlier section so the chip does not jitter — rendered as a chip on one row
+plus a one-line reason under the list (`#songTargetHint`). Rocksmith is the
+precedent: every phrase is playable from the start and the game tells you which
+one is holding you back. Framing never names a weakness out loud.
+
+**4. Three stamps for the RETURN.** The set rewarded days-in-a-row and
+volume-per-day but nothing for coming back to the same passage after a break —
+which is the most productive thing a learner can do with a hard one, since
+finger-sequence skill improves measurably during sleep with no practice at all
+(Walker et al. 2002/2003). Added: 🌙 `overnight_gain` (new best on a part first
+met on an earlier day), 📆 `spaced_3_days` (one song across three different days
+— days, not consecutive days, so a gap cannot reset it), 🪜 `tempo_climb_3` (one
+part cleared at three different speeds — rewards USING the ladder, where
+`tempo_100_unlocked` only ever rewarded arriving at the top). Deliberately NOT
+added: more volume stamps. There are already two repetition ones, and more would
+make "sitting still for longer" the reward.
+
 - **Full-song challenge（1曲チャレンジ, 2026-07-21）**: the practice path's
   visible endpoint — "eventually you play the whole song". The song panel's
   section list ends with a gold **👑 challenge row** (guided/rhythm modes;

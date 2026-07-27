@@ -44,6 +44,116 @@ function ctx(progress: PracticeProgress, over: Partial<StampContext> = {}): Stam
   };
 }
 
+// The stamp set rewarded days-in-a-row and volume-per-day but never the
+// RETURN — coming back to the same passage after a break, which is the single
+// most productive thing a learner can do with a hard one. These three cover it.
+describe('spacing + ladder stamps', () => {
+  const DAY = 86400000;
+  /** A progress blob whose section A1 has attempts on the given day offsets. */
+  const withHistory = (
+    entries: Array<{ dayOffset: number; a: number; s?: number; tempoPct?: number }>
+  ): PracticeProgress => {
+    const p = freshProgress();
+    const sp = defaultSongProgress();
+    sp.history.A1 = entries.map((e) => ({
+      d: Date.now() + e.dayOffset * DAY,
+      a: e.a,
+      t: 60,
+      s: e.s ?? 1,
+      tempoPct: e.tempoPct ?? 60,
+    }));
+    p.songs.fur_elise = sp;
+    return p;
+  };
+
+  it('🌙 awards a new best on a part first met on an EARLIER day', () => {
+    const p = withHistory([{ dayOffset: -1, a: 60 }]);
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ accPct: 78, priorBestPct: 60, stars: 2 }) })
+    );
+    expect(r.newlyEarned).toContain('overnight_gain');
+  });
+
+  it('🌙 does NOT fire for a better run on the SAME day — that is not the return', () => {
+    const p = withHistory([{ dayOffset: 0, a: 60 }]);
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ accPct: 78, priorBestPct: 60, stars: 2 }) })
+    );
+    expect(r.newlyEarned).not.toContain('overnight_gain');
+  });
+
+  it('🌙 does NOT fire when the day passed but nothing improved', () => {
+    const p = withHistory([{ dayOffset: -2, a: 90 }]);
+    const r = applyStampEvaluation(
+      ctx(p, { attempt: attempt({ accPct: 70, priorBestPct: 90, stars: 1 }) })
+    );
+    expect(r.newlyEarned).not.toContain('overnight_gain');
+  });
+
+  it('📆 awards a song practised on three different days', () => {
+    const p = withHistory([
+      { dayOffset: -4, a: 50 },
+      { dayOffset: -2, a: 60 },
+      { dayOffset: 0, a: 70 },
+    ]);
+    const r = applyStampEvaluation(ctx(p, { attempt: attempt({ accPct: 70, stars: 1 }) }));
+    expect(r.newlyEarned).toContain('spaced_3_days');
+  });
+
+  it('📆 counts DAYS, not consecutive days — a gap must not reset it', () => {
+    // Nothing in this app decrements (banned-list); spacing IS the method, so a
+    // missed day is not a failure.
+    const p = withHistory([
+      { dayOffset: -30, a: 50 },
+      { dayOffset: -9, a: 60 },
+      { dayOffset: 0, a: 70 },
+    ]);
+    const r = applyStampEvaluation(ctx(p, { attempt: attempt({ accPct: 70, stars: 1 }) }));
+    expect(r.newlyEarned).toContain('spaced_3_days');
+  });
+
+  it('📆 does not fire on two days', () => {
+    const p = withHistory([
+      { dayOffset: -1, a: 60 },
+      { dayOffset: 0, a: 70 },
+    ]);
+    const r = applyStampEvaluation(ctx(p, { attempt: attempt({ accPct: 70, stars: 1 }) }));
+    expect(r.newlyEarned).not.toContain('spaced_3_days');
+  });
+
+  it('🪜 awards one part cleared at three different speeds', () => {
+    // Rewards USING the ladder. `tempo_100_unlocked` only ever rewarded arriving
+    // at the top of it, which says nothing about the climb.
+    const p = withHistory([
+      { dayOffset: -2, a: 80, s: 2, tempoPct: 60 },
+      { dayOffset: -1, a: 80, s: 2, tempoPct: 75 },
+      { dayOffset: 0, a: 80, s: 2, tempoPct: 90 },
+    ]);
+    const r = applyStampEvaluation(ctx(p, { attempt: attempt({ accPct: 80, stars: 2 }) }));
+    expect(r.newlyEarned).toContain('tempo_climb_3');
+  });
+
+  it('🪜 needs three DISTINCT speeds, and needs them cleared', () => {
+    const same = withHistory([
+      { dayOffset: -2, a: 80, s: 2, tempoPct: 75 },
+      { dayOffset: -1, a: 80, s: 2, tempoPct: 75 },
+      { dayOffset: 0, a: 80, s: 2, tempoPct: 75 },
+    ]);
+    expect(
+      applyStampEvaluation(ctx(same, { attempt: attempt({ stars: 2 }) })).newlyEarned
+    ).not.toContain('tempo_climb_3');
+
+    const unstarred = withHistory([
+      { dayOffset: -2, a: 20, s: 0, tempoPct: 60 },
+      { dayOffset: -1, a: 20, s: 0, tempoPct: 75 },
+      { dayOffset: 0, a: 20, s: 0, tempoPct: 90 },
+    ]);
+    expect(
+      applyStampEvaluation(ctx(unstarred, { attempt: attempt({ stars: 0 }) })).newlyEarned
+    ).not.toContain('tempo_climb_3');
+  });
+});
+
 describe('applyStampEvaluation — basics', () => {
   it('returns empty when nothing qualifies', () => {
     const p = freshProgress();
@@ -114,7 +224,9 @@ describe('completion stamps', () => {
   it('awards tempo_100_unlocked when the song now has 100% tempo unlocked', () => {
     const p = freshProgress();
     const sp = defaultSongProgress();
-    sp.unlockedTempos['100'] = true;
+    for (const sec of Object.values(sp.sections)) {
+      sec.unlockedTempos = { ...sec.unlockedTempos, 100: true };
+    }
     p.songs.fur_elise = sp;
     const r = applyStampEvaluation(ctx(p, { attempt: attempt({ stars: 1 }) }));
     expect(r.newlyEarned).toContain('tempo_100_unlocked');
@@ -192,7 +304,9 @@ describe('completion stamps', () => {
     sp.sections.A1 = { stars: 3, bestPct: 100 };
     sp.sections.B = { stars: 3, bestPct: 100 };
     sp.sections.A2 = { stars: 3, bestPct: 100 };
-    sp.unlockedTempos['100'] = true;
+    for (const sec of Object.values(sp.sections)) {
+      sec.unlockedTempos = { ...sec.unlockedTempos, 100: true };
+    }
     p.songs.fur_elise = sp;
     const r = applyStampEvaluation(ctx(p, { attempt: attempt({ sectionId: 'A2', stars: 3 }) }));
     expect(r.newlyEarned).toContain('first_platinum');
@@ -204,7 +318,7 @@ describe('completion stamps', () => {
     sp.sections.A1 = { stars: 3, bestPct: 100 };
     sp.sections.B = { stars: 3, bestPct: 100 };
     sp.sections.A2 = { stars: 3, bestPct: 100 };
-    // unlockedTempos['100'] stays false
+    // no section has 100 % unlocked
     p.songs.fur_elise = sp;
     const r = applyStampEvaluation(ctx(p, { attempt: attempt({ sectionId: 'A2', stars: 3 }) }));
     expect(r.newlyEarned).not.toContain('first_platinum');

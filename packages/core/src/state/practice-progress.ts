@@ -31,6 +31,26 @@ export interface SectionProgress {
    *  self-best. Non-decreasing. Optional: absent on pre-0.14 saves; the
    *  mastery reader defaults it to 0. */
   bestCombo?: number;
+  /**
+   * Tempo tier → unlocked, FOR THIS SECTION.
+   *
+   * The ladder used to be per SONG, which meant it could be climbed entirely on
+   * the easiest section and then the hardest one opened at full speed with no
+   * scaffold at all. Real save data: Für Elise with A1 at ★3, B and A2 at ★1,
+   * and every tier from 50 to 100 unlocked — the gate existed but never stood
+   * between the player and the passage that needed it.
+   *
+   * A section is the unit that is actually being learned, so it is the unit the
+   * ladder belongs to. Optional: `getSongProgress` seeds it (from the old
+   * song-level map when one is present, so nobody loses a speed they earned).
+   */
+  unlockedTempos?: Record<string, boolean>;
+}
+
+/** Tiers every section starts with. Slowing down is SUPPORT, never a reward to
+ *  earn (banned-list); 75/90/100 are the earned speed-up ladder. */
+export function defaultUnlockedTempos(): Record<string, boolean> {
+  return { 50: true, 60: true, 75: false, 90: false, 100: false };
 }
 
 /** A single attempt's record, keyed inside `SongProgress.history`
@@ -54,11 +74,13 @@ export interface SongProgress {
   /** Section-id → best-attempt summary. The default keys are A1 / B / A2; new
    *  song schemas can add more by setting `defaultSectionIds`. */
   sections: Record<string, SectionProgress>;
-  /** Tempo tier → unlocked. Lower-tempo tiers default unlocked; higher
-   *  unlock as the player meets the star threshold. */
-  unlockedTempos: Record<string, boolean>;
-  /** Section ID → unlocked. A1 starts unlocked; B / A2 unlock by play. */
-  unlockedSections: Record<string, boolean>;
+  /**
+   * @deprecated Song-level tempo ladder — superseded by
+   * `SectionProgress.unlockedTempos`. Present only on saves written before the
+   * ladder moved to the section level; `getSongProgress` copies it into every
+   * section and then removes it. Never write it.
+   */
+  unlockedTempos?: Record<string, boolean>;
   /** Attempt history. Two shape variants in the wild:
    *  - Modern (legacy shell): `Record<sectionId, Array<{d,a,t,s}>>` — per-section
    *    rolling buffer of the last 8 attempts; drives the result-screen growth chart.
@@ -108,21 +130,22 @@ export interface PracticeProgress extends StreakState {
   lastSongId?: string;
 }
 
-/** Build a fresh per-song progress bucket — empty sections at 0 stars,
- *  60-bpm tier unlocked, A1 section unlocked. */
+/** Build a fresh per-song progress bucket — every section at 0 stars with the
+ *  slow tiers of its own ladder open.
+ *
+ *  There is no section lock. Sections used to unlock in order (★1 on A1 opened
+ *  B, and so on), which put the player's freshest attention on the easiest
+ *  passage and kept them out of the one that needed the work — the opposite of
+ *  how a piece is taught. Free access plus a visible recommendation is the
+ *  Rocksmith model and the one that fits this app's autonomy-first design;
+ *  `pickPracticeTarget` supplies the recommendation. */
 export function defaultSongProgress(): SongProgress {
   return {
     sections: {
-      A1: { stars: 0, bestPct: 0 },
-      B: { stars: 0, bestPct: 0 },
-      A2: { stars: 0, bestPct: 0 },
+      A1: { stars: 0, bestPct: 0, unlockedTempos: defaultUnlockedTempos() },
+      B: { stars: 0, bestPct: 0, unlockedTempos: defaultUnlockedTempos() },
+      A2: { stars: 0, bestPct: 0, unlockedTempos: defaultUnlockedTempos() },
     },
-    // 50 + 60 unlocked from the start — slowing down is SUPPORT, never a
-    // reward to earn (banned-list). 75/90/100 are the earned speed-up
-    // ladder. getSongProgress merges this default so existing saves
-    // auto-gain the 50% step.
-    unlockedTempos: { 50: true, 60: true, 75: false, 90: false, 100: false },
-    unlockedSections: { A1: true, B: false, A2: false },
     history: {},
   };
 }
@@ -243,9 +266,29 @@ export function getSongProgress(progress: PracticeProgress, songId: string): Son
   }
   const s = progress.songs[songId];
   const def = defaultSongProgress();
-  s.sections = Object.assign({}, def.sections, s.sections);
-  s.unlockedTempos = Object.assign({}, def.unlockedTempos, s.unlockedTempos);
-  s.unlockedSections = Object.assign({}, def.unlockedSections, s.unlockedSections);
+  // Captured BEFORE the defaults are merged in, so "this section has its own
+  // saved ladder" can be told apart from "I just filled one in". Without that
+  // distinction a section the old save never mentioned would take the fresh
+  // default over the song-level map and silently lose speeds the player could
+  // already select.
+  const rawSections = s.sections ?? {};
+  s.sections = Object.assign({}, def.sections, rawSections);
+  // Per-section ladder, seeded from the old song-level map when one is there.
+  // Seeding rather than resetting is the whole point: a save that had reached
+  // 100 % keeps 100 % on every section, so moving the gate takes nothing away
+  // from anyone. The legacy field is then dropped, so the next call has one
+  // source of truth and a section added later starts at the floor (correct — it
+  // has not been practised at speed).
+  const legacy = s.unlockedTempos;
+  for (const id of Object.keys(s.sections)) {
+    const sec = s.sections[id];
+    const own = rawSections[id]?.unlockedTempos;
+    sec.unlockedTempos = Object.assign(defaultUnlockedTempos(), legacy ?? null, own ?? null);
+  }
+  if (legacy) delete s.unlockedTempos;
+  // The section lock is gone; strip it so a stale map can't be mistaken for a
+  // live gate by anything reading the blob (a backup, a future migration).
+  delete (s as { unlockedSections?: unknown }).unlockedSections;
   if (!s.history) s.history = {};
   return s;
 }

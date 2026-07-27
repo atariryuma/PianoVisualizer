@@ -20,14 +20,21 @@
 // renderer is called whenever the controls flip a flag, plus on every
 // langchange event and after sectionIdx mutations from the result-card.
 
-import { computeFullSongChallenge, isFixedTempoMode, planSectionScaffold } from '@piano/core';
+import {
+  computeFullSongChallenge,
+  isFixedTempoMode,
+  planSectionScaffold,
+  pickPracticeTarget,
+  sectionTempoUnlocks,
+} from '@piano/core';
 import type { Lang, PracticeMode } from '@piano/core';
 
 /** Per-song progress slice the renderer reads. */
 export interface SongPanelProgress {
-  unlockedTempos: Record<number, unknown>;
-  unlockedSections: Record<string, unknown>;
-  sections: Record<string, { stars?: number } | undefined>;
+  sections: Record<
+    string,
+    { stars?: number; bestPct?: number; unlockedTempos?: Record<string, boolean> } | undefined
+  >;
   history?: Record<string, unknown>;
 }
 
@@ -93,6 +100,10 @@ export interface SongPanelRenderDom {
    *  "set it up for me" button. All optional so partial-DOM tests / older
    *  shells degrade gracefully. */
   songPreflightHint?: HTMLElement | null;
+  /** One-line "here is where I'd start" under the section list. Required-
+   *  nullable, not optional — a shipped control marked `?:` is one the compiler
+   *  stops asking about at the call site (CLAUDE.md "silently dead controls"). */
+  songTargetHint: HTMLElement | null;
   songPreflightText?: HTMLElement | null;
   songPreflightApply?: HTMLElement | null;
   songStart: HTMLElement;
@@ -176,10 +187,17 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     }
 
     deps.dom.tempoRow.innerHTML = '';
+    // The ladder belongs to the SECTION being practised, not the song. Climbing
+    // it on the easy opening used to hand full speed to every other passage,
+    // which is the one place the scaffold was actually needed.
+    const selectedSecId = currentSong?.sections[deps.practice.sectionIdx]?.id;
+    const sectionLadder = sectionTempoUnlocks(
+      selectedSecId ? sp.sections[selectedSecId] : undefined
+    );
     for (const step of TEMPO_STEPS) {
       const btn = document.createElement('button');
       const isActive = tempoLocked ? step === 100 : step === deps.practice.tempoPct;
-      const isLocked = tempoLocked ? step !== 100 : !sp.unlockedTempos[step];
+      const isLocked = tempoLocked ? step !== 100 : sectionLadder[String(step)] !== true;
       btn.className = 'tempo-btn' + (isActive ? ' active' : '') + (isLocked ? ' locked' : '');
       // Lock indicator lives in CSS (.tempo-btn.locked::after) so the
       // disabled state reads as designed UI, not an emoji-pasted suffix.
@@ -244,21 +262,44 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     }
     const fullSongSelected = !isListenMode && deps.practice.fullSongMode;
 
+    // Every section is playable from the first visit. The sequential lock (★1 on
+    // A1 opened B, and so on) spent the player's freshest attention on the
+    // easiest passage and kept them out of the one that needed work — the
+    // opposite of how a piece is taught. In its place, ONE row carries a chip
+    // saying where the app would start; the choice stays the player's.
+    const attemptsPerSection: Record<string, number> = {};
+    for (const sec of currentSong.sections) {
+      const h = sp.history?.[sec.id];
+      attemptsPerSection[sec.id] = Array.isArray(h) ? h.length : 0;
+    }
+    const target = pickPracticeTarget({
+      sectionIds: currentSong.sections.map((x) => x.id),
+      sections: sp.sections as Record<string, { stars: number; bestPct: number } | undefined>,
+      attempts: attemptsPerSection,
+    });
+
     currentSong.sections.forEach((sec, i) => {
-      const unlocked = sp.unlockedSections[sec.id];
       const row = document.createElement('div');
-      row.className = 'section-row' + (sec.isBoss ? ' boss' : '') + (unlocked ? '' : ' locked');
+      const isTarget = target?.sectionId === sec.id;
+      row.className =
+        'section-row' + (sec.isBoss ? ' boss' : '') + (isTarget ? ' recommended' : '');
       const stars = sp.sections[sec.id]?.stars || 0;
+      const chip = isTarget
+        ? '<div class="section-chip">' +
+          deps.t(target.reason === 'unplayed' ? 'targetChipUnplayed' : 'targetChipWeakest') +
+          '</div>'
+        : '';
       // Section name + desc come from i18n keys we control, so innerHTML
       // is acceptable here. Escape sec.descKey defensively in case a
       // future user-song path lets the user supply a key.
       row.innerHTML =
         '<div class="section-icon">' +
-        (sec.isBoss ? '👑' : unlocked ? '🎵' : '🔒') +
+        (sec.isBoss ? '👑' : '🎵') +
         '</div>' +
         '<div>' +
         '<div style="font-weight:500;">' +
         deps.t(sec.nameKey) +
+        chip +
         '</div>' +
         '<div style="font-size:.75rem; color:rgba(255,255,255,.45);">' +
         deps.t(sec.descKey ?? '') +
@@ -268,17 +309,15 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
         '★'.repeat(stars) +
         '☆'.repeat(3 - stars) +
         '</div>';
-      if (unlocked) {
-        row.style.cursor = 'pointer';
-        row.onclick = () => {
-          deps.practice.sectionIdx = i;
-          // Picking a section deselects the full-song challenge target.
-          deps.practice.fullSongMode = false;
-          render();
-        };
-      }
+      row.style.cursor = 'pointer';
+      row.onclick = () => {
+        deps.practice.sectionIdx = i;
+        // Picking a section deselects the full-song challenge target.
+        deps.practice.fullSongMode = false;
+        render();
+      };
       deps.dom.sectionList.appendChild(row);
-      if (i === deps.practice.sectionIdx && unlocked && !fullSongSelected) {
+      if (i === deps.practice.sectionIdx && !fullSongSelected) {
         row.style.outline = '2px solid rgba(255,200,230,.6)';
       }
     });
@@ -291,7 +330,11 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
     // scored rhythm run persists under FULL_SONG_SECTION_ID.
     if (!isListenMode) {
       const row = document.createElement('div');
-      row.className = 'section-row challenge' + (challenge.unlocked ? '' : ' locked');
+      const challengeIsTarget = target?.reason === 'fullSong' && challenge.unlocked;
+      row.className =
+        'section-row challenge' +
+        (challenge.unlocked ? '' : ' locked') +
+        (challengeIsTarget ? ' recommended' : '');
       const desc = challenge.unlocked
         ? deps.t('fullSongChallengeReady')
         : deps.t('fullSongChallengeLockedFmt', {
@@ -304,6 +347,9 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
         '<div>' +
         '<div style="font-weight:600;">' +
         deps.t('fullSongChallengeName') +
+        (challengeIsTarget
+          ? '<div class="section-chip">' + deps.t('targetChipFullSong') + '</div>'
+          : '') +
         '</div>' +
         '<div style="font-size:.75rem; color:rgba(255,255,255,.45);">' +
         desc +
@@ -386,6 +432,25 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
           : 'startPractice'
     );
 
+    // The standing recommendation, spelled out once under the list. The chip on
+    // the row says WHICH; this says why, which is the half that teaches — the
+    // same reason `#modeHint` explains the modes where the choice is made.
+    // Listen mode is exempt: there is nothing to work on, you are listening.
+    if (deps.dom.songTargetHint) {
+      const el = deps.dom.songTargetHint;
+      const showTarget = target != null && deps.practice.mode !== 'listen';
+      el.style.display = showTarget ? '' : 'none';
+      el.textContent = showTarget
+        ? deps.t(
+            target.reason === 'unplayed'
+              ? 'targetHintUnplayed'
+              : target.reason === 'fullSong'
+                ? 'targetHintFullSong'
+                : 'targetHintWeakest'
+          )
+        : '';
+    }
+
     // Feed-forward scaffold: if the selected section ended its recent runs in
     // misses, nudge toward a strategy BEFORE the next attempt — but only when
     // the kid is about to play (already in Listen → no nudge needed). The
@@ -433,7 +498,8 @@ export function createSongPanelRender(deps: SongPanelRenderDeps): SongPanelRende
               render();
             };
           } else if (strategy === 'slowTempo') {
-            const slowest = TEMPO_STEPS.find((s) => sp.unlockedTempos[s]) ?? deps.practice.tempoPct;
+            const slowest =
+              TEMPO_STEPS.find((t) => sectionLadder[String(t)] === true) ?? deps.practice.tempoPct;
             applyBtn.textContent = deps.t('preflightApplySlowFmt', { v: slowest });
             applyBtn.onclick = () => {
               deps.practice.tempoPct = slowest;

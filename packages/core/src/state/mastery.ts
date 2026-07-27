@@ -2,7 +2,7 @@
 // Pure: caller hands progress + song defs in, gets flat view out.
 
 import type { PracticeProgress, SongProgress, SectionProgress } from './practice-progress';
-import { TEMPO_TIERS } from './practice-state';
+import { TEMPO_TIERS, FULL_SONG_SECTION_ID, highestTempoAllSections } from './practice-state';
 
 /** A single section's summary as the UI needs to draw it. */
 export interface MasterySectionView {
@@ -14,8 +14,6 @@ export interface MasterySectionView {
   bestPct: number;
   /** Best combo run on this section (0 = none recorded). */
   bestCombo: number;
-  /** True if this section has been unlocked by the player. */
-  unlocked: boolean;
 }
 
 /** Seal tier on a song's "book cover" in the repertoire library. */
@@ -86,26 +84,13 @@ export interface MasterySongDef {
   sectionIds: readonly string[];
 }
 
-function isTempoUnlocked(unlocked: Record<string, boolean> | undefined, tier: number): boolean {
-  // F3: 破損/移行後の per-song バケットが unlockedTempos を欠く（{} 等）と、
-  // computeSongMastery が raw バケットを getSongProgress を通さず渡すため
-  // undefined['60'] で TypeError → renderLibraryStrip 経由で boot 恒久クラッシュ。
-  // leaf でガードして全呼び出し元（highest/count）を一括で安全化する。
-  return unlocked?.[String(tier)] === true;
-}
-
-function highestUnlockedTempo(unlocked: Record<string, boolean>): number {
-  let highest = TEMPO_TIERS[0];
-  for (const t of TEMPO_TIERS) {
-    if (isTempoUnlocked(unlocked, t)) highest = t;
-  }
-  return highest;
-}
-
-function countUnlockedTempos(unlocked: Record<string, boolean>): number {
+/** How many tiers of the ladder the WHOLE song has open — derived from the
+ *  song-wide tempo (the slowest section's ceiling), so the mastery ring cannot
+ *  be inflated by one easy passage. */
+function countTemposUpTo(highest: number): number {
   let n = 0;
   for (const t of TEMPO_TIERS) {
-    if (isTempoUnlocked(unlocked, t)) n++;
+    if (t <= highest) n++;
   }
   return n;
 }
@@ -148,8 +133,7 @@ export function computeSongMastery(
   for (const id of sectionIds) {
     const sec: SectionProgress = progress?.sections?.[id] ?? { stars: 0, bestPct: 0 };
     const secCombo = sec.bestCombo ?? 0;
-    const unlocked = progress?.unlockedSections?.[id] === true || id === sectionIds[0];
-    sections.push({ id, stars: sec.stars, bestPct: sec.bestPct, bestCombo: secCombo, unlocked });
+    sections.push({ id, stars: sec.stars, bestPct: sec.bestPct, bestCombo: secCombo });
     starsEarned += sec.stars;
     if (sec.bestPct > bestPct) bestPct = sec.bestPct;
     if (secCombo > bestCombo) bestCombo = secCombo;
@@ -163,8 +147,14 @@ export function computeSongMastery(
   if ((fullSongSec?.bestPct ?? 0) > bestPct) bestPct = fullSongSec?.bestPct ?? 0;
   if ((fullSongSec?.bestCombo ?? 0) > bestCombo) bestCombo = fullSongSec?.bestCombo ?? 0;
   const starsPossible = sectionIds.length > 0 ? (sectionIds.length + 1) * 3 : 0;
-  const highestTempo = progress ? highestUnlockedTempo(progress.unlockedTempos) : 60;
-  const tempoTiersUnlocked = progress ? countUnlockedTempos(progress.unlockedTempos) : 1;
+  // The song's speed is the SLOWEST section's ceiling — "you play this at full
+  // speed" must not be mintable on the easy opening. Falls back to the legacy
+  // song-level map for a raw bucket that never went through getSongProgress
+  // (computeSongMastery is called with those from the library strip).
+  const highestTempo = progress
+    ? highestTempoAllSections(progress.sections ?? {}, sectionIds)
+    : TEMPO_TIERS[1];
+  const tempoTiersUnlocked = progress ? countTemposUpTo(highestTempo) : 1;
   const seal = resolveSongSeal(
     sections.map((s) => s.stars),
     highestTempo
@@ -370,7 +360,7 @@ export function pickNearCompletion(
       }
     } else if (target === 'bronze') {
       // First unlocked section the player hasn't cleared yet.
-      const firstUnstarred = sm.sections.find((s) => s.unlocked && s.stars === 0);
+      const firstUnstarred = sm.sections.find((s) => s.stars === 0);
       if (firstUnstarred) weakSectionIds.push(firstUnstarred.id);
     }
 
@@ -395,7 +385,7 @@ export function pickNearCompletion(
  *  alongside the real sections, but it is NEVER part of a song's
  *  `sectionIds`, so seals, mastery percent, and whole-song stamp
  *  predicates (which walk real section IDs) are unaffected. */
-export const FULL_SONG_SECTION_ID = '__full';
+export { FULL_SONG_SECTION_ID } from './practice-state';
 
 export interface FullSongChallengeView {
   /** Unlocked once EVERY real section has ≥1 star — a deterministic,

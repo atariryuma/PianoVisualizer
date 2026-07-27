@@ -406,14 +406,14 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       const dotsRow = document.createElement('div');
       dotsRow.className = 'jr-section-dots';
       for (const sec of sm.sections) {
+        // No 🔒 state: sections are all playable from the start now, so a dot
+        // only ever reports how many stars that part has.
         const dot = document.createElement('div');
-        dot.className = 'jr-dot jr-dot-stars-' + sec.stars + (sec.unlocked ? '' : ' jr-dot-locked');
+        dot.className = 'jr-dot jr-dot-stars-' + sec.stars;
         const sectionNameKey = song.sections.find((s) => s.id === sec.id)?.nameKey ?? sec.id;
         dot.title =
-          deps.t(sectionNameKey) +
-          ' · ' +
-          (sec.unlocked ? '★'.repeat(sec.stars) + '☆'.repeat(3 - sec.stars) : '🔒');
-        dot.textContent = sec.unlocked ? '★'.repeat(sec.stars) || '·' : '🔒';
+          deps.t(sectionNameKey) + ' · ' + '★'.repeat(sec.stars) + '☆'.repeat(3 - sec.stars);
+        dot.textContent = '★'.repeat(sec.stars) || '·';
         dotsRow.appendChild(dot);
       }
       // 1曲チャレンジのドット — クリア済みならセクション列の末尾に 👑★n を
@@ -436,9 +436,18 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
       const sp = progress.songs?.[song.id];
       // A2: 実テンポ梯子 TEMPO_TIERS=[50,60,75,90,100]（50/60 は常時解放の支援
       // ティア）。以前は 50 を描かず 60 を最下段にしていて song-panel と不一致。
+      //
+      // The ladder is per SECTION now, and this row is a per-SONG trophy, so it
+      // reports the slowest section's ceiling — the speed the whole song can be
+      // played at. Lighting a pip off the fastest section would let the easy
+      // opening claim "100 %" for a song that falls apart in the middle.
+      const songTempo = PianoCore.highestTempoAllSections(
+        sp?.sections ?? {},
+        song.sections.map((x) => x.id)
+      );
       for (const t of [50, 60, 75, 90, 100]) {
         const pip = document.createElement('span');
-        const unlocked = sp?.unlockedTempos?.[String(t)] === true || t <= 60;
+        const unlocked = t <= songTempo;
         pip.className = 'jr-tempo-pip' + (unlocked ? ' jr-tempo-pip-on' : '');
         pip.textContent = String(t);
         tempos.appendChild(pip);

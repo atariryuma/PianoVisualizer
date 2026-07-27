@@ -86,7 +86,6 @@ export interface ResultSnapshot {
   fullSong?: boolean;
   stars: number;
   unlockedTempo: number | null;
-  unlockedSecKey: string | null;
   streakDays: number | null;
   /** Trailing run of 0-star attempts ending at this one. >=2 escalates
    *  the tier0 copy to gentler "tough section" framing + Listen hint. */
@@ -145,9 +144,7 @@ export interface ResultCardSong {
 
 /** Per-song progress slice the module reads + writes. */
 export interface ResultCardSongProgress {
-  unlockedTempos: Record<number, boolean>;
-  unlockedSections: Record<string, boolean>;
-  sections: Record<string, { stars: number; bestPct: number; bestCombo?: number } | undefined>;
+  sections: Record<string, SectionProgressLike | undefined>;
   history: Record<
     string,
     Array<{
@@ -172,9 +169,16 @@ export interface ResultTier {
 }
 
 /** Unlocks bag returned by PianoCore.computeUnlocks. */
+/** The slice of a section's saved progress this module touches. */
+export interface SectionProgressLike {
+  stars: number;
+  bestPct: number;
+  bestCombo?: number;
+  unlockedTempos?: Record<string, boolean>;
+}
+
 export interface UnlocksResult {
   unlockedTempo: number | null;
-  unlockedSecKey: string | null;
   streakDays: number | null;
 }
 
@@ -240,7 +244,7 @@ export interface ResultCardDom {
   /** Speed-trainer "climb to the next tempo" one-tap button (shown on a
    *  cleared run below 100%). Click wired in practice-flow; this module sets
    *  label + dataset.tempo + visibility. Optional for partial-DOM tests. */
-  resTempoUp?: HTMLElement | null;
+  resTempoShift?: HTMLElement | null;
 }
 
 export interface ResultCardDeps {
@@ -307,15 +311,21 @@ export interface ResultCardDeps {
    *  a cleared run, or null. Optional so partial-DOM tests degrade to no
    *  button. */
   planTempoStepUp?(currentTempoPct: number, stars: number): number | null;
+  /** The same ladder downward (PianoCore.planTempoStepDown) — the tier to
+   *  offer on a run that cleared but was messy (★1), or null. Optional for the
+   *  same reason as the step up. */
+  planTempoStepDown?(currentTempoPct: number, stars: number): number | null;
+  /** A section's tempo ladder, defaulted (PianoCore.sectionTempoUnlocks). The
+   *  ONE way this module reads unlock state — the map is optional on older
+   *  saves, and every reader going through here is what keeps an
+   *  `undefined[tier]` out of the call sites. */
+  sectionTempoUnlocks(section: SectionProgressLike | undefined): Readonly<Record<string, boolean>>;
   /** Decide which unlocks fire (PianoCore.computeUnlocks — pure). */
   computeUnlocks(args: {
     stars: number;
     tempoPct: number;
     sectionId: string;
-    sectionIds: string[];
-    sectionNameKeys: Record<string, string>;
-    unlockedTempos: Record<number, boolean>;
-    unlockedSections: Record<string, boolean>;
+    unlockedTempos: Readonly<Record<string, boolean>>;
     streakCount: number;
   }): UnlocksResult;
   /** Particle/visual effects fired on star milestones. */
@@ -761,13 +771,37 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
    *  "climb to the next tempo" button. planTempoStepUp gates on ★2+ (the same
    *  gate that unlocks the tier). Click is wired in practice-flow via
    *  dataset.tempo. Hidden for listen/guided and at the top of the ladder. */
-  const renderTempoUp = (r: ResultSnapshot): void => {
-    const btn = deps.dom.resTempoUp as (HTMLElement & { dataset: DOMStringMap }) | null;
+  /**
+   * The tempo ladder's one button, pointing whichever way the run earned.
+   *
+   * ★2+ climbs. ★1 offers the step DOWN — "you got through it, now own it" —
+   * because a one-way ladder is the shape that looks most like teaching and
+   * behaves least like it (`planTempoStepDown` carries the two reasons). The two
+   * plans are mutually exclusive by star count, so ONE element with one handler
+   * cannot contradict itself; two buttons could.
+   *
+   * ★0 belongs to the scaffold (`renderRetrySupport`), which can also change the
+   * hand or the mode and escalates with how stuck the player is. When that is
+   * already offering a tempo change, this stays out of the way rather than
+   * putting two 🐢 buttons in one row.
+   */
+  const renderTempoShift = (r: ResultSnapshot): void => {
+    const btn = deps.dom.resTempoShift as (HTMLElement & { dataset: DOMStringMap }) | null;
     if (!btn) return;
-    const next =
-      r.mode === 'rhythm' && r.tempoPct != null
-        ? (deps.planTempoStepUp?.(r.tempoPct, r.stars) ?? null)
-        : null;
+    let next: number | null = null;
+    let key = 'resTempoUpFmt';
+    if (r.mode === 'rhythm' && r.tempoPct != null) {
+      const up = deps.planTempoStepUp?.(r.tempoPct, r.stars) ?? null;
+      if (up != null) {
+        next = up;
+      } else if (r.retryStrategy !== 'slowTempo') {
+        const down = deps.planTempoStepDown?.(r.tempoPct, r.stars) ?? null;
+        if (down != null) {
+          next = down;
+          key = 'tempoDownBtnFmt';
+        }
+      }
+    }
     if (next == null) {
       btn.style.display = 'none';
       delete btn.dataset.tempo;
@@ -775,7 +809,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     }
     btn.style.display = '';
     btn.dataset.tempo = String(next);
-    btn.textContent = deps.t('resTempoUpFmt', { v: next });
+    btn.textContent = deps.t(key, { v: next });
   };
 
   /** Paint the stretch/"add more songs" button from getStretchSongId. A real
@@ -883,7 +917,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // (the listen branch hides it; guided + rhythm set it via stretchId).
       if (deps.dom.resStretch) deps.dom.resStretch.style.display = 'none';
       renderRetrySupport(r); // hides — never shown for listen/guided
-      renderTempoUp(r); // hides — never shown for listen/guided
+      renderTempoShift(r); // hides — never shown for listen/guided
       renderSelfAssess(r);
       return;
     }
@@ -921,9 +955,6 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     if (r.unlockedTempo) {
       unlockedMsg += deps.t('tempoUnlockedFmt', { v: r.unlockedTempo });
     }
-    if (r.unlockedSecKey) {
-      unlockedMsg += deps.t('sectionUnlockedFmt', { v: deps.t(r.unlockedSecKey) });
-    }
     if (r.streakDays) {
       unlockedMsg += deps.t('streakDaysFmt', { v: r.streakDays });
     }
@@ -943,7 +974,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     renderJudge(r);
 
     renderRetrySupport(r);
-    renderTempoUp(r);
+    renderTempoShift(r);
     renderSelfAssess(r);
   }
 
@@ -1007,7 +1038,6 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         minutes: attemptMinutes,
         stars: 0,
         unlockedTempo: null,
-        unlockedSecKey: null,
         streakDays: null,
       };
       // Listen-mode also fires the attempt hook so lifetime/streak
@@ -1052,7 +1082,6 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
         minutes: attemptMinutes,
         stars: 0,
         unlockedTempo: null,
-        unlockedSecKey: null,
         streakDays: null,
       };
       renderResultCard();
@@ -1060,11 +1089,9 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       // 静的リストにフォールバック。
       const realSectionIds = deps.getCurrentSong()?.sections.map((s) => s.id) ?? deps.sectionIds;
       const nextIdx = realSectionIds.indexOf(sec.id) + 1;
-      const hasNext =
-        !isFullSongGuided &&
-        nextIdx > 0 &&
-        nextIdx < realSectionIds.length &&
-        !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
+      // No unlock check — every section is playable from the start, so "is
+      // there a next one" is the whole question.
+      const hasNext = !isFullSongGuided && nextIdx > 0 && nextIdx < realSectionIds.length;
       deps.dom.resNext.style.display = hasNext ? '' : 'none';
       paintStretchButton();
       deps.dom.sectionResult.classList.add('visible');
@@ -1122,25 +1149,23 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // 1曲チャレンジは progressKey='__full' で渡す — realSectionIds に無い ID
     // なので「次のセクション解錠」は発火せず、★2+ のテンポ解錠だけが効く
     // （通しでも速さの階段は登れる）。
+    // The ladder is the SECTION's, so the unlock is read and written on the
+    // section that was just played. Song-level was the bug: Für Elise reached
+    // 100 % entirely on A1 and then opened full speed for B, which sat at ★1 —
+    // the gate existed but never stood between the player and the passage that
+    // needed it.
+    const secProgress = sp.sections[progressKey];
     const unlocks = deps.computeUnlocks({
       stars,
       tempoPct: deps.practice.tempoPct,
       sectionId: progressKey,
-      sectionIds: realSectionIds,
-      sectionNameKeys,
-      unlockedTempos: sp.unlockedTempos,
-      unlockedSections: sp.unlockedSections,
+      unlockedTempos: deps.sectionTempoUnlocks(secProgress),
       streakCount: deps.practice.progress?.streakCount ?? 0,
     });
-    const { unlockedTempo, unlockedSecKey, streakDays } = unlocks;
-    if (unlockedTempo != null) sp.unlockedTempos[unlockedTempo] = true;
-    if (unlockedSecKey != null) {
-      // Verify the lookup before writing — a non-standard / single-section
-      // song's sec.id may be at the end (or absent), so indexOf+1 must not
-      // fall back to flipping realSectionIds[0].
-      const curIdx = realSectionIds.indexOf(progressKey);
-      const nextSec = curIdx >= 0 ? realSectionIds[curIdx + 1] : undefined;
-      if (nextSec) sp.unlockedSections[nextSec] = true;
+    const { unlockedTempo, streakDays } = unlocks;
+    if (unlockedTempo != null && secProgress) {
+      if (!secProgress.unlockedTempos) secProgress.unlockedTempos = {};
+      secProgress.unlockedTempos[String(unlockedTempo)] = true;
     }
 
     if (!sp.history[progressKey]) sp.history[progressKey] = [];
@@ -1193,7 +1218,8 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       const plan = deps.planSectionScaffold(histArr.map((h) => ({ a: h.a ?? 0, s: h.s ?? 0 })));
       retryStrategy = plan.strategy;
       if (retryStrategy === 'slowTempo') {
-        const slowest = (deps.tempoTiers ?? []).find((tier) => sp.unlockedTempos[tier]);
+        const unlockedTiers = deps.sectionTempoUnlocks(sp.sections[progressKey]);
+        const slowest = (deps.tempoTiers ?? []).find((t) => unlockedTiers[String(t)] === true);
         if (slowest != null && slowest < deps.practice.tempoPct) {
           retryTempo = slowest;
         } else {
@@ -1211,7 +1237,6 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
       fullSong: isFullSongRun,
       stars,
       unlockedTempo,
-      unlockedSecKey,
       streakDays,
       zeroStarStreak,
       focus: deps.pickSectionFocus(accPct, timingPct, durPct, stars),
@@ -1258,10 +1283,7 @@ export function createResultCard(deps: ResultCardDeps): ResultCard {
     // 実 section id（上で算出済み realSectionIds）に統一（将来 id 変更で崩れる痕跡）。
     // 1曲チャレンジ（progressKey='__full'）は indexOf=-1 → nextIdx=0 → 非表示。
     const nextIdx = realSectionIds.indexOf(progressKey) + 1;
-    const hasNext =
-      nextIdx > 0 &&
-      nextIdx < realSectionIds.length &&
-      !!deps.songProg().unlockedSections[realSectionIds[nextIdx]];
+    const hasNext = nextIdx > 0 && nextIdx < realSectionIds.length;
     deps.dom.resNext.style.display = hasNext ? '' : 'none';
 
     paintStretchButton();

@@ -1201,6 +1201,11 @@ export function planSectionScaffold(
  *  earned speed-up ladder. */
 export const TEMPO_TIERS: readonly number[] = Object.freeze([50, 60, 75, 90, 100]);
 
+/** Reserved pseudo-section id for the whole-song challenge run. Declared here
+ *  rather than in mastery.ts (which re-exports it) because mastery already
+ *  depends on this module, and `pickPracticeTarget` below needs to name it. */
+export const FULL_SONG_SECTION_ID = '__full';
+
 /**
  * Speed-trainer step: after a section is CLEARED, what tempo tier should the
  * "🚀 try the next speed" button on the result card offer?
@@ -1225,23 +1230,109 @@ export function planTempoStepUp(
   return tiers[idx + 1];
 }
 
+/**
+ * The other direction: after a section was cleared but NOT cleanly, what tempo
+ * should the result card offer to drop to?
+ *
+ * A one-way ladder is the shape that looks most like teaching and behaves least
+ * like it. Two reasons, and both are about what the climb actually costs:
+ *
+ *  - **Speed is not a dial on one skill.** Above a certain tempo the hands stop
+ *    correcting mid-gesture and start running pre-planned ones, so a passage
+ *    owned slowly is only partly owned fast — and one owned at ★1 fast is not
+ *    owned at all. Dropping a tier to play it cleanly is progress, not retreat.
+ *  - **Contextual interference** (Shea & Morgan 1979 and the music replications
+ *    since): repeating one thing under one condition gives the best gain inside
+ *    the session and the worst retention afterwards. A ladder you can only climb
+ *    is maximally blocked practice. Being able to move both ways makes the
+ *    tempo a varied condition instead of a monotone one.
+ *
+ * Returns the tier below `currentTempoPct` when the run cleared weakly (★1) and
+ * there is a slower tier to go to. `null` at ★2+ (the climb is offered instead —
+ * the two are mutually exclusive by construction, so the card never shows a
+ * contradiction) and at the bottom of the ladder.
+ *
+ * ★0 is deliberately NOT handled here: a run that did not clear at all is the
+ * scaffold's business (`planSectionScaffold`), which can also change the hand
+ * filter or send the player to Listen, and which escalates with how long they
+ * have been stuck. This is only for "you got through it, but it was messy".
+ */
+export function planTempoStepDown(
+  currentTempoPct: number,
+  stars: number,
+  tiers: readonly number[] = TEMPO_TIERS
+): number | null {
+  if (stars !== 1) return null;
+  const idx = tiers.indexOf(currentTempoPct);
+  if (idx <= 0) return null;
+  return tiers[idx - 1];
+}
+
+/** This section's tempo ladder, defaulted. The ONE reader of the per-section
+ *  map — everything else asks through here, so a save shape that predates the
+ *  per-section ladder cannot produce an `undefined[tier]` at a call site. */
+export function sectionTempoUnlocks(
+  section: { unlockedTempos?: Record<string, boolean> } | undefined,
+  tiers: readonly number[] = TEMPO_TIERS
+): Readonly<Record<string, boolean>> {
+  const m = section?.unlockedTempos;
+  if (m) return m;
+  const out: Record<string, boolean> = {};
+  for (let i = 0; i < tiers.length; i++) out[String(tiers[i])] = i < 2;
+  return out;
+}
+
+/** Is `tier` selectable for this section? */
+export function isSectionTempoUnlocked(
+  section: { unlockedTempos?: Record<string, boolean> } | undefined,
+  tier: number
+): boolean {
+  return sectionTempoUnlocks(section)[String(tier)] === true;
+}
+
+/** The fastest tier unlocked on this section. */
+export function highestSectionTempo(
+  section: { unlockedTempos?: Record<string, boolean> } | undefined,
+  tiers: readonly number[] = TEMPO_TIERS
+): number {
+  const m = sectionTempoUnlocks(section, tiers);
+  let highest = tiers[0];
+  for (const t of tiers) if (m[String(t)] === true) highest = t;
+  return highest;
+}
+
+/**
+ * The speed the WHOLE song can be played at: the slowest of its sections'
+ * fastest tiers.
+ *
+ * The MINIMUM, not the maximum — a trophy that says "you play this at full
+ * speed" must not be mintable by one easy section. This is what the mastery
+ * ring, the journal's tempo dots and the platinum seal read.
+ */
+export function highestTempoAllSections(
+  sections: Readonly<Record<string, { unlockedTempos?: Record<string, boolean> } | undefined>>,
+  sectionIds: readonly string[],
+  tiers: readonly number[] = TEMPO_TIERS
+): number {
+  if (sectionIds.length === 0) return tiers[0];
+  let floor = tiers[tiers.length - 1];
+  for (const id of sectionIds) {
+    const h = highestSectionTempo(sections[id], tiers);
+    if (h < floor) floor = h;
+  }
+  return floor;
+}
+
 export interface UnlockComputeInput {
   stars: number;
   /** Tempo % at which this section was just played (e.g. 60, 75, 90, 100). */
   tempoPct: number;
   /** Section just completed (e.g. 'A1'). */
   sectionId: string;
-  /** Section IDs in play order — caller passes the SECTION_IDS const. */
-  sectionIds: readonly string[];
-  /** id → nameKey map for the current song's sections. Used to surface the
-   *  next-section's localizable label without coupling the core to the song
-   *  schema. */
-  sectionNameKeys: Readonly<Record<string, string>>;
-  /** Tempos already unlocked for this song. Read-only here; caller mutates
-   *  after applying the result. */
-  unlockedTempos: Readonly<Record<number, boolean>>;
-  /** Sections already unlocked. Read-only here; caller mutates. */
-  unlockedSections: Readonly<Record<string, boolean>>;
+  /** Tempos already unlocked FOR THAT SECTION. Read-only here; caller mutates
+   *  after applying the result. Per section, not per song — see
+   *  `SectionProgress.unlockedTempos` for why. */
+  unlockedTempos: Readonly<Record<string, boolean>>;
   /** Practice-day streak count (e.g. progress.streakCount). */
   streakCount: number;
   /** Optional override for the streak milestones that fire a celebration.
@@ -1250,10 +1341,8 @@ export interface UnlockComputeInput {
 }
 
 export interface UnlockComputeResult {
-  /** New tempo unlocked, or null. */
+  /** New tempo unlocked on the section just played, or null. */
   unlockedTempo: number | null;
-  /** Next section's i18n nameKey, or null when no section unlocked. */
-  unlockedSecKey: string | null;
   /** Streak milestone reached this session (e.g. 3 or 7), or null. */
   streakDays: number | null;
 }
@@ -1263,33 +1352,23 @@ const DEFAULT_STREAK_MILESTONES: readonly number[] = Object.freeze([3, 7]);
 /**
  * Pure: given the result of a section, determine which gates fire.
  *
- * Stars >= 2 unlocks the next tempo tier (if any).
- * Stars >= 1 unlocks the next section (if any).
+ * Stars >= 2 unlocks the next tempo tier ON THAT SECTION (if any).
  * Streak count hitting a milestone (default: 3 or 7) fires a celebration.
+ *
+ * There is no section gate any more — sections are all open and the app
+ * recommends instead (`pickPracticeTarget`).
  *
  * Caller persists the unlocks by mutating the song-progress record.
  */
 export function computeUnlocks(input: UnlockComputeInput): UnlockComputeResult {
   let unlockedTempo: number | null = null;
-  let unlockedSecKey: string | null = null;
   let streakDays: number | null = null;
 
   if (input.stars >= 2) {
     const idx = TEMPO_TIERS.indexOf(input.tempoPct);
     if (idx >= 0 && idx < TEMPO_TIERS.length - 1) {
       const next = TEMPO_TIERS[idx + 1];
-      if (!input.unlockedTempos[next]) unlockedTempo = next;
-    }
-  }
-
-  if (input.stars >= 1) {
-    const sIdx = input.sectionIds.indexOf(input.sectionId);
-    if (sIdx >= 0 && sIdx < input.sectionIds.length - 1) {
-      const next = input.sectionIds[sIdx + 1];
-      if (!input.unlockedSections[next]) {
-        const nameKey = input.sectionNameKeys[next];
-        if (nameKey) unlockedSecKey = nameKey;
-      }
+      if (input.unlockedTempos[String(next)] !== true) unlockedTempo = next;
     }
   }
 
@@ -1298,7 +1377,82 @@ export function computeUnlocks(input: UnlockComputeInput): UnlockComputeResult {
     streakDays = input.streakCount;
   }
 
-  return { unlockedTempo, unlockedSecKey, streakDays };
+  return { unlockedTempo, streakDays };
+}
+
+// =====================================================================
+// What to practise next (the recommendation that replaced the lock)
+// =====================================================================
+
+/** Why this section is the suggestion. The UI phrases each differently — a
+ *  section you have never played is an invitation, a weak one is a target. */
+export type PracticeTargetReason = 'unplayed' | 'weakest' | 'fullSong';
+
+export interface PracticeTarget {
+  sectionId: string;
+  reason: PracticeTargetReason;
+}
+
+export interface PracticeTargetInput {
+  /** Real section IDs in play order (never includes the full-song pseudo-id). */
+  sectionIds: readonly string[];
+  sections: Readonly<Record<string, { stars: number; bestPct: number } | undefined>>;
+  /** Attempts recorded per section — the caller derives it from the history
+   *  buffer's length. Separate from stars because a ★0 section that HAS been
+   *  attempted is a different situation from one never opened. */
+  attempts: Readonly<Record<string, number>>;
+}
+
+/**
+ * Which section to point the player at.
+ *
+ * This exists because removing the section lock removes the app's only opinion
+ * about order, and "do whatever you like" is not the same as autonomy — it is
+ * the absence of teaching. Rocksmith is the precedent: every phrase is playable
+ * from the start and the game tells you which one is holding you back.
+ *
+ * Order: survey, then deepen, then assemble.
+ *  1. A section never attempted wins. You cannot practise what you have not
+ *     met, and hearing all of it early is what makes the hard part legible as
+ *     part of a whole.
+ *  2. Otherwise the weakest — fewest stars, then lowest best percentage. This is
+ *     deliberately the HARD passage, which the old sequential order kept the
+ *     player away from while their attention was freshest.
+ *  3. Every section at ★3 → the full-song challenge, the visible endpoint.
+ *
+ * Ties break toward the earlier section, so the suggestion is stable between
+ * renders rather than jittering between two equally weak passages.
+ */
+export function pickPracticeTarget(input: PracticeTargetInput): PracticeTarget | null {
+  const ids = input.sectionIds;
+  if (ids.length === 0) return null;
+
+  let allThree = true;
+  for (const id of ids) {
+    if ((input.sections[id]?.stars ?? 0) < 3) {
+      allThree = false;
+      break;
+    }
+  }
+  if (allThree) return { sectionId: FULL_SONG_SECTION_ID, reason: 'fullSong' };
+
+  for (const id of ids) {
+    if ((input.attempts[id] ?? 0) === 0) return { sectionId: id, reason: 'unplayed' };
+  }
+
+  let bestId = ids[0];
+  let bestStars = input.sections[bestId]?.stars ?? 0;
+  let bestPct = input.sections[bestId]?.bestPct ?? 0;
+  for (const id of ids.slice(1)) {
+    const stars = input.sections[id]?.stars ?? 0;
+    const pct = input.sections[id]?.bestPct ?? 0;
+    if (stars < bestStars || (stars === bestStars && pct < bestPct)) {
+      bestId = id;
+      bestStars = stars;
+      bestPct = pct;
+    }
+  }
+  return { sectionId: bestId, reason: 'weakest' };
 }
 
 // =====================================================================
