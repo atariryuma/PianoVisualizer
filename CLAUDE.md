@@ -1547,6 +1547,24 @@ Part/Accompaniment model, deliberately without a mixer UI (kid-simple):
   `EngravingRules.CursorIgnoreRepetitions = true` (restored in finally) so
   `|: :|` doesn't double-extract; tie ends are detected via `Tie.Notes[last]`
   (OSMD 1.9 has no `Tie.EndNote`).
+- **Repeat structure is merged across parts PER MARKER KIND, not per part
+  (2026-08-22).** `parsePlaybackOrderFromXml` reads the practice part
+  (`getPracticePartIndex`), and structural markers apply to the whole score —
+  but WHICH part carries them depends on the kind: `<barline><repeat/>` is
+  written on every part, while a volta bracket `<ending>` is engraved on the TOP
+  part only. The old fallback swapped the whole part when the selected one had
+  no markers at all, so the mixed case fell through the hole: a Lied's piano
+  part has the repeat signs, therefore "has markers", therefore no fallback,
+  therefore **not one `<ending>` in the playback order** — the repeat is taken
+  but the 1st ending is never skipped on the second pass. Measured on the
+  shipped library: Schubert 「ます」 replayed bar 25, 「セレナーデ」 replayed
+  bars 28-36. OSMD draws the top part's brackets, so the player could SEE 1./2.
+  on the score while the lane and the scorer ignored them. `MARKER_KINDS`
+  (`ending` / `repeat` / `jump`) is now the merge unit: a kind the selected part
+  lacks entirely is copied in from the first other part that has it, and a donor
+  whose measure count differs is refused (a bar-indexed copy would stamp the
+  volta onto unrelated bars). Applies in both directions — the old
+  `partIdx !== 0` guard was an implementation artifact, not a musical rule.
 
 ## User-added songs
 

@@ -291,14 +291,68 @@ describe('parsePlaybackOrderFromXml — partIndex（多パート譜）', () => {
   it('partIndex=1 でピアノパート（P2）側にだけあるリピートを拾う', () => {
     const xml = buildTwoPartScore([{}, {}, {}], [{ fwdRepeat: true }, { bwdRepeat: true }, {}]);
     expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([0, 1, 0, 1, 2]);
-    // partIndex 省略（先頭パート = Voice、マーカー無し）は従来どおり線形。
-    expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 2]);
+    // 補完は種別ごと・向き非依存: part 0 を見ていても repeat を 1 つも持たない
+    // 以上、他パートの repeat が譜面全体の構造。ここは以前 [0,1,2]（線形）
+    // だったが、それはパート単位フォールバックが partIdx!==0 でしか
+    // 走らなかったという実装の副作用で、音楽的な要件ではない。
+    expect(parsePlaybackOrderFromXml(xml, { parser })).toEqual([0, 1, 0, 1, 2]);
   });
 
   it('選択パートにマーカーが皆無なら part 0 にフォールバックする', () => {
     // リピートを先頭パートにだけ書く譜面（慣例）。partIndex=1 でも取りこぼさない。
     const xml = buildTwoPartScore([{ fwdRepeat: true }, { bwdRepeat: true }, {}], [{}, {}, {}]);
     expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([0, 1, 0, 1, 2]);
+  });
+
+  it('repeat は持つが <ending> が無いパートは、括弧だけを他パートから補完する', () => {
+    // 実データの形（Schubert「ます」「セレナーデ」など OpenScore Lieder）:
+    // volta 括弧は最上段の歌パートにだけ描かれ、ピアノパートにはリピート
+    // 記号しか無い。パート単位のフォールバックだと「マーカーは有る」と
+    // 判定されて括弧が落ち、2 周目に 1 番括弧を飛ばさなくなる。
+    const voice: MeasureSpec[] = [
+      { fwdRepeat: true },
+      {},
+      {
+        bwdRepeat: true,
+        ending: [
+          { num: '1', type: 'start' },
+          { num: '1', type: 'stop' },
+        ],
+      },
+      {
+        ending: [
+          { num: '2', type: 'start' },
+          { num: '2', type: 'discontinue' },
+        ],
+      },
+      {},
+    ];
+    const piano: MeasureSpec[] = [{ fwdRepeat: true }, {}, { bwdRepeat: true }, {}, {}];
+    const xml = buildTwoPartScore(voice, piano);
+    // 1 周目 0,1,2 → 戻って 0,1 → 2（1番括弧）を飛ばして 3,4。
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([0, 1, 2, 0, 1, 3, 4]);
+    // 括弧を持つ側を選んでも当然同じ。
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 0 })).toEqual([0, 1, 2, 0, 1, 3, 4]);
+  });
+
+  it('小節数が食い違うパートからは補完しない（括弧が無関係な小節に乗る）', () => {
+    const voice: MeasureSpec[] = [
+      { fwdRepeat: true },
+      {
+        bwdRepeat: true,
+        ending: [
+          { num: '1', type: 'start' },
+          { num: '1', type: 'stop' },
+        ],
+      },
+      { ending: [{ num: '2', type: 'start' }] },
+    ];
+    // ピアノ側は 5 小節 — ドナー不採用で、括弧無しのリピートのまま。
+    const piano: MeasureSpec[] = [{ fwdRepeat: true }, {}, { bwdRepeat: true }, {}, {}];
+    const xml = buildTwoPartScore(voice, piano);
+    expect(parsePlaybackOrderFromXml(xml, { parser, partIndex: 1 })).toEqual([
+      0, 1, 2, 0, 1, 2, 3, 4,
+    ]);
   });
 
   it('両パートにマーカーがあるときは選択パートを使う（フォールバックしない）', () => {

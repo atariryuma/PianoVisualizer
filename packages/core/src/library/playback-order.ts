@@ -23,9 +23,10 @@ export interface PlaybackOrderOptions {
    *  Defaults to `globalThis.DOMParser`. */
   parser?: DOMParserLike;
   /** 走査対象パートの index（part-list 順、既定 0）。範囲外は 0 に
-   *  フォールバック。リピート / volta / D.C. 等の構造マーカーは全パート
-   *  共通が慣例で、先頭パートにだけ書く譜面も多いため、選択パートに
-   *  マーカーが皆無で part 0 には有る場合は part 0 のマーカーを使う。 */
+   *  フォールバック。リピート / volta / D.C. 等の構造マーカーは譜面全体に
+   *  掛かるが、どのパートに書かれるかは種別で違う（repeat は全パート、
+   *  volta は最上段だけ、が慣例）。そのため選択パートが或る種別を 1 つも
+   *  持たないときだけ、その種別を他パートから補完する（MARKER_KINDS）。 */
   partIndex?: number;
 }
 
@@ -78,6 +79,13 @@ export interface SourceMeasureTiming {
   startSec: ReadonlyArray<number>;
   durSec: ReadonlyArray<number>;
 }
+
+/** 構造マーカーの種別。クロスパート補完はこの単位で行う — パート単位で
+ *  まとめて差し替えると、repeat は持つが `<ending>` を持たないパート
+ *  （歌+ピアノ譜のピアノパートがまさにこれ）で volta が丸ごと落ちる。 */
+type MarkerKind = 'ending' | 'repeat' | 'jump';
+
+const MARKER_KINDS: ReadonlyArray<MarkerKind> = ['ending', 'repeat', 'jump'];
 
 /**
  * Parse the playback order from raw MusicXML text. Returns a flat
@@ -190,29 +198,72 @@ export function parsePlaybackOrderFromXml(
     return info;
   };
 
-  /** マーカー（リピート/volta/D.C./D.S./Coda/Segno/Fine）が 1 つでも有るか。 */
-  const hasAnyMarker = (list: MeasureMarkers[]): boolean =>
-    list.some(
-      (m) =>
-        m.fwdRepeat ||
-        m.bwdRepeat ||
-        m.dacapo ||
-        m.fine ||
-        m.tocoda ||
-        m.coda ||
-        m.segno ||
-        m.dalsegno ||
-        Object.keys(m.startsEnding).length > 0 ||
-        Object.keys(m.stopsEnding).length > 0
-    );
+  /** 「このパートは種別 kind のマーカーを持つか」。補完はパート単位では
+   *  なく種別単位でしか正しく効かない（下の MARKER_KINDS の説明を参照）。 */
+  const hasKind = (list: MeasureMarkers[], kind: MarkerKind): boolean => {
+    if (kind === 'ending') {
+      return list.some(
+        (m) => Object.keys(m.startsEnding).length > 0 || Object.keys(m.stopsEnding).length > 0
+      );
+    }
+    if (kind === 'repeat') return list.some((m) => m.fwdRepeat || m.bwdRepeat);
+    return list.some((m) => m.dacapo || m.fine || m.tocoda || m.coda || m.segno || m.dalsegno);
+  };
 
-  let info = collectMarkers(partEls[partIdx]);
-  // マーカーのグローバル・フォールバック: リピート等の構造マーカーを
-  // 先頭パートにだけ書く譜面（歌+伴奏譜等）向け。選択パートにマーカーが
-  // 皆無で part 0 には有る場合、part 0 のマーカーで再収集する。
-  if (partIdx !== 0 && !hasAnyMarker(info)) {
-    const p0 = collectMarkers(partEls[0]);
-    if (hasAnyMarker(p0)) info = p0;
+  /** 種別 kind のフィールドだけを donor から dst へ小節単位でコピーする。 */
+  const copyKind = (dst: MeasureMarkers[], src: MeasureMarkers[], kind: MarkerKind): void => {
+    for (let k = 0; k < dst.length; k++) {
+      const d = dst[k];
+      const s = src[k];
+      if (kind === 'ending') {
+        d.startsEnding = s.startsEnding;
+        d.stopsEnding = s.stopsEnding;
+      } else if (kind === 'repeat') {
+        d.fwdRepeat = s.fwdRepeat;
+        d.bwdRepeat = s.bwdRepeat;
+      } else {
+        d.dacapo = s.dacapo;
+        d.fine = s.fine;
+        d.tocoda = s.tocoda;
+        d.coda = s.coda;
+        d.segno = s.segno;
+        d.dalsegno = s.dalsegno;
+      }
+    }
+  };
+
+  const info = collectMarkers(partEls[partIdx]);
+  // クロスパート補完は「種別ごと」に行う（2026-08-22）。
+  //
+  // 構造マーカーは譜面全体に掛かるが、どのパートに書かれるかは種別で
+  // 違う: `<barline><repeat/>` は全パートに書くのが普通なのに対し、
+  // volta 括弧 `<ending>` は最上段パートにだけ描くのが記譜の慣例。
+  // 以前はパート単位の全置換で、「選択パートにマーカーが皆無」のときしか
+  // フォールバックしなかったため、この組み合わせで穴が空いていた:
+  // 歌+ピアノ譜のピアノパートは repeat を持つので「マーカーは有る」と
+  // 判定され、`<ending>` が 1 つも無いまま演奏順が組まれる → リピートは
+  // 取るのに 2 周目の 1 番括弧を飛ばさない。実データで確認したのは
+  // Schubert の「ます」(25小節を再演)・「セレナーデ」(28-36小節を再演)。
+  // OSMD は最上段の括弧を描くので、画面には 1./2. が見えているのに
+  // アプリだけ無視する、という食い違いになっていた。
+  //
+  // ドナー探索は他パートを index 順（= 上段優先）に走査し、種別を持つ
+  // 最初のパートを採る。小節数が一致しないパートは、コピーが小節単位で
+  // ズレる（1番括弧を無関係な小節に立てる）ので採らない。
+  const donors = new Map<number, MeasureMarkers[]>();
+  for (const kind of MARKER_KINDS) {
+    if (hasKind(info, kind)) continue;
+    for (let p = 0; p < partEls.length; p++) {
+      if (p === partIdx) continue;
+      let donor = donors.get(p);
+      if (!donor) {
+        donor = collectMarkers(partEls[p]);
+        donors.set(p, donor);
+      }
+      if (donor.length !== info.length || !hasKind(donor, kind)) continue;
+      copyKind(info, donor, kind);
+      break;
+    }
   }
 
   // Pre-scan for segno / coda landing positions (used by D.S. and
