@@ -569,6 +569,69 @@ cluster now relies on:
   while practice is enabled but the session is paused (settings panel,
   post-section result card) no longer phantom-advances the cursor.
 
+### The game frame runs for EVERY input (2026-09-16)
+
+**Free play on a MIDI keyboard showed nothing.** Measured in the built bundle
+with a fake keyboard: 120 notes took the internal flow to 100 and the combo to
+120 while the gauge on screen stayed at **0**, no encouragement ever fired, the
+stage stayed at 0 at flow 100, quality read **0 %** (so four of the eleven
+quests could never complete and the "next quest" label froze on the first of
+them), the "keep going" countdown never appeared, and after the player stopped
+**nothing decayed** — the aurora and flowers stayed at maximum forever. Only the
+canvas background moved, because it reads `state.flow` directly, which is why it
+went unnoticed.
+
+The cause was structural. Everything after the mic analysis — flow decay, the
+stage, the quality recompute, the session-confidence machine, the HUD — lived
+inside `updateGameState`, and `mic-pipeline` skips that call whenever
+`state.micSuspended`, which is **every** MIDI session. Practice had hit the same
+wall once and been patched locally ("v13: MIDI-only practice … must still
+tick"); free play never had. Underneath that, the flow/combo rules existed
+**three** times: a tested reducer in `@piano/core` (`applyFlowEvent`, used by
+nothing), a hand copy in the mic reducer, and another in `midi-handlers` that
+had drifted (a >3 s gap reset the combo to 1 there and kept 60 % on the mic).
+
+Now:
+
+- **Two entry points, one game.** `updateGameState` (a mic frame) and
+  `updateGameStateWithoutMic` (no mic — MIDI, or no input yet) both end in the
+  same stage + HUD step, and the mic pipeline's no-mic branch always calls the
+  latter. Practice keeps its own tick alongside it.
+- **One flow reducer.** Both paths drive `PianoCore.applyFlowEvent`, with rules
+  from ONE builder (`buildFlowMeterOptions(CONFIG)`), so "combo" means the same
+  thing from a keyboard and a microphone. `midiNote` now honours the combo
+  window; the literals that lived in code (`1.5` warm-up boost, MIDI
+  `1.0 + v × 1.8`) are CONFIG entries.
+- **"Is the player making sound?" without a mic** mirrors the mic's answer: a
+  struck note counts for `ONSET_GATE_DURATION_MS` (the mic's gate), a held key
+  or pedal for as long as it is held (`sustainTick` holds the silence clock
+  without adding gain — a MIDI note pays its gain when struck, so holding must
+  not out-earn playing). Mic-sourced `activeNotes` entries are excluded: they
+  expire on their own and must not keep a keyboard session "playing".
+- **The session machine owns `sessionState` for MIDI too.** `onMidiNoteOn` used
+  to force `performing` and bump the confidence on every press, because the
+  machine never ran without a mic — so a keyboard player could never fall back
+  out of `performing`. That override is gone.
+- **`comboDecayAccum` is declared in the initial state.** The old reducer
+  guarded it with `|| 0`; the shared one does `+=`, and an absent field becomes
+  `NaN`, after which the combo silently never decays.
+
+**Encouragement cooldown (same pass).** `ENCOURAGEMENT_COOLDOWN_MS` (8 s) had
+shipped since v9 and nothing read it, so every dip-and-return re-fired the
+banner AND its full-screen effect — and a phrase break keeps 60 % of the combo,
+so that happened at every phrase. `EncouragementOptions.cooldownMs` now
+suppresses **repeats only**: a tier higher than anything celebrated in the
+window always fires, so a fast climb (3 → 8 → 15 → 25 in a few seconds) is still
+celebrated rung by rung. Fixing the MIDI HUD without this would have unleashed
+exactly that spam on every keyboard phrase.
+
+**Deliberately unchanged: the noise penalty's flow term.** `FLOW_NOISE_PENALTY`
+is a rate, applied as `rate × one frame's dt` once per 300 ms cooldown — about
+0.05 flow per firing, effectively nothing. The noise that trips it is usually
+someone talking, and a gauge that drains while a child is spoken to reads as a
+scold, so the behaviour stays and the option's doc now says what it really does.
+The combo penalty is the part that bites.
+
 ## Architecture
 
 ### Audio Pipeline

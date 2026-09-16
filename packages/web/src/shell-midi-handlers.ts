@@ -14,6 +14,7 @@ import type { PianoConfig } from './piano-config';
 import type { MidiState } from '@piano/core';
 import * as PianoCore from '@piano/core';
 import * as MidiHandlers from './midi-handlers';
+import * as GameStateUpdate from './game-state-update';
 import * as MidiRender from './midi-render';
 
 export interface ShellMidiHandlersDeps {
@@ -135,11 +136,14 @@ export function createShellMidiHandlers(deps: ShellMidiHandlersDeps): ShellMidiH
     applyOnsetPitch: PianoCore.applyOnsetPitch,
     applyOnsetToWindow: PianoCore.applyOnsetToWindow,
     triggerWakeUpFlash: PianoCore.triggerWakeUpFlash,
+    applyFlowEvent: PianoCore.applyFlowEvent,
     qhOptsMidi: deps.qhOptsMidi,
     psOpts: deps.psOpts,
     cwOpts: deps.cwOpts,
     wufOpts: deps.wufOpts,
-    config: { NOTE_NAMES: config.NOTE_NAMES, COMBO_WINDOW_MS: config.COMBO_WINDOW_MS },
+    config: { NOTE_NAMES: config.NOTE_NAMES },
+    // The same builder the mic reducer uses — one definition of the rules.
+    flowOpts: GameStateUpdate.buildFlowMeterOptions(config),
     // 表示専用の音名テーブル（prefs.noteNaming + lang を shell-practice が解決）。
     getDisplayNoteNames: deps.getDisplayNoteNames,
     getHeight: () => deps.getScreen().H,

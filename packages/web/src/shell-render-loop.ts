@@ -56,6 +56,8 @@ export interface ShellRenderLoopDeps {
   /** Per-frame reducers. */
   updateAGC: any;
   updateGameState: any;
+  /** The game frame when the mic is not running (see game-state-update). */
+  updateGameStateWithoutMic: (timeMs: number, dt: number, frame: { keyHeld: boolean }) => void;
   updateQuestState: any;
   updatePlayTime: any;
   updateDebugOverlay: any;
@@ -130,6 +132,7 @@ export function createShellRenderLoop(deps: ShellRenderLoopDeps): ShellRenderLoo
     detectPitchYIN: deps.pianoCore.detectPitchYIN,
     updateAGC: deps.updateAGC,
     updateGameState: deps.updateGameState,
+    updateGameStateWithoutMic: deps.updateGameStateWithoutMic,
     hideIntroHint: deps.hideIntroHint,
     getUpdatePractice: deps.getUpdatePractice,
     freqToNote: deps.pianoCore.freqToNote,

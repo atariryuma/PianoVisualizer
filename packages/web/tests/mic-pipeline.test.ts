@@ -45,6 +45,7 @@ interface MockHooks {
   detectPitchYIN: ReturnType<typeof vi.fn>;
   updateAGC: ReturnType<typeof vi.fn>;
   updateGameState: ReturnType<typeof vi.fn>;
+  updateGameStateWithoutMic: ReturnType<typeof vi.fn>;
   updatePractice: ReturnType<typeof vi.fn>;
   freqToNote: ReturnType<typeof vi.fn>;
   getNoteColor: ReturnType<typeof vi.fn>;
@@ -67,6 +68,7 @@ function makeDeps(
       .mockReturnValue({ pitch: 440, conf: 0.95, rms: 0.1 } satisfies PitchResult),
     updateAGC: vi.fn(),
     updateGameState: vi.fn().mockReturnValue(true),
+    updateGameStateWithoutMic: vi.fn(),
     updatePractice: vi.fn(),
     freqToNote: vi.fn().mockReturnValue({
       name: 'A',
@@ -112,6 +114,7 @@ function makeDeps(
     detectPitchYIN: h.detectPitchYIN,
     updateAGC: h.updateAGC,
     updateGameState: h.updateGameState,
+    updateGameStateWithoutMic: h.updateGameStateWithoutMic,
     state,
     practice: { enabled: false },
     midiInput: { enabled: false, lastEventTime: 0 },
@@ -176,6 +179,53 @@ describe('tickMicPipeline — mic-suspended branch', () => {
     tickMicPipeline(1000, 16, deps);
     expect(hooks.detectPitchYIN).not.toHaveBeenCalled();
     expect(hooks.updatePractice).toHaveBeenCalledWith(1000, false, 0);
+  });
+
+  it('STILL RUNS THE GAME FRAME — the gauge / stage / HUD for a keyboard player', () => {
+    // This branch used to run nothing at all in free play. Every MIDI session
+    // lands here, so the gauge on screen stayed at 0 while the internal flow
+    // sat at 100, and nothing ever decayed.
+    const { deps, hooks } = makeDeps({ state: makeState({ micSuspended: true }) });
+    tickMicPipeline(1000, 16, deps);
+    expect(hooks.updateGameStateWithoutMic).toHaveBeenCalledWith(1000, 16, { keyHeld: false });
+    expect(hooks.updateGameState).not.toHaveBeenCalled();
+  });
+
+  it('runs it in practice too, alongside the practice tick', () => {
+    const { deps, hooks } = makeDeps({
+      state: makeState({ micSuspended: true }),
+      practice: { enabled: true },
+    });
+    tickMicPipeline(1000, 16, deps);
+    expect(hooks.updateGameStateWithoutMic).toHaveBeenCalledTimes(1);
+    expect(hooks.updatePractice).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a held KEY — but not a lingering mic highlight — as sound', () => {
+    const activeNotes = new Map<
+      number,
+      { velocity: number; onTimeMs: number; source?: 'mic' | 'midi' }
+    >();
+    const midiState = { activeNotes, recentOnsets: [], lastChordName: '', lastChordTimeMs: 0 };
+    const { deps, hooks } = makeDeps({ state: makeState({ micSuspended: true }), midiState });
+
+    // A mic entry left over from before the switch expires on its own; it must
+    // not keep a keyboard session "playing" and hold the gauge up.
+    activeNotes.set(69, { velocity: 60, onTimeMs: 900, source: 'mic' });
+    tickMicPipeline(1000, 16, deps);
+    expect(hooks.updateGameStateWithoutMic).toHaveBeenLastCalledWith(1000, 16, { keyHeld: false });
+
+    // A real key (MIDI entries carry no source, or 'midi').
+    activeNotes.set(60, { velocity: 90, onTimeMs: 1010 });
+    tickMicPipeline(1016, 16, deps);
+    expect(hooks.updateGameStateWithoutMic).toHaveBeenLastCalledWith(1016, 16, { keyHeld: true });
+  });
+
+  it('does NOT run it on a mic frame (the mic reducer already did the game half)', () => {
+    const { deps, hooks } = makeDeps();
+    tickMicPipeline(1000, 16, deps);
+    expect(hooks.updateGameState).toHaveBeenCalledTimes(1);
+    expect(hooks.updateGameStateWithoutMic).not.toHaveBeenCalled();
   });
 });
 

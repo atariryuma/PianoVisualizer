@@ -150,6 +150,10 @@ export interface MicPipelineDeps {
   detectPitchYIN: (data: Float32Array, sampleRate: number) => PitchResult;
   updateAGC: (timeMs: number, rms: number) => void;
   updateGameState: (timeMs: number, dt: number, pitchResult: PitchResult) => boolean;
+  /** The game frame when the mic is NOT running. Required: without it a MIDI
+   *  session has a gauge, a combo, a stage and a quality read-out that never
+   *  reach the screen and never decay (see game-state-update). */
+  updateGameStateWithoutMic: (timeMs: number, dt: number, frame: { keyHeld: boolean }) => void;
 
   // ─── State refs ───────────────────────────────────────────────────
   state: MicPipelineState;
@@ -421,12 +425,30 @@ export function tickMicPipeline(
         }
       }
     }
-  } else if (deps.practice.enabled) {
-    // v13: MIDI-only practice — the mic isn't running, but the falling-
-    // notes timeline (miss detection, section completion) must still
-    // tick. Pass zero-valued mic inputs; MIDI matches happen out-of-band
-    // in onMidiNoteOn.
-    deps.updatePractice(timeMs, false, 0);
+  } else {
+    // The mic is not running — a MIDI session, or no input yet. The GAME
+    // still has to advance: the gauge, its decay, the stage, the quality
+    // read-out and the HUD all used to live only on the branch above, so a
+    // keyboard player got none of them on screen. Practice had already hit
+    // this and been patched on its own (below); free play never had.
+    //
+    // A held key counts as sound, as long as it is a real one: entries the mic
+    // wrote expire on their own and must not keep the session "playing".
+    let keyHeld = false;
+    if (deps.midiState) {
+      for (const n of deps.midiState.activeNotes.values()) {
+        if (n.source !== 'mic') {
+          keyHeld = true;
+          break;
+        }
+      }
+    }
+    deps.updateGameStateWithoutMic(timeMs, dt, { keyHeld });
+
+    // v13: MIDI-only practice — the falling-notes timeline (miss detection,
+    // section completion) must still tick. Pass zero-valued mic inputs; MIDI
+    // matches happen out-of-band in onMidiNoteOn.
+    if (deps.practice.enabled) deps.updatePractice(timeMs, false, 0);
   }
 
   return { isGoodNote };

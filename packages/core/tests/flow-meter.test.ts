@@ -153,6 +153,64 @@ describe('applyFlowEvent — midiNote', () => {
     applyFlowEvent(s, { type: 'midiNote', timeMs: 1000, velocity: 64 }, OPTS);
     expect(s.lastSilenceStartMs).toBe(-1);
   });
+
+  it('follows the SAME combo window as the mic — a gap keeps 60 %, not zero', () => {
+    // It used to add 1 unconditionally, so the MIDI handler grew its own copy
+    // of the combo rules with a different reset (back to 1). The same number
+    // on screen meant two different things depending on the input.
+    const mic = initFlowState();
+    const midi = initFlowState();
+    for (let i = 0; i < 20; i++) {
+      applyFlowEvent(
+        mic,
+        { type: 'goodOnset', timeMs: 1000 + i * 200, isPerformingOrWarmup: true },
+        OPTS
+      );
+      applyFlowEvent(midi, { type: 'midiNote', timeMs: 1000 + i * 200, velocity: 80 }, OPTS);
+    }
+    expect(midi.combo).toBe(mic.combo);
+    // A phrase break longer than the window.
+    applyFlowEvent(mic, { type: 'goodOnset', timeMs: 20000, isPerformingOrWarmup: true }, OPTS);
+    applyFlowEvent(midi, { type: 'midiNote', timeMs: 20000, velocity: 80 }, OPTS);
+    expect(midi.combo).toBe(mic.combo);
+    expect(midi.combo).toBe(Math.floor(20 * 0.6));
+    expect(midi.bestCombo).toBe(20);
+  });
+
+  it('restarts the idle combo decay from zero, like a mic onset does', () => {
+    const s = initFlowState();
+    s.comboDecayAccum = 0.9;
+    applyFlowEvent(s, { type: 'midiNote', timeMs: 1000, velocity: 64 }, OPTS);
+    expect(s.comboDecayAccum).toBe(0);
+  });
+});
+
+describe('applyFlowEvent — sustainTick', () => {
+  it('stops the silence clock without adding anything', () => {
+    // A held chord is still music. Without this the idle decay would treat a
+    // player holding a long note exactly like one who walked away.
+    const s = initFlowState();
+    s.flow = 40;
+    s.combo = 7;
+    s.lastSilenceStartMs = 1000;
+    applyFlowEvent(s, { type: 'sustainTick', timeMs: 30000 }, OPTS);
+    expect(s.lastSilenceStartMs).toBe(-1);
+    expect(s.flow).toBe(40);
+    expect(s.combo).toBe(7);
+  });
+
+  it('holding forever never decays; letting go starts the clock fresh', () => {
+    const s = initFlowState();
+    s.flow = 60;
+    for (let t = 0; t < 30000; t += 16) {
+      applyFlowEvent(s, { type: 'sustainTick', timeMs: t }, OPTS);
+    }
+    expect(s.flow).toBe(60);
+    // Released at 30 s: silence counts from HERE, not from the last press.
+    applyFlowEvent(s, { type: 'idleTick', timeMs: 30000, dtSec: 0.016 }, OPTS);
+    applyFlowEvent(s, { type: 'idleTick', timeMs: 31000, dtSec: 0.016 }, OPTS);
+    expect(s.flow).toBe(60);
+  });
 });
 
 describe('applyFlowEvent — activeTick', () => {

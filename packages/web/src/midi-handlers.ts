@@ -33,7 +33,13 @@
 // reference — the legacy shell's globals — so the loop body still
 // reads the same values it always did.
 
-import type { WakeUpFlashState, WakeUpFlashOptions } from '@piano/core';
+import type {
+  WakeUpFlashState,
+  WakeUpFlashOptions,
+  FlowState,
+  FlowEvent,
+  FlowMeterOptions,
+} from '@piano/core';
 
 // ─── State refs ─────────────────────────────────────────────────────
 
@@ -47,17 +53,9 @@ export interface MidiActiveNote {
 /** Mic-pipeline state shape extended with the fields these handlers
  *  read/write. Composing with WakeUpFlashState so we can hand the
  *  same `state` ref to `triggerWakeUpFlash`. */
-export interface MidiHandlersState extends WakeUpFlashState {
+export interface MidiHandlersState extends WakeUpFlashState, FlowState {
   running: boolean;
-  flow: number;
-  combo: number;
-  bestCombo: number;
   lastNoteTimeMs: number;
-  lastGoodNoteTimeMs: number;
-  lastSilenceStartMs: number;
-  micSuspended: boolean;
-  sessionState: string;
-  sessionConfidence: number;
   // For showNoteDisplay (re-entered through deps):
   noteShowTimeMs: number;
   lastDetectedNote: string;
@@ -131,6 +129,9 @@ export interface MidiHandlersDeps {
     opts: unknown
   ) => { emitted: string | null };
   triggerWakeUpFlash: (state: WakeUpFlashState, opts: WakeUpFlashOptions) => void;
+  /** The one flow / combo reducer (PianoCore.applyFlowEvent), shared with the
+   *  mic path. */
+  applyFlowEvent: (state: FlowState, event: FlowEvent, opts: FlowMeterOptions) => void;
 
   // ─── Reducer options + tunables ──────────────────────────────────
   qhOptsMidi: unknown;
@@ -139,8 +140,10 @@ export interface MidiHandlersDeps {
   wufOpts: WakeUpFlashOptions;
   config: {
     NOTE_NAMES: readonly string[];
-    COMBO_WINDOW_MS: number;
   };
+  /** Flow / combo rules — built by the same `buildFlowMeterOptions` the mic
+   *  reducer uses. */
+  flowOpts: FlowMeterOptions;
   /** Notation-aware note-name table for the on-screen note DISPLAY only
    *  (shares shell-practice's activeNoteNames: prefs.noteNaming + lang).
    *  Falls back to config.NOTE_NAMES (English). Color lookups elsewhere
@@ -177,23 +180,16 @@ export function spawnMidiNoteVisuals(
   deps.ripples.push(new deps.Ripple(noteX, noteY, color, 100 + v * 280 + deps.state.flow * 1.2));
   deps.spawnStream(noteX, isLow ? H * 0.78 : H * 0.22, v, color);
 
-  // Drive flow/combo from MIDI directly so silent (headphone) practice
-  // still scores.
-  deps.state.flow = Math.min(100, deps.state.flow + 1.0 + v * 1.8);
-  // Reset combo on idle gap, mirroring the mic path. Without this, a
-  // kid who plays one note then walks away for 5 minutes returns to
-  // find the combo still climbing on the next press.
+  // Flow + combo through the SAME reducer the mic uses. This was a hand copy
+  // that had drifted: a >3 s gap reset the combo to 1 here and kept 60 % on
+  // the mic, so the number on screen meant different things per input. The
+  // velocity is passed floored, matching the burst size above.
   const now = performance.now();
-  if (
-    deps.state.lastGoodNoteTimeMs > 0 &&
-    now - deps.state.lastGoodNoteTimeMs >= deps.config.COMBO_WINDOW_MS
-  ) {
-    deps.state.combo = 1;
-  } else {
-    deps.state.combo += 1;
-  }
-  if (deps.state.combo > deps.state.bestCombo) deps.state.bestCombo = deps.state.combo;
-  deps.state.lastGoodNoteTimeMs = now;
+  deps.applyFlowEvent(
+    deps.state,
+    { type: 'midiNote', timeMs: now, velocity: v * 127 },
+    deps.flowOpts
+  );
   deps.state.lastNoteTimeMs = now;
 
   const displayNames = deps.getDisplayNoteNames?.() ?? deps.config.NOTE_NAMES;
@@ -234,10 +230,12 @@ export function onMidiNoteOn(midiNum: number, velocity: number, deps: MidiHandle
   if (!deps.state.running) return;
 
   if (!deps.practice.enabled) {
-    if (deps.state.micSuspended) {
-      deps.state.sessionState = 'performing';
-      deps.state.sessionConfidence = Math.min(1, deps.state.sessionConfidence + 0.15);
-    }
+    // No session-state override here any more. This used to force
+    // `performing` and bump the confidence on every press, because the
+    // session-confidence machine never ran without a mic. It runs every frame
+    // now (updateGameStateWithoutMic), so a keyboard player goes through the
+    // same waiting → warm-up → performing progression — and, unlike before,
+    // falls back out of it when they stop.
     spawnMidiNoteVisuals(midiNum, velocity, synColor, deps);
 
     // Feed MIDI into quality histories so radar/quest reflect the
@@ -247,7 +245,6 @@ export function onMidiNoteOn(midiNum: number, velocity: number, deps: MidiHandle
     deps.applyOnsetToHistory(deps.state, now, velocity / 127, deps.qhOptsMidi);
 
     deps.applyOnsetPitch(deps.state, midiNum, deps.psOpts);
-    deps.state.lastSilenceStartMs = -1;
   }
 
   // Free-play also runs the glow effect; practice just shows the name

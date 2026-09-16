@@ -35,6 +35,11 @@ export interface InitialGameState {
   lastGoodNoteTimeMs: number;
   lastSilenceStartMs: number;
   lastNoisePenaltyMs: number;
+  /** Fractional idle combo decay carried between frames (see
+   *  `PianoCore.FlowState`). Declared here, not created on first use: the
+   *  shared reducer does `+=` on it, and an absent field turns into `NaN` —
+   *  after which the combo never decays again, silently. */
+  comboDecayAccum: number;
   /** Continuous-MIDI semitones of the most recent onset (mic or MIDI).
    *  Replaces legacy lastPitch (Hz) + lastMidiNoteForStability (int). */
   lastPitchSemitones: number | null;
@@ -174,6 +179,7 @@ export function createInitialGameState(): InitialGameState {
     lastGoodNoteTimeMs: 0,
     lastSilenceStartMs: -1,
     lastNoisePenaltyMs: 0,
+    comboDecayAccum: 0,
     lastPitchSemitones: null,
 
     useSynesthesiaMode: false,

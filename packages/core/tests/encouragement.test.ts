@@ -74,6 +74,8 @@ describe('initEncouragementState / resetEncouragementState', () => {
       currentTier: -1,
       lastShownTimeMs: 0,
       hideTimeMs: -1,
+      peakTier: -1,
+      peakShownTimeMs: 0,
     });
   });
 
@@ -164,6 +166,64 @@ describe('applyEncouragementEvent — comboChanged dropping', () => {
     const out = applyEncouragementEvent(s, { type: 'comboChanged', combo: 25, timeMs: 3000 }, OPTS);
     expect(out.kind).toBe('show');
     if (out.kind === 'show') expect(out.tier).toBe(3);
+  });
+});
+
+describe('applyEncouragementEvent — cooldown', () => {
+  // The shipped config has carried ENCOURAGEMENT_COOLDOWN_MS = 8000 since v9 and
+  // nothing read it, so every dip-and-return re-fired the banner AND its
+  // full-screen effect. A phrase break keeps 60 % of the combo, so that is what
+  // happens at every phrase, not in some corner case.
+  const CD: EncouragementOptions = { displayMs: 2500, cooldownMs: 8000 };
+  const combo = (s: EncouragementState, c: number, t: number) =>
+    applyEncouragementEvent(s, { type: 'comboChanged', combo: c, timeMs: t }, CD);
+
+  it('does not re-celebrate a tier it celebrated moments ago', () => {
+    const s = initEncouragementState();
+    expect(combo(s, 25, 1000).kind).toBe('show'); // tier 3
+    combo(s, 15, 3000); // phrase break → tier 2
+    expect(combo(s, 25, 5000)).toEqual({ kind: 'none' });
+    // …but it still KNOWS it is at tier 3, so it will not try again every frame.
+    expect(s.currentTier).toBe(3);
+  });
+
+  it('never mutes genuine progress — a higher rung always fires', () => {
+    // A fast run climbs 3 → 8 → 15 → 25 well inside 8 s; each is new.
+    const s = initEncouragementState();
+    const shown = [3, 8, 15, 25].map((c, i) => combo(s, c, 1000 + i * 700).kind);
+    expect(shown).toEqual(['show', 'show', 'show', 'show']);
+  });
+
+  it('a new high after a dip still fires inside the window', () => {
+    const s = initEncouragementState();
+    combo(s, 25, 1000); // tier 3
+    combo(s, 15, 2000); // dip
+    const out = combo(s, 40, 4000); // tier 4 — never shown before
+    expect(out.kind).toBe('show');
+    if (out.kind === 'show') expect(out.tier).toBe(4);
+  });
+
+  it('celebrates the same tier again once the window has passed', () => {
+    const s = initEncouragementState();
+    combo(s, 25, 1000);
+    combo(s, 15, 2000);
+    expect(combo(s, 25, 9001).kind).toBe('show');
+  });
+
+  it('measures the window from the celebration, not from a suppressed climb', () => {
+    const s = initEncouragementState();
+    combo(s, 25, 1000); // shown at 1000
+    combo(s, 15, 2000);
+    combo(s, 25, 6000); // suppressed — must NOT restart the window
+    combo(s, 15, 7000);
+    expect(combo(s, 25, 9001).kind).toBe('show');
+  });
+
+  it('reset forgets the window', () => {
+    const s = initEncouragementState();
+    combo(s, 25, 1000);
+    resetEncouragementState(s);
+    expect(combo(s, 25, 1500).kind).toBe('show');
   });
 });
 

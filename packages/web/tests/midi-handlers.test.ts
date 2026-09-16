@@ -5,15 +5,16 @@
 // Covers:
 //   • spawnMidiNoteVisuals — flow/combo bookkeeping, idle-gap reset,
 //     bestCombo pinning, low-flow wake-up flash, low-vs-high y placement.
-//   • onMidiNoteOn — running gate, mic-suspended → performing transition,
-//     reducer dispatch, glow effect (free-play only), practice gate skips
-//     spawn + reducers.
+//   • onMidiNoteOn — running gate, no session-state override (the session
+//     machine owns it now), reducer dispatch, glow effect (free-play only),
+//     practice gate skips spawn + reducers.
 //   • onMidiNoteOff — sustain-on routes to sustainedNotes, sustain-off
 //     evicts from activeNotes, practice always finalizes hold.
 //   • onMidiCC — only CC#64 drives sustain, on release every sustained
 //     key drops with a fade ripple + activeNotes cleanup.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { applyFlowEvent, type FlowMeterOptions } from '@piano/core';
 import {
   spawnMidiNoteVisuals,
   onMidiNoteOn,
@@ -26,18 +27,39 @@ import {
 
 // ─── helpers ────────────────────────────────────────────────────────
 
+/** The REAL shared flow rules run in these tests — the MIDI handler is only
+ *  correct if it agrees with the mic path, so a mock here would test nothing. */
+const FLOW_OPTS: FlowMeterOptions = {
+  comboWindowMs: 2000,
+  silenceDecayStartMs: 8000,
+  silenceHardDecayMs: 12000,
+  flowDecaySoft: 0.5,
+  flowDecayHard: 2,
+  comboDecayRate: 0.5,
+  flowNoisePenalty: 3,
+  comboNoisePenalty: 1,
+  noisePenaltyCooldownMs: 300,
+  flowGainBase: 8,
+  flowGainComboMax: 10,
+  flowGainStabilityMax: 20,
+  flowGainQualityMax: 25,
+  flowGainNonPerformingMultiplier: 1.5,
+  midiBaseFlowGain: 1,
+  midiVelocityFlowGain: 1.8,
+};
+
 function makeState(over: Partial<MidiHandlersState> = {}): MidiHandlersState {
   return {
     running: true,
     flow: 50,
     combo: 0,
     bestCombo: 0,
+    peakFlow: 50,
     lastNoteTimeMs: 0,
     lastGoodNoteTimeMs: 0,
     lastSilenceStartMs: 0,
-    micSuspended: false,
-    sessionState: 'waiting',
-    sessionConfidence: 0.2,
+    lastNoisePenaltyMs: 0,
+    comboDecayAccum: 0,
     noteShowTimeMs: 0,
     lastDetectedNote: '',
     inputFlash: 0, // WakeUpFlashState
@@ -134,13 +156,14 @@ function makeDeps(
     applyOnsetPitch: m.applyOnsetPitch,
     applyOnsetToWindow: m.applyOnsetToWindow,
     triggerWakeUpFlash: m.triggerWakeUpFlash,
+    applyFlowEvent,
+    flowOpts: FLOW_OPTS,
     qhOptsMidi: { tag: 'qhMidi' },
     psOpts: { tag: 'ps' },
     cwOpts: { tag: 'cw' },
     wufOpts: { triggerLevel: 0.2, halfLifeSec: 0.071 },
     config: {
       NOTE_NAMES: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
-      COMBO_WINDOW_MS: 2000,
     },
     getHeight: () => 600,
     ...over,
@@ -173,17 +196,34 @@ describe('spawnMidiNoteVisuals', () => {
     expect(state.flow).toBe(100);
   });
 
-  it('resets combo to 1 after idle gap > COMBO_WINDOW_MS', () => {
+  it('after a gap longer than the window, keeps 60 % — the SAME rule as the mic', () => {
+    // This used to reset to 1 here while the mic kept 60 %, so the combo on
+    // screen meant different things per input. Both now run applyFlowEvent.
     // Spy performance.now so the gap is deterministic across vitest's
-    // happy-dom (which can hand out very small numbers right after
-    // boot, making the bare `now - 1 >= 2000` flaky).
+    // happy-dom (which can hand out very small numbers right after boot).
     const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(10_000);
     const { deps, state } = makeDeps({
-      state: makeState({ combo: 8, lastGoodNoteTimeMs: 1 }),
+      state: makeState({ combo: 20, bestCombo: 20, lastGoodNoteTimeMs: 1 }),
     });
     spawnMidiNoteVisuals(60, 80, undefined, deps);
-    expect(state.combo).toBe(1);
+    expect(state.combo).toBe(12);
     nowSpy.mockRestore();
+  });
+
+  it('a first-ever note starts the combo at 1', () => {
+    const { deps, state } = makeDeps({ state: makeState({ combo: 0, lastGoodNoteTimeMs: 0 }) });
+    spawnMidiNoteVisuals(60, 80, undefined, deps);
+    expect(state.combo).toBe(1);
+  });
+
+  it('ends any silence and restarts the idle combo decay', () => {
+    const { deps, state } = makeDeps({
+      state: makeState({ lastSilenceStartMs: 4000, comboDecayAccum: 0.7 }),
+    });
+    spawnMidiNoteVisuals(60, 80, undefined, deps);
+    expect(state.lastSilenceStartMs).toBe(-1);
+    expect(state.comboDecayAccum).toBe(0);
+    expect(state.lastGoodNoteTimeMs).toBeGreaterThan(0);
   });
 
   it('continues combo within window', () => {
@@ -288,13 +328,16 @@ describe('onMidiNoteOn', () => {
     expect(midiState.sustainedNotes.has(60)).toBe(false);
   });
 
-  it('mic-suspended → switches sessionState to performing + bumps confidence', () => {
-    const { deps, state } = makeDeps({
-      state: makeState({ micSuspended: true, sessionState: 'waiting', sessionConfidence: 0.5 }),
-    });
+  it('does NOT force the session state — the session machine owns it now', () => {
+    // A press used to jump straight to `performing` and bump the confidence,
+    // because the session machine never ran without a mic. It runs every frame
+    // now (updateGameStateWithoutMic), and a forced state here would fight it —
+    // and would never let a keyboard player fall back out of `performing`.
+    const state = { ...makeState(), sessionState: 'waiting', sessionConfidence: 0.5 };
+    const { deps } = makeDeps({ state: state as MidiHandlersState });
     onMidiNoteOn(60, 100, deps);
-    expect(state.sessionState).toBe('performing');
-    expect(state.sessionConfidence).toBeCloseTo(0.65, 2);
+    expect(state.sessionState).toBe('waiting');
+    expect(state.sessionConfidence).toBe(0.5);
   });
 
   it('feeds reducers in free-play (history + pitch + chord-window)', () => {

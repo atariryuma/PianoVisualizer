@@ -22,7 +22,26 @@
 //
 // Returns isOnsetNote so the caller can route follow-up work
 // (intro-hint hide, mic-driven note spawn).
+//
+// ── Two entry points, one game (2026-09-16) ──────────────────────────
+//
+// Everything from step 5 on is not about the microphone at all: it is the
+// GAME — the gauge filling and draining, the stage, the quality read-out, the
+// "keep going" countdown, the HUD. It used to live only inside the mic reducer,
+// and the mic pipeline skips that reducer whenever the mic is suspended — which
+// is EVERY MIDI session. Measured in the built bundle with a keyboard attached:
+// 120 notes took the internal flow to 100 and the combo to 120 while the gauge
+// on screen stayed at 0, no encouragement fired, the stage stayed at 0, quality
+// read 0 % (so four quests could never complete), and after the player stopped
+// nothing decayed at all. Practice had hit the same wall once and been patched
+// locally in mic-pipeline; free play never was.
+//
+// So the game half is now shared: `updateGameState` (a mic frame) and
+// `updateGameStateWithoutMic` (a frame with no mic — MIDI, or nothing yet) both
+// end in the same flow / stage / HUD steps, and both drive the flow gauge
+// through `@piano/core`'s `applyFlowEvent` rather than a hand-copied reducer.
 
+import type { FlowEvent, FlowMeterOptions } from '@piano/core';
 import type { RecentPitchEntry } from './core-opts';
 
 /** Subset of `state` we read + write. */
@@ -53,7 +72,7 @@ export interface GameStateRef {
   lastNoisePenaltyMs: number;
   combo: number;
   bestCombo: number;
-  comboDecayAccum?: number;
+  comboDecayAccum: number;
   flow: number;
   peakFlow: number;
   qualityScore: number;
@@ -84,20 +103,10 @@ export interface GameStateTuning {
   goodNoteRms: number;
   onsetGateDurationMs: number;
   pitchMedianFrames: number;
-  comboWindowMs: number;
-  silenceDecayStartMs: number;
-  silenceHardDecayMs: number;
-  flowDecaySoft: number;
-  flowDecayHard: number;
-  comboDecayRate: number;
   noiseRmsThreshold: number;
-  noisePenaltyCooldownMs: number;
-  flowNoisePenalty: number;
-  comboNoisePenalty: number;
-  flowGainBase: number;
-  flowGainComboMax: number;
-  flowGainStabilityMax: number;
-  flowGainQualityMax: number;
+  /** The flow / combo rules — the SAME bag the MIDI handler uses, so the two
+   *  inputs cannot drift apart again. */
+  flow: FlowMeterOptions;
 }
 
 /** Pure reducers from @piano/core. */
@@ -109,6 +118,8 @@ export interface GameStateCore {
   stageForFlow(flow: number, stages: readonly unknown[]): number;
   classifyStageTransition(prev: number, next: number): 'up' | 'down' | 'same';
   pitchHzToSemitones(hz: number): number;
+  /** The one flow / combo reducer (PianoCore.applyFlowEvent). */
+  applyFlowEvent(state: unknown, event: FlowEvent, opts: FlowMeterOptions): void;
 }
 
 /** Pitch-detection result the reducer takes as input. */
@@ -154,7 +165,36 @@ export interface GameStateUpdateConfig {
   FLOW_GAIN_COMBO_MAX: number;
   FLOW_GAIN_STABILITY_MAX: number;
   FLOW_GAIN_QUALITY_MAX: number;
+  FLOW_GAIN_NON_PERFORMING_MULTIPLIER: number;
+  MIDI_FLOW_GAIN_BASE: number;
+  MIDI_FLOW_GAIN_VELOCITY: number;
   STAGES: readonly GameStateStageDef[];
+}
+
+/**
+ * The flow / combo rules, from CONFIG. The ONE place they are assembled —
+ * the mic reducer and the MIDI note handler both take this object, so a
+ * keyboard and a microphone can no longer mean different things by "combo".
+ */
+export function buildFlowMeterOptions(config: GameStateUpdateConfig): FlowMeterOptions {
+  return {
+    comboWindowMs: config.COMBO_WINDOW_MS,
+    silenceDecayStartMs: config.SILENCE_DECAY_START_MS,
+    silenceHardDecayMs: config.SILENCE_HARD_DECAY_MS,
+    flowDecaySoft: config.FLOW_DECAY_SOFT,
+    flowDecayHard: config.FLOW_DECAY_HARD,
+    comboDecayRate: config.COMBO_DECAY_RATE,
+    flowNoisePenalty: config.FLOW_NOISE_PENALTY,
+    comboNoisePenalty: config.COMBO_NOISE_PENALTY,
+    noisePenaltyCooldownMs: config.NOISE_PENALTY_COOLDOWN_MS,
+    flowGainBase: config.FLOW_GAIN_BASE,
+    flowGainComboMax: config.FLOW_GAIN_COMBO_MAX,
+    flowGainStabilityMax: config.FLOW_GAIN_STABILITY_MAX,
+    flowGainQualityMax: config.FLOW_GAIN_QUALITY_MAX,
+    flowGainNonPerformingMultiplier: config.FLOW_GAIN_NON_PERFORMING_MULTIPLIER,
+    midiBaseFlowGain: config.MIDI_FLOW_GAIN_BASE,
+    midiVelocityFlowGain: config.MIDI_FLOW_GAIN_VELOCITY,
+  };
 }
 
 /** Slim shell-side bag the wireup builder consumes. `state` /
@@ -201,20 +241,8 @@ export function buildGameStateUpdateDeps(refs: GameStateWireupShellRefs): GameSt
       confidenceThreshold: refs.config.CONFIDENCE_THRESHOLD,
       goodNoteRms: refs.config.GOOD_NOTE_RMS,
       onsetGateDurationMs: refs.config.ONSET_GATE_DURATION_MS,
-      comboWindowMs: refs.config.COMBO_WINDOW_MS,
-      silenceDecayStartMs: refs.config.SILENCE_DECAY_START_MS,
-      silenceHardDecayMs: refs.config.SILENCE_HARD_DECAY_MS,
-      flowDecaySoft: refs.config.FLOW_DECAY_SOFT,
-      flowDecayHard: refs.config.FLOW_DECAY_HARD,
-      comboDecayRate: refs.config.COMBO_DECAY_RATE,
       noiseRmsThreshold: refs.config.NOISE_RMS_THRESHOLD,
-      noisePenaltyCooldownMs: refs.config.NOISE_PENALTY_COOLDOWN_MS,
-      flowNoisePenalty: refs.config.FLOW_NOISE_PENALTY,
-      comboNoisePenalty: refs.config.COMBO_NOISE_PENALTY,
-      flowGainBase: refs.config.FLOW_GAIN_BASE,
-      flowGainComboMax: refs.config.FLOW_GAIN_COMBO_MAX,
-      flowGainStabilityMax: refs.config.FLOW_GAIN_STABILITY_MAX,
-      flowGainQualityMax: refs.config.FLOW_GAIN_QUALITY_MAX,
+      flow: buildFlowMeterOptions(refs.config),
     },
     stages: refs.config.STAGES,
     qhOptsMic: refs.qhOptsMic,
@@ -356,93 +384,44 @@ export function updateGameState(
   const isPerforming = s.sessionState === 'performing';
   const isWarmup = s.sessionState === 'warmup';
 
-  // 6. Combo / flow bookkeeping.
+  // 6. Combo / flow bookkeeping — through the shared core reducer, so the
+  //    rules here are exactly the rules the MIDI handler applies.
+  const flowOpts = t.flow;
   if (isOnsetNote && !midiDrivingHistories) {
     deps.core.applyOnsetPitch(s, deps.core.pitchHzToSemitones(pitch), deps.psOpts);
-    s.lastSilenceStartMs = -1;
-
-    if (isPerforming || isWarmup) {
-      if (s.lastGoodNoteTimeMs > 0 && timeMs - s.lastGoodNoteTimeMs < t.comboWindowMs) {
-        s.combo++;
-        if (s.combo > s.bestCombo) s.bestCombo = s.combo;
-      } else {
-        s.combo = Math.max(1, Math.floor(s.combo * 0.6));
-      }
-    }
-    s.lastGoodNoteTimeMs = timeMs;
+    deps.core.applyFlowEvent(
+      s,
+      { type: 'goodOnset', timeMs, isPerformingOrWarmup: isPerforming || isWarmup },
+      flowOpts
+    );
   } else if (isActivePlay) {
-    s.lastSilenceStartMs = -1;
     deps.core.applyActivePlay(s, deps.psOpts);
   } else {
-    // Idle decay (frame-rate independent via dtSec).
     deps.core.decayStability(s, dtSec, deps.psOpts);
-
-    if (s.lastSilenceStartMs < 0) s.lastSilenceStartMs = timeMs;
-    const silenceDuration = timeMs - s.lastSilenceStartMs;
-
-    if (silenceDuration > t.silenceDecayStartMs) {
-      // Slow decay start.
-      s.flow = Math.max(0, s.flow - t.flowDecaySoft * dtSec);
-      if (silenceDuration > t.silenceHardDecayMs) {
-        // Hard decay later. Combo is integer, so accumulate
-        // fractional decay across frames — Math.ceil rounds up
-        // every frame and combo would drop at framerate
-        // (144/sec on 144Hz vs 60/sec on 60Hz). The accumulator
-        // keeps drops/sec constant.
-        s.flow = Math.max(0, s.flow - t.flowDecayHard * dtSec);
-        s.comboDecayAccum = (s.comboDecayAccum || 0) + t.comboDecayRate * 60 * dtSec;
-        if (s.comboDecayAccum >= 1) {
-          const drops = Math.floor(s.comboDecayAccum);
-          s.combo = Math.max(0, s.combo - drops);
-          s.comboDecayAccum -= drops;
-        }
-      }
-    }
-
-    if (rms > t.noiseRmsThreshold && !isActivePlay) {
-      if (timeMs - s.lastNoisePenaltyMs > t.noisePenaltyCooldownMs) {
-        s.flow = Math.max(0, s.flow - t.flowNoisePenalty * dtSec);
-        s.combo = Math.max(0, s.combo - t.comboNoisePenalty);
-        s.lastNoisePenaltyMs = timeMs;
-      }
+    deps.core.applyFlowEvent(s, { type: 'idleTick', timeMs, dtSec }, flowOpts);
+    if (rms > t.noiseRmsThreshold) {
+      deps.core.applyFlowEvent(s, { type: 'noiseTick', timeMs, dtSec }, flowOpts);
     }
   }
 
   if (isActivePlay) {
-    // v10: Always allow flow gain regardless of session state.
-    const comboFactor = Math.min(s.combo / 50, 1);
-    const qualityFactor = s.qualityScore;
-    let flowGain =
-      (t.flowGainBase +
-        comboFactor * t.flowGainComboMax +
-        s.pitchStability * t.flowGainStabilityMax +
-        qualityFactor * t.flowGainQualityMax) *
-      dtSec;
-    // Boost gain in warmup/waiting to get started faster.
-    if (s.sessionState !== 'performing') flowGain *= 1.5;
-    s.flow = Math.min(100, s.flow + flowGain);
-    if (s.flow > s.peakFlow) s.peakFlow = s.flow;
+    // v10: Always allow flow gain regardless of session state (the core
+    // reducer boosts it outside `performing` to get started faster).
+    deps.core.applyFlowEvent(
+      s,
+      {
+        type: 'activeTick',
+        timeMs,
+        dtSec,
+        isPerforming,
+        pitchStability: s.pitchStability,
+        qualityScore: s.qualityScore,
+      },
+      flowOpts
+    );
   }
 
-  // 7. Stage transitions.
-  const prevStage = s.currentStage;
-  const newStage = deps.core.stageForFlow(s.flow, deps.stages);
-  if (newStage !== prevStage) {
-    s.currentStage = newStage;
-    if (deps.stageLabelEl) {
-      deps.stageLabelEl.textContent = deps.stageLabelText(deps.stages[newStage]);
-      deps.stageLabelEl.classList.toggle('visible', newStage > 0);
-    }
-    if (deps.core.classifyStageTransition(prevStage, newStage) === 'up' && newStage > 0) {
-      const screen = deps.getScreen();
-      for (let i = 0; i < 40; i++) {
-        deps.spawnBurst(Math.random() * screen.W, Math.random() * screen.H, 3, 0.9);
-      }
-      deps.effectStarShower(6);
-    }
-  }
-
-  // 8. Periodic per-frame stats — only when remote logging is on.
+  // 7-8. Periodic per-frame stats (mic-only numbers).
   if (deps.remoteLogEnabled) {
     if (rms > s.debugMaxRms) s.debugMaxRms = rms;
     if (conf > s.debugMaxConf) s.debugMaxConf = conf;
@@ -463,8 +442,78 @@ export function updateGameState(
     }
   }
 
-  // 9. HUD.
-  deps.updateHUD(timeMs);
+  // 9-10. Stage + HUD — the part every input shares.
+  finishGameFrame(timeMs, deps);
 
   return isOnsetNote;
+}
+
+/** What a frame with no microphone knows about the player. */
+export interface NoMicFrame {
+  /** A key is down, or the sustain pedal is holding one. */
+  keyHeld: boolean;
+}
+
+/**
+ * The game frame when the microphone is NOT running — a MIDI session, or a
+ * player with no working input yet.
+ *
+ * "Is the player making sound?" is answered the way the mic answers it: the
+ * mic keeps its gate open for `onsetGateDurationMs` after an onset, so here a
+ * struck note counts for the same span, and a held key or pedal counts for as
+ * long as it is held. That one boolean feeds the session-confidence machine
+ * (the warm-up → performing progression and the "keep going" countdown) and
+ * decides between holding the silence clock and letting it run.
+ *
+ * No continuous flow gain here: a MIDI note pays its gain when it is struck
+ * (`midiNote`), and paying it again every frame it is held would make holding
+ * a key worth more than playing.
+ */
+export function updateGameStateWithoutMic(
+  timeMs: number,
+  dt: number,
+  frame: NoMicFrame,
+  deps: GameStateUpdateDeps
+): void {
+  const s = deps.state;
+  const t = deps.tuning;
+  const dtSec = dt / 1000;
+  const recentlyStruck =
+    s.lastGoodNoteTimeMs > 0 && timeMs - s.lastGoodNoteTimeMs < t.onsetGateDurationMs;
+  const sounding = frame.keyHeld || recentlyStruck;
+
+  deps.updateSessionConfidence(timeMs, sounding);
+  deps.updateQualityScores(timeMs);
+
+  if (sounding) {
+    deps.core.applyFlowEvent(s, { type: 'sustainTick', timeMs }, t.flow);
+  } else {
+    deps.core.decayStability(s, dtSec, deps.psOpts);
+    deps.core.applyFlowEvent(s, { type: 'idleTick', timeMs, dtSec }, t.flow);
+  }
+
+  finishGameFrame(timeMs, deps);
+}
+
+/** Stage transition + HUD — identical for every input. */
+function finishGameFrame(timeMs: number, deps: GameStateUpdateDeps): void {
+  const s = deps.state;
+  const prevStage = s.currentStage;
+  const newStage = deps.core.stageForFlow(s.flow, deps.stages);
+  if (newStage !== prevStage) {
+    s.currentStage = newStage;
+    if (deps.stageLabelEl) {
+      deps.stageLabelEl.textContent = deps.stageLabelText(deps.stages[newStage]);
+      deps.stageLabelEl.classList.toggle('visible', newStage > 0);
+    }
+    if (deps.core.classifyStageTransition(prevStage, newStage) === 'up' && newStage > 0) {
+      const screen = deps.getScreen();
+      for (let i = 0; i < 40; i++) {
+        deps.spawnBurst(Math.random() * screen.W, Math.random() * screen.H, 3, 0.9);
+      }
+      deps.effectStarShower(6);
+    }
+  }
+
+  deps.updateHUD(timeMs);
 }

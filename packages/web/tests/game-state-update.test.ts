@@ -6,8 +6,11 @@
 // onset routing through reducers).
 
 import { describe, it, expect, vi } from 'vitest';
+import { applyFlowEvent } from '@piano/core';
 import {
   updateGameState,
+  updateGameStateWithoutMic,
+  buildFlowMeterOptions,
   type GameStateUpdateDeps,
   type GameStateRef,
   type GameStateOnsetState,
@@ -21,20 +24,27 @@ const TUNING: Omit<GameStateTuning, 'pitchMedianFrames'> = {
   confidenceThreshold: 0.7,
   goodNoteRms: 0.005,
   onsetGateDurationMs: 150,
-  comboWindowMs: 2000,
-  silenceDecayStartMs: 3000,
-  silenceHardDecayMs: 8000,
-  flowDecaySoft: 5,
-  flowDecayHard: 15,
-  comboDecayRate: 0.5,
   noiseRmsThreshold: 0.05,
-  noisePenaltyCooldownMs: 500,
-  flowNoisePenalty: 8,
-  comboNoisePenalty: 2,
-  flowGainBase: 4,
-  flowGainComboMax: 8,
-  flowGainStabilityMax: 6,
-  flowGainQualityMax: 4,
+  // The REAL shared reducer runs in these tests (see `core` below), so these
+  // are the rules under test — not a mock's.
+  flow: {
+    comboWindowMs: 2000,
+    silenceDecayStartMs: 3000,
+    silenceHardDecayMs: 8000,
+    flowDecaySoft: 5,
+    flowDecayHard: 15,
+    comboDecayRate: 0.5,
+    noisePenaltyCooldownMs: 500,
+    flowNoisePenalty: 8,
+    comboNoisePenalty: 2,
+    flowGainBase: 4,
+    flowGainComboMax: 8,
+    flowGainStabilityMax: 6,
+    flowGainQualityMax: 4,
+    flowGainNonPerformingMultiplier: 1.5,
+    midiBaseFlowGain: 1,
+    midiVelocityFlowGain: 1.8,
+  },
 };
 
 function makeState(over: Partial<GameStateRef> = {}): GameStateRef {
@@ -104,6 +114,7 @@ function makeFixture(over: { state?: Partial<GameStateRef>; onset?: GameStateOns
       stageForFlow: vi.fn(() => stageReturn),
       classifyStageTransition: (prev, next) => (next > prev ? 'up' : next < prev ? 'down' : 'same'),
       pitchHzToSemitones: (hz) => Math.round(12 * Math.log2(hz / 440) + 69),
+      applyFlowEvent: applyFlowEvent as GameStateUpdateDeps['core']['applyFlowEvent'],
     },
     updateMultiFeatureOnset,
     updateSessionConfidence,
@@ -314,5 +325,100 @@ describe('updateGameState — HUD', () => {
     const fx = makeFixture();
     updateGameState(0, 16, { pitch: 0, conf: 0, rms: 0 }, fx.deps);
     expect(fx.updateHUD).toHaveBeenCalledWith(0);
+  });
+});
+
+// ─── the game frame without a microphone ─────────────────────────────
+//
+// A MIDI session suspends the mic, and the mic pipeline used to skip the
+// whole reducer when it did — so the gauge, the encouragement, the stage, the
+// quality read-out and every decay simply stopped for keyboard players. The
+// built bundle showed internal flow 100 / combo 120 with the gauge at 0. These
+// pin the frame that now runs instead.
+
+describe('updateGameStateWithoutMic', () => {
+  const FRAME = 16;
+
+  it('paints the HUD and resolves the stage — the part that never reached the screen', () => {
+    const f = makeFixture({ state: { flow: 70, currentStage: 0 } });
+    f.setStage(2);
+    updateGameStateWithoutMic(1000, FRAME, { keyHeld: true }, f.deps);
+    expect(f.updateHUD).toHaveBeenCalledWith(1000);
+    expect(f.state.currentStage).toBe(2);
+    // …with the celebration a mic player gets for the same climb.
+    expect(f.effectStarShower).toHaveBeenCalled();
+    expect(f.updateQualityScores).toHaveBeenCalledWith(1000);
+  });
+
+  it('decays the gauge after the player stops — it used to stay at 100 forever', () => {
+    const f = makeFixture({ state: { flow: 100, combo: 40, lastGoodNoteTimeMs: 1000 } });
+    // Play stopped at t=1000. Walk the clock well past the hard-decay point.
+    for (let t = 1200; t <= 20000; t += FRAME) {
+      updateGameStateWithoutMic(t, FRAME, { keyHeld: false }, f.deps);
+    }
+    expect(f.state.flow).toBeLessThan(100);
+    expect(f.state.combo).toBeLessThan(40);
+  });
+
+  it('a HELD key is still music — no decay while a chord rings', () => {
+    const f = makeFixture({ state: { flow: 80, combo: 12, lastGoodNoteTimeMs: 1000 } });
+    for (let t = 1200; t <= 20000; t += FRAME) {
+      updateGameStateWithoutMic(t, FRAME, { keyHeld: true }, f.deps);
+    }
+    expect(f.state.flow).toBe(80);
+    expect(f.state.combo).toBe(12);
+  });
+
+  it('feeds the session machine the same "is the player making sound" the mic does', () => {
+    // A strike counts for the mic's onset-gate span; after that only a held key does.
+    const f = makeFixture({ state: { lastGoodNoteTimeMs: 1000 } });
+    updateGameStateWithoutMic(1100, FRAME, { keyHeld: false }, f.deps); // inside the 150 ms gate
+    updateGameStateWithoutMic(1400, FRAME, { keyHeld: false }, f.deps); // past it
+    updateGameStateWithoutMic(1500, FRAME, { keyHeld: true }, f.deps); // held
+    expect(f.updateSessionConfidence.mock.calls.map((c) => c[1])).toEqual([true, false, true]);
+  });
+
+  it('adds NO continuous gain — a held key must not out-earn playing', () => {
+    const f = makeFixture({ state: { flow: 20, lastGoodNoteTimeMs: 1000 } });
+    for (let t = 1000; t <= 10000; t += FRAME) {
+      updateGameStateWithoutMic(t, FRAME, { keyHeld: true }, f.deps);
+    }
+    expect(f.state.flow).toBe(20);
+  });
+
+  it('never touches the mic-only analysis', () => {
+    const f = makeFixture();
+    updateGameStateWithoutMic(1000, FRAME, { keyHeld: false }, f.deps);
+    expect(f.updateMultiFeatureOnset).not.toHaveBeenCalled();
+    expect(f.deps.core.applyOnsetToHistory).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildFlowMeterOptions', () => {
+  it('maps every rule from CONFIG — one definition for the mic and the keyboard', () => {
+    const opts = buildFlowMeterOptions({
+      COMBO_WINDOW_MS: 3000,
+      SILENCE_DECAY_START_MS: 8000,
+      SILENCE_HARD_DECAY_MS: 12000,
+      FLOW_DECAY_SOFT: 0.5,
+      FLOW_DECAY_HARD: 2,
+      COMBO_DECAY_RATE: 0.5,
+      FLOW_NOISE_PENALTY: 3,
+      COMBO_NOISE_PENALTY: 1,
+      NOISE_PENALTY_COOLDOWN_MS: 300,
+      FLOW_GAIN_BASE: 8,
+      FLOW_GAIN_COMBO_MAX: 10,
+      FLOW_GAIN_STABILITY_MAX: 20,
+      FLOW_GAIN_QUALITY_MAX: 25,
+      FLOW_GAIN_NON_PERFORMING_MULTIPLIER: 1.5,
+      MIDI_FLOW_GAIN_BASE: 1,
+      MIDI_FLOW_GAIN_VELOCITY: 1.8,
+    } as Parameters<typeof buildFlowMeterOptions>[0]);
+    // Every field is a real number — a missing mapping would be `undefined`
+    // and quietly turn the reducer's arithmetic into NaN.
+    for (const [k, v] of Object.entries(opts)) {
+      expect(Number.isFinite(v), k).toBe(true);
+    }
+    expect(Object.keys(opts)).toHaveLength(16);
   });
 });

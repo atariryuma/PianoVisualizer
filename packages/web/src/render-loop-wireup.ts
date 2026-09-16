@@ -87,6 +87,7 @@ export interface RenderLoopWireupDeps {
   detectPitchYIN: (...args: any[]) => any;
   updateAGC: (timeMs: number, postGainRms: number) => void;
   updateGameState: (...args: any[]) => any;
+  updateGameStateWithoutMic: (timeMs: number, dt: number, frame: { keyHeld: boolean }) => void;
   hideIntroHint: () => void;
   /** updatePractice is forward-declared after the wireup. */
   getUpdatePractice: () => (...args: any[]) => any;
@@ -167,6 +168,7 @@ export function wireRenderLoop(deps: RenderLoopWireupDeps): { tick: (timeMs: num
           detectPitchYIN: deps.detectPitchYIN,
           updateAGC: deps.updateAGC,
           updateGameState: deps.updateGameState,
+          updateGameStateWithoutMic: deps.updateGameStateWithoutMic,
           state: deps.state,
           practice: deps.getPractice(),
           isMidiActive: deps.isMidiActive,

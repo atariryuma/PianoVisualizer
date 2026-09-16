@@ -162,6 +162,13 @@ export interface PianoConfig {
   FLOW_DECAY_HARD: number;
   NOISE_RMS_THRESHOLD: number;
   FLOW_NOISE_PENALTY: number;
+  /** Flow-gain multiplier before the session is `performing` (to get a new
+   *  player started faster). Was a literal in the mic reducer. */
+  FLOW_GAIN_NON_PERFORMING_MULTIPLIER: number;
+  /** Flow a MIDI note adds, plus a per-velocity part. Were literals in the
+   *  MIDI handler (1.0 + v × 1.8). */
+  MIDI_FLOW_GAIN_BASE: number;
+  MIDI_FLOW_GAIN_VELOCITY: number;
   COMBO_DECAY_RATE: number;
   COMBO_NOISE_PENALTY: number;
 
@@ -424,6 +431,9 @@ export function createPianoConfig(): PianoConfig {
     FLOW_DECAY_HARD: 2.0, // v10: slower hard decay (was 8.0)
     NOISE_RMS_THRESHOLD: 0.05,
     FLOW_NOISE_PENALTY: 3,
+    FLOW_GAIN_NON_PERFORMING_MULTIPLIER: 1.5,
+    MIDI_FLOW_GAIN_BASE: 1.0,
+    MIDI_FLOW_GAIN_VELOCITY: 1.8,
     COMBO_DECAY_RATE: 0.5,
     COMBO_NOISE_PENALTY: 1,
 

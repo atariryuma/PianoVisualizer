@@ -35,6 +35,10 @@ export interface EncouragementState {
   lastShownTimeMs: number;
   /** Wall-clock ms when the active message should hide; -1 if nothing showing. */
   hideTimeMs: number;
+  /** Highest tier celebrated inside the current cooldown window, or -1. */
+  peakTier: number;
+  /** Wall-clock ms `peakTier` was celebrated. */
+  peakShownTimeMs: number;
 }
 
 export interface EncouragementOptions {
@@ -42,6 +46,20 @@ export interface EncouragementOptions {
   tiers?: readonly EncouragementTier[];
   /** How long the message stays visible. */
   displayMs: number;
+  /**
+   * How long a tier that has just been celebrated stays "spent".
+   *
+   * Without it, a combo that dips below a threshold and climbs back fires the
+   * same banner — and the same full-screen effect — again, every time. That is
+   * not an edge case: a phrase break keeps 60 % of the combo, so every phrase
+   * re-crosses the rungs it had already crossed. The config has shipped an
+   * 8 s value for this since v9 and nothing ever read it.
+   *
+   * It suppresses REPEATS only. A tier higher than anything celebrated in the
+   * window always fires, so a fast run up the ladder (3 → 8 → 15 → 25 inside a
+   * few seconds) is still celebrated rung by rung. Omitted / 0 = no cooldown.
+   */
+  cooldownMs?: number;
 }
 
 export type EncouragementEvent =
@@ -64,6 +82,8 @@ export function initEncouragementState(): EncouragementState {
     currentTier: -1,
     lastShownTimeMs: 0,
     hideTimeMs: -1,
+    peakTier: -1,
+    peakShownTimeMs: 0,
   };
 }
 
@@ -72,6 +92,8 @@ export function resetEncouragementState(state: EncouragementState): void {
   state.currentTier = -1;
   state.lastShownTimeMs = 0;
   state.hideTimeMs = -1;
+  state.peakTier = -1;
+  state.peakShownTimeMs = 0;
 }
 
 /**
@@ -93,11 +115,11 @@ export function pickTier(combo: number, tiers: readonly EncouragementTier[]): nu
  * - `{ kind: 'none' }` — no UI change.
  *
  * Behavior:
- * - On `comboChanged`: only fires `show` when the picked tier is strictly
- *   higher than `currentTier`. Same or lower picked tier within cooldown ms
- *   is suppressed (no flicker on combo drift around a threshold). When picked
- *   tier is lower than currentTier, `currentTier` follows it down without
- *   firing — combo dropped, so the next ladder rung is fresh again.
+ * - On `comboChanged`: fires `show` when the picked tier is strictly higher
+ *   than `currentTier` AND it is new within the cooldown — higher than any tier
+ *   celebrated in the last `cooldownMs`, or the window has lapsed. A suppressed
+ *   climb still moves `currentTier` up, silently. When the picked tier is lower
+ *   than `currentTier`, `currentTier` follows it down without firing.
  * - On `hideTick`: fires `hide` once, exactly when `hideTimeMs` first elapses;
  *   subsequent ticks return `none` until another show happens.
  */
@@ -112,8 +134,16 @@ export function applyEncouragementEvent(
     const bestTier = pickTier(event.combo, tiers);
 
     if (bestTier > state.currentTier && bestTier >= 0) {
-      const tier = tiers[bestTier];
       state.currentTier = bestTier;
+      const cooldown = opts.cooldownMs ?? 0;
+      const windowLapsed = event.timeMs - state.peakShownTimeMs >= cooldown;
+      if (bestTier <= state.peakTier && !windowLapsed) {
+        // Already celebrated moments ago — a dip-and-return, not progress.
+        return { kind: 'none' };
+      }
+      const tier = tiers[bestTier];
+      state.peakTier = bestTier;
+      state.peakShownTimeMs = event.timeMs;
       state.lastShownTimeMs = event.timeMs;
       state.hideTimeMs = event.timeMs + opts.displayMs;
       return {

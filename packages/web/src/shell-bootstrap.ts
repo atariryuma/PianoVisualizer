@@ -288,8 +288,14 @@ export function boot(): void {
     getMidiInput: () => midiInput,
     isMidiActive: () => _midi.isMidiActive(),
   });
-  const { updateQuestState, updateAGC, updateGameState, updateDebugOverlay, getEnergy } =
-    _gameUpdate;
+  const {
+    updateQuestState,
+    updateAGC,
+    updateGameState,
+    updateGameStateWithoutMic,
+    updateDebugOverlay,
+    getEnergy,
+  } = _gameUpdate;
 
   // ── Main loop — moved to packages/web/src/shell-render-loop.ts (batch 112).
   const _rl = ShellRenderLoop.createShellRenderLoop({
@@ -314,6 +320,7 @@ export function boot(): void {
     freeplayMoments: _freeplayMoments,
     updateAGC,
     updateGameState,
+    updateGameStateWithoutMic,
     updateQuestState,
     updatePlayTime,
     updateDebugOverlay,

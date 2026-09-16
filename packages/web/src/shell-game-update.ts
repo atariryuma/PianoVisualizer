@@ -82,6 +82,14 @@ export interface ShellGameUpdate {
   updateAGC: (timeMs: number, postGainRms: number) => void;
   /** Combined per-frame reducer (combo + flow + encouragement + stage). */
   updateGameState: (timeMs: number, dt: number, pitchResult: any) => any;
+  /** The same game frame when the mic is not running (MIDI, or no input). */
+  updateGameStateWithoutMic: (
+    timeMs: number,
+    dt: number,
+    frame: GameStateUpdate.NoMicFrame
+  ) => void;
+  /** The flow / combo rules the MIDI handler must share with the mic path. */
+  flowOpts: PianoCore.FlowMeterOptions;
   /** Encouragement banner + flow gauge. */
   updateHUD: (timeMs: number) => void;
   /** Debug overlay (1Hz throttled). */
@@ -109,6 +117,9 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
   const encOpts = {
     tiers: deps.config.ENCOURAGEMENT_TIERS,
     displayMs: deps.config.ENCOURAGEMENT_DISPLAY_MS,
+    // Shipped since v9 and never read — every dip-and-return re-fired the
+    // banner and its full-screen effect. See EncouragementOptions.cooldownMs.
+    cooldownMs: deps.config.ENCOURAGEMENT_COOLDOWN_MS,
   };
   const questState = PianoCore.initQuestTrackerState();
   questState.completedIds = state.completedQuests;
@@ -271,6 +282,7 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
       stageForFlow: PianoCore.stageForFlow,
       classifyStageTransition: PianoCore.classifyStageTransition,
       pitchHzToSemitones: PianoCore.pitchHzToSemitones,
+      applyFlowEvent: PianoCore.applyFlowEvent,
     } as any,
     updateMultiFeatureOnset,
     updateSessionConfidence,
@@ -286,6 +298,11 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
   } as any);
   const updateGameState = (timeMs: number, dt: number, pitchResult: any) =>
     GameStateUpdate.updateGameState(timeMs, dt, pitchResult, _gameStateDeps);
+  const updateGameStateWithoutMic = (
+    timeMs: number,
+    dt: number,
+    frame: GameStateUpdate.NoMicFrame
+  ) => GameStateUpdate.updateGameStateWithoutMic(timeMs, dt, frame, _gameStateDeps);
 
   // ── Energy (FFT slice over piano frequency range) ──
   const getEnergy = (): number => {
@@ -309,6 +326,8 @@ export function createShellGameUpdate(deps: ShellGameUpdateDeps): ShellGameUpdat
     updateQualityScores,
     updateAGC,
     updateGameState,
+    updateGameStateWithoutMic,
+    flowOpts: GameStateUpdate.buildFlowMeterOptions(deps.config),
     updateHUD,
     updateDebugOverlay,
     getEnergy,
