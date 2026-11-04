@@ -1722,6 +1722,13 @@ The native MIDI plugin lives at
   Android** (`native-midi-polyfill.ts` only wires `showBleMidiPairing` for iOS;
   Android would need scanBle/connectBle + a device-picker UI). Treat Android as
   a future milestone, not a shippable target.
+- **UIScene life cycle is mandatory (2026-11-05).** An app built with the iOS 27
+  SDK and no `UIApplicationSceneManifest` is killed at launch on iOS 27
+  ("UIScene life cycle is required"), yet it builds cleanly and still runs on
+  iOS 26, so only opening it on iOS 27 shows the failure.
+  [`SceneDelegate.swift`](packages/mobile/ios/App/App/SceneDelegate.swift) +
+  `Info.plist` fix it, pinned by `native-scene-lifecycle.test.ts`. A "builds on
+  Xcode N" claim is not proof: launch it on that SDK's newest runtime too.
 - **No background audio.** This is a foreground-only practice app;
   `UIBackgroundModes` was intentionally removed from `Info.plist` (it was
   declared but never backed by an `AVAudioSession` setup). If lock-screen /
