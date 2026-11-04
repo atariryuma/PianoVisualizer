@@ -86,6 +86,22 @@ export function recordPracticeDay(state: StreakState, todayKey: string, opts: St
   }
 }
 
+/** Longest run of consecutive days anywhere in an ascending day-key list. Cloud
+ *  sync needs this rather than the tail count: days from two devices can join
+ *  into a run in the middle of the list that neither device saw on its own. */
+export function longestStreakRun(days: readonly string[]): number {
+  let longest = days.length > 0 ? 1 : 0;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const cur = new Date(days[i] + 'T00:00:00');
+    const prev = new Date(days[i - 1] + 'T00:00:00');
+    const diff = Math.round((cur.valueOf() - prev.valueOf()) / 86400000);
+    run = diff === 1 ? run + 1 : 1;
+    if (run > longest) longest = run;
+  }
+  return longest;
+}
+
 /** Walk backward from the most recent recorded day, counting consecutive
  *  days. Returns 0 when the array is empty, 1 when only one day, and the
  *  longest tail of consecutive integer day-diffs otherwise. */

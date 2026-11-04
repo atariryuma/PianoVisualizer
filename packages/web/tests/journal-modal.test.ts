@@ -220,4 +220,22 @@ describe('createJournalModal — J5 calendar day detail', () => {
     expect(html).toContain('feA1');
     expect(html).toContain('jr-cal-detail');
   });
+
+  it('does not show a raw id for a song whose score is not on this device', () => {
+    // Cloud sync carries progress but not score files.
+    const now = Date.now();
+    const deps = makeDeps({
+      getProgress: () =>
+        ({
+          streakDays: [],
+          streakCount: 0,
+          earnedStamps: {},
+          songs: {
+            usr_elsewhere: songProgressWithHistory([{ d: now, a: 70, t: 60, s: 2 }]),
+          },
+        }) as never,
+    });
+    expect(() => createJournalModal(deps).render()).not.toThrow();
+    expect(deps.dom.journalActivityList.innerHTML).not.toContain('usr_elsewhere');
+  });
 });

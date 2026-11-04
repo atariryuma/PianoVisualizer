@@ -1659,6 +1659,41 @@ their own score (their responsibility; stored on-device only). See
   `packages/web/src/shell-user-library.ts`, and
   `packages/web/src/shell-add-song.ts`.
 
+## Cloud sync (2026-11-04)
+
+Optional sync of progress + device-independent prefs to the player's OWN cloud.
+We run no server and hold no account, which is what keeps "we collect nothing"
+true. Google Drive (`drive.appdata` only) exists; iCloud is deliberately not
+written until the paid Developer Program, because a free team cannot sign that
+entitlement and it could not be tested.
+
+- **No conflict UI, by construction.** `mergeProgress`
+  ([`progress-merge.ts`](packages/core/src/state/progress-merge.ts)) is a join:
+  commutative, associative, idempotent, property-tested. Keep it that way. Any
+  new field in `PracticeProgress` needs a rule there. A lost write heals on the
+  next sync, so the engine does not rely on conditional writes.
+- **Deletion is final.** A song in `deletedSongs` is dropped unconditionally.
+  "Keep it if played after the deletion" was tried and failed the associativity
+  test. A JSON library import that reuses a deleted id gets a fresh id
+  (`isSongIdRetired`).
+- **Minutes are a per-device ledger**, not a value: `max` loses a shared day and
+  adding double-counts on every sync. First sync treats what the cloud has as
+  already counted, so a restored backup or reconnect cannot double-count.
+- **`cloud-sync.ts` never applies during a section**, and rechecks after the
+  network read because a section can start during it. Merge + apply is
+  synchronous.
+- **Prefs are an accept-list** (`SYNCED_PREF_KEYS`). Anything describing the
+  device (audio offset, volumes, input source) stays out.
+- **Tokens never enter the WebView on iOS**:
+  [`GoogleDriveBridge.swift`](packages/plugins/capacitor-piano-midi/ios/Plugin/GoogleDriveBridge.swift)
+  does sign-in and HTTP, and JS sees only status + body. It lives in the
+  existing plugin to avoid another pod. Adding a Swift file needs `pod install`.
+- **Client IDs are in [`cloud-config.ts`](packages/web/src/cloud-config.ts).**
+  Empty hides the option. While the OAuth app is in Testing, only listed test
+  users can sign in and sign-in expires after 7 days (shows as "sign in again").
+- **Not synced: score files.** Progress for a score missing on this device is
+  kept but not listed by id in the journal.
+
 ## Native (Capacitor) plans
 
 See [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md) for the App Store / Play Store

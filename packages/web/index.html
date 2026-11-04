@@ -409,6 +409,24 @@
             />
           </div>
           <div class="settings-help" id="backupStatus" aria-live="polite"></div>
+          <!-- Cloud sync: progress + device-independent settings, in the player's
+               own cloud. Opt-in; nothing touches the network until connected. -->
+          <div class="settings-row">
+            <button class="settings-btn" id="cloudConnectBtn">Connect Google Drive</button>
+            <button class="settings-btn" id="cloudSyncNowBtn">
+              🔄 <span data-i18n="cloudSyncNow">Sync now</span>
+            </button>
+            <button class="settings-btn" id="cloudDisconnectBtn">
+              <span data-i18n="cloudDisconnect">Disconnect</span>
+            </button>
+            <button class="settings-btn danger" id="cloudDeleteBtn">🗑 Delete cloud copy</button>
+          </div>
+          <div class="settings-help" id="cloudStatus" aria-live="polite"></div>
+          <div class="settings-help" data-i18n="cloudHelp">
+            Stars, stamps and settings are saved in your own Google Drive. Added scores are not
+            synced. If another device is still connected, deleting the cloud copy is undone by its
+            next sync.
+          </div>
           <!-- About / privacy reassurance — static, no external link (a link
                would need a parental gate under App Store Kids rules; the full
                policy ships in docs/PRIVACY.md and the store listing). Version

@@ -484,6 +484,29 @@ describe('createUserSongsStore — rename', () => {
 });
 
 describe('createUserSongsStore — remove', () => {
+  it('records the deletion so cloud sync cannot bring the song back', async () => {
+    const fx = makeFixture();
+    const progress = fx.practice.progress as {
+      songs: Record<string, unknown>;
+      deletedSongs?: Record<string, number>;
+    };
+    progress.songs['r1'] = { sections: {} };
+    await fx.store.remove('r1');
+    expect(progress.songs['r1']).toBeUndefined();
+    expect(progress.deletedSongs?.['r1']).toEqual(expect.any(Number));
+    expect(fx.savePracticeProgress).toHaveBeenCalled();
+  });
+
+  it('records the deletion even when this device has no progress for the song', async () => {
+    const fx = makeFixture();
+    await fx.store.remove('never_played');
+    expect(
+      (fx.practice.progress as { deletedSongs?: Record<string, number> }).deletedSongs?.[
+        'never_played'
+      ]
+    ).toEqual(expect.any(Number));
+  });
+
   it('deletes from IDB, revokes blob URLs, drops the SONGS entry', async () => {
     const fx = makeFixture();
     fx.songs['r1'] = {
@@ -543,9 +566,9 @@ describe('createUserSongsStore — remove', () => {
     expect(fx.savePracticeProgress).toHaveBeenCalled();
   });
 
-  it('skips savePracticeProgress when no per-song progress row exists', async () => {
+  it('skips savePracticeProgress when progress has not loaded', async () => {
     const fx = makeFixture();
-    fx.practice.progress = { songs: {} };
+    fx.practice.progress = undefined;
     await fx.store.remove('r1');
     expect(fx.savePracticeProgress).not.toHaveBeenCalled();
   });

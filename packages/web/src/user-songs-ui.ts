@@ -92,6 +92,8 @@ export interface UserSongsUiDom {
 }
 
 export interface UserSongsUiDeps {
+  /** True when this id belongs to a deleted song (`progress.deletedSongs`). */
+  isSongIdRetired: (id: string) => boolean;
   dom: UserSongsUiDom;
   /** A1: タイトル画面の mastery strip を再描画するフック。ユーザー曲は
    *  IndexedDB から非同期ロードされ、boot 直後の strip 描画には間に合わない。
@@ -622,9 +624,10 @@ export function createUserSongsUi(deps: UserSongsUiDeps): UserSongsUi {
       for (const raw of parsed.songs as Array<Record<string, unknown>>) {
         if (!raw.mxlDataUrl) continue;
         // Don't clobber if id already exists — assign a fresh id so
-        // re-importing is idempotent and never destroys an edited song.
+        // re-importing is idempotent and never destroys an edited song. A
+        // deleted id is retired too: cloud sync drops anything filed under it.
         let id = String(raw.id ?? '');
-        if (!id || deps.songs[id]) {
+        if (!id || deps.songs[id] || deps.isSongIdRetired(id)) {
           id = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
         }
         const blob = await dataUrlToBlob(String(raw.mxlDataUrl));

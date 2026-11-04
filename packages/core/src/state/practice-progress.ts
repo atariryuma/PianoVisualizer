@@ -128,6 +128,11 @@ export interface PracticeProgress extends StreakState {
    *  one-tap "▶ Continue" back into it. Optional — absent until the first
    *  section start; the shell writes it there. */
   lastSongId?: string;
+  /** Song ID → epoch-ms the player deleted it. Without this, cloud sync would
+   *  bring a deleted song's progress back from another device. Permanent: an ID
+   *  listed here is never reused (a JSON library import assigns a fresh one).
+   *  Absent until the first deletion. */
+  deletedSongs?: Record<string, number>;
 }
 
 /** Build a fresh per-song progress bucket — every section at 0 stars with the

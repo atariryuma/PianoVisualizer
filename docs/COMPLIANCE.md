@@ -14,6 +14,22 @@ SHA-pinned static library fetch), so a plain 4+ / Education listing keeps review
 light while broadening the audience. The kid-safe **design** (banned- list, no
 ads, no tracking) is retained as a product promise, not a category obligation.
 
+**Cloud sync changes the wording above, and these must be checked before
+submission.** Optional sync stores progress in the player's own Google Drive
+(`drive.appdata` only; no server of ours, no email or profile scope). Open
+items, none yet confirmed against Apple's current text:
+
+- Guideline 4.8 (login services) and 5.1.1(v) (account deletion) with no account
+  of ours. "Delete cloud copy" ships in settings either way. iCloud must also be
+  selectable at submission, which needs the paid Developer Program.
+- Whether the Nutrition Label stays "Data Not Collected", given that the data is
+  sent directly to the player's own Google account and we cannot access it.
+- The App Review note below still says "no third-party SDKs". That stays true
+  (no SDK is linked; sign-in and Drive use plain HTTPS), but it should mention
+  sync.
+- The Google OAuth app is in Testing until published: only listed test users can
+  sign in, and their sign-in expires every 7 days. Publish it before release.
+
 **What this relaxes** (items below marked "Kids-only" no longer block us):
 
 - No mandatory parental gate before the mic permission prompt (a clear usage

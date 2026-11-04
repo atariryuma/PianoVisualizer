@@ -216,6 +216,12 @@ export interface DomBag {
   backupImportBtn: HTMLElement;
   backupImportFile: HTMLElement;
   backupStatus: HTMLElement;
+  // Cloud sync.
+  cloudConnectBtn: HTMLElement;
+  cloudSyncNowBtn: HTMLElement;
+  cloudDisconnectBtn: HTMLElement;
+  cloudDeleteBtn: HTMLElement;
+  cloudStatus: HTMLElement;
 }
 
 /** All ids the bag walks. Kept as a frozen const so a typo (or a
@@ -397,6 +403,11 @@ export const DOM_BAG_IDS: readonly (keyof DomBag)[] = Object.freeze([
   'backupImportBtn',
   'backupImportFile',
   'backupStatus',
+  'cloudConnectBtn',
+  'cloudSyncNowBtn',
+  'cloudDisconnectBtn',
+  'cloudDeleteBtn',
+  'cloudStatus',
 ] as const) as readonly (keyof DomBag)[];
 
 /** Project a subset of an existing DOM bag onto a new object. The

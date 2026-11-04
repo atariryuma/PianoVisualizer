@@ -14,6 +14,9 @@ import * as DomBag from './dom-bag';
 import * as GameStateInit from './game-state-init';
 import * as PrefsStorage from './prefs-storage';
 import * as ProgressBackup from './progress-backup';
+import * as CloudSync from './cloud-sync';
+import * as CloudSyncUi from './cloud-sync-ui';
+import * as CloudProviderGoogle from './cloud-provider-google';
 import * as PracticeStateInit from './practice-state-init';
 import * as ModalFocus from './modal-focus';
 import * as PianoWakeLock from './wakelock';
@@ -719,6 +722,8 @@ export function boot(): void {
   // ── Add-song modal + Section editor — moved to packages/web/src/shell-add-song.ts (batch 102).
   const _addSong = ShellAddSong.createShellAddSong({
     document,
+    isSongIdRetired: (id: string) =>
+      !!(practice.progress as { deletedSongs?: Record<string, number> } | null)?.deletedSongs?.[id],
     songs: SONGS,
     t,
     modalFocus,
@@ -892,4 +897,54 @@ export function boot(): void {
   // getDevices 対応ブラウザのみ（非対応・未許可は即 false）。鍵盤の電源が
   // 入っていれば、前回ペアした BLE 鍵盤がチューザー無しで繋がる。
   void _midi.reconnectKnownBle();
+
+  // ── Cloud sync: opt-in, so this is inert (no network) until connected. ──
+  const googleProvider = CloudProviderGoogle.createGoogleProviderForPlatform(
+    (
+      window as {
+        Capacitor?: Parameters<typeof CloudProviderGoogle.createGoogleProviderForPlatform>[0];
+      }
+    ).Capacitor
+  );
+  let cloudUi: CloudSyncUi.CloudSyncUi | null = null;
+  const cloudSync = CloudSync.createCloudSync({
+    store: { loadJSON, saveJSON },
+    providers: googleProvider ? { google: googleProvider } : {},
+    getProgress: () => practice.progress as PianoCore.PracticeProgress | null,
+    applyProgress: (merged) => {
+      // In place: practice.progress is a long-lived object.
+      const live = practice.progress as unknown as Record<string, unknown>;
+      for (const key of Object.keys(live)) delete live[key];
+      Object.assign(live, merged);
+      savePracticeProgress();
+      _ui.refreshJournal();
+    },
+    getPrefs: () => prefs,
+    applyPrefs: (values) => {
+      CloudSync.assignSyncedPrefs(prefs, values);
+      savePrefs();
+    },
+    isBusy: () => !!practice.enabled,
+    onStatusChange: (status) => cloudUi?.refresh(status),
+  });
+  _prefsStore.onSaved((key) => cloudSync.noteSaved(key));
+  cloudUi = CloudSyncUi.createCloudSyncUi({
+    dom: {
+      cloudConnectBtn: DOM.cloudConnectBtn,
+      cloudSyncNowBtn: DOM.cloudSyncNowBtn,
+      cloudDisconnectBtn: DOM.cloudDisconnectBtn,
+      cloudDeleteBtn: DOM.cloudDeleteBtn,
+      cloudStatus: DOM.cloudStatus,
+    },
+    sync: cloudSync,
+    available: googleProvider !== null,
+    t,
+    reload: () => location.reload(),
+  });
+  window.addEventListener('langchange', () => cloudUi?.refresh());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') cloudSync.onForeground();
+    else cloudSync.onBackground();
+  });
+  cloudSync.start();
 }

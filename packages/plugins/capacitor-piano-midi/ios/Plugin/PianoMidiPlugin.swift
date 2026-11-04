@@ -49,7 +49,12 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "connectBle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "showBleMidiPairing", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAudioLatency", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "googleSignIn", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "googleSignOut", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "googleDriveRequest", returnType: CAPPluginReturnPromise),
     ]
+
+    private let googleDrive = GoogleDriveBridge()
 
     // MARK: - State
     private var midiClient: MIDIClientRef = 0
@@ -272,6 +277,63 @@ public class PianoMidiPlugin: CAPPlugin, CAPBridgedPlugin {
             "portName": route?.portName ?? "",
             "available": outMs > 0
         ])
+    }
+
+    // MARK: - Google Drive (cloud sync). Tokens stay inside GoogleDriveBridge.
+
+    @objc func googleSignIn(_ call: CAPPluginCall) {
+        guard let clientId = call.getString("clientId"), !clientId.isEmpty else {
+            call.reject("clientId required")
+            return
+        }
+        Task { @MainActor in
+            guard let window = self.bridge?.webView?.window else {
+                call.reject("no window")
+                return
+            }
+            do {
+                try await self.googleDrive.signIn(clientId: clientId, anchor: window)
+                call.resolve()
+            } catch GoogleDriveBridgeError.cancelled {
+                call.reject("cancelled", "cancelled")
+            } catch GoogleDriveBridgeError.scopeDenied {
+                call.reject("scope-denied", "scope-denied")
+            } catch {
+                call.reject("sign-in failed: \(error)")
+            }
+        }
+    }
+
+    @objc func googleSignOut(_ call: CAPPluginCall) {
+        Task {
+            await self.googleDrive.signOut()
+            call.resolve()
+        }
+    }
+
+    @objc func googleDriveRequest(_ call: CAPPluginCall) {
+        guard let clientId = call.getString("clientId"),
+              let method = call.getString("method"),
+              let path = call.getString("path") else {
+            call.reject("clientId, method and path required")
+            return
+        }
+        let contentType = call.getString("contentType")
+        let body = call.getString("body")
+        Task {
+            do {
+                let result = try await self.googleDrive.request(
+                    clientId: clientId,
+                    method: method,
+                    path: path,
+                    contentType: contentType,
+                    body: body
+                )
+                call.resolve(["status": result.status, "body": result.body])
+            } catch {
+                call.reject("drive request failed: \(error)")
+            }
+        }
     }
 
     @objc private func dismissBleMidiPairing() {

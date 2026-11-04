@@ -562,6 +562,10 @@ export function createJournalModal(deps: JournalModalDeps): JournalModal {
     }
     const detailByDay = new Map<string, Map<string, DayItem>>();
     for (const [songId, sp] of Object.entries(progress.songs ?? {})) {
+      // Cloud sync carries progress but not score files, so a song added on
+      // another device can be unknown here. Without a title the row would read
+      // as a raw id ("usr_m3x…"). The day still shows as practised.
+      if (!titleOf.has(songId)) continue;
       for (const [secId, hist] of Object.entries(sp.history ?? {})) {
         if (!Array.isArray(hist)) continue;
         for (const h of hist) {

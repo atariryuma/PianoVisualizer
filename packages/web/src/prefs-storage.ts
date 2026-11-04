@@ -107,6 +107,9 @@ export interface JSONStore {
   /** Register a callback fired the FIRST time a write fails (storage absent
    *  or quota). Lets the shell surface the loss instead of swallowing it. */
   onSaveError(cb: (reason: 'unavailable' | 'quota') => void): void;
+  /** Register a callback fired after every successful write, with its key. Cloud
+   *  sync uses this to notice changes without touching each save site. */
+  onSaved(cb: (key: string) => void): void;
 }
 
 /** Build a {load, save} pair against a given storage. The factory
@@ -119,6 +122,7 @@ export function createJSONStore(
   let quotaWarned = false;
   let errorFired = false;
   let errorCb: ((reason: 'unavailable' | 'quota') => void) | null = null;
+  let savedCb: ((key: string) => void) | null = null;
   const fireError = (reason: 'unavailable' | 'quota'): void => {
     if (errorFired) return;
     errorFired = true;
@@ -146,7 +150,6 @@ export function createJSONStore(
     }
     try {
       storage.setItem(key, JSON.stringify(val));
-      return true;
     } catch (e) {
       // Safari Private Mode + storage-full both throw
       // QuotaExceededError. Without this, settings appear to apply
@@ -160,6 +163,12 @@ export function createJSONStore(
       fireError('quota');
       return false;
     }
+    try {
+      savedCb?.(key);
+    } catch {
+      /* a listener must never turn a successful save into a failed one */
+    }
+    return true;
   }
 
   return {
@@ -168,6 +177,9 @@ export function createJSONStore(
     isPersistent: () => !!storage,
     onSaveError: (cb) => {
       errorCb = cb;
+    },
+    onSaved: (cb) => {
+      savedCb = cb;
     },
   };
 }

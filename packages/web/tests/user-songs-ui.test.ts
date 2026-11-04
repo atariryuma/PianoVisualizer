@@ -86,6 +86,7 @@ function makeDeps(overrides: Partial<UserSongsUiDeps> = {}): UserSongsUiDeps {
   return {
     dom: makeDom(),
     songs,
+    isSongIdRetired: () => false,
     getLang: () => 'en',
     getLibrary: () => library,
     setLibrary: (entries) => {
@@ -542,6 +543,37 @@ describe('createUserSongsUi — import', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(deps.dom.status.classList.contains('error')).toBe(true);
+  });
+
+  it.each([
+    ['keeps the id of a song that was never deleted', false],
+    ['assigns a fresh id when the file reuses a deleted song id', true],
+  ])('%s', async (_name, retired) => {
+    const deps = makeDeps({ isSongIdRetired: (id) => retired && id === 'usr_old' });
+    createUserSongsUi(deps);
+    const json = JSON.stringify({
+      version: 1,
+      songs: [
+        {
+          id: 'usr_old',
+          title: 'T',
+          mxlDataUrl: 'data:application/xml;base64,PHNjb3JlLz4=',
+          mimeType: 'application/xml',
+          sectionDefs: [],
+        },
+      ],
+    });
+    Object.defineProperty(deps.dom.importInput, 'files', {
+      value: [new File([json], 'lib.json', { type: 'application/json' })],
+      configurable: true,
+    });
+    deps.dom.importInput!.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(deps.registerUserSong).toHaveBeenCalled());
+    const rec = (deps.registerUserSong as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      id: string;
+    };
+    if (retired) expect(rec.id).not.toBe('usr_old');
+    else expect(rec.id).toBe('usr_old');
   });
 
   it('rejects malformed JSON', async () => {

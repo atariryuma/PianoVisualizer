@@ -88,7 +88,7 @@ export interface UserSongsStoreCoreFns {
 }
 
 export interface UserSongsStorePracticeRef {
-  progress?: { songs?: Record<string, unknown> };
+  progress?: { songs?: Record<string, unknown>; deletedSongs?: Record<string, number> };
 }
 
 export interface UserSongsStoreDeps {
@@ -389,10 +389,12 @@ export function createUserSongsStore(deps: UserSongsStoreDeps): UserSongsStore {
       delete deps.songs[id];
     }
     // Also drop any per-song progress (otherwise the localStorage
-    // row leaks forever).
-    const practice = deps.getPractice();
-    if (practice.progress?.songs?.[id]) {
-      delete practice.progress.songs[id];
+    // row leaks forever), and record the deletion even when this device has no
+    // row: another device may have one, and cloud sync would bring it back.
+    const progress = deps.getPractice().progress;
+    if (progress) {
+      if (progress.songs) delete progress.songs[id];
+      (progress.deletedSongs ??= {})[id] = deps.now();
       deps.savePracticeProgress();
     }
   }

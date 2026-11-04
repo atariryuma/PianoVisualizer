@@ -52,6 +52,8 @@ export interface ShellAddSongDeps {
   /** Currently-loaded song; refreshSongPanelHeader uses titleKey/composerKey. */
   getCurrentSong: () => any;
   selectSong: (id: string) => void;
+  /** Deleted-song ids are never reused (`progress.deletedSongs`). */
+  isSongIdRetired: (id: string) => boolean;
   /** Song-panel header — re-rendered after rename. */
   songPanelHeaderDom: { songTitle: HTMLElement; songComposer: HTMLElement };
   /** i18n + modal focus trap. */
@@ -188,6 +190,7 @@ export function createShellAddSong(deps: ShellAddSongDeps): ShellAddSong {
     // closure binding even after a hot-reload.
     openSectionEditor: (id: any) => _sectionEditor.open(id),
     selectSong: deps.selectSong,
+    isSongIdRetired: deps.isSongIdRetired,
     getCurrentSong: deps.getCurrentSong,
     refreshSongPanelHeader: () => {
       const song = deps.getCurrentSong();

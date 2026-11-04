@@ -17,6 +17,39 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+// ─── onSaved (cloud-sync change detection) ─────────────────────────
+describe('createJSONStore onSaved', () => {
+  it('reports the key after a successful write', () => {
+    const store = createJSONStore();
+    const seen: string[] = [];
+    store.onSaved((k) => seen.push(k));
+    expect(store.saveJSON('k1', { a: 1 })).toBe(true);
+    expect(seen).toEqual(['k1']);
+  });
+
+  it('stays silent when the write failed', () => {
+    const failing: JSONStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota');
+      },
+    };
+    const store = createJSONStore(failing, () => undefined);
+    const seen: string[] = [];
+    store.onSaved((k) => seen.push(k));
+    expect(store.saveJSON('k1', 1)).toBe(false);
+    expect(seen).toEqual([]);
+  });
+
+  it('a throwing listener cannot fail the save', () => {
+    const store = createJSONStore();
+    store.onSaved(() => {
+      throw new Error('boom');
+    });
+    expect(store.saveJSON('k1', 1)).toBe(true);
+  });
+});
+
 // ─── createJSONStore (against happy-dom localStorage) ──────────────
 
 describe('createJSONStore — happy-dom localStorage', () => {

@@ -300,6 +300,72 @@ export const T_STRINGS: TranslationTable = {
   },
   backupProgress: { en: 'Back up progress', jp: 'きろくをほぞん', de: 'Fortschritt sichern' },
   restoreProgress: { en: 'Restore progress', jp: 'きろくをもどす', de: 'Fortschritt laden' },
+  cloudConnectGoogle: {
+    en: 'Connect Google Drive',
+    jp: 'Google ドライブにつなぐ',
+    de: 'Google Drive verbinden',
+  },
+  cloudReconnect: { en: 'Sign in again', jp: 'もういちどログイン', de: 'Erneut anmelden' },
+  cloudSyncNow: { en: 'Sync now', jp: 'いま同期する', de: 'Jetzt synchronisieren' },
+  cloudDisconnect: { en: 'Disconnect', jp: '接続をやめる', de: 'Trennen' },
+  cloudDelete: { en: 'Delete cloud copy', jp: 'クラウドのデータを消す', de: 'Cloud-Kopie löschen' },
+  cloudDeleteConfirm: {
+    en: 'Tap again to delete',
+    jp: 'もういちど押すと消します',
+    de: 'Zum Löschen erneut tippen',
+  },
+  cloudHelp: {
+    en: 'Stars, stamps and settings are saved in your own Google Drive. Added scores are not synced. If another device is still connected, deleting the cloud copy is undone by its next sync.',
+    jp: '星・スタンプ・設定を、あなた自身の Google ドライブに保存します。追加した楽譜は同期されません。ほかの端末がつながったままだと、クラウドのデータを消しても次の同期で戻ります。',
+    de: 'Sterne, Stempel und Einstellungen werden in deinem eigenen Google Drive gespeichert. Hinzugefügte Noten werden nicht synchronisiert. Ist noch ein anderes Gerät verbunden, stellt dessen nächste Synchronisierung die gelöschte Cloud-Kopie wieder her.',
+  },
+  cloudStatusOff: {
+    en: 'Cloud sync is off. Nothing leaves this device.',
+    jp: 'クラウド同期はオフです。データは端末の外に出ません。',
+    de: 'Cloud-Synchronisierung ist aus. Nichts verlässt dieses Gerät.',
+  },
+  cloudUnavailable: {
+    en: 'Cloud sync is not available on this device.',
+    jp: 'この端末ではクラウド同期を使えません。',
+    de: 'Cloud-Synchronisierung ist auf diesem Gerät nicht verfügbar.',
+  },
+  cloudStatusConnected: { en: 'Connected', jp: '接続しました', de: 'Verbunden' },
+  cloudStatusSyncing: { en: 'Syncing…', jp: '同期しています…', de: 'Synchronisiert…' },
+  cloudStatusSyncedFmt: {
+    en: 'Saved to the cloud: {time}',
+    jp: 'クラウドに保存しました: {time}',
+    de: 'In der Cloud gespeichert: {time}',
+  },
+  cloudStatusNeedsAuth: {
+    en: 'Please sign in again to keep syncing.',
+    jp: '同期を続けるには、もういちどログインしてください。',
+    de: 'Bitte melde dich erneut an, um weiter zu synchronisieren.',
+  },
+  cloudStatusNeedsUpdate: {
+    en: 'The cloud copy is from a newer version. Please update the app. Nothing was overwritten.',
+    jp: 'クラウドのデータは新しいバージョンのものです。アプリを更新してください。上書きはしていません。',
+    de: 'Die Cloud-Kopie stammt von einer neueren Version. Bitte aktualisiere die App. Es wurde nichts überschrieben.',
+  },
+  cloudStatusCorrupt: {
+    en: 'The cloud copy could not be read, so it was left as it is. Your progress on this device is safe.',
+    jp: 'クラウドのデータを読めなかったので、そのままにしました。この端末の記録は無事です。',
+    de: 'Die Cloud-Kopie konnte nicht gelesen werden und bleibt unverändert. Dein Fortschritt auf diesem Gerät ist sicher.',
+  },
+  cloudStatusError: {
+    en: 'Could not sync. Your progress on this device is safe, and it will try again later.',
+    jp: '同期できませんでした。この端末の記録は無事です。あとでまた試します。',
+    de: 'Synchronisierung fehlgeschlagen. Dein Fortschritt auf diesem Gerät ist sicher, es wird später erneut versucht.',
+  },
+  cloudConnectFailed: {
+    en: 'Could not connect. Please try again.',
+    jp: 'つなげませんでした。もういちど試してください。',
+    de: 'Verbindung fehlgeschlagen. Bitte versuche es erneut.',
+  },
+  cloudDeleteFailed: {
+    en: 'Could not delete the cloud copy, so it is still there. Please try again.',
+    jp: 'クラウドのデータを消せませんでした（残っています）。もういちど試してください。',
+    de: 'Die Cloud-Kopie konnte nicht gelöscht werden und ist noch vorhanden. Bitte versuche es erneut.',
+  },
   calibrateBtn: {
     en: '🎯 Tap-along auto-set',
     jp: '🎯 タップで自動そくてい',

@@ -190,6 +190,7 @@ export {
   resetStreakState,
   recordPracticeDay,
   computeStreakCount,
+  longestStreakRun,
   formatDateKey,
 } from './state/streak';
 export type { StreakState, StreakOptions } from './state/streak';
@@ -203,6 +204,7 @@ export {
   recordPracticeMinutes,
   lifetimePracticeMinutes,
   MAX_MINUTES_PER_ATTEMPT,
+  CURRENT_SCHEMA_VERSION,
 } from './state/practice-progress';
 export type {
   PracticeProgress,
@@ -210,6 +212,17 @@ export type {
   SectionProgress,
   AttemptRecord,
 } from './state/practice-progress';
+
+// === State: cloud-sync merge (order-independent join of two progress blobs) ===
+export {
+  mergeProgress,
+  mergeMinutesLedgers,
+  sumMinutesLedger,
+  creditMinutesToDevice,
+  MERGE_MAX_STREAK_DAYS,
+  MERGE_MAX_SECTION_HISTORY,
+} from './state/progress-merge';
+export type { MinutesLedger } from './state/progress-merge';
 
 // === State: mastery aggregation (song + library rollups, near-completion) ===
 export {
