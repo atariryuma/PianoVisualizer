@@ -280,8 +280,9 @@ pnpm serve                     # build:web + node https_server.mjs (any OS)
 pnpm serve:ps                  # build:web + PowerShell server (Windows legacy)
 
 pnpm build:mobile              # → packages/mobile/dist/ + cap sync
-pnpm deploy:ios                # build:mobile + cap run ios (device / simulator)
-pnpm cap:ios                   # alias for deploy:ios — builds, then runs
+pnpm deploy:ios                # build, sign, install + launch on the connected device
+                               #   (--device <udid> if several; --sim for a simulator)
+pnpm cap:ios                   # alias for deploy:ios
 pnpm cap:open:ios              # just open the Xcode project (no build)
 pnpm cap:android               # ⚠ fails until `cap add android` is run — the
                                #   Android host app is not generated yet

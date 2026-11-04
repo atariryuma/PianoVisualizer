@@ -28,7 +28,7 @@
     "serve:ps": "pnpm build:web && powershell -File https_server.ps1",
     "cap:sync": "pnpm --filter @piano/mobile exec cap sync",
     "cap:ios": "pnpm deploy:ios",
-    "deploy:ios": "pnpm build:mobile && pnpm --filter @piano/mobile exec cap run ios",
+    "deploy:ios": "node scripts/deploy-ios.mjs",
     "cap:android": "pnpm build:mobile && pnpm --filter @piano/mobile exec cap run android",
     "cap:open:ios": "pnpm --filter @piano/mobile exec cap open ios",
     "cap:open:android": "pnpm --filter @piano/mobile exec cap open android",
