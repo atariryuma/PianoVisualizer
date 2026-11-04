@@ -40,6 +40,12 @@
         "$TURBO_ROOT$/packages/web/index.html",
         "$TURBO_ROOT$/packages/web/vite.config.ts",
         "$TURBO_ROOT$/packages/web/package.json",
+        // The task also runs `cap sync`, i.e. `pod install`. Without these, a
+        // Podfile / podspec change (the iOS deployment-target bump for Xcode 27)
+        // was a cache hit: turbo replayed the old "pod install" log line and the
+        // Pods project kept the rejected 13.0 target.
+        "ios/App/Podfile",
+        "$TURBO_ROOT$/packages/plugins/capacitor-piano-midi/CapacitorPianoMidi.podspec",
         "package.json",
         "tsconfig.json",
         "capacitor.config.*"

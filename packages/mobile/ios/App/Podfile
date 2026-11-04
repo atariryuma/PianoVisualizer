@@ -1,6 +1,14 @@
 require_relative '../../../../node_modules/.pnpm/@capacitor+ios@6.2.1_@capacitor+core@6.2.1/node_modules/@capacitor/ios/scripts/pods_helpers'
 
-platform :ios, '13.0'
+# The ONE minimum iOS version. Xcode 27 refuses anything below 15.0
+# ("supported deployment target versions is 15.0 to 27.0.x"), so every device
+# build failed after the Xcode update — and Capacitor 6's own
+# `assertDeploymentTarget` can only lift pods to a hard-coded 13.0. The App
+# target (App.xcodeproj) and CapacitorPianoMidi.podspec carry the same value;
+# native-deployment-target.test.ts keeps the three in step.
+IOS_DEPLOYMENT_TARGET = '15.0'
+
+platform :ios, IOS_DEPLOYMENT_TARGET
 use_frameworks!
 
 # workaround to avoid Xcode caching of Pods that requires
@@ -28,4 +36,15 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+  # Each pod declares its own (older) minimum in its podspec, and that — not
+  # the `platform` line above — is what its target is built with. Lift every
+  # pod to the app's minimum so the whole workspace builds on current Xcode.
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f
+      if current < IOS_DEPLOYMENT_TARGET.to_f
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET
+      end
+    end
+  end
 end
