@@ -247,7 +247,7 @@ For local development, any HTTPS-capable static server works once
 
 ### Agent / VSCode environment
 
-- **Node + pnpm**: pinned via `.nvmrc` (Node 22.20.0) and
+- **Node + pnpm**: pinned via `.nvmrc` (Node 22.23.4) and
   `package.json#packageManager` (pnpm 9.12.3). `nvm use && corepack enable` on a
   fresh machine.
 - **VSCode**: `.vscode/extensions.json` recommends ESLint, Prettier, Vitest
