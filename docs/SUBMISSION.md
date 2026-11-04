@@ -13,11 +13,20 @@ Age **4+**.
 Piano Visualizer is a real-time piano practice app for learners of any age.
 
 PRIVACY / DATA
-• No accounts, no ads, no third-party analytics or SDKs. The app collects NO data.
+• No accounts of ours, no ads, no third-party analytics or SDKs. The app collects
+  NO data, and we run no server.
 • Microphone audio is processed entirely on-device for pitch/onset detection
   (YIN + multi-feature onset). Audio is never recorded, stored, or transmitted.
-• All progress (stars, stamps, practice days) is stored locally on the device
+• Progress (stars, stamps, practice days) is stored locally on the device
   (localStorage / IndexedDB). Nutrition Label: "Data Not Collected".
+
+OPTIONAL CLOUD SYNC
+• Off by default and never prompted for. Settings can copy progress and settings
+  to the player's own Google Drive app-data folder (scope: drive.appdata only; no
+  email or profile). The data goes directly from the device to Google, and we
+  cannot access it.
+• Sign-in uses ASWebAuthenticationSession. "Delete cloud copy" in settings removes
+  the file. The app is fully usable without signing in.
 
 NATIVE FUNCTIONALITY (Guideline 4.2.3)
 • Optional MIDI keyboard input via USB and Bluetooth is provided by our own
@@ -48,7 +57,7 @@ MUSIC LICENSING (Guideline 5.2.3)
 HOW TO TEST WITHOUT A PIANO
 • Tap "🎨 Free Play" or a song, then hum/whistle or play any note near the mic —
   the screen reacts with particles. Or connect a USB/Bluetooth MIDI keyboard.
-• No login required. Works offline with the two bundled songs.
+• No login required. Everything except optional cloud sync works offline.
 
 Public-domain per-score license summary:
 https://github.com/atariryuma/PianoVisualizer/tree/main/docs/LICENSES
@@ -99,7 +108,7 @@ it: edit `privacy.html`, push to `main`, and the workflow redeploys.
 
 - ☐ Open the URL in a private window (must be reachable without login).
 - ☐ It renders `docs/PRIVACY.md` content (title "Privacy Policy", "no data
-  collected", contact email).
+  collected", cloud sync section, contact link).
 
 ---
 

@@ -24,9 +24,9 @@ items, none yet confirmed against Apple's current text:
   selectable at submission, which needs the paid Developer Program.
 - Whether the Nutrition Label stays "Data Not Collected", given that the data is
   sent directly to the player's own Google account and we cannot access it.
-- The App Review note below still says "no third-party SDKs". That stays true
-  (no SDK is linked; sign-in and Drive use plain HTTPS), but it should mention
-  sync.
+- `docs/SUBMISSION.md` holds the paste-ready App Review note, including sync.
+  "No third-party SDKs" stays true: no SDK is linked, and sign-in and Drive use
+  plain HTTPS.
 - The Google OAuth app is in Testing until published: only listed test users can
   sign in, and their sign-in expires every 7 days. Publish it before release.
 
@@ -143,12 +143,7 @@ minimum to get a first build submitted.
   (added 2026-07-25** — the bundled `@capacitor/filesystem` plugin reads file
   metadata / free space for the on-device user-song library; declared
   proactively to avoid an `ITMS-91053` upload flag). `plutil -lint` passes.
-- **Only remaining step (manual, ~30 s in Xcode):** the file exists on disk but
-  is not yet a member of the App target in the `.pbxproj`. `cap sync` won't add
-  it. In Xcode: **Project navigator → drag `PrivacyInfo.xcprivacy` into the
-  `App` group** (or right-click the `App` group → _Add Files to "App"…_ → select
-  it) → in the dialog make sure **Target = App is checked**. Build once to
-  confirm it's picked up.
+- It is a member of the App target (in the Resources build phase).
 
 ### Code-review follow-ups (from the 2026-07-21 full audit)
 
@@ -173,15 +168,9 @@ Only genuinely-latent (harmless-today) notes remain, not worth changing now:
 
 ### Future / non-blocking (does NOT block the current release)
 
-- **UIScene lifecycle adoption** — the console logs
-  `UIScene lifecycle will soon be required. Failure to adopt will result in an assert in the future.`
-  This is a deprecation warning only (Capacitor 6 uses the classic AppDelegate
-  lifecycle); the app builds and runs today. Adopt when Apple makes it mandatory
-  — most likely resolved by a Capacitor upgrade (7.x), otherwise add a
-  `UIApplicationSceneManifest` + scene delegate to the iOS host. The other
-  launch-time console lines (`Could not create a sandbox extension`,
-  `xpc_user_sessions_get_foreground_uid() failed`,
-  `Unable to hide query parameters`) are benign WKWebView/iOS noise, not errors.
+- The launch-time console lines `Could not create a sandbox extension`,
+  `xpc_user_sessions_get_foreground_uid() failed` and
+  `Unable to hide query parameters` are benign WKWebView/iOS noise, not errors.
 
 ### What to write in App Review Notes
 

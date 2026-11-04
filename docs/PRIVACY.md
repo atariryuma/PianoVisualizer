@@ -137,4 +137,4 @@ would also require updating the App Store / Play Store privacy nutrition labels.
 
 ## Contact
 
-Issues, questions: <https://github.com/atariryuma/piano-visualizer/issues>
+Issues, questions: <https://github.com/atariryuma/PianoVisualizer/issues>
