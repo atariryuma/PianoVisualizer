@@ -140,6 +140,10 @@ function main(argv) {
     BUNDLE_ID,
   ]);
   if (!launched) {
+    // The build takes minutes, so a device unlocked at the start may have locked since.
+    if (devicectlJson(['device', 'info', 'lockState', '--device', device.udid])?.passcodeRequired) {
+      fail(`Installed, but ${device.name} locked during the build. Unlock it and open the app.`);
+    }
     fail(
       'Installed, but it did not launch. On a device new to this Apple ID, trust the developer ' +
         'in Settings > General > VPN & Device Management, then open the app by hand.'
