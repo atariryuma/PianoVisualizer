@@ -258,12 +258,22 @@ body[data-layout='desktop'] .add-song-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Centred by the auto margins on the h1 and ::after below, NOT by
+     `justify-content: center`. Centring an overflowing column pushes its top
+     above the box where no scroll can reach it: on an iPad mini in landscape
+     and on a portrait iPhone the title slid under the status bar and the
+     bottom line was cut off. Auto margins centre while there is room and
+     collapse to zero when there is not, so the column then starts at the top
+     and scrolls. (`safe center` does the same but needs iOS 17.6.) */
+  justify-content: flex-start;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   z-index: 10;
   /* Horizontal breathing room so no text can sit flush against the
      physical screen edge (390pt phones wrapped the title with the box
      at full width and the lines left-flush — see h1/p text-align too). */
-  padding: 0 20px;
+  padding: calc(var(--safe-top) + 12px) 20px 0;
   /* Mesh-gradient backdrop: 3 stacked radial gradients give the
          title screen a "starry sky over an aurora" feel without needing
          an image. Pure CSS, GPU-friendly, ages well. */
@@ -310,8 +320,17 @@ body[data-layout='desktop'] .add-song-card {
   }
 }
 
+/* Bottom half of the centring pair, and the bottom padding of the scroller
+   (padding-bottom on a scroll container is not reliably scrolled into view). */
+#startScreen::after {
+  content: '';
+  flex: 0 0 calc(var(--safe-bottom) + 16px);
+  margin-top: auto;
+}
+
 #startScreen h1 {
   position: relative;
+  margin-top: auto;
   font-family: var(--font-display);
   font-size: var(--fs-3xl);
   color: var(--c-text-primary);
@@ -2256,8 +2275,15 @@ body:has(#practiceHud.visible) #encouragement {
 #practiceTopBar {
   position: absolute;
   top: max(10px, calc(var(--safe-top) + 10px));
-  left: 50%;
-  transform: translateX(-50%);
+  /* Centred with auto margins, NOT `left: 50%` + translateX(-50%). An absolutely
+     positioned box with `left: 50%` is shrink-to-fit inside the remaining half
+     of its container, so the pill wrapped at 50% of the screen whatever
+     max-width said: on an iPad mini (1133 px) the ✕ dropped to a second row
+     with half the screen still free. */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: fit-content;
   display: flex;
   gap: 10px;
   align-items: center;
