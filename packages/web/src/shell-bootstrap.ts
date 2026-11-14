@@ -709,6 +709,7 @@ export function boot(): void {
     getKbSafeBottom: _vp.getKbSafeBottom,
     getSafeRight: _vp.getSafeRight,
     getCurrentLayoutMode: () => _vp.layout.getCurrentLayoutMode(),
+    getTopClusterBottom: () => _vp.layout.getTopClusterBottom(),
     getCurrentSong: () => currentSong,
     laneLookaheadMs: _practice.getLaneLookaheadMs(),
     countInMs: _practice.getCountInMs(),

@@ -56,6 +56,7 @@ function makeDeps(over: Partial<PracticeLaneDeps> = {}): PracticeLaneDeps {
       kbHeight: 80,
       kbSafeBottom: 8,
       safeRight: 0,
+      topClusterBottom: 0,
       currentLayoutMode: 'wide',
       cachedOsmdRect: { right: 0, bottom: 0, top: 0, height: 0 },
       osmdContainerVisible: false,
@@ -120,6 +121,7 @@ describe('createPracticeLane — OSMD cursor sync', () => {
         kbHeight: 80,
         kbSafeBottom: 8,
         safeRight: 0,
+        topClusterBottom: 0,
         currentLayoutMode: 'wide',
         cachedOsmdRect: { right: 100, bottom: 200, top: 50, height: 150 },
         osmdContainerVisible: true,
@@ -144,6 +146,7 @@ describe('createPracticeLane — OSMD cursor sync', () => {
         kbHeight: 80,
         kbSafeBottom: 8,
         safeRight: 0,
+        topClusterBottom: 0,
         currentLayoutMode: 'wide',
         cachedOsmdRect: { right: 100, bottom: 200, top: 50, height: 150 },
         osmdContainerVisible: true,
@@ -168,6 +171,7 @@ describe('createPracticeLane — OSMD cursor sync', () => {
         kbHeight: 80,
         kbSafeBottom: 8,
         safeRight: 0,
+        topClusterBottom: 0,
         currentLayoutMode: 'wide',
         cachedOsmdRect: { right: 100, bottom: 200, top: 50, height: 150 },
         osmdContainerVisible: true,
@@ -199,6 +203,7 @@ describe('createPracticeLane — OSMD cursor sync', () => {
         kbHeight: 80,
         kbSafeBottom: 8,
         safeRight: 0,
+        topClusterBottom: 0,
         currentLayoutMode: 'wide',
         cachedOsmdRect: { right: 100, bottom: 200, top: 50, height: 150 },
         osmdContainerVisible: true,
@@ -262,6 +267,7 @@ describe('createPracticeLane — lane region', () => {
         kbHeight: 80,
         kbSafeBottom: 8,
         safeRight: 0,
+        topClusterBottom: 0,
         currentLayoutMode: 'wide',
         cachedOsmdRect: { right: 0, bottom: 300, top: 0, height: 300 },
         osmdContainerVisible: true,
@@ -369,5 +375,24 @@ describe('createPracticeLane — synesthesia toggle', () => {
     createPracticeLane(deps).draw(100);
     const opts = (deps.drawPracticeLane as ReturnType<typeof vi.fn>).mock.calls[0][3];
     expect(opts.noteRestingColor(60)).toBe('#themecolor');
+  });
+
+  it('tells the lane to keep the hand labels below the top bar', () => {
+    const deps = makeDeps({
+      getLayout: () => ({
+        W: 1133,
+        H: 744,
+        kbHeight: 48,
+        kbSafeBottom: 8,
+        safeRight: 0,
+        topClusterBottom: 96,
+        currentLayoutMode: 'tablet',
+        cachedOsmdRect: { right: 0, bottom: 0, top: 0, height: 0 },
+        osmdContainerVisible: false,
+      }),
+    });
+    createPracticeLane(deps).draw(100);
+    const opts = (deps.drawPracticeLane as ReturnType<typeof vi.fn>).mock.calls[0][3];
+    expect(opts.handLabelMinY).toBe(96 + 18);
   });
 });

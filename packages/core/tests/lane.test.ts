@@ -98,6 +98,27 @@ describe('drawPracticeLane', () => {
     expect(texts).toContain('右手');
   });
 
+  it('keeps the hand labels below handLabelMinY, and at lane top + 16 otherwise', () => {
+    const labelY = (minY?: number): number => {
+      const local = makeCanvasStub();
+      drawPracticeLane(
+        local.ctx,
+        baseView(),
+        baseTiming(),
+        baseOpts({ laneLabelL: '左手', laneLabelR: '右手', handLabelMinY: minY })
+      );
+      const ys = local.calls
+        .filter((c) => c.method === 'fillText' && (c.args[0] === '左手' || c.args[0] === '右手'))
+        .map((c) => c.args[2] as number);
+      expect(ys).toHaveLength(2);
+      expect(ys[0]).toBe(ys[1]);
+      return ys[0];
+    };
+    expect(labelY()).toBe(66); // lane top 50 + 16
+    expect(labelY(40)).toBe(66); // a bar that ends above the old position moves nothing
+    expect(labelY(120)).toBe(120); // a bar that covers it pushes the labels below
+  });
+
   it('positions lane top at 50 when osmdVisible is false, 332 when true', () => {
     // osmdVisible: false → first fillRect (left bg) sits at y=50
     drawPracticeLane(stub.ctx, baseView(), baseTiming(), baseOpts({ osmdVisible: false }));

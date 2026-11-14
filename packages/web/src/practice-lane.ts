@@ -36,6 +36,10 @@
 // has to fail here rather than silently mis-draw the window the scoring uses.
 import type { JudgeErrorRing, JudgeProfile, JudgeTally } from '@piano/core';
 
+/** Gap between the top bar's bottom edge and the centre of the hand labels
+ *  (the chips are 20 px tall). */
+const HAND_LABEL_CLEARANCE_PX = 18;
+
 /** Practice slice the lane reads + writes. */
 export interface PracticeLanePracticeRef {
   enabled: boolean;
@@ -86,6 +90,8 @@ export interface PracticeLaneLayout {
   kbHeight: number;
   kbSafeBottom: number;
   safeRight: number;
+  /** Bottom edge of the top bar / ⚙🏠 cluster in CSS px (0 = unknown). */
+  topClusterBottom: number;
   currentLayoutMode: string;
   cachedOsmdRect: PracticeLaneOsmdRect;
 }
@@ -210,6 +216,7 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     screenH: 0,
     osmdVisible: false,
     laneTopOverride: undefined as number | undefined,
+    handLabelMinY: 0,
     kbReserve: 0,
     laneLookaheadMs: deps.laneLookaheadMs,
     countInMs: deps.countInMs,
@@ -349,6 +356,7 @@ export function createPracticeLane(deps: PracticeLaneDeps): PracticeLane {
     laneOpts.screenH = layout.H;
     laneOpts.osmdVisible = osmdVisible;
     laneOpts.laneTopOverride = laneTopOverride;
+    laneOpts.handLabelMinY = layout.topClusterBottom + HAND_LABEL_CLEARANCE_PX;
     laneOpts.kbReserve = kbReserve;
     // ライブコンボ + 判定パネルは rhythm のみ（guided はタイミングを採点
     // しないので判定内訳が意味を持たず、listen は視聴）。

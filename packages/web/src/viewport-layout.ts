@@ -128,6 +128,10 @@ export interface ViewportLayout {
    *  caches this for drawPracticeLane to switch stacked vs split-h
    *  layouts without re-detecting. */
   getCurrentLayoutMode(): LayoutMode;
+  /** Bottom edge of the practice top bar / ⚙🏠 cluster in CSS px, as last
+   *  measured (0 before the first measurement). The lane keeps its hand
+   *  labels below it. */
+  getTopClusterBottom(): number;
 }
 
 export function createViewportLayout(deps: ViewportLayoutDeps): ViewportLayout {
@@ -196,6 +200,7 @@ export function createViewportLayout(deps: ViewportLayoutDeps): ViewportLayout {
     refreshOsmdRect,
     onResizeBurst,
     getCurrentLayoutMode: () => currentLayoutMode ?? 'phone-portrait',
+    getTopClusterBottom: () => Math.max(0, lastTopClusterPx),
   };
 }
 

@@ -28,6 +28,7 @@ export interface ShellPracticeLaneDeps {
   getKbHeight: () => number;
   getKbSafeBottom: () => number;
   getSafeRight: () => number;
+  getTopClusterBottom: () => number;
   getCurrentLayoutMode: () => any;
   cachedOsmdRect: any;
   osmdContainerEl: HTMLElement | null;
@@ -73,6 +74,7 @@ export function createShellPracticeLane(deps: ShellPracticeLaneDeps): ShellPract
         kbHeight: deps.getKbHeight(),
         kbSafeBottom: deps.getKbSafeBottom(),
         safeRight: deps.getSafeRight(),
+        topClusterBottom: deps.getTopClusterBottom(),
         currentLayoutMode: deps.getCurrentLayoutMode(),
         cachedOsmdRect: deps.cachedOsmdRect,
         osmdContainerVisible: !!(

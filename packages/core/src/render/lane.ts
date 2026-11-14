@@ -161,6 +161,11 @@ export interface LaneDrawOptions {
    *  strip is sized non-default (e.g. landscape phone media query) so the
    *  lane sits exactly under the score regardless of viewport shape. */
   laneTopOverride?: number;
+  /** Highest y the hand-label chips may be centred on. The full-height lane
+   *  starts above the practice top bar, and how far that bar reaches across
+   *  depends on the screen: on a 12.9" iPad the labels sit clear of it, on an
+   *  iPad mini it covers both. Omitted = lane top + 16 (the old position). */
+  handLabelMinY?: number;
   /** Reserve at the bottom of the canvas (keyboard + safe area, or small
    *  padding when the keyboard is hidden). */
   kbReserve: number;
@@ -469,10 +474,11 @@ export function drawPracticeLane(
   ctx.font = 'bold 11px -apple-system, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const handLabelY = Math.max(laneTop + 16, opts.handLabelMinY ?? 0);
   drawChip(
     ctx,
     padX + halfW / 2,
-    laneTop + 16,
+    handLabelY,
     opts.laneLabelL,
     'rgba(140, 180, 255, 0.95)',
     'rgba(40, 60, 130, 0.9)'
@@ -480,7 +486,7 @@ export function drawPracticeLane(
   drawChip(
     ctx,
     midX + halfW / 2,
-    laneTop + 16,
+    handLabelY,
     opts.laneLabelR,
     'rgba(255, 180, 220, 0.95)',
     'rgba(110, 50, 110, 0.9)'
