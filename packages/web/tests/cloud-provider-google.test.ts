@@ -1,16 +1,24 @@
 // @vitest-environment happy-dom
 // Tests for packages/web/src/cloud-provider-google.ts against a fake Drive.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   DRIVE_FILE_NAME,
   createGoogleDriveProvider,
   createGoogleProviderForPlatform,
+  createWebTransport,
   type DriveRequest,
   type DriveResponse,
   type DriveTransport,
 } from '../src/cloud-provider-google';
-import { CloudAuthError, type CloudDoc } from '../src/cloud-sync';
+import { CloudAuthError, createCloudSync, type CloudDoc } from '../src/cloud-sync';
+import {
+  GOOGLE_CLIENT_ID_IOS,
+  GOOGLE_CLIENT_ID_WEB,
+  GOOGLE_DRIVE_SCOPE,
+} from '../src/cloud-config';
+import { defaultPracticeProgress, defaultSongProgress } from '@piano/core';
+import type { PrefsShape } from '../src/prefs-storage';
 
 const DOC = {
   app: 'piano-visualizer',
@@ -147,6 +155,13 @@ describe('createGoogleProviderForPlatform', () => {
     googleDriveRequest: vi.fn(async () => ({ status: 200, body: '{"files":[]}' })),
   };
 
+  it('ships a separate Web client in the same Google project as iOS', () => {
+    expect(GOOGLE_CLIENT_ID_WEB).toMatch(/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/);
+    expect(GOOGLE_CLIENT_ID_WEB).not.toBe(GOOGLE_CLIENT_ID_IOS);
+    expect(GOOGLE_CLIENT_ID_WEB.split('-')[0]).toBe(GOOGLE_CLIENT_ID_IOS.split('-')[0]);
+    expect(createGoogleProviderForPlatform(undefined)).not.toBeNull();
+  });
+
   it('is unavailable without a client ID, so the option stays hidden', () => {
     expect(createGoogleProviderForPlatform(undefined, { ios: '', web: '' })).toBeNull();
     expect(
@@ -188,5 +203,151 @@ describe('createGoogleProviderForPlatform', () => {
   it('reports "sign in again" on the web after a reload (no token in memory)', async () => {
     const p = createGoogleProviderForPlatform(undefined, ids);
     await expect(p?.read()).rejects.toBeInstanceOf(CloudAuthError);
+  });
+});
+
+describe('Web Google authorization', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function google(response: Record<string, unknown>, popupError?: string) {
+    const requestAccessToken = vi.fn();
+    const revoke = vi.fn();
+    const initTokenClient = vi.fn((options) => {
+      requestAccessToken.mockImplementation(() => {
+        if (popupError) options.error_callback({ type: popupError });
+        else options.callback(response);
+      });
+      return { requestAccessToken };
+    });
+    vi.stubGlobal('google', { accounts: { oauth2: { initTokenClient, revoke } } });
+    return { initTokenClient, requestAccessToken, revoke };
+  }
+
+  const grant = {
+    access_token: 'test-token',
+    expires_in: '3600',
+    scope: GOOGLE_DRIVE_SCOPE,
+  };
+
+  it('uses the Web client and app-data scope, sends the memory token, then clears it', async () => {
+    const gis = google(grant);
+    const fetchMock = vi.fn(async () => new Response('{"files":[]}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const transport = createWebTransport('web-client');
+    const provider = createGoogleDriveProvider(transport);
+    await provider.connect();
+    expect(gis.initTokenClient).toHaveBeenCalledWith(
+      expect.objectContaining({ client_id: 'web-client', scope: GOOGLE_DRIVE_SCOPE })
+    );
+    expect(gis.requestAccessToken).toHaveBeenCalledOnce();
+    await expect(provider.read()).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder'),
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } })
+    );
+    await provider.disconnect();
+    expect(gis.revoke).toHaveBeenCalledWith('test-token');
+    await expect(provider.read()).rejects.toBeInstanceOf(CloudAuthError);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('requires interactive sign-in again when the token expires', async () => {
+    google(grant);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createGoogleDriveProvider(createWebTransport('web-client'));
+    await provider.connect();
+    clock.mockReturnValue(1000 + 3540 * 1000);
+    await expect(provider.read()).rejects.toBeInstanceOf(CloudAuthError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('merges iOS and Web records through their transports into the same Drive file', async () => {
+    google(grant);
+    const drive = new FakeDrive();
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      const res = await drive.request({
+        method: init.method as DriveRequest['method'],
+        path: url.replace('https://www.googleapis.com', ''),
+        body: init.body as string | undefined,
+      });
+      return new Response(res.status === 204 ? null : res.body, { status: res.status });
+    });
+    const native = createGoogleProviderForPlatform(
+      {
+        isNativePlatform: () => true,
+        getPlatform: () => 'ios',
+        Plugins: {
+          PianoMidi: {
+            googleSignIn: drive.signIn,
+            googleSignOut: drive.signOut,
+            googleDriveRequest: (req: DriveRequest) => drive.request(req),
+          },
+        },
+      },
+      { ios: 'ios-client', web: 'web-client' }
+    )!;
+    const web = createGoogleProviderForPlatform(undefined, {
+      ios: 'ios-client',
+      web: 'web-client',
+    })!;
+    function device(provider: typeof web, id: string, stars: number, prefs: PrefsShape) {
+      const progress = defaultPracticeProgress();
+      progress.songs.s = defaultSongProgress();
+      progress.songs.s.sections.A1 = { stars, bestPct: stars * 30 };
+      const disk = new Map<string, unknown>();
+      const sync = createCloudSync({
+        providers: { google: provider },
+        store: {
+          loadJSON: <T>(key: string, fallback: T): T => (disk.get(key) as T) ?? fallback,
+          saveJSON: (key, value) => {
+            disk.set(key, value);
+            return true;
+          },
+        },
+        getProgress: () => progress,
+        applyProgress: (p) => Object.assign(progress, p),
+        getPrefs: () => prefs,
+        applyPrefs: (p) => Object.assign(prefs, p),
+        isBusy: () => false,
+        randomId: () => id,
+        now: () => 1000,
+      });
+      return { sync, progress, prefs };
+    }
+    const ios = device(native, 'ios', 2, { lang: 'jp', inputSource: 'mic' });
+    const browser = device(web, 'web', 1, { inputSource: 'midi' });
+    await ios.sync.connect('google');
+    await browser.sync.connect('google');
+    expect(browser.progress.songs.s.sections.A1.stars).toBe(2);
+    expect(browser.prefs).toMatchObject({ lang: 'jp', inputSource: 'midi' });
+    browser.progress.songs.s.sections.A1 = { stars: 3, bestPct: 100 };
+    await browser.sync.syncNow();
+    await ios.sync.syncNow();
+    expect(ios.progress.songs.s.sections.A1.stars).toBe(3);
+    expect(ios.prefs.inputSource).toBe('mic');
+    expect(drive.files.size).toBe(1);
+  });
+
+  it.each([
+    [{ error: 'access_denied' }, undefined, 'access_denied'],
+    [{ ...grant, scope: 'openid' }, undefined, 'scope-denied'],
+    [{ ...grant, expires_in: undefined }, undefined, 'invalid token lifetime'],
+    [{ ...grant, expires_in: 'invalid' }, undefined, 'invalid token lifetime'],
+    [{ ...grant, expires_in: 30 }, undefined, 'invalid token lifetime'],
+    [grant, 'popup_closed', 'popup_closed'],
+    [grant, 'popup_failed_to_open', 'popup_failed_to_open'],
+  ])('rejects a failed or unusable grant without calling Drive (%j)', async (r, error, message) => {
+    google(r, error);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createGoogleDriveProvider(createWebTransport('web-client'));
+    await expect(provider.connect()).rejects.toThrow(message);
+    await expect(provider.read()).rejects.toBeInstanceOf(CloudAuthError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
