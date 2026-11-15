@@ -1690,8 +1690,11 @@ entitlement and it could not be tested.
   does sign-in and HTTP, and JS sees only status + body. It lives in the
   existing plugin to avoid another pod. Adding a Swift file needs `pod install`.
 - **Client IDs are in [`cloud-config.ts`](packages/web/src/cloud-config.ts).**
-  Empty hides the option. While the OAuth app is in Testing, only listed test
-  users can sign in and sign-in expires after 7 days (shows as "sign in again").
+  Use a Web application client in the iOS client's Cloud project so both can
+  access the same app-data folder. See
+  [`docs/GOOGLE-SYNC.md`](docs/GOOGLE-SYNC.md) for setup and checks. Empty hides
+  the option. While the OAuth app is in Testing, only listed test users can sign
+  in and sign-in expires after 7 days (shows as "sign in again").
 - **Not synced: score files.** Progress for a score missing on this device is
   kept but not listed by id in the journal.
 

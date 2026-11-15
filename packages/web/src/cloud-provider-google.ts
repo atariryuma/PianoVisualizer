@@ -222,8 +222,13 @@ export function createWebTransport(clientId: string): DriveTransport {
               reject(new Error('scope-denied'));
               return;
             }
+            const lifetime = Number(r.expires_in);
+            if (!Number.isFinite(lifetime) || lifetime <= 60) {
+              reject(new Error('invalid token lifetime'));
+              return;
+            }
             token = r.access_token;
-            expiresAt = Date.now() + (Number(r.expires_in) - 60) * 1000;
+            expiresAt = Date.now() + (lifetime - 60) * 1000;
             resolve();
           },
           error_callback: (e) => reject(new Error(e.type ?? 'sign-in failed')),
